@@ -15,7 +15,7 @@ export default function LanguagesPage() {
     <div data-pagefind-body>
       <h1 className="text-2xl font-semibold tracking-tight">Languages</h1>
       <p className="mt-2 text-muted">Primary languages of the repositories currently tracked.</p>
-      <ul className="mt-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <ul className="mt-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-8">
         {languages.map(({ language, count }) => (
           <li key={language} className="rounded-md border border-border p-3">
             <Link href={`/languages/${languageSlug(language)}`} className="font-medium text-accent hover:underline">

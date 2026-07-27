@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
+import SideNav from "@/components/SideNav";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -50,7 +51,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
         <SiteHeader />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+        <div className="flex flex-1 items-start">
+          <aside className="sticky top-[57px] hidden max-h-[calc(100vh-57px)] w-60 shrink-0 overflow-y-auto border-r border-border px-3 py-5 xl:block">
+            <SideNav />
+          </aside>
+          <main className="min-w-0 flex-1 px-4 py-6 lg:px-6">{children}</main>
+        </div>
         <SiteFooter />
       </body>
     </html>

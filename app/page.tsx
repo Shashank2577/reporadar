@@ -21,7 +21,13 @@ export default function HomePage() {
   const reports = getReports();
   const latestDaily = reports.find((r) => r.kind === "daily");
   const featured = latestDaily?.featured ? byId.get(latestDaily.featured) : byId.get(daily[0]?.repo);
-  const gainers = topGainers(7, 5);
+  const gainers = topGainers(7, 8);
+  const mostActive = [...repos]
+    .map((r) => ({ r, commits: (r.commitActivity || []).reduce((s, w) => s + w.commits, 0) }))
+    .filter((x) => x.commits > 0)
+    .sort((a, b) => b.commits - a.commits)
+    .slice(0, 8)
+    .map((x) => x.r);
 
   return (
     <div className="space-y-12">
@@ -85,8 +91,8 @@ export default function HomePage() {
             All periods: day, week, month
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {daily.slice(0, 9).map((e) => {
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {daily.slice(0, 12).map((e) => {
             const repo = byId.get(e.repo);
             if (!repo) return null;
             return (
@@ -96,32 +102,59 @@ export default function HomePage() {
         </div>
       </section>
 
-      {gainers.length ? (
-        <section aria-labelledby="gainers">
-          <h2 id="gainers" className="mb-3 text-lg font-semibold">Biggest star gainers this week</h2>
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {gainers.map(({ repo, gain }) => (
-              <li key={repo.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <Link href={`/repos/${repo.id}`} className="font-medium text-accent hover:underline">
-                    {repo.id}
-                  </Link>
-                  <p className="truncate text-sm text-muted">{repo.description}</p>
-                </div>
-                <span className="shrink-0 text-sm font-medium text-success">+{compactNumber(gain)}</span>
-              </li>
-            ))}
-          </ul>
+      <div className="grid gap-8 xl:grid-cols-2">
+        {gainers.length ? (
+          <section aria-labelledby="gainers">
+            <h2 id="gainers" className="mb-3 text-lg font-semibold">Biggest star gainers this week</h2>
+            <ol className="divide-y divide-border rounded-md border border-border">
+              {gainers.map(({ repo, gain }, i) => (
+                <li key={repo.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="w-5 shrink-0 text-sm tabular-nums text-muted">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
+                      {repo.id}
+                    </Link>
+                    <p className="truncate text-xs text-muted">{repo.description}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium tabular-nums text-success">+{compactNumber(gain)}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="most-active">
+          <h2 id="most-active" className="mb-3 text-lg font-semibold">Most actively developed</h2>
+          <ol className="divide-y divide-border rounded-md border border-border">
+            {mostActive.map((repo, i) => {
+              const commits = (repo.commitActivity || []).reduce((s, w) => s + w.commits, 0);
+              return (
+                <li key={repo.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="w-5 shrink-0 text-sm tabular-nums text-muted">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
+                      {repo.id}
+                    </Link>
+                    <p className="truncate text-xs text-muted">
+                      {repo.contributorCount ? `~${compactNumber(repo.contributorCount)} contributors` : ""}
+                      {repo.language ? ` · ${repo.language}` : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm tabular-nums text-muted">{compactNumber(commits)} commits/yr</span>
+                </li>
+              );
+            })}
+          </ol>
         </section>
-      ) : null}
+      </div>
 
       <section aria-labelledby="latest-reports">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 id="latest-reports" className="text-lg font-semibold">Latest reports</h2>
           <Link href="/reports" className="text-sm text-accent hover:underline">All reports</Link>
         </div>
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {reports.slice(0, 6).map((r) => (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {reports.slice(0, 8).map((r) => (
             <li key={`${r.kind}-${r.slug}`} className="rounded-md border border-border p-4">
               <p className="text-xs uppercase tracking-wide text-muted">{r.kind} report</p>
               <Link href={`/reports/${r.kind}/${r.slug}`} className="mt-1 block font-medium text-accent hover:underline">

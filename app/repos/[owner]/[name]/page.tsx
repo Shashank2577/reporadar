@@ -2,11 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAllRepos, getRepo, starDelta, languageSlug, mergedStarHistory } from "@/lib/data";
+import { awardsFor } from "@/lib/awards";
 import { compactNumber, fullNumber, formatDate, repoAge } from "@/lib/format";
 import StarHistoryChart from "@/components/StarHistoryChart";
+import ContributionHeatmap from "@/components/ContributionHeatmap";
+import PunchCard from "@/components/PunchCard";
+import CodeFrequencyChart from "@/components/CodeFrequencyChart";
 import CommitActivityChart from "@/components/CommitActivityChart";
+import ActivityFeed from "@/components/ActivityFeed";
 import ReadmeViewer from "@/components/ReadmeViewer";
 import LanguageBar from "@/components/LanguageBar";
+import FileTree from "@/components/FileTree";
+import AwardList from "@/components/AwardList";
 import Tag from "@/components/Tag";
 import WatchButton from "@/components/WatchButton";
 import { absoluteUrl } from "@/lib/site";
@@ -43,15 +50,36 @@ function timeAgo(iso: string): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-function Card({ id, title, meta, children }: { id: string; title: string; meta?: React.ReactNode; children: React.ReactNode }) {
+function Card({
+  id,
+  title,
+  meta,
+  children,
+}: {
+  id: string;
+  title: string;
+  meta?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
-    <section aria-labelledby={id} className="rounded-md border border-border">
-      <div className="flex items-baseline justify-between border-b border-border bg-surface px-4 py-2.5">
+    <section aria-labelledby={id} className="scroll-mt-20 rounded-md border border-border">
+      <div className="flex items-baseline justify-between gap-3 border-b border-border bg-surface px-4 py-2.5">
         <h2 id={id} className="text-sm font-semibold">{title}</h2>
-        {meta ? <span className="text-xs text-muted">{meta}</span> : null}
+        {meta ? <span className="shrink-0 text-xs text-muted">{meta}</span> : null}
       </div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+function CounterTab({ label, count, href }: { label: string; count?: number | null; href: string }) {
+  return (
+    <a href={href} rel="noopener" className="flex items-center gap-1.5">
+      {label}
+      {count != null ? (
+        <span className="rounded-full bg-surface px-1.5 text-xs tabular-nums text-muted">{compactNumber(count)}</span>
+      ) : null}
+    </a>
   );
 }
 
@@ -60,17 +88,20 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
   const repo = getRepo(owner, name);
   if (!repo) notFound();
 
+  const allRepos = getAllRepos();
   const s = repo.aiSummary;
   const history = mergedStarHistory(repo);
+  const awards = awardsFor(repo, allRepos);
   const gainDay = starDelta(repo, 1);
   const gainWeek = starDelta(repo, 7);
   const gainMonth = starDelta(repo, 30);
-  const tags = [...new Set([...(repo.topics || []), ...(s?.tags || [])])].slice(0, 12);
+  const tags = [...new Set([...(repo.topics || []), ...(s?.tags || [])])].slice(0, 14);
   const appearances = [...(repo.trendingHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
   const totalContrib = (repo.contributors || []).reduce((sum, c) => sum + c.contributions, 0);
-  const useCases = (s?.useCases || []).map((u) =>
-    typeof u === "string" ? { title: u, description: "" } : u
-  );
+  const useCases = (s?.useCases || []).map((u) => (typeof u === "string" ? { title: u, description: "" } : u));
+  const related = allRepos
+    .filter((r) => r.id !== repo.id && (r.language === repo.language || r.topics?.some((t) => repo.topics?.includes(t))))
+    .slice(0, 6);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -102,84 +133,126 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
     { label: "Open issues", value: compactNumber(repo.openIssuesOnly ?? repo.openIssues) },
     { label: "Open PRs", value: repo.openPRs != null ? compactNumber(repo.openPRs) : "n/a" },
     { label: "Contributors", value: repo.contributorCount ? `~${compactNumber(repo.contributorCount)}` : "n/a" },
+    { label: "Commits", value: repo.commitCount ? compactNumber(repo.commitCount) : "n/a" },
+    { label: "Branches", value: repo.branchCount != null ? compactNumber(repo.branchCount) : "n/a" },
   ];
 
   return (
     <div data-pagefind-body>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      {/* Hero */}
-      <header className="rounded-md border border-border bg-surface p-5">
-        <p className="text-sm text-muted">
-          <Link href="/" className="hover:underline">Home</Link>
-          {" / "}
-          <Link href="/trending/daily" className="hover:underline">Repositories</Link>
-        </p>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
+      {/* Repo header, in GitHub's shape */}
+      <header>
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
             {repo.ownerAvatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`${repo.ownerAvatarUrl}&s=96`} alt="" width={48} height={48} className="mt-1 rounded-md border border-border" />
+              <img src={`${repo.ownerAvatarUrl}&s=96`} alt="" width={40} height={40} className="mt-0.5 rounded-md border border-border" />
             ) : null}
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight break-words">
-                <a href={`https://github.com/${repo.owner}`} className="text-accent hover:underline" rel="noopener">{repo.owner}</a>
-                <span className="text-muted"> / </span>
+              <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
+                <a href={`https://github.com/${repo.owner}`} className="text-accent hover:underline" rel="noopener">
+                  {repo.owner}
+                </a>
+                <span className="text-muted">/</span>
                 <span data-pagefind-meta="title">{repo.name}</span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-xs font-normal text-muted">
+                  {repo.isFork ? "Fork" : "Public"}
+                </span>
+                {repo.archived ? (
+                  <span className="rounded-full border border-attention bg-attention-subtle px-2 py-0.5 text-xs font-normal text-attention">
+                    Archived
+                  </span>
+                ) : null}
               </h1>
-              <p className="mt-1 max-w-2xl">{s?.oneLiner || repo.description}</p>
-              <p className="mt-1.5 text-sm text-muted">
-                {repo.language ? `${repo.language} · ` : ""}
-                {repo.license || "No license"} · created {formatDate(repo.createdAt)} · last push {timeAgo(repo.pushedAt)}
-                {repo.archived ? " · ARCHIVED" : ""}
-              </p>
+              <p className="mt-1.5 max-w-3xl text-sm">{s?.oneLiner || repo.description}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <WatchButton repo={{ id: repo.id, description: repo.description, language: repo.language, stars: repo.stars }} />
-            <a href={repo.url} rel="noopener" className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:opacity-90">
+            <a
+              href={repo.url}
+              rel="noopener"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-sm font-medium hover:bg-border/40"
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                <path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.49c-2.01.37-2.53-.5-2.69-.96-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-2.65-.89-2.65-2.36 0-.7.25-1.28.66-1.73-.09-.22-.29-.79.06-1.56 0 0 .54-.17 1.77.66a5.6 5.6 0 0 1 1.6-.22c.55 0 1.1.07 1.61.22 1.22-.83 1.76-.66 1.76-.66.35.77.15 1.34.07 1.56.41.45.65 1.03.65 1.73 0 1.48-.87 2.16-2.66 2.36.28.24.52.71.52 1.44l-.01 2.13c0 .21.14.46.55.38A8 8 0 0 0 8 0Z" />
+              </svg>
               Star on GitHub
             </a>
           </div>
         </div>
 
-        <dl className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-6">
+        {/* GitHub-style counter tab bar */}
+        <nav className="tabnav mt-4" aria-label="Repository sections on GitHub">
+          <a href="#overview" aria-current="page">Overview</a>
+          <a href="#activity">Activity</a>
+          <a href="#insights">Insights</a>
+          <CounterTab label="Issues" count={repo.openIssuesOnly ?? repo.openIssues} href={`${repo.url}/issues`} />
+          <CounterTab label="Pull requests" count={repo.openPRs} href={`${repo.url}/pulls`} />
+          {repo.discussionsEnabled ? (
+            <CounterTab label="Discussions" count={repo.discussionCount} href={`${repo.url}/discussions`} />
+          ) : null}
+          <CounterTab label="Releases" count={repo.releaseCount} href={`${repo.url}/releases`} />
+          <CounterTab label="Tags" count={repo.tagCount} href={`${repo.url}/tags`} />
+        </nav>
+
+        <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4 xl:grid-cols-8">
           {heroStats.map((st) => (
             <div key={st.label} className="bg-background px-3 py-2.5">
               <dt className="text-xs text-muted">{st.label}</dt>
-              <dd className="text-lg font-semibold leading-tight">{st.value}</dd>
+              <dd className="text-lg font-semibold leading-tight tabular-nums">{st.value}</dd>
               {st.sub ? <dd className="text-xs font-medium text-success">{st.sub}</dd> : null}
             </div>
           ))}
         </dl>
 
-        {(gainDay || gainWeek || gainMonth) ? (
-          <p className="mt-3 text-sm">
-            <span className="text-muted">Momentum:</span>
-            {gainDay ? <span className="ml-2 font-medium text-success">+{compactNumber(gainDay)} stars today</span> : null}
-            {gainWeek ? <span className="ml-2 font-medium text-success">+{compactNumber(gainWeek)} this week</span> : null}
-            {gainMonth ? <span className="ml-2 font-medium text-success">+{compactNumber(gainMonth)} this month</span> : null}
-          </p>
-        ) : null}
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
+          {repo.language ? (
+            <span>
+              <Link href={`/languages/${languageSlug(repo.language)}`} className="text-accent hover:underline">
+                {repo.language}
+              </Link>
+            </span>
+          ) : null}
+          <span>{repo.license || "No license"}</span>
+          <span>Created {formatDate(repo.createdAt)}</span>
+          <span>Last push {timeAgo(repo.pushedAt)}</span>
+          {repo.latestRelease ? <span>Latest release {repo.latestRelease.tag}</span> : null}
+          {gainWeek ? <span className="font-medium text-success">+{compactNumber(gainWeek)} stars this week</span> : null}
+          {gainMonth ? <span className="font-medium text-success">+{compactNumber(gainMonth)} this month</span> : null}
+        </p>
       </header>
 
-      {/* Two-column dashboard */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="min-w-0 space-y-6">
-          <Card
-            id="star-history"
-            title="Star history"
-            meta={repo.starHistory ? `since ${formatDate(history[0]?.date)}` : undefined}
-          >
-            <StarHistoryChart points={history} partial={repo.starHistory?.partial} approximate={repo.starHistory?.source === "gharchive-clickhouse"} />
+      {/* Wide dashboard grid — main column plus right rail */}
+      <div className="mt-6 grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5" id="overview">
+          <Card id="star-history" title="Star history" meta={history.length ? `since ${formatDate(history[0]?.date)}` : undefined}>
+            <StarHistoryChart
+              points={history}
+              partial={repo.starHistory?.partial}
+              approximate={repo.starHistory?.source === "gharchive-clickhouse"}
+            />
           </Card>
 
+          {repo.contributionDays?.length ? (
+            <Card id="contributions" title="Contribution activity" meta="commits per day, last 52 weeks">
+              <ContributionHeatmap days={repo.contributionDays} />
+            </Card>
+          ) : null}
+
+          {awards.length ? (
+            <Card id="awards" title="Signals and awards" meta="derived from tracked data">
+              <AwardList awards={awards} />
+            </Card>
+          ) : null}
+
           {s?.whatItDoes ? (
-            <Card id="overview" title={`What ${repo.name} does`}>
+            <Card id="what-it-does" title={`What ${repo.name} does`}>
               <p>{s.whatItDoes}</p>
               {s.whoIsItFor ? <p className="mt-3 text-sm text-muted">{s.whoIsItFor}</p> : null}
               {s.keyFeatures?.length ? (
-                <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                <ul className="mt-4 grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
                   {s.keyFeatures.map((f) => {
                     const [head, ...rest] = f.split(":");
                     return (
@@ -196,7 +269,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
 
           {useCases.length ? (
             <Card id="use-cases" title="Where teams use it">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {useCases.map((u) => (
                   <div key={u.title} className="rounded-md border border-border p-3">
                     <h3 className="text-sm font-semibold">{u.title}</h3>
@@ -213,17 +286,82 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
             </Card>
           ) : null}
 
-          {repo.commitActivity?.length ? (
-            <Card id="commit-activity" title="Commit activity" meta="last 52 weeks">
-              <CommitActivityChart weeks={repo.commitActivity} />
-            </Card>
-          ) : null}
-
           {repo.readmeHtml ? (
-            <Card id="readme" title="README">
+            <Card id="readme" title="README" meta={repo.defaultBranch ? `${repo.defaultBranch} branch` : undefined}>
               <ReadmeViewer html={repo.readmeHtml} repoUrl={repo.url} />
             </Card>
           ) : null}
+
+          {/* Activity */}
+          <div id="activity" className="grid gap-5 lg:grid-cols-2">
+            <Card id="recent-activity" title="Recent activity" meta="commits and pull requests">
+              <ActivityFeed repo={repo} />
+            </Card>
+            <div className="space-y-5">
+              {repo.recentIssues?.length ? (
+                <Card
+                  id="issues"
+                  title="Recent open issues"
+                  meta={
+                    <a href={`${repo.url}/issues`} className="text-accent hover:underline" rel="noopener">
+                      view all
+                    </a>
+                  }
+                >
+                  <ul className="space-y-3">
+                    {repo.recentIssues.map((i) => (
+                      <li key={i.number} className="text-sm">
+                        <a href={i.url} rel="noopener" className="font-medium text-accent hover:underline">
+                          {i.title}
+                        </a>
+                        <p className="mt-0.5 text-xs text-muted">
+                          #{i.number} · {timeAgo(i.createdAt)}
+                          {i.author ? ` · by ${i.author}` : ""}
+                          {i.comments ? ` · ${i.comments} comments` : ""}
+                        </p>
+                        {i.labels?.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {i.labels.map((l) => (
+                              <span key={l} className="rounded-full border border-border px-1.5 text-xs text-muted">
+                                {l}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
+              {repo.discussions?.length ? (
+                <Card
+                  id="discussions"
+                  title="Discussions"
+                  meta={
+                    <a href={`${repo.url}/discussions`} className="text-accent hover:underline" rel="noopener">
+                      all {compactNumber(repo.discussionCount || 0)}
+                    </a>
+                  }
+                >
+                  <ul className="space-y-3">
+                    {repo.discussions.map((d) => (
+                      <li key={d.url} className="text-sm">
+                        <a href={d.url} rel="noopener" className="font-medium text-accent hover:underline">
+                          {d.title}
+                        </a>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {d.category ? `${d.category} · ` : ""}
+                          {timeAgo(d.createdAt)}
+                          {d.comments ? ` · ${d.comments} comments` : ""}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+            </div>
+          </div>
 
           {repo.releases?.length ? (
             <Card
@@ -231,7 +369,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
               title="Releases and announcements"
               meta={repo.releaseCount ? `${fullNumber(repo.releaseCount)} total` : undefined}
             >
-              <ol className="space-y-4">
+              <ol className="grid gap-4 lg:grid-cols-2">
                 {repo.releases.map((rel) => (
                   <li key={rel.tag} className="border-l-2 border-border pl-4">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -248,7 +386,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
                       ) : null}
                     </div>
                     {rel.body ? (
-                      <p className="mt-1 line-clamp-3 whitespace-pre-line text-sm text-muted">{rel.body}</p>
+                      <p className="mt-1 line-clamp-4 whitespace-pre-line text-sm text-muted">{rel.body}</p>
                     ) : null}
                   </li>
                 ))}
@@ -256,50 +394,49 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
             </Card>
           ) : null}
 
-          <div className="grid gap-6 md:grid-cols-2">
-            {repo.recentIssues?.length ? (
-              <Card
-                id="issues"
-                title="Recent open issues"
-                meta={<a href={`${repo.url}/issues`} className="text-accent hover:underline" rel="noopener">all {compactNumber(repo.openIssuesOnly ?? repo.openIssues)}</a>}
-              >
-                <ul className="space-y-3">
-                  {repo.recentIssues.map((i) => (
-                    <li key={i.number} className="text-sm">
-                      <a href={i.url} rel="noopener" className="font-medium text-accent hover:underline">
-                        {i.title}
-                      </a>
-                      <p className="mt-0.5 text-xs text-muted">
-                        #{i.number} · {timeAgo(i.createdAt)}
-                        {i.author ? ` · by ${i.author}` : ""}
-                        {i.comments ? ` · ${i.comments} comments` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+          {/* Insights */}
+          <div id="insights" className="grid gap-5 lg:grid-cols-2">
+            {repo.codeFrequency?.length ? (
+              <Card id="code-frequency" title="Code frequency" meta="additions and deletions">
+                <CodeFrequencyChart weeks={repo.codeFrequency} />
               </Card>
             ) : null}
-
-            {repo.discussions?.length ? (
-              <Card
-                id="discussions"
-                title="Discussions"
-                meta={<a href={`${repo.url}/discussions`} className="text-accent hover:underline" rel="noopener">all {compactNumber(repo.discussionCount || 0)}</a>}
-              >
-                <ul className="space-y-3">
-                  {repo.discussions.map((d) => (
-                    <li key={d.url} className="text-sm">
-                      <a href={d.url} rel="noopener" className="font-medium text-accent hover:underline">
-                        {d.title}
-                      </a>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {d.category ? `${d.category} · ` : ""}
-                        {timeAgo(d.createdAt)}
-                        {d.comments ? ` · ${d.comments} comments` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+            {repo.commitActivity?.length ? (
+              <Card id="commit-activity" title="Commits per week" meta="last 52 weeks">
+                <CommitActivityChart weeks={repo.commitActivity} />
+              </Card>
+            ) : null}
+            {repo.punchCard?.length ? (
+              <Card id="punch-card" title="When work happens" meta="weekday and hour">
+                <PunchCard points={repo.punchCard} />
+              </Card>
+            ) : null}
+            {repo.participation && repo.participation.owner > 0 ? (
+              <Card id="participation" title="Who is committing" meta="last 52 weeks">
+                <div className="space-y-3">
+                  {[
+                    { label: "Maintainer commits", value: repo.participation.owner, color: "var(--accent)" },
+                    { label: "Community commits", value: repo.participation.community, color: "var(--success)" },
+                  ].map((row) => {
+                    const pct = repo.participation!.all ? (row.value / repo.participation!.all) * 100 : 0;
+                    return (
+                      <div key={row.label}>
+                        <div className="flex justify-between text-sm">
+                          <span>{row.label}</span>
+                          <span className="font-medium tabular-nums">
+                            {fullNumber(row.value)} ({Math.round(pct)}%)
+                          </span>
+                        </div>
+                        <div className="mt-1 h-2 overflow-hidden rounded-full bg-border">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: row.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-muted">
+                    {fullNumber(repo.participation.all)} commits in total over the last year.
+                  </p>
+                </div>
               </Card>
             ) : null}
           </div>
@@ -328,21 +465,43 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
               </table>
             </Card>
           ) : null}
+
+          {related.length ? (
+            <Card id="related" title="Related repositories">
+              <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {related.map((r) => (
+                  <li key={r.id} className="rounded-md border border-border p-3">
+                    <Link href={`/repos/${r.id}`} className="text-sm font-medium text-accent hover:underline">
+                      {r.id}
+                    </Link>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {compactNumber(r.stars)} stars{r.language ? ` · ${r.language}` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
         </div>
 
-        {/* Sidebar */}
-        <aside className="space-y-6">
-          <Card id="facts" title="Facts">
+        {/* Right rail — sticks so it stays useful beside the long main column */}
+        <aside className="space-y-5 2xl:sticky 2xl:top-[70px] 2xl:max-h-[calc(100vh-90px)] 2xl:self-start 2xl:overflow-y-auto 2xl:pr-1">
+          <Card id="facts" title="About">
             <dl className="space-y-2.5 text-sm">
-              {[
-                ["License", repo.license || "Unspecified"],
-                ["First commit", formatDate(repo.firstCommitAt || repo.createdAt)],
-                ["Age", repoAge(repo.createdAt)],
-                ["Commits", repo.commitCount ? fullNumber(repo.commitCount) : "n/a"],
-                ["Default branch", repo.defaultBranch || "n/a"],
-                ["Last push", formatDate(repo.pushedAt)],
-              ].map(([k, v]) => (
-                <div key={k as string} className="flex justify-between gap-3">
+              {(
+                [
+                  ["License", repo.license || "Unspecified"],
+                  ["First commit", formatDate(repo.firstCommitAt || repo.createdAt)],
+                  ["Age", repoAge(repo.createdAt)],
+                  ["Default branch", repo.defaultBranch || "n/a"],
+                  ["Tags", repo.tagCount != null ? fullNumber(repo.tagCount) : "n/a"],
+                  ["Closed issues", repo.closedIssues != null ? fullNumber(repo.closedIssues) : "n/a"],
+                  ["Merged PRs", repo.mergedPRs != null ? fullNumber(repo.mergedPRs) : "n/a"],
+                  ["Owner type", repo.isInOrganization ? "Organization" : "Individual"],
+                ] as [string, string][]
+              ).map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-3">
                   <dt className="text-muted">{k}</dt>
                   <dd className="text-right font-medium">{v}</dd>
                 </div>
@@ -363,21 +522,86 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
                     }}
                   />
                 </div>
+                <ul className="mt-2.5 space-y-1 text-xs text-muted">
+                  {[
+                    ["Contributing guide", repo.community.hasContributing],
+                    ["Code of conduct", repo.community.hasCodeOfConduct || Boolean(repo.codeOfConduct)],
+                    ["Issue templates", repo.community.hasIssueTemplate],
+                    ["Security policy", Boolean(repo.securityPolicyUrl)],
+                  ].map(([label, present]) => (
+                    <li key={label as string} className="flex items-center gap-1.5">
+                      <span style={{ color: present ? "var(--success)" : "var(--muted)" }}>{present ? "✓" : "—"}</span>
+                      {label as string}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </Card>
 
+          {repo.workflowRuns?.length ? (
+            <Card id="ci" title="Continuous integration">
+              <ul className="space-y-2 text-sm">
+                {repo.workflowRuns.map((run) => {
+                  const ok = run.status === "success";
+                  const failed = run.status === "failure";
+                  return (
+                    <li key={run.name} className="flex items-center justify-between gap-2">
+                      <a href={run.url} rel="noopener" className="min-w-0 truncate hover:text-accent hover:underline">
+                        {run.name}
+                      </a>
+                      <span
+                        className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                        style={{
+                          background: ok ? "var(--success-subtle)" : failed ? "var(--danger-subtle)" : "var(--surface)",
+                          color: ok ? "var(--success)" : failed ? "var(--danger)" : "var(--muted)",
+                        }}
+                      >
+                        {run.status}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          ) : null}
+
+          {repo.fileTree?.length ? (
+            <Card id="files" title="Source" meta={`${repo.fileTree.length} top-level entries`}>
+              <FileTree files={repo.fileTree} repoUrl={repo.url} branch={repo.defaultBranch} />
+            </Card>
+          ) : null}
+
           {repo.languages && Object.keys(repo.languages).length ? (
-            <Card id="tech-stack" title="Tech stack">
+            <Card id="tech-stack" title="Languages">
               <LanguageBar languages={repo.languages} />
-              {repo.language ? (
-                <p className="mt-3 text-sm text-muted">
-                  More{" "}
-                  <Link href={`/languages/${languageSlug(repo.language)}`} className="text-accent hover:underline">
-                    trending {repo.language} repos
-                  </Link>
-                </p>
-              ) : null}
+            </Card>
+          ) : null}
+
+          {repo.manifestDependencies?.dependencies?.length ? (
+            <Card
+              id="dependencies"
+              title="Direct dependencies"
+              meta={repo.manifestDependencies.manifest}
+            >
+              <div className="flex flex-wrap gap-1">
+                {repo.manifestDependencies.dependencies.slice(0, 24).map((d) => (
+                  <span
+                    key={d.name}
+                    title={d.version ? `${d.name} ${d.version}` : d.name}
+                    className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-xs"
+                  >
+                    {d.name}
+                  </span>
+                ))}
+              </div>
+              <a
+                href={`${repo.url}/network/dependencies`}
+                rel="noopener"
+                className="mt-3 block text-sm text-accent hover:underline"
+              >
+                Full dependency graph
+              </a>
             </Card>
           ) : null}
 
@@ -396,7 +620,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={`${c.avatarUrl}&s=48`} alt="" width={24} height={24} className="rounded-full" loading="lazy" />
                         <span className="min-w-0 flex-1 truncate font-medium text-accent">{c.login}</span>
-                        <span className="text-xs text-muted">{compactNumber(c.contributions)}</span>
+                        <span className="text-xs tabular-nums text-muted">{compactNumber(c.contributions)}</span>
                       </a>
                       <div className="ml-[34px] mt-1 h-1 overflow-hidden rounded-full bg-border">
                         <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(share, 2)}%` }} />
@@ -424,10 +648,21 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
           <Card id="links" title="Links">
             <ul className="space-y-1.5 text-sm">
               <li><a href={repo.url} className="text-accent hover:underline" rel="noopener">Repository</a></li>
-              {repo.homepage ? <li><a href={repo.homepage} className="text-accent hover:underline" rel="noopener nofollow">Project homepage</a></li> : null}
+              {repo.homepage ? (
+                <li><a href={repo.homepage} className="text-accent hover:underline" rel="noopener nofollow">Project homepage</a></li>
+              ) : null}
               <li><a href={`${repo.url}/releases`} className="text-accent hover:underline" rel="noopener">Releases</a></li>
               <li><a href={`${repo.url}/issues`} className="text-accent hover:underline" rel="noopener">Issues</a></li>
-              {repo.discussionsEnabled ? <li><a href={`${repo.url}/discussions`} className="text-accent hover:underline" rel="noopener">Discussions</a></li> : null}
+              <li><a href={`${repo.url}/pulls`} className="text-accent hover:underline" rel="noopener">Pull requests</a></li>
+              {repo.discussionsEnabled ? (
+                <li><a href={`${repo.url}/discussions`} className="text-accent hover:underline" rel="noopener">Discussions</a></li>
+              ) : null}
+              {repo.securityPolicyUrl ? (
+                <li><a href={repo.securityPolicyUrl} className="text-accent hover:underline" rel="noopener">Security policy</a></li>
+              ) : null}
+              {repo.codeOfConduct?.url ? (
+                <li><a href={repo.codeOfConduct.url} className="text-accent hover:underline" rel="noopener">{repo.codeOfConduct.name}</a></li>
+              ) : null}
               <li><a href={`https://github.com/${repo.owner}`} className="text-accent hover:underline" rel="noopener">Maintainer: {repo.owner}</a></li>
               {(repo.fundingLinks || []).map((f) => (
                 <li key={f.url}>

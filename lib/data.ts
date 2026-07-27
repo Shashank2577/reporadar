@@ -117,6 +117,45 @@ export type RepoProfile = {
   fundingLinks?: { platform: string; url: string }[];
   readmeHtml?: string | null;
   updatedAt?: string;
+  // Activity and insight surfaces
+  contributionDays?: { date: string; count: number }[];
+  punchCard?: { day: number; hour: number; commits: number }[];
+  codeFrequency?: { week: string; additions: number; deletions: number }[];
+  participation?: { all: number; owner: number; community: number };
+  recentCommits?: {
+    sha: string;
+    message: string;
+    url: string;
+    date: string | null;
+    author: string | null;
+    avatarUrl: string | null;
+  }[];
+  recentPulls?: {
+    number: number;
+    title: string;
+    url: string;
+    state: string;
+    updatedAt: string;
+    author: string | null;
+    draft: boolean;
+  }[];
+  workflowRuns?: { name: string; status: string; url: string; branch: string; updatedAt: string }[];
+  fileTree?: { name: string; type: string; size: number; url: string }[];
+  manifestDependencies?: {
+    manifest: string;
+    total: number;
+    dependencies: { name: string; version: string | null }[];
+  };
+  branchCount?: number;
+  tagCount?: number;
+  closedIssues?: number;
+  mergedPRs?: number;
+  environmentCount?: number;
+  isFork?: boolean;
+  isInOrganization?: boolean;
+  securityPolicyUrl?: string | null;
+  codeOfConduct?: { name: string; url: string } | null;
+  latestRelease?: { tag: string; publishedAt: string } | null;
 };
 
 // Full star curve: backfilled history (from stargazer timestamps) merged with

@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { getAllRepos, getLatestTrending } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import RepoCard from "@/components/RepoCard";
+import Blankslate from "@/components/Blankslate";
 
 const PERIODS = ["daily", "weekly", "monthly"] as const;
 type Period = (typeof PERIODS)[number];
@@ -58,7 +59,7 @@ export default async function TrendingPage({ params }: { params: Promise<{ perio
           </Link>
         ))}
       </nav>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {entries.map((e) => {
           const repo = byId.get(e.repo);
           if (!repo) return null;
@@ -66,7 +67,11 @@ export default async function TrendingPage({ params }: { params: Promise<{ perio
         })}
       </div>
       {!entries.length ? (
-        <p className="mt-6 text-muted">No trending data collected yet. The pipeline runs twice daily.</p>
+        <div className="mt-6">
+          <Blankslate heading="No trending data for this period yet" actionLabel="See the reports archive" actionHref="/reports">
+            The pipeline collects trending lists twice a day; this list fills in on the next run.
+          </Blankslate>
+        </div>
       ) : null}
     </div>
   );

@@ -1,7 +1,7 @@
 // Rich per-repo detail collectors: everything the repo page needs so a
 // visitor never has to leave for GitHub except to star or clone.
 
-import { ghFetch, ghGraphQL } from "./gh.mjs";
+import { ghFetch, ghGraphQL, lastPageFromLink } from "./gh.mjs";
 
 // --- Star history backfill --------------------------------------------------
 // GitHub removed public access to stargazer timestamps, so the historical
@@ -98,6 +98,212 @@ export async function fetchRecentIssues(fullName) {
     }));
 }
 
+// --- Contribution heatmap: per-day commit counts for 52 weeks -----------------
+// stats/commit_activity returns a `days` array per week (Sun..Sat), which is
+// exactly what GitHub's green-square contribution graph is built from.
+export async function fetchContributionDays(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/stats/commit_activity`);
+  if (!Array.isArray(res.data)) return null;
+  const days = [];
+  for (const w of res.data) {
+    const weekStart = new Date(w.week * 1000);
+    (w.days || []).forEach((count, i) => {
+      const d = new Date(weekStart.getTime() + i * 86400000);
+      days.push({ date: d.toISOString().slice(0, 10), count });
+    });
+  }
+  return days;
+}
+
+// --- Punch card: commits by weekday and hour ----------------------------------
+export async function fetchPunchCard(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/stats/punch_card`);
+  if (!Array.isArray(res.data)) return null;
+  // [[day, hour, commits], ...]
+  return res.data.map(([day, hour, commits]) => ({ day, hour, commits }));
+}
+
+// --- Code frequency: weekly additions and deletions ---------------------------
+export async function fetchCodeFrequency(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/stats/code_frequency`);
+  if (!Array.isArray(res.data)) return null;
+  return res.data.slice(-52).map(([week, additions, deletions]) => ({
+    week: new Date(week * 1000).toISOString().slice(0, 10),
+    additions,
+    deletions: Math.abs(deletions),
+  }));
+}
+
+// --- Participation: owner vs community commits (52 weeks) ---------------------
+export async function fetchParticipation(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/stats/participation`);
+  if (!res.data?.all) return null;
+  const all = res.data.all.reduce((s, n) => s + n, 0);
+  const owner = (res.data.owner || []).reduce((s, n) => s + n, 0);
+  return { all, owner, community: Math.max(all - owner, 0) };
+}
+
+// --- Recent commits (activity feed) -------------------------------------------
+export async function fetchRecentCommits(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/commits?per_page=10`);
+  if (!Array.isArray(res.data)) return [];
+  return res.data.map((c) => ({
+    sha: c.sha.slice(0, 7),
+    message: (c.commit?.message || "").split("\n")[0].slice(0, 140),
+    url: c.html_url,
+    date: c.commit?.author?.date || null,
+    author: c.author?.login || c.commit?.author?.name || null,
+    avatarUrl: c.author?.avatar_url || null,
+  }));
+}
+
+// --- Recent pull requests -----------------------------------------------------
+export async function fetchRecentPulls(fullName) {
+  const res = await ghFetch(
+    `/repos/${fullName}/pulls?state=all&sort=updated&direction=desc&per_page=8`
+  );
+  if (!Array.isArray(res.data)) return [];
+  return res.data.map((p) => ({
+    number: p.number,
+    title: p.title.slice(0, 140),
+    url: p.html_url,
+    state: p.merged_at ? "merged" : p.state,
+    updatedAt: p.updated_at,
+    author: p.user?.login || null,
+    draft: Boolean(p.draft),
+  }));
+}
+
+// --- CI: latest Actions workflow runs -----------------------------------------
+export async function fetchWorkflowRuns(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/actions/runs?per_page=10`);
+  const runs = res.data?.workflow_runs;
+  if (!Array.isArray(runs)) return null;
+  // Latest run per workflow name.
+  const seen = new Map();
+  for (const r of runs) {
+    if (seen.has(r.name)) continue;
+    seen.set(r.name, {
+      name: r.name,
+      status: r.conclusion || r.status,
+      url: r.html_url,
+      branch: r.head_branch,
+      updatedAt: r.updated_at,
+    });
+  }
+  return [...seen.values()].slice(0, 6);
+}
+
+// --- Top-level file tree ------------------------------------------------------
+// Powers a GitHub-style file browser on the repo page.
+export async function fetchFileTree(fullName) {
+  const res = await ghFetch(`/repos/${fullName}/contents/`);
+  if (!Array.isArray(res.data)) return null;
+  return res.data
+    .map((f) => ({ name: f.name, type: f.type, size: f.size || 0, url: f.html_url }))
+    .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
+    .slice(0, 40);
+}
+
+// --- Direct dependencies from the primary manifest ----------------------------
+// GitHub's SBOM endpoint is unreliable (timeouts and 404s), and direct
+// dependencies are more meaningful to a reader than a transitive list, so the
+// primary manifest is parsed instead.
+const MANIFESTS = [
+  "package.json",
+  "requirements.txt",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "Gemfile",
+  "composer.json",
+  "pubspec.yaml",
+];
+
+function parseManifest(name, text) {
+  const deps = [];
+  try {
+    if (name === "package.json") {
+      const json = JSON.parse(text);
+      for (const [k, v] of Object.entries(json.dependencies || {})) deps.push({ name: k, version: String(v) });
+      for (const [k, v] of Object.entries(json.peerDependencies || {})) deps.push({ name: k, version: String(v) });
+    } else if (name === "requirements.txt") {
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("-")) continue;
+        const m = trimmed.match(/^([A-Za-z0-9_.-]+)\s*([=<>~!].*)?$/);
+        if (m) deps.push({ name: m[1], version: (m[2] || "").trim() || null });
+      }
+    } else if (name === "Cargo.toml" || name === "pyproject.toml") {
+      const section = name === "Cargo.toml" ? /\[dependencies\]([\s\S]*?)(\n\[|$)/ : /dependencies\s*=\s*\[([\s\S]*?)\]/;
+      const block = text.match(section)?.[1] || "";
+      for (const line of block.split("\n")) {
+        const m = line.trim().match(/^["']?([A-Za-z0-9_.-]+)["']?\s*[=><~^]*\s*["']?([^"',]*)/);
+        if (m && m[1] && !m[1].startsWith("#")) deps.push({ name: m[1], version: m[2]?.trim() || null });
+      }
+    } else if (name === "go.mod") {
+      const block = text.match(/require\s*\(([\s\S]*?)\)/)?.[1] || text;
+      for (const line of block.split("\n")) {
+        const m = line.trim().match(/^([\w./-]+)\s+(v[\w.+-]+)/);
+        if (m) deps.push({ name: m[1], version: m[2] });
+      }
+    } else if (name === "composer.json") {
+      const json = JSON.parse(text);
+      for (const [k, v] of Object.entries(json.require || {})) deps.push({ name: k, version: String(v) });
+    } else if (name === "Gemfile") {
+      for (const line of text.split("\n")) {
+        const m = line.trim().match(/^gem\s+["']([^"']+)["'](?:\s*,\s*["']([^"']+)["'])?/);
+        if (m) deps.push({ name: m[1], version: m[2] || null });
+      }
+    } else if (name === "pubspec.yaml") {
+      const block = text.match(/^dependencies:\s*\n([\s\S]*?)(^\S|$)/m)?.[1] || "";
+      for (const line of block.split("\n")) {
+        const m = line.match(/^\s{2}([A-Za-z0-9_]+):\s*(.*)$/);
+        if (m) deps.push({ name: m[1], version: m[2]?.trim() || null });
+      }
+    }
+  } catch {
+    return [];
+  }
+  const seen = new Set();
+  return deps
+    .filter((d) => d.name && d.name.length < 60 && !seen.has(d.name) && seen.add(d.name))
+    .slice(0, 40);
+}
+
+export async function fetchManifestDependencies(fullName, tree) {
+  const present = (tree || []).filter((f) => f.type === "file" && MANIFESTS.includes(f.name));
+  for (const file of present) {
+    try {
+      const res = await ghFetch(`/repos/${fullName}/contents/${file.name}`, { raw: true });
+      if (typeof res.data !== "string") continue;
+      const deps = parseManifest(file.name, res.data);
+      if (deps.length) return { manifest: file.name, dependencies: deps, total: deps.length };
+    } catch {
+      // Try the next manifest.
+    }
+  }
+  return null;
+}
+
+// --- Repository shape: branches, tags, security policy ------------------------
+export async function fetchRepoShape(fullName) {
+  const out = {};
+  try {
+    const branches = await ghFetch(`/repos/${fullName}/branches?per_page=1`);
+    out.branchCount = lastPageFromLink(branches.headers);
+  } catch {
+    // Non-fatal.
+  }
+  try {
+    const tags = await ghFetch(`/repos/${fullName}/tags?per_page=1`);
+    out.tagCount = lastPageFromLink(tags.headers);
+  } catch {
+    // Non-fatal.
+  }
+  return out;
+}
+
 // --- Commit activity (52 weeks) ----------------------------------------------
 export async function fetchCommitActivity(fullName) {
   const res = await ghFetch(`/repos/${fullName}/stats/commit_activity`);
@@ -127,9 +333,17 @@ export async function fetchGraphQLExtras(owner, name) {
         watchers{totalCount}
         fundingLinks{platform url}
         issues(states:OPEN){totalCount}
+        closedIssues:issues(states:CLOSED){totalCount}
         pullRequests(states:OPEN){totalCount}
+        mergedPRs:pullRequests(states:MERGED){totalCount}
         releases{totalCount}
+        environments{totalCount}
         hasDiscussionsEnabled
+        isFork
+        isInOrganization
+        securityPolicyUrl
+        codeOfConduct{name url}
+        latestRelease{tagName publishedAt}
         discussions(first:5,orderBy:{field:UPDATED_AT,direction:DESC}){
           totalCount
           nodes{title url createdAt comments{totalCount} category{name}}
@@ -145,8 +359,18 @@ export async function fetchGraphQLExtras(owner, name) {
     watchers: r.watchers?.totalCount ?? null,
     fundingLinks: (r.fundingLinks || []).map((f) => ({ platform: f.platform, url: f.url })),
     openIssuesOnly: r.issues?.totalCount ?? null,
+    closedIssues: r.closedIssues?.totalCount ?? null,
     openPRs: r.pullRequests?.totalCount ?? null,
+    mergedPRs: r.mergedPRs?.totalCount ?? null,
     releaseCount: r.releases?.totalCount ?? null,
+    environmentCount: r.environments?.totalCount ?? null,
+    isFork: Boolean(r.isFork),
+    isInOrganization: Boolean(r.isInOrganization),
+    securityPolicyUrl: r.securityPolicyUrl || null,
+    codeOfConduct: r.codeOfConduct ? { name: r.codeOfConduct.name, url: r.codeOfConduct.url } : null,
+    latestRelease: r.latestRelease
+      ? { tag: r.latestRelease.tagName, publishedAt: r.latestRelease.publishedAt }
+      : null,
     discussionsEnabled: Boolean(r.hasDiscussionsEnabled),
     discussionCount: r.discussions?.totalCount ?? 0,
     discussions: (r.discussions?.nodes || []).map((d) => ({

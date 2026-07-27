@@ -17,6 +17,16 @@ import {
   fetchReleases,
   fetchRecentIssues,
   fetchCommitActivity,
+  fetchContributionDays,
+  fetchPunchCard,
+  fetchCodeFrequency,
+  fetchParticipation,
+  fetchRecentCommits,
+  fetchRecentPulls,
+  fetchWorkflowRuns,
+  fetchRepoShape,
+  fetchFileTree,
+  fetchManifestDependencies,
   fetchCommunity,
   fetchGraphQLExtras,
   fetchReadmeHtml,
@@ -28,7 +38,7 @@ const TRENDING_DIR = path.join(ROOT, "data", "trending");
 const TRACK_LIMIT = Number(process.env.TRACK_LIMIT || 400);
 const FACTS_TTL_DAYS = 7;
 // Bump to force a full facts refetch for every tracked repo on the next run.
-const FACTS_VERSION = 2;
+const FACTS_VERSION = 3;
 
 function readJson(file) {
   try {
@@ -123,6 +133,42 @@ async function fetchFacts(fullName, profile) {
     console.warn(`  commit activity: ${err.message}`);
   }
 
+  // Each of these is independent; a failure on one must not lose the others.
+  const optional = [
+    ["contributionDays", fetchContributionDays],
+    ["punchCard", fetchPunchCard],
+    ["codeFrequency", fetchCodeFrequency],
+    ["participation", fetchParticipation],
+    ["recentCommits", fetchRecentCommits],
+    ["recentPulls", fetchRecentPulls],
+    ["workflowRuns", fetchWorkflowRuns],
+  ];
+  for (const [key, fn] of optional) {
+    try {
+      const value = await fn(fullName);
+      if (value) profile[key] = value;
+    } catch (err) {
+      console.warn(`  ${key}: ${err.message}`);
+    }
+  }
+
+  try {
+    Object.assign(profile, await fetchRepoShape(fullName));
+  } catch (err) {
+    console.warn(`  repo shape: ${err.message}`);
+  }
+
+  try {
+    const tree = await fetchFileTree(fullName);
+    if (tree) {
+      profile.fileTree = tree;
+      const deps = await fetchManifestDependencies(fullName, tree);
+      if (deps) profile.manifestDependencies = deps;
+    }
+  } catch (err) {
+    console.warn(`  file tree: ${err.message}`);
+  }
+
   try {
     profile.community = await fetchCommunity(fullName);
   } catch (err) {
@@ -140,6 +186,14 @@ async function fetchFacts(fullName, profile) {
       profile.discussionsEnabled = extras.discussionsEnabled;
       profile.discussionCount = extras.discussionCount;
       profile.discussions = extras.discussions;
+      profile.closedIssues = extras.closedIssues;
+      profile.mergedPRs = extras.mergedPRs;
+      profile.environmentCount = extras.environmentCount;
+      profile.isFork = extras.isFork;
+      profile.isInOrganization = extras.isInOrganization;
+      profile.securityPolicyUrl = extras.securityPolicyUrl;
+      profile.codeOfConduct = extras.codeOfConduct;
+      profile.latestRelease = extras.latestRelease;
       if (extras.commitCount) profile.commitCount = extras.commitCount;
     }
   } catch (err) {

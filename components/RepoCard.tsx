@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { mergedStarHistory, type RepoProfile } from "@/lib/data";
+import { awardsFor } from "@/lib/awards";
 import { compactNumber } from "@/lib/format";
 import Tag from "@/components/Tag";
 import WatchButton from "@/components/WatchButton";
 import Sparkline from "@/components/Sparkline";
+import AwardList from "@/components/AwardList";
 
 export default function RepoCard({
   repo,
@@ -28,10 +30,11 @@ export default function RepoCard({
         <WatchButton repo={{ id: repo.id, description: repo.description, language: repo.language, stars: repo.stars }} compact />
       </div>
       {repo.description ? (
-        <p className="mt-1 text-sm text-muted">{repo.description}</p>
+        <p className="mt-1 line-clamp-2 text-sm text-muted">{repo.description}</p>
       ) : null}
-      <div className="mt-2">
+      <div className="mt-2 flex items-end justify-between gap-3">
         <Sparkline points={mergedStarHistory(repo)} />
+        <AwardList awards={awardsFor(repo)} compact />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
         <span className="inline-flex items-center gap-1">

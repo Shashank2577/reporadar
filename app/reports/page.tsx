@@ -20,7 +20,7 @@ export default function ReportsIndexPage() {
         Every report is generated from GitHub API data and kept forever, so you can see how the
         open-source landscape looked on any given day — and how earlier reports changed over time.
       </p>
-      <div className="mt-8 grid gap-8 lg:grid-cols-3">
+      <div className="mt-8 grid gap-8 lg:grid-cols-3 2xl:gap-10">
         {kinds.map((kind) => {
           const list = reports.filter((r) => r.kind === kind);
           return (

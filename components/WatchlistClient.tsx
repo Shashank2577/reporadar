@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { readWatchlist, writeWatchlist, type WatchedRepo } from "@/components/WatchButton";
 import { compactNumber } from "@/lib/format";
+import Blankslate from "@/components/Blankslate";
 
 export default function WatchlistClient() {
   const [list, setList] = useState<WatchedRepo[] | null>(null);
@@ -18,15 +19,9 @@ export default function WatchlistClient() {
   if (list === null) return <p className="text-sm text-muted">Loading your watchlist…</p>;
   if (!list.length) {
     return (
-      <div className="rounded-md border border-border bg-surface p-6 text-sm text-muted">
-        <p>
-          Nothing here yet. Browse{" "}
-          <Link href="/trending/daily" className="text-accent hover:underline">
-            trending repositories
-          </Link>{" "}
-          and press Watch on any repo to pin it here.
-        </p>
-      </div>
+      <Blankslate heading="Nothing on your watchlist yet" actionLabel="Browse trending repositories" actionHref="/trending/daily">
+        Press Watch on any repository to pin it here. The list is stored in this browser only.
+      </Blankslate>
     );
   }
 

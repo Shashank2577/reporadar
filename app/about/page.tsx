@@ -21,14 +21,36 @@ export default function AboutPage() {
       <ul>
         <li>Trending lists are read from GitHub&apos;s public trending pages (daily, weekly, monthly).</li>
         <li>
-          Repository facts — stars, forks, license, languages, topics, contributors, first commit,
-          commit counts — come from the official GitHub REST API.
+          Repository facts — stars, forks, watchers, license, languages, topics, contributors,
+          branches, tags, first commit and commit counts — come from the GitHub REST and GraphQL
+          APIs.
         </li>
         <li>
-          Star history is built from our own snapshots: each pipeline run records the current star
-          count, so every tracked repository accumulates a genuine time series.
+          Activity and insight graphs use GitHub&apos;s statistics endpoints: per-day commit counts
+          for the contribution heatmap, weekly additions and deletions for code frequency, the
+          punch card for weekday and hour patterns, and participation for the maintainer versus
+          community split.
+        </li>
+        <li>
+          READMEs are rendered by GitHub and embedded directly, so you can read a project without
+          leaving the page. Releases, recent issues, discussions, pull requests, Actions results,
+          and the dependency graph (SBOM) come from their respective endpoints.
+        </li>
+        <li>
+          Star history before we started tracking is reconstructed from public GitHub event
+          archives and calibrated to each repository&apos;s current star count; from then on our own
+          twice-daily snapshots extend the curve. GitHub no longer exposes per-star timestamps
+          directly.
         </li>
       </ul>
+      <h2>Signals and awards</h2>
+      <p>
+        GitHub does not expose profile achievements or trophies through any public API, so the
+        awards shown on repository pages are computed by us from the data above. Each one maps to a
+        stated rule — for example, &quot;Breakout launch&quot; means at least 3,000 stars within 120
+        days of creation, and &quot;Outside contributions&quot; means at least 70 percent of the last
+        year&apos;s commits came from people other than the maintainer.
+      </p>
       <h2>Jump detection</h2>
       <p>
         A star jump is flagged when a repository gains stars at more than three times its trailing
