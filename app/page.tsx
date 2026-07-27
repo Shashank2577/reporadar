@@ -1,65 +1,130 @@
-import Image from "next/image";
+import Link from "next/link";
+import type { Metadata } from "next";
+import { getAllRepos, getLatestTrending, getReports, topGainers } from "@/lib/data";
+import { compactNumber, formatDate } from "@/lib/format";
+import RepoCard from "@/components/RepoCard";
+import NewsletterForm from "@/components/NewsletterForm";
+import { site } from "@/lib/site";
 
-export default function Home() {
+export const metadata: Metadata = {
+  title: `${site.name} — GitHub Trending Repositories, Star History and Daily Reports`,
+  description: site.description,
+  alternates: { canonical: "/" },
+};
+
+export default function HomePage() {
+  const repos = getAllRepos();
+  const byId = new Map(repos.map((r) => [r.id, r]));
+  const trending = getLatestTrending();
+  const daily = trending?.periods.daily || [];
+  const reports = getReports();
+  const latestDaily = reports.find((r) => r.kind === "daily");
+  const featured = latestDaily?.featured ? byId.get(latestDaily.featured) : byId.get(daily[0]?.repo);
+  const gainers = topGainers(7, 5);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-12">
+      <section>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          What the open-source world is starring
+          {trending ? <span className="text-muted"> — {formatDate(trending.date)}</span> : null}
+        </h1>
+        <p className="mt-2 max-w-2xl text-muted">
+          {site.name} tracks trending GitHub repositories twice a day: star history, unusual star
+          jumps, licenses, tech stacks, contributors, and what each project is actually for.
+        </p>
+      </section>
+
+      {featured ? (
+        <section aria-labelledby="rotd">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 id="rotd" className="text-lg font-semibold">Repository of the day</h2>
+            {latestDaily ? (
+              <Link href={`/reports/daily/${latestDaily.slug}`} className="text-sm text-accent hover:underline">
+                Read today&apos;s full report
+              </Link>
+            ) : null}
+          </div>
+          <div className="rounded-md border border-border bg-surface p-6">
+            <h3 className="text-xl font-semibold">
+              <Link href={`/repos/${featured.id}`} className="text-accent hover:underline">
+                {featured.id}
+              </Link>
+            </h3>
+            <p className="mt-2 max-w-3xl">{featured.aiSummary?.whatItDoes || featured.description}</p>
+            <p className="mt-3 text-sm text-muted">
+              {compactNumber(featured.stars)} stars
+              {featured.language ? ` · ${featured.language}` : ""}
+              {featured.license ? ` · ${featured.license}` : ""}
+              {featured.aiSummary?.category ? ` · ${featured.aiSummary.category}` : ""}
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="trending-today">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 id="trending-today" className="text-lg font-semibold">Trending today</h2>
+          <Link href="/trending/daily" className="text-sm text-accent hover:underline">
+            All periods: day, week, month
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {daily.slice(0, 9).map((e) => {
+            const repo = byId.get(e.repo);
+            if (!repo) return null;
+            return (
+              <RepoCard key={e.repo} repo={repo} rank={e.rank} gain={e.starsGained} gainLabel="stars today" />
+            );
+          })}
         </div>
-      </main>
+      </section>
+
+      {gainers.length ? (
+        <section aria-labelledby="gainers">
+          <h2 id="gainers" className="mb-3 text-lg font-semibold">Biggest star gainers this week</h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {gainers.map(({ repo, gain }) => (
+              <li key={repo.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <Link href={`/repos/${repo.id}`} className="font-medium text-accent hover:underline">
+                    {repo.id}
+                  </Link>
+                  <p className="truncate text-sm text-muted">{repo.description}</p>
+                </div>
+                <span className="shrink-0 text-sm font-medium text-success">+{compactNumber(gain)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="latest-reports">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 id="latest-reports" className="text-lg font-semibold">Latest reports</h2>
+          <Link href="/reports" className="text-sm text-accent hover:underline">All reports</Link>
+        </div>
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {reports.slice(0, 6).map((r) => (
+            <li key={`${r.kind}-${r.slug}`} className="rounded-md border border-border p-4">
+              <p className="text-xs uppercase tracking-wide text-muted">{r.kind} report</p>
+              <Link href={`/reports/${r.kind}/${r.slug}`} className="mt-1 block font-medium text-accent hover:underline">
+                {r.title}
+              </Link>
+              <p className="mt-1 line-clamp-2 text-sm text-muted">{r.description}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section aria-labelledby="newsletter" className="rounded-md border border-border bg-surface p-6">
+        <h2 id="newsletter" className="text-lg font-semibold">The weekly digest, in your inbox</h2>
+        <p className="mb-4 mt-1 text-sm text-muted">
+          One email a week: repository of the week, the biggest star gainers, and new projects worth
+          watching. No spam, unsubscribe anytime.
+        </p>
+        <NewsletterForm />
+      </section>
     </div>
   );
 }

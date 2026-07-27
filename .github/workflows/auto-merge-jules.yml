@@ -1,0 +1,52 @@
+name: Auto-merge Jules PRs
+
+# Enables auto-merge on pull requests opened by Jules (or labeled "jules").
+# The PR still has to pass the CI build before GitHub merges it, and branch
+# protection rules apply. Content-only changes (data/, content/) are the
+# expected scope; PRs touching other paths are left for manual review.
+
+on:
+  pull_request:
+    types: [opened, labeled, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.pull_request.user.login == 'google-labs-jules[bot]' ||
+      contains(github.event.pull_request.labels.*.name, 'jules')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the PR only touches content and data
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh pr view "$PR" --json files --jq '.files[].path')
+          echo "$files"
+          if echo "$files" | grep -qvE '^(data/|content/)'; then
+            echo "content_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "content_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge
+        if: steps.scope.outputs.content_only == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR" --auto --squash
+
+      - name: Flag for manual review
+        if: steps.scope.outputs.content_only == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --body "This PR touches files outside data/ and content/, so it will not be auto-merged. A maintainer needs to review it."

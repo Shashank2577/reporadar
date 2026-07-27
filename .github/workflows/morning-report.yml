@@ -1,0 +1,46 @@
+name: Morning report
+
+on:
+  schedule:
+    # 06:15 UTC daily: fetch trending, refresh repo data, publish the daily report.
+    - cron: "15 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  morning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run morning pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run pipeline:morning
+
+      - name: Commit and push
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data content
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: morning report $(date -u +%F)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+          fi

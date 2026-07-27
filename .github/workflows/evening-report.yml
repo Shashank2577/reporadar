@@ -1,0 +1,65 @@
+name: Evening report
+
+on:
+  schedule:
+    # 18:15 UTC daily: refresh star snapshots and enrichment; publish the
+    # weekly digest on Sundays and the monthly roundup on the 1st.
+    - cron: "15 18 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  evening:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run evening pipeline
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run pipeline:evening
+
+      - name: Weekly digest (Sundays)
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(date -u +%u)" = "7" ]; then
+            npm run report:weekly
+          fi
+
+      - name: Monthly roundup (1st of the month)
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(date -u +%d)" = "01" ]; then
+            npm run report:monthly
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data content
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: evening refresh $(date -u +%F)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+          fi
