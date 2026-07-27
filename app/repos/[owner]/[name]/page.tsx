@@ -13,6 +13,7 @@ import ActivityFeed from "@/components/ActivityFeed";
 import ReadmeViewer from "@/components/ReadmeViewer";
 import LanguageBar from "@/components/LanguageBar";
 import FileTree from "@/components/FileTree";
+import Contributors from "@/components/Contributors";
 import AwardList from "@/components/AwardList";
 import Tag from "@/components/Tag";
 import WatchButton from "@/components/WatchButton";
@@ -97,7 +98,6 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
   const gainMonth = starDelta(repo, 30);
   const tags = [...new Set([...(repo.topics || []), ...(s?.tags || [])])].slice(0, 14);
   const appearances = [...(repo.trendingHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
-  const totalContrib = (repo.contributors || []).reduce((sum, c) => sum + c.contributions, 0);
   const useCases = (s?.useCases || []).map((u) => (typeof u === "string" ? { title: u, description: "" } : u));
   const related = allRepos
     .filter((r) => r.id !== repo.id && (r.language === repo.language || r.topics?.some((t) => repo.topics?.includes(t))))
@@ -608,30 +608,14 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
           {repo.contributors?.length ? (
             <Card
               id="contributors"
-              title="Top contributors"
-              meta={repo.contributorCount ? `~${fullNumber(repo.contributorCount)} total` : undefined}
+              title="Contributors"
+              meta={repo.contributorCount ? fullNumber(repo.contributorCount) : String(repo.contributors.length)}
             >
-              <ul className="space-y-2.5">
-                {repo.contributors.slice(0, 10).map((c) => {
-                  const share = totalContrib ? (c.contributions / totalContrib) * 100 : 0;
-                  return (
-                    <li key={c.login}>
-                      <a href={c.url} rel="noopener" className="flex items-center gap-2.5 text-sm hover:underline">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`${c.avatarUrl}&s=48`} alt="" width={24} height={24} className="rounded-full" loading="lazy" />
-                        <span className="min-w-0 flex-1 truncate font-medium text-accent">{c.login}</span>
-                        <span className="text-xs tabular-nums text-muted">{compactNumber(c.contributions)}</span>
-                      </a>
-                      <div className="ml-[34px] mt-1 h-1 overflow-hidden rounded-full bg-border">
-                        <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(share, 2)}%` }} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              <a href={`${repo.url}/graphs/contributors`} rel="noopener" className="mt-3 block text-sm text-accent hover:underline">
-                All contributors on GitHub
-              </a>
+              <Contributors
+                contributors={repo.contributors}
+                total={repo.contributorCount}
+                repoUrl={repo.url}
+              />
             </Card>
           ) : null}
 

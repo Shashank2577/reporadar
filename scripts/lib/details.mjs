@@ -98,21 +98,23 @@ export async function fetchRecentIssues(fullName) {
     }));
 }
 
-// --- Contribution heatmap: per-day commit counts for 52 weeks -----------------
-// stats/commit_activity returns a `days` array per week (Sun..Sat), which is
-// exactly what GitHub's green-square contribution graph is built from.
-export async function fetchContributionDays(fullName) {
+// --- Commit activity: weekly totals and per-day counts ------------------------
+// One call to stats/commit_activity yields both the weekly bar chart and the
+// per-day series behind GitHub's green-square contribution graph.
+export async function fetchCommitStats(fullName) {
   const res = await ghFetch(`/repos/${fullName}/stats/commit_activity`);
   if (!Array.isArray(res.data)) return null;
+  const weeks = [];
   const days = [];
   for (const w of res.data) {
     const weekStart = new Date(w.week * 1000);
+    weeks.push({ week: weekStart.toISOString().slice(0, 10), commits: w.total });
     (w.days || []).forEach((count, i) => {
       const d = new Date(weekStart.getTime() + i * 86400000);
       days.push({ date: d.toISOString().slice(0, 10), count });
     });
   }
-  return days;
+  return { weeks, days };
 }
 
 // --- Punch card: commits by weekday and hour ----------------------------------
@@ -302,13 +304,6 @@ export async function fetchRepoShape(fullName) {
     // Non-fatal.
   }
   return out;
-}
-
-// --- Commit activity (52 weeks) ----------------------------------------------
-export async function fetchCommitActivity(fullName) {
-  const res = await ghFetch(`/repos/${fullName}/stats/commit_activity`);
-  if (!Array.isArray(res.data)) return null;
-  return res.data.map((w) => ({ week: new Date(w.week * 1000).toISOString().slice(0, 10), commits: w.total }));
 }
 
 // --- Community profile ---------------------------------------------------------

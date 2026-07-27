@@ -7,6 +7,20 @@ export function token() {
   return process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
 }
 
+// Usage accounting so unattended runs can report and self-limit. GITHUB_TOKEN
+// inside Actions is capped at 1,000 REST requests per hour per repository; a
+// classic PAT gets 5,000.
+const usage = { rest: 0, graphql: 0, remaining: null, limit: null, resetAt: null };
+
+export function apiUsage() {
+  return { ...usage };
+}
+
+// True when the remaining budget is too small to safely start more work.
+export function budgetExhausted(floor = 60) {
+  return usage.remaining !== null && usage.remaining < floor;
+}
+
 export async function ghFetch(url, { raw = false, accept = null, retries = 2 } = {}) {
   const isText = raw || (accept && !accept.includes("json"));
   const headers = {
@@ -19,6 +33,13 @@ export async function ghFetch(url, { raw = false, accept = null, retries = 2 } =
 
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url.startsWith("http") ? url : `${API}${url}`, { headers });
+    usage.rest++;
+    const rem = res.headers.get("x-ratelimit-remaining");
+    if (rem !== null) {
+      usage.remaining = Number(rem);
+      usage.limit = Number(res.headers.get("x-ratelimit-limit"));
+      usage.resetAt = new Date(Number(res.headers.get("x-ratelimit-reset")) * 1000).toISOString();
+    }
     if (res.status === 403 || res.status === 429) {
       const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
       const waitMs = Math.min(Math.max(reset - Date.now(), 1000), 60_000);
@@ -54,6 +75,7 @@ export async function ghFetch(url, { raw = false, accept = null, retries = 2 } =
 export async function ghGraphQL(query, variables) {
   const t = token();
   if (!t) return null;
+  usage.graphql++;
   const res = await fetch("https://api.github.com/graphql", {
     method: "POST",
     headers: {

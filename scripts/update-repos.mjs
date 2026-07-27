@@ -11,13 +11,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ghFetch, lastPageFromLink, todayUTC, repoSlug } from "./lib/gh.mjs";
+import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted } from "./lib/gh.mjs";
 import {
   fetchStarHistoryBatch,
   fetchReleases,
   fetchRecentIssues,
-  fetchCommitActivity,
-  fetchContributionDays,
+  fetchCommitStats,
   fetchPunchCard,
   fetchCodeFrequency,
   fetchParticipation,
@@ -37,8 +36,22 @@ const REPO_DIR = path.join(ROOT, "data", "repos");
 const TRENDING_DIR = path.join(ROOT, "data", "trending");
 const TRACK_LIMIT = Number(process.env.TRACK_LIMIT || 400);
 const FACTS_TTL_DAYS = 7;
+// Deep facts cost ~18 API calls per repo, so cap how many refresh per run.
+// GITHUB_TOKEN inside Actions allows 1,000 REST calls per hour per repository.
+const FACTS_LIMIT = Number(process.env.FACTS_LIMIT || 25);
+// Stop starting new work when the remaining rate-limit budget gets this low.
+const RATE_FLOOR = Number(process.env.RATE_FLOOR || 80);
 // Bump to force a full facts refetch for every tracked repo on the next run.
 const FACTS_VERSION = 3;
+
+let factsDone = 0;
+
+// Spread facts refreshes across days so they never all come due at once.
+function jitterDays(id) {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return h % 5;
+}
 
 function readJson(file) {
   try {
@@ -127,15 +140,17 @@ async function fetchFacts(fullName, profile) {
   }
 
   try {
-    const activity = await fetchCommitActivity(fullName);
-    if (activity) profile.commitActivity = activity;
+    const stats = await fetchCommitStats(fullName);
+    if (stats) {
+      profile.commitActivity = stats.weeks;
+      profile.contributionDays = stats.days;
+    }
   } catch (err) {
-    console.warn(`  commit activity: ${err.message}`);
+    console.warn(`  commit stats: ${err.message}`);
   }
 
   // Each of these is independent; a failure on one must not lose the others.
   const optional = [
-    ["contributionDays", fetchContributionDays],
     ["punchCard", fetchPunchCard],
     ["codeFrequency", fetchCodeFrequency],
     ["participation", fetchParticipation],
@@ -254,8 +269,12 @@ async function updateRepo(fullName, trendingEntry, date) {
     });
   }
 
-  if (daysSince(profile.factsUpdatedAt) > FACTS_TTL_DAYS || (profile.factsVersion || 1) < FACTS_VERSION) {
+  const factsStale =
+    daysSince(profile.factsUpdatedAt) > FACTS_TTL_DAYS + jitterDays(fullName) ||
+    (profile.factsVersion || 1) < FACTS_VERSION;
+  if (factsStale && factsDone < FACTS_LIMIT && !budgetExhausted(RATE_FLOOR)) {
     await fetchFacts(fullName, profile);
+    factsDone++;
   }
 
   fs.mkdirSync(REPO_DIR, { recursive: true });
@@ -301,7 +320,13 @@ async function main() {
   console.log(`Updating ${queue.length} repos (${trendingMap.size} trending today)`);
 
   let ok = 0;
+  let skipped = 0;
   for (const fullName of queue) {
+    if (budgetExhausted(RATE_FLOOR)) {
+      skipped = queue.length - ok - skipped;
+      console.warn(`Rate-limit floor reached; ${skipped} repos deferred to the next run`);
+      break;
+    }
     try {
       process.stdout.write(`- ${fullName}\n`);
       if (await updateRepo(fullName, trendingMap.get(fullName) || null, date)) ok++;
@@ -309,7 +334,7 @@ async function main() {
       console.warn(`  failed: ${err.message}`);
     }
   }
-  console.log(`Updated ${ok}/${queue.length} repos`);
+  console.log(`Updated ${ok}/${queue.length} repos (deep facts refreshed: ${factsDone})`);
 
   // Batched star-history backfill (one-time per repo) from the GH Archive
   // dataset on ClickHouse's public playground.
@@ -333,6 +358,12 @@ async function main() {
     }
     console.log(`Backfilled ${filled}/${needBackfill.length}`);
   }
+
+  const u = apiUsage();
+  console.log(
+    `API usage: ${u.rest} REST + ${u.graphql} GraphQL calls | ` +
+      `rate limit remaining ${u.remaining ?? "?"}/${u.limit ?? "?"} (resets ${u.resetAt ?? "?"})`
+  );
 }
 
 main().catch((err) => {

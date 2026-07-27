@@ -13,7 +13,9 @@ const REPO_DIR = path.join(ROOT, "data", "repos");
 const MODEL = process.env.MODELS_MODEL || "openai/gpt-4o";
 const SUMMARY_VERSION = 2;
 const SUMMARY_TTL_DAYS = 45;
-const MAX_PER_RUN = Number(process.env.ENRICH_LIMIT || 40);
+// GitHub Models free tier allows roughly 50 requests/day for gpt-4o, so keep
+// each run well inside it; anything skipped is picked up by a later run.
+const MAX_PER_RUN = Number(process.env.ENRICH_LIMIT || 20);
 
 function daysSince(iso) {
   if (!iso) return Infinity;
@@ -71,7 +73,9 @@ async function llmSummarize(profile) {
     }),
   });
   if (!res.ok) {
-    console.warn(`  models API ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    const body = (await res.text()).slice(0, 150);
+    console.warn(`  models API ${res.status}: ${body}`);
+    if (res.status === 429) throw new Error("RATE_LIMITED");
     return null;
   }
   const data = await res.json();
@@ -135,11 +139,12 @@ async function main() {
     const file = path.join(REPO_DIR, f);
     const profile = JSON.parse(fs.readFileSync(file, "utf8"));
     const s = profile.aiSummary;
+    const jitter = [...profile.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 997, 0) % 14;
     const stale =
       !s ||
       s.source === "template" ||
       (s.version || 1) < SUMMARY_VERSION ||
-      daysSince(s.generatedAt) > SUMMARY_TTL_DAYS;
+      daysSince(s.generatedAt) > SUMMARY_TTL_DAYS + jitter;
     if (!stale) continue;
     if (enriched >= MAX_PER_RUN) break;
 
@@ -148,6 +153,10 @@ async function main() {
     try {
       summary = await llmSummarize(profile);
     } catch (err) {
+      if (err.message === "RATE_LIMITED") {
+        console.log("Model quota reached; remaining repos will be enriched on a later run");
+        break;
+      }
       console.warn(`  llm failed: ${err.message}`);
     }
     // Never downgrade an existing LLM/Jules summary to a template one.
