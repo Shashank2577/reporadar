@@ -33,6 +33,43 @@ npm run build          # static export to out/ + Pagefind search index
 GITHUB_TOKEN=$(gh auth token) npm run pipeline:morning   # run the data pipeline locally
 ```
 
+## Running costs and autopilot reality
+
+Measured, not estimated (numbers from real runs on this repository):
+
+| Resource | Free allowance | What this project uses |
+| --- | --- | --- |
+| GitHub Actions minutes | Unlimited (public repo) | ~2 min per run, 2 runs/day, ~120 min/month |
+| GitHub REST API | 5,000/hour observed with `GITHUB_TOKEN` in Actions on this repo (GitHub documents 1,000/hour per repository for Actions tokens, so treat 1,000 as the planning floor) | 40 calls for a snapshot-only run; ~20 calls per repo needing a deep refresh, capped at 25 repos per run (~540 worst case) |
+| GitHub Models (AI summaries) | ~50 requests/day for `openai/gpt-4o` on the free tier | 1 call per newly-tracked repo, capped at 20 per run |
+| GH Archive on ClickHouse (star history) | Public, anonymous | 1 batched query per run, only for repos missing history |
+| Vercel Hobby | 100 deploys/day, generous build minutes | 2-3 deploys/day, ~1 min build |
+| Buttondown | 100 subscribers | RSS-to-email, no code |
+
+Safety behaviour built in: the pipeline reports its own API usage, stops
+starting new work below a rate-limit floor (deferring repos to the next run
+rather than failing), staggers deep refreshes across days so they never all
+come due at once, and stops enrichment cleanly when the model quota is hit.
+
+### Do you need Jules?
+
+No. The site is fully autonomous on GitHub Actions alone: the workflows collect
+data, generate reports, commit, and Vercel redeploys. Jules is an optional
+editorial layer that rewrites the human-voice paragraph between the
+`<!-- jules:editorial -->` markers and improves any summary still marked
+`"source": "template"`. Without Jules, those sections keep their generated text.
+
+### Scaling limits
+
+At the default `TRACK_LIMIT` of 400 repositories, a snapshot-only run costs 400
+REST calls plus up to ~500 for deep refreshes. That is comfortable against the
+5,000/hour ceiling measured in Actions, but tight against the 1,000/hour figure
+GitHub documents for Actions tokens. If runs ever start deferring repos (the log
+says so explicitly), add a `REPORADAR_TOKEN` secret — a classic PAT with
+`public_repo` scope — and the workflows will use it automatically for a
+guaranteed 5,000/hour. Beyond roughly 1,500 tracked repositories, split the
+refresh across additional scheduled runs.
+
 ## Deployment checklist
 
 1. **Push to GitHub.** Create a repository and push this project to `main`.
