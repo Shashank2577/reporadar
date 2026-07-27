@@ -117,7 +117,9 @@ function featuredSection(p, label) {
     s.whyItMatters ? `\n${s.whyItMatters}` : "",
     "",
     `- Stars: ${fmt(p.stars)} | Forks: ${fmt(p.forks)} | Language: ${p.language || "n/a"} | License: ${p.license || "Unspecified"}`,
-    s.useCases?.length ? `- Typical use cases: ${s.useCases.slice(0, 3).join("; ")}` : "",
+    s.useCases?.length
+      ? `- Typical use cases: ${s.useCases.slice(0, 3).map((u) => (typeof u === "string" ? u : u.title)).join("; ")}`
+      : "",
     `- [View the full ${label} profile](/repos/${p.id}) or [see it on GitHub](${p.url})`,
   ];
   return lines.filter(Boolean).join("\n");

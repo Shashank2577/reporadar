@@ -7,9 +7,10 @@ export function token() {
   return process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
 }
 
-export async function ghFetch(url, { raw = false, retries = 2 } = {}) {
+export async function ghFetch(url, { raw = false, accept = null, retries = 2 } = {}) {
+  const isText = raw || (accept && !accept.includes("json"));
   const headers = {
-    Accept: raw ? "application/vnd.github.raw+json" : "application/vnd.github+json",
+    Accept: accept || (raw ? "application/vnd.github.raw+json" : "application/vnd.github+json"),
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "reporadar-pipeline",
   };
@@ -27,6 +28,14 @@ export async function ghFetch(url, { raw = false, retries = 2 } = {}) {
         continue;
       }
     }
+    // Stats endpoints return 202 while GitHub computes them in the background.
+    if (res.status === 202) {
+      if (attempt < retries + 2) {
+        await new Promise((r) => setTimeout(r, 2500));
+        continue;
+      }
+      return { status: 202, data: null, headers: res.headers };
+    }
     if (res.status === 404) return { status: 404, data: null, headers: res.headers };
     if (!res.ok) {
       if (attempt < retries) {
@@ -35,9 +44,34 @@ export async function ghFetch(url, { raw = false, retries = 2 } = {}) {
       }
       throw new Error(`GitHub API ${res.status} for ${url}: ${(await res.text()).slice(0, 200)}`);
     }
-    const data = raw ? await res.text() : await res.json();
+    const data = isText ? await res.text() : await res.json();
     return { status: res.status, data, headers: res.headers };
   }
+}
+
+// GraphQL endpoint: used for data REST does not expose (discussions, funding
+// links, exact commit counts).
+export async function ghGraphQL(query, variables) {
+  const t = token();
+  if (!t) return null;
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${t}`,
+      "Content-Type": "application/json",
+      "User-Agent": "reporadar-pipeline",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) {
+    console.warn(`GraphQL ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    return null;
+  }
+  const json = await res.json();
+  if (json.errors?.length) {
+    console.warn(`GraphQL errors: ${json.errors[0]?.message}`);
+  }
+  return json.data || null;
 }
 
 // Parse the `Link` header to get the last page number (used to count items

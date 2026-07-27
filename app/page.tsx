@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getAllRepos, getLatestTrending, getReports, topGainers } from "@/lib/data";
+import { getAllRepos, getLatestTrending, getReports, topGainers, starDelta, mergedStarHistory } from "@/lib/data";
 import { compactNumber, formatDate } from "@/lib/format";
 import RepoCard from "@/components/RepoCard";
 import NewsletterForm from "@/components/NewsletterForm";
+import StarHistoryChart from "@/components/StarHistoryChart";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -46,18 +47,33 @@ export default function HomePage() {
             ) : null}
           </div>
           <div className="rounded-md border border-border bg-surface p-6">
-            <h3 className="text-xl font-semibold">
-              <Link href={`/repos/${featured.id}`} className="text-accent hover:underline">
-                {featured.id}
-              </Link>
-            </h3>
-            <p className="mt-2 max-w-3xl">{featured.aiSummary?.whatItDoes || featured.description}</p>
-            <p className="mt-3 text-sm text-muted">
-              {compactNumber(featured.stars)} stars
-              {featured.language ? ` · ${featured.language}` : ""}
-              {featured.license ? ` · ${featured.license}` : ""}
-              {featured.aiSummary?.category ? ` · ${featured.aiSummary.category}` : ""}
-            </p>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <h3 className="text-xl font-semibold">
+                  <Link href={`/repos/${featured.id}`} className="text-accent hover:underline">
+                    {featured.id}
+                  </Link>
+                </h3>
+                <p className="mt-2">{featured.aiSummary?.whatItDoes || featured.description}</p>
+                <p className="mt-3 text-sm text-muted">
+                  {compactNumber(featured.stars)} stars
+                  {starDelta(featured, 1) ? (
+                    <span className="font-medium text-success"> (+{compactNumber(starDelta(featured, 1))} today)</span>
+                  ) : null}
+                  {featured.language ? ` · ${featured.language}` : ""}
+                  {featured.license ? ` · ${featured.license}` : ""}
+                </p>
+                <Link
+                  href={`/repos/${featured.id}`}
+                  className="mt-4 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
+                >
+                  Full profile: star history, README, releases
+                </Link>
+              </div>
+              <div className="min-w-0">
+                <StarHistoryChart points={mergedStarHistory(featured)} partial={featured.starHistory?.partial} approximate={featured.starHistory?.source === "gharchive-clickhouse"} />
+              </div>
+            </div>
           </div>
         </section>
       ) : null}

@@ -1,8 +1,7 @@
-// Generates the editorial sections of each repo profile ("what it does",
-// "use cases", "getting started", tags) using the GitHub Models API — free
-// with a GITHUB_TOKEN that has the `models` permission. Falls back to a
-// deterministic template when no model is available, so the pipeline never
-// blocks on AI.
+// Generates the editorial sections of each repo profile using the GitHub
+// Models API — free with a GITHUB_TOKEN that has the `models` permission.
+// Falls back to a deterministic template when no model is available, so the
+// pipeline never blocks on AI.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,14 +10,32 @@ import { token } from "./lib/gh.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const REPO_DIR = path.join(ROOT, "data", "repos");
-const MODEL = process.env.MODELS_MODEL || "openai/gpt-4o-mini";
-const SUMMARY_TTL_DAYS = 30;
+const MODEL = process.env.MODELS_MODEL || "openai/gpt-4o";
+const SUMMARY_VERSION = 2;
+const SUMMARY_TTL_DAYS = 45;
 const MAX_PER_RUN = Number(process.env.ENRICH_LIMIT || 40);
 
 function daysSince(iso) {
   if (!iso) return Infinity;
   return (Date.now() - new Date(iso).getTime()) / 86400000;
 }
+
+const SYSTEM_PROMPT = `You are a senior engineer writing repository briefings for a developer intelligence site. Your readers decide in 60 seconds whether a project is worth adopting. Be specific and technical; name the actual mechanisms, protocols, and commands from the README. Plain text only, no markdown syntax, no emojis, no hype words (revolutionary, blazing, game-changing).
+
+Respond with a JSON object with EXACTLY these fields:
+{
+  "oneLiner": string,            // <=120 chars, what it is + the differentiator
+  "whatItDoes": string,          // 3-4 sentences: the problem, the approach, what is distinctive technically
+  "keyFeatures": string[],       // 4-6 items, each "Feature name: one concrete sentence"
+  "useCases": [                  // 3-5 CONCRETE scenarios
+    {"title": string,            // <=8 words
+     "description": string}      // 1-2 sentences: who does this, in what situation, why this tool over alternatives
+  ],
+  "whoIsItFor": string,          // 1-2 sentences naming the audiences and prerequisites
+  "gettingStarted": string,      // the actual first step, including the real install/run command from the README if present
+  "tags": string[],              // 4-8 lowercase kebab-case topical tags
+  "category": string             // one of: ai-ml, developer-tools, web, mobile, data, infrastructure, security, systems, learning, productivity, other
+}`;
 
 async function llmSummarize(profile) {
   const t = process.env.MODELS_TOKEN || token();
@@ -30,10 +47,11 @@ async function llmSummarize(profile) {
     `Primary language: ${profile.language || "n/a"}`,
     `Topics: ${(profile.topics || []).join(", ") || "n/a"}`,
     `License: ${profile.license || "n/a"}`,
-    `Stars: ${profile.stars}`,
+    `Stars: ${profile.stars} | Forks: ${profile.forks} | Contributors: ~${profile.contributorCount || "?"}`,
+    `Latest release: ${profile.releases?.[0]?.tag || "none"}`,
     "",
-    "README excerpt:",
-    (profile.readmeExcerpt || "").slice(0, 4000),
+    "README:",
+    (profile.readmeExcerpt || "").slice(0, 11000),
   ].join("\n");
 
   const res = await fetch("https://models.github.ai/inference/chat/completions", {
@@ -44,14 +62,10 @@ async function llmSummarize(profile) {
     },
     body: JSON.stringify({
       model: MODEL,
-      temperature: 0.4,
+      temperature: 0.3,
       response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content:
-            "You write concise, factual editorial summaries of open-source GitHub repositories for a developer-facing site. Plain text only, no markdown, no emojis, no hype. Respond with a JSON object: {\"whatItDoes\": string (2-3 sentences), \"whyItMatters\": string (1-2 sentences), \"useCases\": string[] (3-5 short items), \"gettingStarted\": string (1-2 sentences pointing at how a user would begin), \"tags\": string[] (4-8 lowercase kebab-case topical tags), \"category\": string (one of: ai-ml, developer-tools, web, mobile, data, infrastructure, security, systems, learning, productivity, other)}",
-        },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
     }),
@@ -63,26 +77,17 @@ async function llmSummarize(profile) {
   const data = await res.json();
   try {
     const parsed = JSON.parse(data.choices[0].message.content);
-    if (!parsed.whatItDoes) return null;
-    return { ...parsed, source: "llm", model: MODEL, generatedAt: new Date().toISOString() };
+    if (!parsed.whatItDoes || !Array.isArray(parsed.useCases)) return null;
+    return {
+      ...parsed,
+      source: "llm",
+      model: MODEL,
+      version: SUMMARY_VERSION,
+      generatedAt: new Date().toISOString(),
+    };
   } catch {
     return null;
   }
-}
-
-function templateSummarize(profile) {
-  const lang = profile.language ? ` written primarily in ${profile.language}` : "";
-  const license = profile.license ? ` under the ${profile.license} license` : "";
-  return {
-    whatItDoes: `${profile.id} is an open-source project${lang}, published${license}. ${profile.description || ""}`.trim(),
-    whyItMatters: `It has accumulated ${profile.stars?.toLocaleString?.() || profile.stars} stars on GitHub and is actively tracked as a trending repository.`,
-    useCases: (profile.topics || []).slice(0, 5).map((t) => `Projects involving ${t.replace(/-/g, " ")}`),
-    gettingStarted: `Visit the repository README on GitHub for installation and usage instructions.`,
-    tags: (profile.topics || []).slice(0, 8),
-    category: guessCategory(profile),
-    source: "template",
-    generatedAt: new Date().toISOString(),
-  };
 }
 
 function guessCategory(profile) {
@@ -99,6 +104,27 @@ function guessCategory(profile) {
   return "other";
 }
 
+function templateSummarize(profile) {
+  const lang = profile.language ? ` written primarily in ${profile.language}` : "";
+  const license = profile.license ? ` under the ${profile.license} license` : "";
+  return {
+    oneLiner: (profile.description || `Open-source project by ${profile.owner}`).slice(0, 120),
+    whatItDoes: `${profile.id} is an open-source project${lang}, published${license}. ${profile.description || ""}`.trim(),
+    keyFeatures: [],
+    useCases: (profile.topics || []).slice(0, 4).map((t) => ({
+      title: t.replace(/-/g, " "),
+      description: `Projects involving ${t.replace(/-/g, " ")}.`,
+    })),
+    whoIsItFor: "",
+    gettingStarted: "Visit the repository README on GitHub for installation and usage instructions.",
+    tags: (profile.topics || []).slice(0, 8),
+    category: guessCategory(profile),
+    source: "template",
+    version: SUMMARY_VERSION,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 async function main() {
   const files = fs.existsSync(REPO_DIR)
     ? fs.readdirSync(REPO_DIR).filter((f) => f.endsWith(".json"))
@@ -108,10 +134,12 @@ async function main() {
   for (const f of files) {
     const file = path.join(REPO_DIR, f);
     const profile = JSON.parse(fs.readFileSync(file, "utf8"));
+    const s = profile.aiSummary;
     const stale =
-      !profile.aiSummary ||
-      profile.aiSummary.source === "template" ||
-      daysSince(profile.aiSummary.generatedAt) > SUMMARY_TTL_DAYS;
+      !s ||
+      s.source === "template" ||
+      (s.version || 1) < SUMMARY_VERSION ||
+      daysSince(s.generatedAt) > SUMMARY_TTL_DAYS;
     if (!stale) continue;
     if (enriched >= MAX_PER_RUN) break;
 
@@ -122,8 +150,8 @@ async function main() {
     } catch (err) {
       console.warn(`  llm failed: ${err.message}`);
     }
-    // Never downgrade an existing LLM summary to a template one.
-    if (!summary && profile.aiSummary?.source === "llm") continue;
+    // Never downgrade an existing LLM/Jules summary to a template one.
+    if (!summary && (s?.source === "llm" || s?.source === "jules")) continue;
     profile.aiSummary = summary || templateSummarize(profile);
     fs.writeFileSync(file, JSON.stringify(profile, null, 2));
     enriched++;

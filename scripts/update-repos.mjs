@@ -12,12 +12,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ghFetch, lastPageFromLink, todayUTC, repoSlug } from "./lib/gh.mjs";
+import {
+  fetchStarHistoryBatch,
+  fetchReleases,
+  fetchRecentIssues,
+  fetchCommitActivity,
+  fetchCommunity,
+  fetchGraphQLExtras,
+  fetchReadmeHtml,
+} from "./lib/details.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const REPO_DIR = path.join(ROOT, "data", "repos");
 const TRENDING_DIR = path.join(ROOT, "data", "trending");
 const TRACK_LIMIT = Number(process.env.TRACK_LIMIT || 400);
-const FACTS_TTL_DAYS = 14;
+const FACTS_TTL_DAYS = 7;
+// Bump to force a full facts refetch for every tracked repo on the next run.
+const FACTS_VERSION = 2;
 
 function readJson(file) {
   try {
@@ -81,12 +92,61 @@ async function fetchFacts(fullName, profile) {
         .replace(/<!--[\s\S]*?-->/g, "")
         .replace(/\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)/g, "")
         .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-        .slice(0, 6000);
+        .slice(0, 12000);
     }
   } catch (err) {
     console.warn(`  readme: ${err.message}`);
   }
 
+  try {
+    profile.readmeHtml = await fetchReadmeHtml(fullName, profile.defaultBranch);
+  } catch (err) {
+    console.warn(`  readme html: ${err.message}`);
+  }
+
+  try {
+    profile.releases = await fetchReleases(fullName);
+  } catch (err) {
+    console.warn(`  releases: ${err.message}`);
+  }
+
+  try {
+    profile.recentIssues = await fetchRecentIssues(fullName);
+  } catch (err) {
+    console.warn(`  issues: ${err.message}`);
+  }
+
+  try {
+    const activity = await fetchCommitActivity(fullName);
+    if (activity) profile.commitActivity = activity;
+  } catch (err) {
+    console.warn(`  commit activity: ${err.message}`);
+  }
+
+  try {
+    profile.community = await fetchCommunity(fullName);
+  } catch (err) {
+    console.warn(`  community: ${err.message}`);
+  }
+
+  try {
+    const extras = await fetchGraphQLExtras(...fullName.split("/"));
+    if (extras) {
+      profile.watchers = extras.watchers ?? profile.watchers;
+      profile.fundingLinks = extras.fundingLinks;
+      profile.openIssuesOnly = extras.openIssuesOnly;
+      profile.openPRs = extras.openPRs;
+      profile.releaseCount = extras.releaseCount;
+      profile.discussionsEnabled = extras.discussionsEnabled;
+      profile.discussionCount = extras.discussionCount;
+      profile.discussions = extras.discussions;
+      if (extras.commitCount) profile.commitCount = extras.commitCount;
+    }
+  } catch (err) {
+    console.warn(`  graphql extras: ${err.message}`);
+  }
+
+  profile.factsVersion = FACTS_VERSION;
   profile.factsUpdatedAt = new Date().toISOString();
 }
 
@@ -114,6 +174,7 @@ async function updateRepo(fullName, trendingEntry, date) {
     topics: r.topics || [],
     stars: r.stargazers_count,
     forks: r.forks_count,
+    watchers: r.subscribers_count,
     openIssues: r.open_issues_count,
     createdAt: r.created_at,
     pushedAt: r.pushed_at,
@@ -139,7 +200,7 @@ async function updateRepo(fullName, trendingEntry, date) {
     });
   }
 
-  if (daysSince(profile.factsUpdatedAt) > FACTS_TTL_DAYS) {
+  if (daysSince(profile.factsUpdatedAt) > FACTS_TTL_DAYS || (profile.factsVersion || 1) < FACTS_VERSION) {
     await fetchFacts(fullName, profile);
   }
 
@@ -195,6 +256,29 @@ async function main() {
     }
   }
   console.log(`Updated ${ok}/${queue.length} repos`);
+
+  // Batched star-history backfill (one-time per repo) from the GH Archive
+  // dataset on ClickHouse's public playground.
+  const needBackfill = fs
+    .readdirSync(REPO_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => ({ file: path.join(REPO_DIR, f), profile: readJson(path.join(REPO_DIR, f)) }))
+    .filter(({ profile }) => profile && !profile.starHistory?.points?.length);
+  if (needBackfill.length) {
+    console.log(`Backfilling star history for ${needBackfill.length} repos`);
+    const histories = await fetchStarHistoryBatch(
+      needBackfill.map(({ profile }) => ({ id: profile.id, stars: profile.stars }))
+    );
+    let filled = 0;
+    for (const { file, profile } of needBackfill) {
+      const h = histories.get(profile.id);
+      if (!h) continue;
+      profile.starHistory = h;
+      fs.writeFileSync(file, JSON.stringify(profile, null, 2));
+      filled++;
+    }
+    console.log(`Backfilled ${filled}/${needBackfill.length}`);
+  }
 }
 
 main().catch((err) => {

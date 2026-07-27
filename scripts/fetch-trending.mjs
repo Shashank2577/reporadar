@@ -30,6 +30,8 @@ function parseTrendingHtml(html) {
     if (!hrefMatch) continue;
     const fullName = hrefMatch[1].trim();
     if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) continue;
+    // Sponsor/login links inside the row are not repositories.
+    if (/^(sponsors|login|features|topics|trending)\//.test(fullName)) continue;
 
     const descMatch = chunk.match(/<p class="col-9[^"]*">\s*([\s\S]*?)\s*<\/p>/);
     const description = descMatch

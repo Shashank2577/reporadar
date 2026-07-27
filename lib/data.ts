@@ -20,15 +20,60 @@ export type Contributor = {
   avatarUrl: string;
   contributions: number;
 };
+export type UseCase = { title: string; description: string };
 export type AiSummary = {
+  oneLiner?: string;
   whatItDoes?: string;
   whyItMatters?: string;
-  useCases?: string[];
+  keyFeatures?: string[];
+  useCases?: (string | UseCase)[];
+  whoIsItFor?: string;
   gettingStarted?: string;
   tags?: string[];
   category?: string;
   source?: string;
+  version?: number;
   generatedAt?: string;
+};
+export type Release = {
+  name: string;
+  tag: string;
+  url: string;
+  publishedAt: string;
+  prerelease: boolean;
+  body: string;
+  downloads: number;
+  reactions: number;
+};
+export type RepoIssue = {
+  number: number;
+  title: string;
+  url: string;
+  createdAt: string;
+  comments: number;
+  labels: string[];
+  author: string | null;
+};
+export type Discussion = {
+  title: string;
+  url: string;
+  createdAt: string;
+  comments: number;
+  category: string | null;
+};
+export type StarHistory = {
+  points: { date: string; stars: number }[];
+  source?: string;
+  scale?: number;
+  partial?: boolean;
+  sampledAt: string;
+};
+export type Community = {
+  healthPercentage: number;
+  hasCodeOfConduct: boolean;
+  hasContributing: boolean;
+  hasIssueTemplate: boolean;
+  hasPullRequestTemplate: boolean;
 };
 export type RepoProfile = {
   id: string;
@@ -45,9 +90,13 @@ export type RepoProfile = {
   topics: string[];
   stars: number;
   forks: number;
+  watchers?: number;
   openIssues: number;
+  openIssuesOnly?: number;
+  openPRs?: number;
   createdAt: string;
   pushedAt: string;
+  defaultBranch?: string;
   firstCommitAt?: string;
   commitCount?: number;
   contributorCount?: number;
@@ -56,8 +105,36 @@ export type RepoProfile = {
   snapshots: Snapshot[];
   trendingHistory: TrendingAppearance[];
   aiSummary?: AiSummary;
+  starHistory?: StarHistory;
+  commitActivity?: { week: string; commits: number }[];
+  releases?: Release[];
+  releaseCount?: number;
+  recentIssues?: RepoIssue[];
+  discussionsEnabled?: boolean;
+  discussionCount?: number;
+  discussions?: Discussion[];
+  community?: Community;
+  fundingLinks?: { platform: string; url: string }[];
+  readmeHtml?: string | null;
   updatedAt?: string;
 };
+
+// Full star curve: backfilled history (from stargazer timestamps) merged with
+// our daily snapshots, which take over from the backfill's last point.
+export function mergedStarHistory(repo: RepoProfile): { date: string; stars: number }[] {
+  const back = repo.starHistory?.points || [];
+  const lastBack = back.length ? back[back.length - 1].date : "";
+  const snaps = (repo.snapshots || [])
+    .filter((s) => s.date > lastBack)
+    .map((s) => ({ date: s.date, stars: s.stars }));
+  const merged = [...back, ...snaps];
+  // Guarantee monotonic non-decreasing dates and dedupe.
+  const byDate = new Map<string, number>();
+  for (const p of merged) byDate.set(p.date, Math.max(byDate.get(p.date) || 0, p.stars));
+  return [...byDate.entries()]
+    .map(([date, stars]) => ({ date, stars }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
 
 export type TrendingEntry = {
   rank: number;
