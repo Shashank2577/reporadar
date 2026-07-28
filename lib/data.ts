@@ -327,14 +327,19 @@ export function toBrowserRepo(
   repo: RepoProfile,
   extra?: { rank?: number; gain?: number | null; gainLabel?: string }
 ) {
+  const s = repo.aiSummary;
   return {
     id: repo.id,
-    description: repo.description || "",
+    // Prefer the AI-generated one-liner (specific, technical) over GitHub's
+    // raw description (often terse or missing); fall back gracefully.
+    description: s?.oneLiner || repo.description || s?.whatItDoes?.split(". ")[0] || "",
+    aiDetail: s?.source === "llm" ? s.whatItDoes : undefined,
+    category: s?.category,
     language: repo.language,
     license: repo.license,
     stars: repo.stars,
     forks: repo.forks,
-    tags: [...new Set([...(repo.topics || []), ...(repo.aiSummary?.tags || [])])],
+    tags: [...new Set([...(repo.topics || []), ...(s?.tags || [])])],
     history: mergedStarHistory(repo).slice(-60),
     ...extra,
   };

@@ -1,14 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Fully static export: zero serverless cost on Vercel, maximum SEO performance.
-  output: "export",
+  // Hybrid mode: content pages (repos, reports, topics, languages) still
+  // prerender to static HTML at build time exactly as before. The only
+  // server-side pieces are GitHub login (/api/auth) and the repo-request
+  // API route (/api/request-repo), both needed because GitHub's OAuth token
+  // exchange requires a client secret that can never live in browser code.
   trailingSlash: false,
-  images: {
-    // Static export cannot use the image optimization server; GitHub avatars are
-    // already CDN-served and sized via URL params.
-    unoptimized: true,
-  },
 };
 
 export default nextConfig;

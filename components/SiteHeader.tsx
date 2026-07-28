@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { site } from "@/lib/site";
 import HeaderSearch from "@/components/HeaderSearch";
+import UserMenu from "@/components/UserMenu";
 
 export default function SiteHeader() {
   return (
@@ -19,6 +20,7 @@ export default function SiteHeader() {
           <Link href="/trending/daily" className="hover:text-accent">Trending</Link>
           <Link href="/reports" className="hover:text-accent">Reports</Link>
           <Link href="/watchlist" className="hover:text-accent">Watchlist</Link>
+          <Link href="/request" className="hover:text-accent">Request a repo</Link>
           <Link
             href="/newsletter"
             className="rounded-md border border-border bg-background px-3 py-1 font-medium hover:bg-surface"
@@ -26,6 +28,7 @@ export default function SiteHeader() {
             Subscribe
           </Link>
         </nav>
+        <UserMenu />
       </div>
     </header>
   );

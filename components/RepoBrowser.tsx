@@ -8,6 +8,8 @@ import Sparkline from "@/components/Sparkline";
 export type BrowserRepo = {
   id: string;
   description: string;
+  aiDetail?: string;
+  category?: string;
   language: string | null;
   license: string | null;
   stars: number;
@@ -118,7 +120,8 @@ export default function RepoBrowser({ repos, pageSize = 40 }: { repos: BrowserRe
                   {r.id}
                 </Link>
               </h3>
-              {r.description ? <p className="mt-0.5 line-clamp-2 text-sm text-muted">{r.description}</p> : null}
+              {r.description ? <p className="mt-0.5 text-sm font-medium">{r.description}</p> : null}
+              {r.aiDetail ? <p className="mt-0.5 line-clamp-2 text-sm text-muted">{r.aiDetail}</p> : null}
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                 <span className="inline-flex items-center gap-1">
                   <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
@@ -128,6 +131,9 @@ export default function RepoBrowser({ repos, pageSize = 40 }: { repos: BrowserRe
                 </span>
                 {typeof r.gain === "number" && r.gain > 0 ? (
                   <span className="font-medium text-success">+{r.gain.toLocaleString()} {r.gainLabel || "stars"}</span>
+                ) : null}
+                {r.category ? (
+                  <span className="rounded-full bg-accent-subtle px-2 py-0.5 font-medium text-accent">{r.category}</span>
                 ) : null}
                 {r.language ? <span>{r.language}</span> : null}
                 {r.license ? <span>{r.license}</span> : null}

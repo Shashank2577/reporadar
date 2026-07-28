@@ -1,37 +1,70 @@
 # RepoRadar
 
 Open-source intelligence on trending GitHub repositories, updated twice a day.
-Fully static Next.js site — the git repository itself is the database.
+The git repository itself is the database; content pages are still fully
+static, with a couple of small serverless routes for GitHub login.
 
 - Daily, weekly, and monthly trending reports with a featured repository each period
 - Per-repo profiles: star history charts, star-jump detection, what it does, use
   cases, tech stack, contributors, license, first commit, commit counts
+- List views with multi-select topic filtering on trending/topic/language pages
 - Browse by topic and language; in-browser search (Pagefind); localStorage watchlist
+- Request a repository: sign in with GitHub, describe what you're looking for, and
+  the site opens a GitHub Issue (as you) that a workflow resolves automatically —
+  it searches GitHub by stars/relevance, adds the best match to tracking, comments
+  the result, and closes the issue
 - SEO/AEO: JSON-LD structured data, sitemap, RSS feed, `llms.txt`
-- Zero infrastructure cost: static export on Vercel, data via GitHub Actions cron
+- Vercel Web Analytics + Speed Insights for real traffic and performance data
+- Near-zero infrastructure cost: hybrid Next.js on Vercel, data via GitHub Actions
 
 ## Architecture
 
 ```
-GitHub Actions (cron 06:15 + 18:15 UTC)
-  scripts/fetch-trending.mjs   -> data/trending/<date>.json   (scrapes github.com/trending)
-  scripts/update-repos.mjs     -> data/repos/<owner>__<name>.json  (GitHub REST API + daily star snapshot)
-  scripts/enrich.mjs           -> aiSummary via GitHub Models API (free, falls back to template)
-  scripts/generate-reports.mjs -> content/reports/{daily,weekly,monthly}/<slug>.md
-  git commit + push            -> Vercel rebuilds and deploys the static site
+GitHub Actions (cron 06:15 + 18:15 UTC, plus hourly-refresh.yml every hour)
+  scripts/fetch-trending.mjs      -> data/trending/<date>.json   (scrapes github.com/trending)
+  scripts/update-repos.mjs        -> data/repos/<owner>__<name>.json  (GitHub REST/GraphQL + daily star snapshot)
+  scripts/enrich.mjs              -> aiSummary via GitHub Models API (free, falls back to template)
+  scripts/generate-reports.mjs    -> content/reports/{daily,weekly,monthly}/<slug>.md
+  scripts/process-repo-requests.mjs -> resolves open `repo-request` issues, adds matches to data/repos/
+  git commit + push               -> Vercel rebuilds and deploys
+
+Runtime (Vercel, Node runtime)
+  /api/auth/[...nextauth]  -> Auth.js v5, GitHub OAuth (login only — no accounts, no user table)
+  /api/request-repo        -> creates a GitHub Issue as the signed-in user
+  everything else          -> prerendered static HTML, same as before
 ```
 
-Star history accumulates one snapshot per day per tracked repo, so charts and
-"biggest gainers" get richer every day the pipeline runs.
+Almost every page is still fully static and prerendered at build time — the
+only server-side code is the two API routes above, both existing solely
+because GitHub's OAuth token exchange requires a secret that can never live
+in browser JavaScript. Star history accumulates one snapshot per day per
+tracked repo, so charts and "biggest gainers" get richer every day the
+pipeline runs.
+
+### Why the search index build changed
+
+Pagefind needs a folder of rendered HTML to crawl. The site used to produce
+that for free via `output: "export"`, but static export disables API routes
+entirely, so login required dropping it. `scripts/build-search-index.mjs`
+replaces that: it starts the built app with `next start`, fetches every known
+content URL (enumerated straight from `data/` and `content/`, no guessing),
+saves the HTML into `.crawl/`, and runs Pagefind against that folder into
+`public/pagefind/` — which Next serves as static files at `/pagefind/*`,
+exactly where the existing search component already looked. No frontend
+changes were needed; `npm run build` still does everything in one command.
 
 ## Local development
 
 ```
 npm ci
 npm run dev            # dev server (search index unavailable in dev)
-npm run build          # static export to out/ + Pagefind search index
+npm run build           # build + crawl-based search index (see above)
 GITHUB_TOKEN=$(gh auth token) npm run pipeline:morning   # run the data pipeline locally
 ```
+
+For login to work locally, create `.env.local` with `AUTH_SECRET` (any random
+string — `openssl rand -base64 32`) and a GitHub OAuth App's `AUTH_GITHUB_ID` /
+`AUTH_GITHUB_SECRET` (see the deployment checklist below for creating one).
 
 ## Running costs and autopilot reality
 
@@ -97,33 +130,51 @@ workflows already use it automatically when present.
 
 1. **Push to GitHub.** Create a repository and push this project to `main`.
 2. **Vercel.** Import the repo at vercel.com/new. Framework preset: Next.js
-   (static export is picked up automatically from `next.config.ts`). Set env vars:
+   is auto-detected (the app is no longer a static export, so Vercel builds
+   it as a normal hybrid Next.js app — same deploy flow, still free on Hobby).
+   Set env vars:
    - `NEXT_PUBLIC_SITE_URL` — the production URL (e.g. `https://reporadar.vercel.app`)
-   - `NEXT_PUBLIC_GITHUB_REPO` — `youruser/reporadar` (adds a Source footer link)
-   - `NEXT_PUBLIC_BUTTONDOWN_USERNAME` — once the newsletter exists (step 5)
-3. **GitHub Actions.** Already configured in `.github/workflows/`:
+   - `NEXT_PUBLIC_GITHUB_REPO` — `youruser/reporadar` (adds a Source footer link
+     and is the repo repo-requests are filed against)
+   - `NEXT_PUBLIC_BUTTONDOWN_USERNAME` — once the newsletter exists (step 6 below)
+   - `AUTH_SECRET` — any random string (`openssl rand -base64 32`)
+   - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` — from step 3
+3. **GitHub OAuth App (for "Request a repo" login).** In GitHub, go to
+   Settings > Developer settings > OAuth Apps > New OAuth App. Homepage URL:
+   your production URL. Authorization callback URL:
+   `https://<your-domain>/api/auth/callback/github`. Copy the generated
+   Client ID and Client Secret into Vercel as `AUTH_GITHUB_ID` and
+   `AUTH_GITHUB_SECRET`, then redeploy. This step needs your GitHub account —
+   it can't be scripted or done on your behalf.
+4. **GitHub Actions.** Already configured in `.github/workflows/`:
    - `morning-report.yml` (06:15 UTC) — trending + repo refresh + daily report
    - `evening-report.yml` (18:15 UTC) — snapshot refresh; weekly digest on
      Sundays, monthly roundup on the 1st
    - `hourly-refresh.yml` (top of every hour) — one round-robin shard of the
      tracked corpus, so coverage keeps up as the repo count grows (see above)
+   - `repo-requests.yml` (fires the instant a `repo-request` issue is opened) —
+     searches, tracks, comments, closes
    - `ci.yml` — lint + build on every PR (the auto-merge gate)
    - `auto-merge-jules.yml` — auto-merges Jules PRs that only touch `data/` and
      `content/` after CI passes
    In the repo settings, under Actions > General, set Workflow permissions to
    "Read and write permissions".
-4. **Jules (scheduled editorial).** In [jules.google.com](https://jules.google.com)
+5. **Jules (scheduled editorial).** In [jules.google.com](https://jules.google.com)
    connect the repo. `AGENTS.md` tells Jules exactly what to do. Create scheduled
    tasks, e.g. daily: "Do the editorial pass on the latest daily report as
    described in AGENTS.md" and weekly (Sunday): "Do the weekly digest polish as
    described in AGENTS.md". Jules opens PRs; content-only PRs auto-merge after CI.
-5. **Newsletter (free).** Create a [Buttondown](https://buttondown.com) account
+6. **Newsletter (free).** Create a [Buttondown](https://buttondown.com) account
    (free tier: 100 subscribers). In Buttondown settings, add the RSS-to-email
    automation pointing at `https://<your-domain>/feed.xml`, filtered to items
    in category `weekly`. Set `NEXT_PUBLIC_BUTTONDOWN_USERNAME` in Vercel and
    redeploy — the subscribe forms go live.
-6. **Search Console.** Submit `https://<your-domain>/sitemap.xml` to Google
+7. **Search Console.** Submit `https://<your-domain>/sitemap.xml` to Google
    Search Console and Bing Webmaster Tools for fastest indexing.
+8. **Analytics.** Nothing to configure — Vercel Web Analytics and Speed
+   Insights are wired into every page already. Enable them for the project
+   in the Vercel dashboard (Analytics tab) to start seeing real visitor and
+   performance data; both are free on Hobby.
 
 ## Data model
 

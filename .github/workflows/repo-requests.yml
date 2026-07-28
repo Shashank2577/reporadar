@@ -1,0 +1,50 @@
+name: Repo requests
+
+# Fires the moment a `repo-request` issue is opened (the site's request form
+# creates the issue with this label already set, so this is effectively
+# instant — no polling). Searches GitHub for the best-matching repository,
+# adds it to tracking, comments the result, and closes the issue.
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  process:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'repo-request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Find and track a match
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPORADAR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: node scripts/process-repo-requests.mjs
+
+      - name: Commit and push
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: repo request $(date -u +%Y-%m-%dT%H:%M)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+          fi
