@@ -6,6 +6,7 @@ const ROOT = process.cwd();
 const REPO_DIR = path.join(ROOT, "data", "repos");
 const TRENDING_DIR = path.join(ROOT, "data", "trending");
 const REPORTS_DIR = path.join(ROOT, "content", "reports");
+const BLOG_DIR = path.join(ROOT, "content", "blog");
 
 export type Snapshot = { date: string; stars: number; forks: number };
 export type TrendingAppearance = {
@@ -258,6 +259,38 @@ export function getReports(kind?: Report["kind"]): Report[] {
 
 export function getReport(kind: Report["kind"], slug: string): Report | null {
   return getReports(kind).find((r) => r.slug === slug) || null;
+}
+
+export type BlogPost = {
+  slug: string;
+  title: string;
+  date: string;
+  description: string;
+  tags: string[];
+  body: string;
+};
+
+export function getBlogPosts(): BlogPost[] {
+  if (!fs.existsSync(BLOG_DIR)) return [];
+  return fs
+    .readdirSync(BLOG_DIR)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => {
+      const { data, content } = matter(fs.readFileSync(path.join(BLOG_DIR, f), "utf8"));
+      return {
+        slug: f.replace(/\.md$/, ""),
+        title: String(data.title || f),
+        date: String(data.date || ""),
+        description: String(data.description || ""),
+        tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
+        body: content,
+      };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function getBlogPost(slug: string): BlogPost | null {
+  return getBlogPosts().find((p) => p.slug === slug) || null;
 }
 
 // --- Derived views ---------------------------------------------------------

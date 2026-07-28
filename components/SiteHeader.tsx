@@ -19,6 +19,7 @@ export default function SiteHeader() {
         <nav className="hidden shrink-0 items-center gap-4 text-sm md:flex">
           <Link href="/trending/daily" className="hover:text-accent">Trending</Link>
           <Link href="/reports" className="hover:text-accent">Reports</Link>
+          <Link href="/blog" className="hover:text-accent">Blog</Link>
           <Link href="/watchlist" className="hover:text-accent">Watchlist</Link>
           <Link href="/request" className="hover:text-accent">Request a repo</Link>
           <Link

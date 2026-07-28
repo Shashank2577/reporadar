@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getAllRepos, getReports, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
+import { getAllRepos, getReports, getBlogPosts, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl("/trending/weekly"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl("/trending/monthly"), lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: absoluteUrl("/reports"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
+    { url: absoluteUrl("/blog"), lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: absoluteUrl("/categories"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/topics"), lastModified: now, changeFrequency: "daily", priority: 0.6 },
     { url: absoluteUrl("/languages"), lastModified: now, changeFrequency: "daily", priority: 0.6 },
@@ -55,5 +56,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.5,
   }));
 
-  return [...statics, ...repos, ...reports, ...categories, ...topics, ...languages];
+  const blogPosts: MetadataRoute.Sitemap = getBlogPosts().map((p) => ({
+    url: absoluteUrl(`/blog/${p.slug}`),
+    lastModified: p.date ? new Date(p.date) : now,
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+
+  return [...statics, ...repos, ...reports, ...blogPosts, ...categories, ...topics, ...languages];
 }

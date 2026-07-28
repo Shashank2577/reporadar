@@ -15,6 +15,10 @@ GitHub repositories. Data lives in the repo itself:
 - `data/trending/<date>.json` — raw trending lists per day.
 - `content/reports/{daily,weekly,monthly}/<slug>.md` — published reports with
   YAML frontmatter. Written by `scripts/generate-reports.mjs`.
+- `content/blog/<slug>.md` — long-form editorial posts (SEO/AEO content, not
+  generated from data). Frontmatter: `title`, `date` (YYYY-MM-DD), `description`
+  (used as the meta description — keep it under ~160 characters), `tags`
+  (array of strings). Rendered at `/blog/<slug>`.
 
 ## Tasks Jules is scheduled for
 
@@ -30,6 +34,15 @@ GitHub repositories. Data lives in the repo itself:
    `description`, and set `"source": "jules"`.
 3. **Weekly digest polish** (Sundays): same editorial pass on the newest file
    in `content/reports/weekly/`.
+4. **Blog posts** (when explicitly scheduled/requested — not automatic).
+   Write a new file in `content/blog/` on a topic relevant to the current
+   repo/report data: a trend across several tracked repos, an explainer of
+   a category, a "what changed this month" retrospective. 500-900 words,
+   specific and technical (name real repos, real numbers), no hype. Link to
+   relevant `/repos/<id>`, `/categories/<slug>`, or `/reports/...` pages
+   inline where natural — internal links help both users and search engines.
+   Use a unique, descriptive slug (the filename). Never edit or delete an
+   existing post; publish a new one instead.
 
 ## Hard rules
 

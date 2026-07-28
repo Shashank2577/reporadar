@@ -41,6 +41,7 @@ function collectRoutes() {
   const routes = new Set([
     "/",
     "/reports",
+    "/blog",
     "/categories",
     "/topics",
     "/languages",
@@ -48,6 +49,13 @@ function collectRoutes() {
     "/newsletter",
     "/request",
   ]);
+
+  const blogDir = path.join(ROOT, "content", "blog");
+  if (fs.existsSync(blogDir)) {
+    for (const f of fs.readdirSync(blogDir).filter((f) => f.endsWith(".md"))) {
+      routes.add(`/blog/${f.replace(/\.md$/, "")}`);
+    }
+  }
 
   const repos = readJsonDir(path.join(ROOT, "data", "repos"));
   for (const r of repos) if (r.id) routes.add(`/repos/${r.id}`);

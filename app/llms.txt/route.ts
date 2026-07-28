@@ -1,4 +1,4 @@
-import { getAllRepos, getReports, getLatestTrending, allCategories } from "@/lib/data";
+import { getAllRepos, getReports, getBlogPosts, getLatestTrending, allCategories } from "@/lib/data";
 import { absoluteUrl, site } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -48,6 +48,10 @@ export function GET() {
     ...reports.slice(0, 10).map(
       (r) => `- [${r.title}](${absoluteUrl(`/reports/${r.kind}/${r.slug}`)})`
     ),
+    "",
+    "## Blog",
+    "",
+    ...getBlogPosts().map((p) => `- [${p.title}](${absoluteUrl(`/blog/${p.slug}`)}): ${p.description}`),
     "",
   ];
 
