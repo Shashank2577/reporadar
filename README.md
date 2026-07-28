@@ -35,21 +35,22 @@ GITHUB_TOKEN=$(gh auth token) npm run pipeline:morning   # run the data pipeline
 
 ## Running costs and autopilot reality
 
-Measured, not estimated (numbers from real runs on this repository):
+Measured, not estimated (numbers from real runs on this repository, including
+actual GitHub Actions executions, not just local tests):
 
 | Resource | Free allowance | What this project uses |
 | --- | --- | --- |
-| GitHub Actions minutes | Unlimited (public repo) | ~2 min per run, 2 runs/day, ~120 min/month |
-| GitHub REST API | 5,000/hour observed with `GITHUB_TOKEN` in Actions on this repo (GitHub documents 1,000/hour per repository for Actions tokens, so treat 1,000 as the planning floor) | 40 calls for a snapshot-only run; ~20 calls per repo needing a deep refresh, capped at 25 repos per run (~540 worst case) |
-| GitHub Models (AI summaries) | ~50 requests/day for `openai/gpt-4o` on the free tier | 1 call per newly-tracked repo, capped at 20 per run |
+| GitHub Actions minutes | Unlimited (public repo) | ~45s per run; 26 runs/day (24 hourly + morning + evening) ≈ 20 min/day, all free regardless |
+| GitHub REST API | 5,000/hour observed with `GITHUB_TOKEN` in Actions on this repo (GitHub documents 1,000/hour per repository for Actions tokens — treat 1,000 as the planning floor) | ~40 calls/run at today's scale (40 tracked repos); auto-scales with population, see below |
+| GitHub Models (AI summaries) | ~50 requests/day for `openai/gpt-4o` on the free tier | 1 call per newly-tracked or stale-summary repo, capped at 20 per run |
 | GH Archive on ClickHouse (star history) | Public, anonymous | 1 batched query per run, only for repos missing history |
-| Vercel Hobby | 100 deploys/day, generous build minutes | 2-3 deploys/day, ~1 min build |
+| Vercel Hobby | 100 deploys/day, generous build minutes | Up to 26 deploys/day if every run changes data, ~1 min build each |
 | Buttondown | 100 subscribers | RSS-to-email, no code |
 
-Safety behaviour built in: the pipeline reports its own API usage, stops
-starting new work below a rate-limit floor (deferring repos to the next run
-rather than failing), staggers deep refreshes across days so they never all
-come due at once, and stops enrichment cleanly when the model quota is hit.
+Safety behaviour built in: the pipeline reports its own API usage every run,
+stops starting new work below a rate-limit floor (deferring repos to the next
+run rather than failing), staggers deep refreshes across days so they never
+all come due at once, and stops enrichment cleanly when the model quota is hit.
 
 ### Do you need Jules?
 
@@ -59,16 +60,38 @@ editorial layer that rewrites the human-voice paragraph between the
 `<!-- jules:editorial -->` markers and improves any summary still marked
 `"source": "template"`. Without Jules, those sections keep their generated text.
 
-### Scaling limits
+### How coverage scales as the tracked repo count grows
 
-At the default `TRACK_LIMIT` of 400 repositories, a snapshot-only run costs 400
-REST calls plus up to ~500 for deep refreshes. That is comfortable against the
-5,000/hour ceiling measured in Actions, but tight against the 1,000/hour figure
-GitHub documents for Actions tokens. If runs ever start deferring repos (the log
-says so explicitly), add a `REPORADAR_TOKEN` secret — a classic PAT with
-`public_repo` scope — and the workflows will use it automatically for a
-guaranteed 5,000/hour. Beyond roughly 1,500 tracked repositories, split the
-refresh across additional scheduled runs.
+`.github/workflows/hourly-refresh.yml` runs `scripts/update-repos.mjs` every
+hour, in addition to the morning and evening runs (26 executions/day total).
+Every run always refreshes today's trending repos immediately, plus one
+**shard** of a round-robin rotation over the entire tracked corpus. The shard
+size is not a fixed number — it is computed each run as
+`ceil(tracked_repo_count / 20)`, so it auto-scales:
+
+| Tracked repos | Shard size per run | Repos covered per day (26 runs) |
+| --- | --- | --- |
+| 40 (today) | 40 (floored to the whole corpus) | every repo, multiple times |
+| 500 | 40 | ~1,040 — every repo covered more than once |
+| 2,000 | 100 | ~2,600 — full coverage with margin |
+| 3,000 (`MAX_TRACKED` default) | 150 | ~3,900 — full coverage with margin |
+
+A rotation cursor persists in `data/.pipeline-cursor.json` (committed like
+everything else) so the shard picks up where the last run left off, and
+nothing is skipped or double-processed across restarts. New trending repos
+are added to the tracked corpus up to `MAX_TRACKED` (default 3,000, raise via
+the env var); past that ceiling nothing new is added but nothing already
+tracked is ever dropped or archived — nothing goes stale as long as the
+population fits the daily rotation. Snapshot calls (1 REST call/repo) are
+cheap enough that this holds at real-world scale; deep-fact refreshes (the
+expensive ~18-call profile rebuild) stay capped per run regardless of
+population size, so they simply take longer to cycle through at very large
+scale rather than ever exceeding the rate limit.
+
+Practically: this design comfortably handles thousands of tracked repos
+before any limit is at risk. If it ever gets there, add a `REPORADAR_TOKEN`
+secret (a classic PAT with `public_repo` scope, 5,000/hour guaranteed) — the
+workflows already use it automatically when present.
 
 ## Deployment checklist
 
@@ -82,6 +105,8 @@ refresh across additional scheduled runs.
    - `morning-report.yml` (06:15 UTC) — trending + repo refresh + daily report
    - `evening-report.yml` (18:15 UTC) — snapshot refresh; weekly digest on
      Sundays, monthly roundup on the 1st
+   - `hourly-refresh.yml` (top of every hour) — one round-robin shard of the
+     tracked corpus, so coverage keeps up as the repo count grows (see above)
    - `ci.yml` — lint + build on every PR (the auto-merge gate)
    - `auto-merge-jules.yml` — auto-merges Jules PRs that only touch `data/` and
      `content/` after CI passes

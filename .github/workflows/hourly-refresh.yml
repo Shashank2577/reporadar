@@ -1,0 +1,51 @@
+name: Hourly refresh
+
+# Round-robin coverage: each run refreshes today's trending repos plus one
+# shard of the full tracked corpus (see scripts/update-repos.mjs). The shard
+# size auto-scales with population, so as tracking grows from dozens to
+# thousands of repos, every one still gets touched roughly once per day
+# without needing to raise limits by hand. This is what keeps the site from
+# going stale as it grows over weeks and months, without ever exceeding
+# GitHub's per-hour API budget.
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  hourly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Refresh this hour's shard
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPORADAR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: npm run data:repos
+
+      - name: Commit and push
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: hourly shard refresh $(date -u +%Y-%m-%dT%H:%M)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+          fi
