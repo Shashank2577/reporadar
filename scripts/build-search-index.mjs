@@ -41,6 +41,7 @@ function collectRoutes() {
   const routes = new Set([
     "/",
     "/reports",
+    "/repos",
     "/blog",
     "/categories",
     "/topics",

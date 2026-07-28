@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl("/trending/weekly"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl("/trending/monthly"), lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: absoluteUrl("/reports"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
+    { url: absoluteUrl("/repos"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/blog"), lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: absoluteUrl("/categories"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/topics"), lastModified: now, changeFrequency: "daily", priority: 0.6 },

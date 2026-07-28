@@ -6,6 +6,7 @@ import { compactNumber } from "@/lib/format";
 // navigation plus jump-off points into the corpus. Fills the left real estate
 // on wide screens instead of leaving it empty.
 const nav = [
+  { href: "/repos", label: "All repositories" },
   { href: "/categories", label: "Browse by category" },
   { href: "/trending/daily", label: "Trending today" },
   { href: "/trending/weekly", label: "Trending this week" },

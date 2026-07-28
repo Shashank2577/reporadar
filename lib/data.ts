@@ -218,7 +218,10 @@ export function getAllRepos(): RepoProfile[] {
     .filter((f) => f.endsWith(".json"))
     .map((f) => readJson<RepoProfile>(path.join(REPO_DIR, f)))
     .filter((p): p is RepoProfile => Boolean(p?.id))
-    .sort((a, b) => b.stars - a.stars);
+    // Newly-discovered stubs (e.g. from the historical trending backfill)
+    // don't have `stars` yet until their first facts fetch — treat as 0
+    // rather than NaN so they sort predictably to the bottom, not scattered.
+    .sort((a, b) => (b.stars || 0) - (a.stars || 0));
   return repoCache;
 }
 
@@ -452,8 +455,10 @@ export function toBrowserRepo(
     category: s?.category,
     language: repo.language,
     license: repo.license,
-    stars: repo.stars,
-    forks: repo.forks,
+    // Newly-discovered stubs don't have stars/forks until their first facts
+    // fetch — default to 0 rather than letting undefined leak into display.
+    stars: repo.stars || 0,
+    forks: repo.forks || 0,
     tags: [...new Set([...(repo.topics || []), ...(s?.tags || [])])],
     history: mergedStarHistory(repo).slice(-60),
     ...extra,

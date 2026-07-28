@@ -39,8 +39,11 @@ export default function HomePage() {
         <p className="mt-2 max-w-2xl text-muted">
           {site.name} tracks {repos.length}+ trending GitHub repositories across {categories.length}{" "}
           categories, twice a day: star history, unusual star jumps, licenses, tech stacks,
-          contributors, and what each project is actually for. Looking for what&apos;s new today
-          instead? See what&apos;s{" "}
+          contributors, and what each project is actually for. Browse{" "}
+          <Link href="/repos" className="text-accent hover:underline">
+            every tracked repository
+          </Link>{" "}
+          at once, or see what&apos;s{" "}
           <Link href="/trending/daily" className="text-accent hover:underline">
             trending right now
           </Link>

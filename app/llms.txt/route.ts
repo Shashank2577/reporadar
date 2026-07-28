@@ -24,6 +24,7 @@ export function GET() {
     "",
     "## Key pages",
     "",
+    `- [All repositories](${absoluteUrl("/repos")}): every tracked repository, not scoped to any period`,
     `- [Categories](${absoluteUrl("/categories")}): browse by project type (${categories.map((c) => c.title).join(", ")})`,
     `- [Trending today](${absoluteUrl("/trending/daily")}): today's trending repositories, ranked`,
     `- [Trending this week](${absoluteUrl("/trending/weekly")}) and [this month](${absoluteUrl("/trending/monthly")})`,
