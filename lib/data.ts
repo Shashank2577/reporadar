@@ -320,3 +320,22 @@ export function reposByLanguage(language: string): RepoProfile[] {
 export function languageSlug(language: string): string {
   return language.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
+
+// Slim, client-bundle-friendly shape for list/browse pages — avoids shipping
+// the full profile (README HTML, punch card, etc.) to the browser.
+export function toBrowserRepo(
+  repo: RepoProfile,
+  extra?: { rank?: number; gain?: number | null; gainLabel?: string }
+) {
+  return {
+    id: repo.id,
+    description: repo.description || "",
+    language: repo.language,
+    license: repo.license,
+    stars: repo.stars,
+    forks: repo.forks,
+    tags: [...new Set([...(repo.topics || []), ...(repo.aiSummary?.tags || [])])],
+    history: mergedStarHistory(repo).slice(-60),
+    ...extra,
+  };
+}

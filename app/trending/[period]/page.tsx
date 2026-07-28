@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAllRepos, getLatestTrending } from "@/lib/data";
+import { getAllRepos, getLatestTrending, toBrowserRepo } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import RepoCard from "@/components/RepoCard";
+import RepoBrowser from "@/components/RepoBrowser";
 import Blankslate from "@/components/Blankslate";
 
 const PERIODS = ["daily", "weekly", "monthly"] as const;
@@ -39,6 +39,14 @@ export default async function TrendingPage({ params }: { params: Promise<{ perio
   const entries = trending?.periods[period as Period] || [];
   const byId = new Map(getAllRepos().map((r) => [r.id, r]));
 
+  const items = entries
+    .map((e) => {
+      const repo = byId.get(e.repo);
+      if (!repo) return null;
+      return toBrowserRepo(repo, { rank: e.rank, gain: e.starsGained, gainLabel: l.gain });
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
   return (
     <div data-pagefind-body>
       <h1 className="text-2xl font-semibold tracking-tight">
@@ -59,20 +67,15 @@ export default async function TrendingPage({ params }: { params: Promise<{ perio
           </Link>
         ))}
       </nav>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {entries.map((e) => {
-          const repo = byId.get(e.repo);
-          if (!repo) return null;
-          return <RepoCard key={e.repo} repo={repo} rank={e.rank} gain={e.starsGained} gainLabel={l.gain} />;
-        })}
-      </div>
-      {!entries.length ? (
-        <div className="mt-6">
+      <div className="mt-6">
+        {items.length ? (
+          <RepoBrowser repos={items} />
+        ) : (
           <Blankslate heading="No trending data for this period yet" actionLabel="See the reports archive" actionHref="/reports">
             The pipeline collects trending lists twice a day; this list fills in on the next run.
           </Blankslate>
-        </div>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }

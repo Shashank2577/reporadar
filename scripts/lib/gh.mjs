@@ -21,6 +21,25 @@ export function budgetExhausted(floor = 60) {
   return usage.remaining !== null && usage.remaining < floor;
 }
 
+// Bounded-concurrency map: runs `fn` over `items` with at most `limit` in
+// flight at once. This is the safe form of "run calls in parallel" — the
+// total number of API calls made is identical to running sequentially (the
+// rate-limit budget doesn't change), it just finishes faster. GitHub applies
+// secondary/abuse-detection rate limiting well before ~10 concurrent
+// requests from one token, so the default stays comfortably under that.
+export async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function ghFetch(url, { raw = false, accept = null, retries = 2 } = {}) {
   const isText = raw || (accept && !accept.includes("json"));
   const headers = {

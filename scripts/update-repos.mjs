@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted } from "./lib/gh.mjs";
+import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted, mapLimit } from "./lib/gh.mjs";
 import {
   fetchStarHistoryBatch,
   fetchReleases,
@@ -49,6 +49,12 @@ const FACTS_TTL_DAYS = 7;
 // GITHUB_TOKEN inside Actions allows 1,000 REST calls per hour per repository
 // (5,000/hour observed in practice); a shard run stays far under either.
 const FACTS_LIMIT = Number(process.env.FACTS_LIMIT || 25);
+// How many of a repo's ~18 independent facts calls run concurrently, and how
+// many repos in the shard are processed concurrently. Both are capped well
+// under GitHub's secondary/abuse-detection rate limit (~10 concurrent
+// requests per token is the commonly cited safe ceiling).
+const FACTS_CONCURRENCY = Number(process.env.FACTS_CONCURRENCY || 6);
+const REPO_CONCURRENCY = Number(process.env.REPO_CONCURRENCY || 4);
 // Stop starting new work when the remaining rate-limit budget gets this low.
 const RATE_FLOOR = Number(process.env.RATE_FLOOR || 80);
 // Bump to force a full facts refetch for every tracked repo on the next run.
@@ -84,154 +90,148 @@ function daysSince(iso) {
   return (Date.now() - new Date(iso).getTime()) / 86400000;
 }
 
+// A deep facts refresh makes ~18 independent API calls per repo. Running
+// them one at a time was pure wasted wall-clock — none of them depend on
+// each other's results (the one real dependency, file tree -> manifest
+// dependencies, is kept sequential within its own task). This does not use
+// any more of the rate-limit budget than the sequential version; it just
+// stops paying round-trip latency serially. Concurrency across these tasks
+// is capped by mapLimit below to stay well under GitHub's per-token
+// secondary rate limit.
 async function fetchFacts(fullName, profile) {
-  // First-commit date + total commit count via the Link-header pagination trick.
-  try {
-    const first = await ghFetch(`/repos/${fullName}/commits?per_page=1`);
-    if (first.status !== 404 && Array.isArray(first.data) && first.data.length > 0) {
-      const lastPage = lastPageFromLink(first.headers);
-      profile.commitCount = lastPage;
-      if (lastPage > 1) {
-        const oldest = await ghFetch(`/repos/${fullName}/commits?per_page=1&page=${lastPage}`);
-        const c = Array.isArray(oldest.data) ? oldest.data[0] : null;
-        profile.firstCommitAt = c?.commit?.author?.date || profile.createdAt;
-      } else {
-        profile.firstCommitAt = first.data[0]?.commit?.author?.date || profile.createdAt;
+  const tasks = [
+    async () => {
+      const first = await ghFetch(`/repos/${fullName}/commits?per_page=1`);
+      if (first.status !== 404 && Array.isArray(first.data) && first.data.length > 0) {
+        const lastPage = lastPageFromLink(first.headers);
+        profile.commitCount = lastPage;
+        if (lastPage > 1) {
+          const oldest = await ghFetch(`/repos/${fullName}/commits?per_page=1&page=${lastPage}`);
+          const c = Array.isArray(oldest.data) ? oldest.data[0] : null;
+          profile.firstCommitAt = c?.commit?.author?.date || profile.createdAt;
+        } else {
+          profile.firstCommitAt = first.data[0]?.commit?.author?.date || profile.createdAt;
+        }
       }
-    }
-  } catch (err) {
-    console.warn(`  commits: ${err.message}`);
-  }
-
-  try {
-    const langs = await ghFetch(`/repos/${fullName}/languages`);
-    if (langs.data) profile.languages = langs.data;
-  } catch (err) {
-    console.warn(`  languages: ${err.message}`);
-  }
-
-  try {
-    const contrib = await ghFetch(`/repos/${fullName}/contributors?per_page=10`);
-    if (Array.isArray(contrib.data)) {
-      profile.contributors = contrib.data.map((c) => ({
-        login: c.login,
-        url: c.html_url,
-        avatarUrl: c.avatar_url,
-        contributions: c.contributions,
-      }));
-    }
-    const count = await ghFetch(`/repos/${fullName}/contributors?per_page=1&anon=true`);
-    profile.contributorCount = lastPageFromLink(count.headers);
-  } catch (err) {
-    console.warn(`  contributors: ${err.message}`);
-  }
-
-  try {
-    const readme = await ghFetch(`/repos/${fullName}/readme`, { raw: true });
-    if (typeof readme.data === "string") {
-      profile.readmeExcerpt = readme.data
-        .replace(/<!--[\s\S]*?-->/g, "")
-        .replace(/\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)/g, "")
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-        .slice(0, 12000);
-    }
-  } catch (err) {
-    console.warn(`  readme: ${err.message}`);
-  }
-
-  try {
-    profile.readmeHtml = await fetchReadmeHtml(fullName, profile.defaultBranch);
-  } catch (err) {
-    console.warn(`  readme html: ${err.message}`);
-  }
-
-  try {
-    profile.releases = await fetchReleases(fullName);
-  } catch (err) {
-    console.warn(`  releases: ${err.message}`);
-  }
-
-  try {
-    profile.recentIssues = await fetchRecentIssues(fullName);
-  } catch (err) {
-    console.warn(`  issues: ${err.message}`);
-  }
-
-  try {
-    const stats = await fetchCommitStats(fullName);
-    if (stats) {
-      profile.commitActivity = stats.weeks;
-      profile.contributionDays = stats.days;
-    }
-  } catch (err) {
-    console.warn(`  commit stats: ${err.message}`);
-  }
-
-  // Each of these is independent; a failure on one must not lose the others.
-  const optional = [
-    ["punchCard", fetchPunchCard],
-    ["codeFrequency", fetchCodeFrequency],
-    ["participation", fetchParticipation],
-    ["recentCommits", fetchRecentCommits],
-    ["recentPulls", fetchRecentPulls],
-    ["workflowRuns", fetchWorkflowRuns],
+    },
+    async () => {
+      const langs = await ghFetch(`/repos/${fullName}/languages`);
+      if (langs.data) profile.languages = langs.data;
+    },
+    async () => {
+      const contrib = await ghFetch(`/repos/${fullName}/contributors?per_page=10`);
+      if (Array.isArray(contrib.data)) {
+        profile.contributors = contrib.data.map((c) => ({
+          login: c.login,
+          url: c.html_url,
+          avatarUrl: c.avatar_url,
+          contributions: c.contributions,
+        }));
+      }
+      const count = await ghFetch(`/repos/${fullName}/contributors?per_page=1&anon=true`);
+      profile.contributorCount = lastPageFromLink(count.headers);
+    },
+    async () => {
+      const readme = await ghFetch(`/repos/${fullName}/readme`, { raw: true });
+      if (typeof readme.data === "string") {
+        profile.readmeExcerpt = readme.data
+          .replace(/<!--[\s\S]*?-->/g, "")
+          .replace(/\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)/g, "")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .slice(0, 12000);
+      }
+    },
+    async () => {
+      profile.readmeHtml = await fetchReadmeHtml(fullName, profile.defaultBranch);
+    },
+    async () => {
+      profile.releases = await fetchReleases(fullName);
+    },
+    async () => {
+      profile.recentIssues = await fetchRecentIssues(fullName);
+    },
+    async () => {
+      const stats = await fetchCommitStats(fullName);
+      if (stats) {
+        profile.commitActivity = stats.weeks;
+        profile.contributionDays = stats.days;
+      }
+    },
+    async () => {
+      const value = await fetchPunchCard(fullName);
+      if (value) profile.punchCard = value;
+    },
+    async () => {
+      const value = await fetchCodeFrequency(fullName);
+      if (value) profile.codeFrequency = value;
+    },
+    async () => {
+      const value = await fetchParticipation(fullName);
+      if (value) profile.participation = value;
+    },
+    async () => {
+      const value = await fetchRecentCommits(fullName);
+      if (value) profile.recentCommits = value;
+    },
+    async () => {
+      const value = await fetchRecentPulls(fullName);
+      if (value) profile.recentPulls = value;
+    },
+    async () => {
+      const value = await fetchWorkflowRuns(fullName);
+      if (value) profile.workflowRuns = value;
+    },
+    async () => {
+      Object.assign(profile, await fetchRepoShape(fullName));
+    },
+    async () => {
+      const tree = await fetchFileTree(fullName);
+      if (tree) {
+        profile.fileTree = tree;
+        const deps = await fetchManifestDependencies(fullName, tree);
+        if (deps) profile.manifestDependencies = deps;
+      }
+    },
+    async () => {
+      profile.community = await fetchCommunity(fullName);
+    },
+    async () => {
+      const extras = await fetchGraphQLExtras(...fullName.split("/"));
+      if (extras) {
+        profile.watchers = extras.watchers ?? profile.watchers;
+        profile.fundingLinks = extras.fundingLinks;
+        profile.openIssuesOnly = extras.openIssuesOnly;
+        profile.openPRs = extras.openPRs;
+        profile.releaseCount = extras.releaseCount;
+        profile.discussionsEnabled = extras.discussionsEnabled;
+        profile.discussionCount = extras.discussionCount;
+        profile.discussions = extras.discussions;
+        profile.closedIssues = extras.closedIssues;
+        profile.mergedPRs = extras.mergedPRs;
+        profile.environmentCount = extras.environmentCount;
+        profile.isFork = extras.isFork;
+        profile.isInOrganization = extras.isInOrganization;
+        profile.securityPolicyUrl = extras.securityPolicyUrl;
+        profile.codeOfConduct = extras.codeOfConduct;
+        profile.latestRelease = extras.latestRelease;
+        if (extras.commitCount) profile.commitCount = extras.commitCount;
+      }
+    },
   ];
-  for (const [key, fn] of optional) {
+
+  const labels = [
+    "commits", "languages", "contributors", "readme", "readme html", "releases",
+    "issues", "commit stats", "punch card", "code frequency", "participation",
+    "recent commits", "recent pulls", "workflow runs", "repo shape", "file tree",
+    "community", "graphql extras",
+  ];
+  await mapLimit(tasks, FACTS_CONCURRENCY, async (task, i) => {
     try {
-      const value = await fn(fullName);
-      if (value) profile[key] = value;
+      await task();
     } catch (err) {
-      console.warn(`  ${key}: ${err.message}`);
+      console.warn(`  ${labels[i]}: ${err.message}`);
     }
-  }
-
-  try {
-    Object.assign(profile, await fetchRepoShape(fullName));
-  } catch (err) {
-    console.warn(`  repo shape: ${err.message}`);
-  }
-
-  try {
-    const tree = await fetchFileTree(fullName);
-    if (tree) {
-      profile.fileTree = tree;
-      const deps = await fetchManifestDependencies(fullName, tree);
-      if (deps) profile.manifestDependencies = deps;
-    }
-  } catch (err) {
-    console.warn(`  file tree: ${err.message}`);
-  }
-
-  try {
-    profile.community = await fetchCommunity(fullName);
-  } catch (err) {
-    console.warn(`  community: ${err.message}`);
-  }
-
-  try {
-    const extras = await fetchGraphQLExtras(...fullName.split("/"));
-    if (extras) {
-      profile.watchers = extras.watchers ?? profile.watchers;
-      profile.fundingLinks = extras.fundingLinks;
-      profile.openIssuesOnly = extras.openIssuesOnly;
-      profile.openPRs = extras.openPRs;
-      profile.releaseCount = extras.releaseCount;
-      profile.discussionsEnabled = extras.discussionsEnabled;
-      profile.discussionCount = extras.discussionCount;
-      profile.discussions = extras.discussions;
-      profile.closedIssues = extras.closedIssues;
-      profile.mergedPRs = extras.mergedPRs;
-      profile.environmentCount = extras.environmentCount;
-      profile.isFork = extras.isFork;
-      profile.isInOrganization = extras.isInOrganization;
-      profile.securityPolicyUrl = extras.securityPolicyUrl;
-      profile.codeOfConduct = extras.codeOfConduct;
-      profile.latestRelease = extras.latestRelease;
-      if (extras.commitCount) profile.commitCount = extras.commitCount;
-    }
-  } catch (err) {
-    console.warn(`  graphql extras: ${err.message}`);
-  }
+  });
 
   profile.factsVersion = FACTS_VERSION;
   profile.factsUpdatedAt = new Date().toISOString();
@@ -371,20 +371,31 @@ async function main() {
       `queue this run: ${queue.length} (${trendingMap.size} trending today, ${newTrending.length} newly added)`
   );
 
+  // Repos in the shard are independent of each other, so processing several
+  // concurrently (bounded, same reasoning as fetchFacts above) cuts wall-clock
+  // time without touching the total call count against the rate limit.
   let ok = 0;
-  let skipped = 0;
-  for (const fullName of queue) {
-    if (budgetExhausted(RATE_FLOOR)) {
-      skipped = queue.length - ok - skipped;
-      console.warn(`Rate-limit floor reached; ${skipped} repos deferred to the next run`);
-      break;
+  let floorHit = false;
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < queue.length) {
+      if (budgetExhausted(RATE_FLOOR)) {
+        floorHit = true;
+        return;
+      }
+      const i = nextIndex++;
+      const fullName = queue[i];
+      try {
+        process.stdout.write(`- ${fullName}\n`);
+        if (await updateRepo(fullName, trendingMap.get(fullName) || null, date)) ok++;
+      } catch (err) {
+        console.warn(`  failed: ${err.message}`);
+      }
     }
-    try {
-      process.stdout.write(`- ${fullName}\n`);
-      if (await updateRepo(fullName, trendingMap.get(fullName) || null, date)) ok++;
-    } catch (err) {
-      console.warn(`  failed: ${err.message}`);
-    }
+  }
+  await Promise.all(Array.from({ length: Math.min(REPO_CONCURRENCY, queue.length) }, worker));
+  if (floorHit) {
+    console.warn(`Rate-limit floor reached; ${queue.length - nextIndex} repos deferred to the next run`);
   }
   console.log(`Updated ${ok}/${queue.length} repos (deep facts refreshed: ${factsDone})`);
 

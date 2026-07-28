@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { allLanguages, getAllRepos, languageSlug } from "@/lib/data";
-import RepoCard from "@/components/RepoCard";
+import { allLanguages, getAllRepos, languageSlug, toBrowserRepo } from "@/lib/data";
+import RepoBrowser from "@/components/RepoBrowser";
 
 function langFromSlug(slug: string): string | null {
   return allLanguages().find(({ language }) => languageSlug(language) === slug)?.language || null;
@@ -38,10 +38,8 @@ export default async function LanguagePage({ params }: { params: Promise<{ lang:
       <p className="mt-2 text-muted">
         {repos.length} tracked {repos.length === 1 ? "repository" : "repositories"} with {language} as the primary language.
       </p>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {repos.map((repo) => (
-          <RepoCard key={repo.id} repo={repo} />
-        ))}
+      <div className="mt-6">
+        <RepoBrowser repos={repos.map((r) => toBrowserRepo(r))} />
       </div>
     </div>
   );

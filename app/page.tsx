@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getAllRepos, getLatestTrending, getReports, topGainers, starDelta, mergedStarHistory } from "@/lib/data";
+import { getAllRepos, getLatestTrending, getReports, topGainers, starDelta, mergedStarHistory, toBrowserRepo } from "@/lib/data";
 import { compactNumber, formatDate } from "@/lib/format";
-import RepoCard from "@/components/RepoCard";
+import RepoBrowser from "@/components/RepoBrowser";
 import NewsletterForm from "@/components/NewsletterForm";
 import StarHistoryChart from "@/components/StarHistoryChart";
 import { site } from "@/lib/site";
@@ -91,15 +91,15 @@ export default function HomePage() {
             All periods: day, week, month
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {daily.slice(0, 12).map((e) => {
-            const repo = byId.get(e.repo);
-            if (!repo) return null;
-            return (
-              <RepoCard key={e.repo} repo={repo} rank={e.rank} gain={e.starsGained} gainLabel="stars today" />
-            );
-          })}
-        </div>
+        <RepoBrowser
+          repos={daily
+            .map((e) => {
+              const repo = byId.get(e.repo);
+              if (!repo) return null;
+              return toBrowserRepo(repo, { rank: e.rank, gain: e.starsGained, gainLabel: "stars today" });
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null)}
+        />
       </section>
 
       <div className="grid gap-8 xl:grid-cols-2">
