@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getAllRepos, getReports, allTopics, allLanguages, languageSlug } from "@/lib/data";
+import { getAllRepos, getReports, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl("/trending/weekly"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl("/trending/monthly"), lastModified: now, changeFrequency: "weekly", priority: 0.8 },
     { url: absoluteUrl("/reports"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
+    { url: absoluteUrl("/categories"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/topics"), lastModified: now, changeFrequency: "daily", priority: 0.6 },
     { url: absoluteUrl("/languages"), lastModified: now, changeFrequency: "daily", priority: 0.6 },
     { url: absoluteUrl("/search"), changeFrequency: "monthly", priority: 0.5 },
@@ -33,6 +34,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.6,
   }));
 
+  const categories: MetadataRoute.Sitemap = allCategories().map(({ category }) => ({
+    url: absoluteUrl(`/categories/${category}`),
+    lastModified: now,
+    changeFrequency: "daily",
+    priority: 0.8,
+  }));
+
   const topics: MetadataRoute.Sitemap = allTopics().map(({ topic }) => ({
     url: absoluteUrl(`/topics/${encodeURIComponent(topic)}`),
     lastModified: now,
@@ -47,5 +55,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.5,
   }));
 
-  return [...statics, ...repos, ...reports, ...topics, ...languages];
+  return [...statics, ...repos, ...reports, ...categories, ...topics, ...languages];
 }

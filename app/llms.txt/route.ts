@@ -1,4 +1,4 @@
-import { getAllRepos, getReports, getLatestTrending } from "@/lib/data";
+import { getAllRepos, getReports, getLatestTrending, allCategories } from "@/lib/data";
 import { absoluteUrl, site } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -10,6 +10,7 @@ export function GET() {
   const repos = getAllRepos();
   const reports = getReports();
   const trending = getLatestTrending();
+  const categories = allCategories();
 
   const lines = [
     `# ${site.name}`,
@@ -23,6 +24,7 @@ export function GET() {
     "",
     "## Key pages",
     "",
+    `- [Categories](${absoluteUrl("/categories")}): browse by project type (${categories.map((c) => c.title).join(", ")})`,
     `- [Trending today](${absoluteUrl("/trending/daily")}): today's trending repositories, ranked`,
     `- [Trending this week](${absoluteUrl("/trending/weekly")}) and [this month](${absoluteUrl("/trending/monthly")})`,
     `- [Reports archive](${absoluteUrl("/reports")}): every daily, weekly, and monthly report`,

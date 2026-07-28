@@ -8,6 +8,7 @@ import Sparkline from "@/components/Sparkline";
 export type BrowserRepo = {
   id: string;
   description: string;
+  aiOneLiner?: string;
   aiDetail?: string;
   category?: string;
   language: string | null;
@@ -120,8 +121,13 @@ export default function RepoBrowser({ repos, pageSize = 40 }: { repos: BrowserRe
                   {r.id}
                 </Link>
               </h3>
-              {r.description ? <p className="mt-0.5 text-sm font-medium">{r.description}</p> : null}
-              {r.aiDetail ? <p className="mt-0.5 line-clamp-2 text-sm text-muted">{r.aiDetail}</p> : null}
+              {r.description ? <p className="mt-0.5 text-sm">{r.description}</p> : null}
+              {r.aiOneLiner || r.aiDetail ? (
+                <p className="mt-0.5 line-clamp-2 text-sm text-muted">
+                  <span className="font-medium text-foreground">AI summary: </span>
+                  {r.aiDetail || r.aiOneLiner}
+                </p>
+              ) : null}
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                 <span className="inline-flex items-center gap-1">
                   <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">

@@ -16,6 +16,10 @@ const SUMMARY_TTL_DAYS = 45;
 // GitHub Models free tier allows roughly 50 requests/day for gpt-4o, so keep
 // each run well inside it; anything skipped is picked up by a later run.
 const MAX_PER_RUN = Number(process.env.ENRICH_LIMIT || 20);
+const KNOWN_CATEGORIES = new Set([
+  "ai-ml", "developer-tools", "web", "mobile", "data", "infrastructure",
+  "security", "systems", "learning", "productivity", "other",
+]);
 
 function daysSince(iso) {
   if (!iso) return Infinity;
@@ -82,6 +86,10 @@ async function llmSummarize(profile) {
   try {
     const parsed = JSON.parse(data.choices[0].message.content);
     if (!parsed.whatItDoes || !Array.isArray(parsed.useCases)) return null;
+    // The model is asked for one of a fixed set of categories but isn't
+    // always perfectly compliant; anything else becomes "other" so it can
+    // never produce a category with no corresponding browse page.
+    if (!KNOWN_CATEGORIES.has(parsed.category)) parsed.category = "other";
     return {
       ...parsed,
       source: "llm",

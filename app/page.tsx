@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getAllRepos, getLatestTrending, getReports, topGainers, starDelta, mergedStarHistory, toBrowserRepo } from "@/lib/data";
-import { compactNumber, formatDate } from "@/lib/format";
+import { getAllRepos, getLatestTrending, getReports, topGainers, starDelta, mergedStarHistory, toBrowserRepo, allCategories, CATEGORIES } from "@/lib/data";
+import { compactNumber } from "@/lib/format";
 import RepoBrowser from "@/components/RepoBrowser";
 import NewsletterForm from "@/components/NewsletterForm";
 import StarHistoryChart from "@/components/StarHistoryChart";
@@ -19,6 +19,7 @@ export default function HomePage() {
   const trending = getLatestTrending();
   const daily = trending?.periods.daily || [];
   const reports = getReports();
+  const categories = allCategories();
   const latestDaily = reports.find((r) => r.kind === "daily");
   const featured = latestDaily?.featured ? byId.get(latestDaily.featured) : byId.get(daily[0]?.repo);
   const gainers = topGainers(7, 8);
@@ -33,13 +34,41 @@ export default function HomePage() {
     <div className="space-y-12">
       <section>
         <h1 className="text-2xl font-semibold tracking-tight">
-          What the open-source world is starring
-          {trending ? <span className="text-muted"> — {formatDate(trending.date)}</span> : null}
+          Find the best open-source projects, by category
         </h1>
         <p className="mt-2 max-w-2xl text-muted">
-          {site.name} tracks trending GitHub repositories twice a day: star history, unusual star
-          jumps, licenses, tech stacks, contributors, and what each project is actually for.
+          {site.name} tracks {repos.length}+ trending GitHub repositories across {categories.length}{" "}
+          categories, twice a day: star history, unusual star jumps, licenses, tech stacks,
+          contributors, and what each project is actually for. Looking for what&apos;s new today
+          instead? See what&apos;s{" "}
+          <Link href="/trending/daily" className="text-accent hover:underline">
+            trending right now
+          </Link>
+          .
         </p>
+      </section>
+
+      <section aria-labelledby="categories">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 id="categories" className="text-lg font-semibold">Browse by category</h2>
+          <Link href="/categories" className="text-sm text-accent hover:underline">All categories</Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {categories.map((c) => (
+            <Link
+              key={c.category}
+              href={`/categories/${c.category}`}
+              className="rounded-md border border-border p-4 hover:border-accent"
+            >
+              <h3 className="font-semibold">{c.title}</h3>
+              <p className="mt-1 line-clamp-2 text-sm text-muted">{CATEGORIES[c.category]?.description}</p>
+              <p className="mt-2 text-xs text-muted">
+                {c.count} {c.count === 1 ? "repository" : "repositories"}
+                {c.topRepo ? ` · top: ${c.topRepo.id}` : ""}
+              </p>
+            </Link>
+          ))}
+        </div>
       </section>
 
       {featured ? (

@@ -311,6 +311,86 @@ export function reposByTopic(topic: string): RepoProfile[] {
   );
 }
 
+// Fixed category buckets (see scripts/enrich.mjs's guessCategory/prompt) —
+// unlike free-form topics, these are the primary browse-by-intent surface:
+// someone searching "best AI agent frameworks" is looking for a category,
+// not a specific tag or a specific day's trending list.
+export const CATEGORIES: Record<string, { title: string; description: string }> = {
+  "ai-ml": {
+    title: "AI & Machine Learning",
+    description: "Agents, LLM tooling, model training, inference, and applied AI projects trending on GitHub.",
+  },
+  "developer-tools": {
+    title: "Developer Tools",
+    description: "CLIs, SDKs, frameworks, linters, and build tooling that other developers rely on daily.",
+  },
+  web: {
+    title: "Web Development",
+    description: "Frontend frameworks, UI libraries, and full-stack web projects gaining traction.",
+  },
+  mobile: {
+    title: "Mobile Development",
+    description: "iOS, Android, and cross-platform mobile frameworks and apps.",
+  },
+  data: {
+    title: "Data & Analytics",
+    description: "Databases, ETL pipelines, analytics engines, and data infrastructure.",
+  },
+  infrastructure: {
+    title: "Infrastructure & DevOps",
+    description: "Kubernetes, containers, cloud tooling, and infrastructure-as-code projects.",
+  },
+  security: {
+    title: "Security",
+    description: "Authentication, cryptography, vulnerability tooling, and security research projects.",
+  },
+  systems: {
+    title: "Systems Programming",
+    description: "Low-level, performance-critical, and systems-language projects — Rust, C, kernels, embedded.",
+  },
+  learning: {
+    title: "Learning Resources",
+    description: "Courses, curated lists, roadmaps, and educational open-source projects.",
+  },
+  productivity: {
+    title: "Productivity",
+    description: "Note-taking, task management, and personal productivity tools.",
+  },
+  other: {
+    title: "Other",
+    description: "Everything that doesn't fit neatly into a single category above.",
+  },
+};
+
+export function allCategories(): { category: string; title: string; count: number; topRepo: RepoProfile | null }[] {
+  const byCategory = new Map<string, RepoProfile[]>();
+  for (const r of getAllRepos()) {
+    // The model is prompted for one of the fixed keys below but isn't always
+    // perfectly compliant; anything outside the known set falls back to
+    // "other" so a stray value can never produce a dead category page.
+    const c = r.aiSummary?.category && CATEGORIES[r.aiSummary.category] ? r.aiSummary.category : r.aiSummary?.category ? "other" : null;
+    if (!c) continue;
+    if (!byCategory.has(c)) byCategory.set(c, []);
+    byCategory.get(c)!.push(r);
+  }
+  return [...byCategory.entries()]
+    .map(([category, repos]) => ({
+      category,
+      title: CATEGORIES[category]?.title || category,
+      count: repos.length,
+      topRepo: repos[0] || null, // getAllRepos() is already sorted by stars desc
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export function reposByCategory(category: string): RepoProfile[] {
+  return getAllRepos().filter((r) => {
+    const c = r.aiSummary?.category;
+    const normalized = c && CATEGORIES[c] ? c : c ? "other" : null;
+    return normalized === category;
+  });
+}
+
 export function reposByLanguage(language: string): RepoProfile[] {
   return getAllRepos().filter(
     (r) => r.language?.toLowerCase() === language.toLowerCase()
@@ -330,9 +410,11 @@ export function toBrowserRepo(
   const s = repo.aiSummary;
   return {
     id: repo.id,
-    // Prefer the AI-generated one-liner (specific, technical) over GitHub's
-    // raw description (often terse or missing); fall back gracefully.
-    description: s?.oneLiner || repo.description || s?.whatItDoes?.split(". ")[0] || "",
+    // GitHub's own description, unchanged — this is what the repo actually
+    // says about itself and shouldn't be replaced.
+    description: repo.description || "",
+    // The AI-generated interpretation shown alongside it, not instead of it.
+    aiOneLiner: s?.oneLiner,
     aiDetail: s?.source === "llm" ? s.whatItDoes : undefined,
     category: s?.category,
     language: repo.language,

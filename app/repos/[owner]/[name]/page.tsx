@@ -165,7 +165,13 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
                   </span>
                 ) : null}
               </h1>
-              <p className="mt-1.5 max-w-3xl text-sm">{s?.oneLiner || repo.description}</p>
+              {repo.description ? <p className="mt-1.5 max-w-3xl text-sm">{repo.description}</p> : null}
+              {s?.oneLiner ? (
+                <p className="mt-1 max-w-3xl text-sm text-muted">
+                  <span className="font-medium text-foreground">AI summary: </span>
+                  {s.oneLiner}
+                </p>
+              ) : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
