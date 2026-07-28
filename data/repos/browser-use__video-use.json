@@ -1,6 +1,12 @@
 {
   "id": "browser-use/video-use",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 18030,
+      "forks": 2198
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-06-29",
@@ -83,5 +89,2976 @@
     "sampledAt": "2026-07-28T09:22:07.986Z"
   },
   "owner": "browser-use",
-  "name": "video-use"
+  "name": "video-use",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/192012301?v=4",
+  "ownerType": "Organization",
+  "description": "Edit videos with coding agents",
+  "url": "https://github.com/browser-use/video-use",
+  "homepage": null,
+  "license": "MIT",
+  "language": "Python",
+  "topics": [],
+  "stars": 18030,
+  "forks": 2198,
+  "watchers": 118,
+  "openIssues": 58,
+  "createdAt": "2026-04-12T01:34:42Z",
+  "pushedAt": "2026-07-01T00:33:52Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-28T23:02:48.174Z",
+  "languages": {
+    "Python": 66356,
+    "HTML": 19975,
+    "Shell": 921
+  },
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"static/video-use-banner.png\" alt=\"video-use\" width=\"100%\">\n</p>\n\n# video-use\n\nIntroducing **video-use** — edit videos with Claude Code. 100% open source.\n\nDrop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works for any content — talking heads, montages, tutorials, travel, interviews — without presets or menus.\n\nTry video-use in [Browser Use Cloud](https://cloud.browser-use.com/v4?utm_campaign=video-use-use-in-cloud&utm_source=github).\n\n## What it does\n\n- **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes\n- **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)\n- **30ms audio fades** at every cut so you never hear a pop\n- **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable\n- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation\n- **Self-evaluates the rendered output** at every cut boundary before showing you anything\n- **Persists session memory** in `project.md` so next week's session picks up where you left off\n\n## Setup prompt\n\nPaste into Claude Code, Codex, Hermes, Openclaw, or any agent with shell access:\n\n```text\nSet up https://github.com/browser-use/video-use for me.\n\nRead install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.\n```\n\nThe agent handles the clone, dependencies, skill registration, and prompts you once for your ElevenLabs API key (grab one at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys)).\n\nThen point your agent at a folder of raw takes:\n\n```bash\ncd /path/to/your/videos\nclaude    # or codex, hermes, etc.\n```\n\nFor always-on editing from your own VPS or Telegram, run the agent through [Browser Use Box](https://browser-use.com/bux). [Watch the 15-second demo](https://www.tiktok.com/@browser_use/video/7639824093721758989).\n\nAnd in the session:\n\n> edit these into a launch video\n\nIt inventories the sources, proposes a strategy, waits for your OK, then produces `edit/final.mp4` next to your sources. All outputs live in `<videos_dir>/edit/` — the skill directory stays clean.\n\n## Manual install\n\nIf you'd rather do it by hand:\n\n```bash\n# 1. Clone and symlink into your agent's skills directory\ngit clone https://github.com/browser-use/video-use ~/Developer/video-use\nln -sfn ~/Developer/video-use ~/.claude/skills/video-use        # Claude Code\n# ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex\n\n# 2. Install deps\ncd ~/Developer/video-use\nuv sync                         # or: pip install -e .\nbrew install ffmpeg             # required\nbrew install yt-dlp             # optional, for downloading online sources\n\n# 3. Add your ElevenLabs API key\ncp .env.example .env\n$EDITOR .env                    # ELEVENLABS_API_KEY=...\n```\n\n## How it works\n\nThe LLM never watches the video. It **reads** it — through two layers that together give it everything it needs to cut with word-boundary precision.\n\n<p align=\"center\">\n  <img src=\"static/timeline-view.svg\" alt=\"timeline_view composite — filmstrip + speaker track + waveform + word labels + silence-gap cut candidates\" width=\"100%\">\n</p>\n\n**Layer 1 — Audio transcript (always loaded).** One ElevenLabs Scribe call per source gives word-level timestamps, speaker diarization, and audio events (`(laughter)`, `(applause)`, `(sigh)`). All takes pack into a single ~12KB `takes_packed.md` — the LLM's primary reading view.\n\n```\n## C0103  (duration: 43.0s, 8 phrases)\n  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.\n  [006.08-006.74] S0 We fixed this.\n```\n\n**Layer 2 — Visual composite (on demand).** `timeline_view` produces a filmstrip + waveform + word labels PNG for any time range. Called only at decision points — ambiguous pauses, retake comparisons, cut-point sanity checks.\n\n> Naive approach: 30,000 frames × 1,500 tokens = **45M tokens of noise**.\n> Video Use: **12KB text + a handful of PNGs**.\n\nSame idea as browser-use giving an LLM a structured DOM instead of a screenshot — but for video.\n\n## Pipeline\n\n```\nTranscribe ──> Pack ──> LLM Reasons ──> EDL ──> Render ──> Self-Eval\n                                                              │\n                                                              └─ issue? fix + re-render (max 3)\n```\n\nThe self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.\n\n## Design principles\n\n1. **Text + on-demand visuals.** No frame-dumping. The transcript is the surface.\n2. **Audio is primary, visuals follow.** Cuts come from speech boundaries and silence gaps.\n3. **Ask → confirm → execute → self-eval → persist.** Never touch the cut without strategy approval.\n4. **Zero assumptions about content type.** Look, ask, then edit.\n5. **12 hard rules, artistic freedom elsewhere.** Production-correctness is non-negotiable. Taste isn't.\n\nSee [`SKILL.md`](./SKILL.md) for the full production rules and editing craft.\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/browser-use/video-use/blob/main/static/video-use-banner.png\"><img src=\"https://raw.githubusercontent.com/browser-use/video-use/main/static/video-use-banner.png\" alt=\"video-use\" width=\"100%\" style=\"max-width: 100%;\"></a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">video-use</h1></div>\n<p dir=\"auto\">Introducing <strong>video-use</strong> — edit videos with Claude Code. 100% open source.</p>\n<p dir=\"auto\">Drop raw footage in a folder, chat with Claude Code, get <code>final.mp4</code> back. Works for any content — talking heads, montages, tutorials, travel, interviews — without presets or menus.</p>\n<p dir=\"auto\">Try video-use in <a href=\"https://cloud.browser-use.com/v4?utm_campaign=video-use-use-in-cloud&amp;utm_source=github\" rel=\"nofollow\">Browser Use Cloud</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What it does</h2></div>\n<ul dir=\"auto\">\n<li><strong>Cuts out filler words</strong> (<code>umm</code>, <code>uh</code>, false starts) and dead space between takes</li>\n<li><strong>Auto color grades</strong> every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)</li>\n<li><strong>30ms audio fades</strong> at every cut so you never hear a pop</li>\n<li><strong>Burns subtitles</strong> in your style — 2-word UPPERCASE chunks by default, fully customizable</li>\n<li><strong>Generates animation overlays</strong> via <a href=\"https://github.com/heygen-com/hyperframes\">HyperFrames</a>, <a href=\"https://www.remotion.dev/\" rel=\"nofollow\">Remotion</a>, <a href=\"https://www.manim.community/\" rel=\"nofollow\">Manim</a>, or PIL — spawned in parallel sub-agents, one per animation</li>\n<li><strong>Self-evaluates the rendered output</strong> at every cut boundary before showing you anything</li>\n<li><strong>Persists session memory</strong> in <code>project.md</code> so next week's session picks up where you left off</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Setup prompt</h2></div>\n<p dir=\"auto\">Paste into Claude Code, Codex, Hermes, Openclaw, or any agent with shell access:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Set up https://github.com/browser-use/video-use for me.\n\nRead install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.\"><pre lang=\"text\" class=\"notranslate\"><code>Set up https://github.com/browser-use/video-use for me.\n\nRead install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.\n</code></pre></div>\n<p dir=\"auto\">The agent handles the clone, dependencies, skill registration, and prompts you once for your ElevenLabs API key (grab one at <a href=\"https://elevenlabs.io/app/settings/api-keys\" rel=\"nofollow\">elevenlabs.io/app/settings/api-keys</a>).</p>\n<p dir=\"auto\">Then point your agent at a folder of raw takes:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd /path/to/your/videos\nclaude    # or codex, hermes, etc.\"><pre><span class=\"pl-c1\">cd</span> /path/to/your/videos\nclaude    <span class=\"pl-c\"><span class=\"pl-c\">#</span> or codex, hermes, etc.</span></pre></div>\n<p dir=\"auto\">For always-on editing from your own VPS or Telegram, run the agent through <a href=\"https://browser-use.com/bux\" rel=\"nofollow\">Browser Use Box</a>. <a href=\"https://www.tiktok.com/@browser_use/video/7639824093721758989\" rel=\"nofollow\">Watch the 15-second demo</a>.</p>\n<p dir=\"auto\">And in the session:</p>\n<blockquote>\n<p dir=\"auto\">edit these into a launch video</p>\n</blockquote>\n<p dir=\"auto\">It inventories the sources, proposes a strategy, waits for your OK, then produces <code>edit/final.mp4</code> next to your sources. All outputs live in <code>&lt;videos_dir&gt;/edit/</code> — the skill directory stays clean.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Manual install</h2></div>\n<p dir=\"auto\">If you'd rather do it by hand:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Clone and symlink into your agent's skills directory\ngit clone https://github.com/browser-use/video-use ~/Developer/video-use\nln -sfn ~/Developer/video-use ~/.claude/skills/video-use        # Claude Code\n# ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex\n\n# 2. Install deps\ncd ~/Developer/video-use\nuv sync                         # or: pip install -e .\nbrew install ffmpeg             # required\nbrew install yt-dlp             # optional, for downloading online sources\n\n# 3. Add your ElevenLabs API key\ncp .env.example .env\n$EDITOR .env                    # ELEVENLABS_API_KEY=...\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Clone and symlink into your agent's skills directory</span>\ngit clone https://github.com/browser-use/video-use <span class=\"pl-k\">~</span>/Developer/video-use\nln -sfn <span class=\"pl-k\">~</span>/Developer/video-use <span class=\"pl-k\">~</span>/.claude/skills/video-use        <span class=\"pl-c\"><span class=\"pl-c\">#</span> Claude Code</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Install deps</span>\n<span class=\"pl-c1\">cd</span> <span class=\"pl-k\">~</span>/Developer/video-use\nuv sync                         <span class=\"pl-c\"><span class=\"pl-c\">#</span> or: pip install -e .</span>\nbrew install ffmpeg             <span class=\"pl-c\"><span class=\"pl-c\">#</span> required</span>\nbrew install yt-dlp             <span class=\"pl-c\"><span class=\"pl-c\">#</span> optional, for downloading online sources</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Add your ElevenLabs API key</span>\ncp .env.example .env\n<span class=\"pl-smi\">$EDITOR</span> .env                    <span class=\"pl-c\"><span class=\"pl-c\">#</span> ELEVENLABS_API_KEY=...</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">The LLM never watches the video. It <strong>reads</strong> it — through two layers that together give it everything it needs to cut with word-boundary precision.</p>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/browser-use/video-use/blob/main/static/timeline-view.svg\"><img src=\"https://raw.githubusercontent.com/browser-use/video-use/main/static/timeline-view.svg\" alt=\"timeline_view composite — filmstrip + speaker track + waveform + word labels + silence-gap cut candidates\" width=\"100%\" style=\"max-width: 100%;\"></a>\n</p>\n<p dir=\"auto\"><strong>Layer 1 — Audio transcript (always loaded).</strong> One ElevenLabs Scribe call per source gives word-level timestamps, speaker diarization, and audio events (<code>(laughter)</code>, <code>(applause)</code>, <code>(sigh)</code>). All takes pack into a single ~12KB <code>takes_packed.md</code> — the LLM's primary reading view.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"## C0103  (duration: 43.0s, 8 phrases)\n  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.\n  [006.08-006.74] S0 We fixed this.\"><pre class=\"notranslate\"><code>## C0103  (duration: 43.0s, 8 phrases)\n  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.\n  [006.08-006.74] S0 We fixed this.\n</code></pre></div>\n<p dir=\"auto\"><strong>Layer 2 — Visual composite (on demand).</strong> <code>timeline_view</code> produces a filmstrip + waveform + word labels PNG for any time range. Called only at decision points — ambiguous pauses, retake comparisons, cut-point sanity checks.</p>\n<blockquote>\n<p dir=\"auto\">Naive approach: 30,000 frames × 1,500 tokens = <strong>45M tokens of noise</strong>.\nVideo Use: <strong>12KB text + a handful of PNGs</strong>.</p>\n</blockquote>\n<p dir=\"auto\">Same idea as browser-use giving an LLM a structured DOM instead of a screenshot — but for video.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Pipeline</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Transcribe ──&gt; Pack ──&gt; LLM Reasons ──&gt; EDL ──&gt; Render ──&gt; Self-Eval\n                                                              │\n                                                              └─ issue? fix + re-render (max 3)\"><pre class=\"notranslate\"><code>Transcribe ──&gt; Pack ──&gt; LLM Reasons ──&gt; EDL ──&gt; Render ──&gt; Self-Eval\n                                                              │\n                                                              └─ issue? fix + re-render (max 3)\n</code></pre></div>\n<p dir=\"auto\">The self-eval loop runs <code>timeline_view</code> on the <em>rendered output</em> at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design principles</h2></div>\n<ol dir=\"auto\">\n<li><strong>Text + on-demand visuals.</strong> No frame-dumping. The transcript is the surface.</li>\n<li><strong>Audio is primary, visuals follow.</strong> Cuts come from speech boundaries and silence gaps.</li>\n<li><strong>Ask → confirm → execute → self-eval → persist.</strong> Never touch the cut without strategy approval.</li>\n<li><strong>Zero assumptions about content type.</strong> Look, ask, then edit.</li>\n<li><strong>12 hard rules, artistic freedom elsewhere.</strong> Production-correctness is non-negotiable. Taste isn't.</li>\n</ol>\n<p dir=\"auto\">See <a href=\"https://github.com/browser-use/video-use/blob/main/SKILL.md\"><code>SKILL.md</code></a> for the full production rules and editing craft.</p>\n</article></div>",
+  "contributors": [
+    {
+      "login": "gregpr07",
+      "url": "https://github.com/gregpr07",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/36313686?v=4",
+      "contributions": 9
+    },
+    {
+      "login": "ShawnPana",
+      "url": "https://github.com/ShawnPana",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/129362299?v=4",
+      "contributions": 4
+    },
+    {
+      "login": "antoinersx",
+      "url": "https://github.com/antoinersx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/118331084?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "miguel-heygen",
+      "url": "https://github.com/miguel-heygen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/229591595?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "alexandrepirescontato1-bipe",
+      "url": "https://github.com/alexandrepirescontato1-bipe",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/274891363?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "cezqr3",
+      "url": "https://github.com/cezqr3",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/276761187?v=4",
+      "contributions": 1
+    }
+  ],
+  "commitCount": 18,
+  "releases": [],
+  "contributorCount": 6,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 4
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 4
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 1
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 4
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 3
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 3
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 1
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 3
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 1
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 1
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "firstCommitAt": "2026-04-12T01:34:21Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "participation": {
+    "all": 18,
+    "owner": 0,
+    "community": 18
+  },
+  "recentCommits": [
+    {
+      "sha": "92c2b34",
+      "message": "Merge pull request #91 from ShawnPana/patch-1",
+      "url": "https://github.com/browser-use/video-use/commit/92c2b34e44c205cbc2acae7f6ca7c1c219d5dd66",
+      "date": "2026-07-01T00:33:52Z",
+      "author": "ShawnPana",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/129362299?v=4"
+    },
+    {
+      "sha": "507c215",
+      "message": "Update README.md",
+      "url": "https://github.com/browser-use/video-use/commit/507c215ee84a948c8df9de4ffb252c5b7baa6e5d",
+      "date": "2026-06-29T03:03:55Z",
+      "author": "ShawnPana",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/129362299?v=4"
+    },
+    {
+      "sha": "cf12ac3",
+      "message": "Merge pull request #34 from browser-use/add-bux-video-use-note",
+      "url": "https://github.com/browser-use/video-use/commit/cf12ac35143caa48db76efa35b1cb439582333bb",
+      "date": "2026-05-15T03:53:01Z",
+      "author": "ShawnPana",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/129362299?v=4"
+    },
+    {
+      "sha": "a2a38a7",
+      "message": "Add Browser Use Box editing note",
+      "url": "https://github.com/browser-use/video-use/commit/a2a38a75bcc5e6b97611283c2a9a630ded267c30",
+      "date": "2026-05-15T03:51:28Z",
+      "author": "ShawnPana",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/129362299?v=4"
+    },
+    {
+      "sha": "1200463",
+      "message": "fix(render): preserve orientation for portrait video sources (#29)",
+      "url": "https://github.com/browser-use/video-use/commit/1200463f00ae53fa562dc8ca2b5f8b7ec7d43f43",
+      "date": "2026-05-10T19:06:11Z",
+      "author": "alexandrepirescontato1-bipe",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/274891363?v=4"
+    },
+    {
+      "sha": "196d7e9",
+      "message": "fix(pack_transcripts): write output as UTF-8 to avoid cp1252 encoding errors (#10)",
+      "url": "https://github.com/browser-use/video-use/commit/196d7e9377d7265ae61bd9e6189a4b12f33913c1",
+      "date": "2026-05-10T19:05:52Z",
+      "author": "cezqr3",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/276761187?v=4"
+    },
+    {
+      "sha": "fdf749c",
+      "message": "Add MIT license (#32)",
+      "url": "https://github.com/browser-use/video-use/commit/fdf749cff9e2477b3092eab0f7e4ccf4afd54e54",
+      "date": "2026-05-10T18:56:51Z",
+      "author": "gregpr07",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/36313686?v=4"
+    },
+    {
+      "sha": "fbcf29f",
+      "message": "docs: add HyperFrames animation option (#13)",
+      "url": "https://github.com/browser-use/video-use/commit/fbcf29fd6dad2da880fac9b4450dcbfb5668ded4",
+      "date": "2026-05-03T22:08:26Z",
+      "author": "miguel-heygen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/229591595?v=4"
+    },
+    {
+      "sha": "87f00c6",
+      "message": "fix(subtitles): raise MarginV to 90 to clear vertical safe zones (#5)",
+      "url": "https://github.com/browser-use/video-use/commit/87f00c6b9b4199dadf3c3b7a75bf818f3df0695e",
+      "date": "2026-04-23T16:40:24Z",
+      "author": "antoinersx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/118331084?v=4"
+    },
+    {
+      "sha": "60798b1",
+      "message": "fix(render): tone-map HLG/PQ sources to Rec.709 SDR (#6)",
+      "url": "https://github.com/browser-use/video-use/commit/60798b1cd5cd4563875aeb06bb9252983084831a",
+      "date": "2026-04-23T16:40:06Z",
+      "author": "antoinersx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/118331084?v=4"
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 101,
+      "title": "## Summers para  adultos",
+      "url": "https://github.com/browser-use/video-use/issues/101",
+      "createdAt": "2026-07-03T07:31:17Z",
+      "comments": 0,
+      "labels": [],
+      "author": "vic37hu-web"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "helpers",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/browser-use/video-use/tree/main/helpers"
+    },
+    {
+      "name": "skills",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/browser-use/video-use/tree/main/skills"
+    },
+    {
+      "name": "static",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/browser-use/video-use/tree/main/static"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 20,
+      "url": "https://github.com/browser-use/video-use/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 790,
+      "url": "https://github.com/browser-use/video-use/blob/main/.gitignore"
+    },
+    {
+      "name": "install.md",
+      "type": "file",
+      "size": 7739,
+      "url": "https://github.com/browser-use/video-use/blob/main/install.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1068,
+      "url": "https://github.com/browser-use/video-use/blob/main/LICENSE"
+    },
+    {
+      "name": "poster.html",
+      "type": "file",
+      "size": 19975,
+      "url": "https://github.com/browser-use/video-use/blob/main/poster.html"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 450,
+      "url": "https://github.com/browser-use/video-use/blob/main/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 5645,
+      "url": "https://github.com/browser-use/video-use/blob/main/README.md"
+    },
+    {
+      "name": "SKILL.md",
+      "type": "file",
+      "size": 22984,
+      "url": "https://github.com/browser-use/video-use/blob/main/SKILL.md"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 115,
+      "title": "chore: add security floors to dependency versions",
+      "url": "https://github.com/browser-use/video-use/pull/115",
+      "state": "closed",
+      "updatedAt": "2026-07-28T05:09:39Z",
+      "author": "moocow4844",
+      "draft": false
+    },
+    {
+      "number": 114,
+      "title": "feat: add Groq Whisper as a free transcription provider",
+      "url": "https://github.com/browser-use/video-use/pull/114",
+      "state": "closed",
+      "updatedAt": "2026-07-28T05:07:39Z",
+      "author": "moocow4844",
+      "draft": false
+    },
+    {
+      "number": 113,
+      "title": "docs: add Chinese and Japanese README translations",
+      "url": "https://github.com/browser-use/video-use/pull/113",
+      "state": "open",
+      "updatedAt": "2026-07-23T07:31:38Z",
+      "author": "tura-ai-agent",
+      "draft": false
+    },
+    {
+      "number": 112,
+      "title": "Fix Windows console crashes, portrait rotation detection, and timeline_view seek edge case; add CRF/preset overrides",
+      "url": "https://github.com/browser-use/video-use/pull/112",
+      "state": "open",
+      "updatedAt": "2026-07-20T13:59:06Z",
+      "author": "sameer99z",
+      "draft": false
+    },
+    {
+      "number": 94,
+      "title": "docs: make Codex manual install path explicit",
+      "url": "https://github.com/browser-use/video-use/pull/94",
+      "state": "open",
+      "updatedAt": "2026-07-17T17:19:28Z",
+      "author": "isha-1686",
+      "draft": false
+    },
+    {
+      "number": 110,
+      "title": "Fix subtitles filter path escaping on Windows",
+      "url": "https://github.com/browser-use/video-use/pull/110",
+      "state": "closed",
+      "updatedAt": "2026-07-17T12:41:14Z",
+      "author": "eliezercarsoni",
+      "draft": false
+    },
+    {
+      "number": 109,
+      "title": "fix(render): detect portrait sources that carry rotation metadata",
+      "url": "https://github.com/browser-use/video-use/pull/109",
+      "state": "open",
+      "updatedAt": "2026-07-16T09:07:04Z",
+      "author": "chekazoid",
+      "draft": false
+    },
+    {
+      "number": 108,
+      "title": "Add uv.lock for reproducible installs",
+      "url": "https://github.com/browser-use/video-use/pull/108",
+      "state": "open",
+      "updatedAt": "2026-07-14T03:36:51Z",
+      "author": "charleshan7",
+      "draft": false
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "requests",
+        "version": null
+      },
+      {
+        "name": "librosa",
+        "version": null
+      },
+      {
+        "name": "matplotlib",
+        "version": null
+      },
+      {
+        "name": "pillow",
+        "version": null
+      },
+      {
+        "name": "numpy",
+        "version": null
+      }
+    ],
+    "total": 5
+  },
+  "workflowRuns": [
+    {
+      "name": "Scheduled",
+      "status": "success",
+      "url": "https://github.com/browser-use/video-use/actions/runs/30334243413",
+      "branch": "main",
+      "updatedAt": "2026-07-28T06:17:09Z"
+    },
+    {
+      "name": "Push on main",
+      "status": "success",
+      "url": "https://github.com/browser-use/video-use/actions/runs/28485141469",
+      "branch": "main",
+      "updatedAt": "2026-07-01T00:34:56Z"
+    }
+  ],
+  "branchCount": 2,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 37,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 14,
+  "openPRs": 44,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 6,
+  "mergedPRs": 9,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-04-05",
+      "additions": 6012,
+      "deletions": 332
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 329,
+      "deletions": 120
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 250,
+      "deletions": 21
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 17,
+      "deletions": 6
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 44,
+      "deletions": 3
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 2,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T23:02:51.537Z"
 }
