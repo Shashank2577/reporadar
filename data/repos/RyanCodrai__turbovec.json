@@ -1,6 +1,12 @@
 {
   "id": "RyanCodrai/turbovec",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 14476,
+      "forks": 1283
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-05-21",
@@ -117,5 +123,2967 @@
     "sampledAt": "2026-07-28T09:22:07.395Z"
   },
   "owner": "RyanCodrai",
-  "name": "turbovec"
+  "name": "turbovec",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4",
+  "ownerType": "User",
+  "description": "A vector index built on TurboQuant, written in Rust with Python bindings",
+  "url": "https://github.com/RyanCodrai/turbovec",
+  "homepage": "https://pypi.org/project/turbovec/",
+  "license": "MIT",
+  "language": "Python",
+  "topics": [
+    "ann",
+    "avx512",
+    "embedding",
+    "embeddings",
+    "faiss",
+    "nearest-neighbor",
+    "neon",
+    "python",
+    "quant",
+    "quantization",
+    "rag",
+    "rust",
+    "simd",
+    "turboquant",
+    "vector-search"
+  ],
+  "stars": 14476,
+  "forks": 1283,
+  "watchers": 66,
+  "openIssues": 12,
+  "createdAt": "2026-03-26T10:32:44Z",
+  "pushedAt": "2026-07-28T19:41:07Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-28T19:52:57.564Z",
+  "languages": {
+    "Python": 762446,
+    "Rust": 592204
+  },
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://img.shields.io/pypi/l/turbovec\" alt=\"License\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\"><img src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&color=blue\" alt=\"PyPI version\"></a>\n  <a href=\"https://crates.io/crates/turbovec\"><img src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&color=blue\" alt=\"crates.io version\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\"><img src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" alt=\"TurboQuant paper\"></a>\n</p>\n\n---\n\n**A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.**\n\nturbovec is a Rust vector index with Python bindings, built on Google Research's [**TurboQuant**](https://arxiv.org/abs/2504.19874) algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.\n\n- **Online ingest.** Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.\n- **Fast SIMD search.** Hand-written NEON (ARM) and AVX-512BW (x86) kernels beat FAISS IndexPQFastScan by 10–19% on ARM; on x86 they win the 4-bit configs and trail by a few percent on 2-bit.\n- **Filter at search time.** Pass an id allowlist (or a slot bitmask) to `search()` and the kernel honours it directly. You always get up to `k` results from the allowed set — no over-fetching, no recall hit on selective filters.\n- **Pure local.** No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.\n\nBuilding RAG where privacy, memory, or latency matters? **You're in the right place.**\n\n## Python\n\n```bash\npip install turbovec\n```\n\n```python\nfrom turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(\"my_index.tv\")\nloaded = TurboQuantIndex.load(\"my_index.tv\")\n```\n\n`vectors` and `query` are 2-D `float32` arrays of shape `(n, dim)` — other dtypes are rejected rather than silently converted, so cast with `np.asarray(x, dtype=np.float32)` first if needed.\n\nNeed stable ids that survive deletes? Use `IdMapIndex`:\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(\"my_index.tvim\")\nloaded = IdMapIndex.load(\"my_index.tvim\")\n```\n\n### Hybrid retrieval (filtered search)\n\nRestrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(\"SELECT id FROM docs WHERE tenant=?\", (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\n```\n\nFiltering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.\n\nThe output length is `min(k, len(allowed))` — when the allowlist is smaller than `k` you get exactly `len(allowed)` results rather than padded fallbacks.\n\nSee [`docs/api.md`](docs/api.md) for the full reference.\n\n### Framework integrations\n\nDrop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.\n\n- [LangChain](docs/integrations/langchain.md) — `pip install turbovec[langchain]` · replaces `langchain_core.vectorstores.InMemoryVectorStore`\n- [LlamaIndex](docs/integrations/llama_index.md) — `pip install turbovec[llama-index]` · replaces `llama_index.core.vector_stores.SimpleVectorStore`\n- [Haystack](docs/integrations/haystack.md) — `pip install turbovec[haystack]` · replaces `haystack.document_stores.in_memory.InMemoryDocumentStore`\n- [Agno](docs/integrations/agno.md) — `pip install turbovec[agno]` · replaces `agno.vectordb.lancedb.LanceDb`\n\n## Rust\n\n```bash\ncargo add turbovec\n```\n\n```rust\nuse turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&vectors);\nlet results = index.search(&queries, 10);\nindex.write(\"index.tv\").unwrap();\nlet loaded = TurboQuantIndex::load(\"index.tv\").unwrap();\n```\n\nFor stable external ids that survive deletes:\n\n```rust\nuse turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&vectors, &[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&queries, 10);\nindex.remove(1002);\nindex.write(\"index.tvim\").unwrap();\nlet loaded = IdMapIndex::load(\"index.tvim\").unwrap();\n```\n\n## Recall\n\nTurboQuant vs FAISS `IndexPQ` (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).\n\n\n\n\n\n\n\nAcross OpenAI d=1536 and d=3072, TurboQuant beats FAISS by 0.2–1.9 points at R@1 across 2-bit and 4-bit, and both reach 1.0 by k=8 (≥0.997 already at k=4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TurboQuant beats FAISS by 0.9 points at 4-bit and is effectively tied at 2-bit (within 0.1 points) at R@1, both tracking FAISS closely by k≈16.\n\n**A note on baselines.** We compare against FAISS `IndexPQ` (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the [TurboQuant paper](https://arxiv.org/abs/2504.19874) — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see [`turboquant-py`](https://pypi.org/project/turboquant-py/) at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands level with FAISS at 2-bit and ahead at 4-bit; TQ+ calibration closes the low-dim gap the base algorithm leaves.\n\nFull results: [d=1536 2-bit](benchmarks/results/recall_d1536_2bit.json), [d=1536 4-bit](benchmarks/results/recall_d1536_4bit.json), [d=3072 2-bit](benchmarks/results/recall_d3072_2bit.json), [d=3072 4-bit](benchmarks/results/recall_d3072_4bit.json), [GloVe 2-bit](benchmarks/results/recall_glove_2bit.json), [GloVe 4-bit](benchmarks/results/recall_glove_4bit.json).\n\n## Compression\n\n\n\n## Search Speed\n\nAll benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.\n\n### ARM (Apple M3 Max)\n\n\n\n\n\nOn ARM, TurboQuant beats FAISS FastScan by 10–19% across every config.\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\nOn x86, TurboQuant wins the 4-bit configs by up to ~5% (d=3072 multi-threaded ties) and is modestly behind FAISS on 2-bit — most visibly d=1536 single-threaded (~8%), within a few percent on the rest — where FAISS's AVX-512 VBMI path has the edge on the short 2-bit accumulate loop.\n\n## Insertion & Removal Speed\n\nSame corpus as the search cells: 100K OpenAI vectors, median of 5 runs, fresh index per timed run. Insertion measures bulk `add()` into an empty index (one-time rotation/codebook init and TQ+ calibration fit included) and a warm 10K append with calibration frozen (the steady-state encode path), against FAISS `IndexPQFastScan` bulk add (training untimed). Removal measures per-op latency of `IdMapIndex.remove(id)` against raw `TurboQuantIndex.swap_remove` — both O(1) swap-and-pop; the gap is the id-map bookkeeping. Single-threaded cells pin `RAYON_NUM_THREADS=1`. Scripts: [`benchmarks/suite/`](benchmarks/suite/).\n\n### ARM (Apple M3 Max)\n\n\n\n\n\n\n\nFull results: [d=1536 2-bit insert ST](benchmarks/results/speed_insert_d1536_2bit_arm_st.json), [MT](benchmarks/results/speed_insert_d1536_2bit_arm_mt.json), [d=1536 4-bit insert ST](benchmarks/results/speed_insert_d1536_4bit_arm_st.json), [MT](benchmarks/results/speed_insert_d1536_4bit_arm_mt.json), [d=3072 2-bit insert ST](benchmarks/results/speed_insert_d3072_2bit_arm_st.json), [MT](benchmarks/results/speed_insert_d3072_2bit_arm_mt.json), [d=3072 4-bit insert ST](benchmarks/results/speed_insert_d3072_4bit_arm_st.json), [MT](benchmarks/results/speed_insert_d3072_4bit_arm_mt.json), and the matching [`speed_remove_*`](benchmarks/results/) files.\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\n\n\nFull results: [d=1536 2-bit insert ST](benchmarks/results/speed_insert_d1536_2bit_x86_st.json), [MT](benchmarks/results/speed_insert_d1536_2bit_x86_mt.json), [d=1536 4-bit insert ST](benchmarks/results/speed_insert_d1536_4bit_x86_st.json), [MT](benchmarks/results/speed_insert_d1536_4bit_x86_mt.json), [d=3072 2-bit insert ST](benchmarks/results/speed_insert_d3072_2bit_x86_st.json), [MT](benchmarks/results/speed_insert_d3072_2bit_x86_mt.json), [d=3072 4-bit insert ST](benchmarks/results/speed_insert_d3072_4bit_x86_st.json), [MT](benchmarks/results/speed_insert_d3072_4bit_x86_mt.json), and the matching [`speed_remove_*`](benchmarks/results/) files.\n\n## How it works\n\nEach vector is a direction on a high-dimensional hypersphere. TurboQuant compresses these directions using a simple insight: after applying a random rotation, every coordinate follows a known distribution -- regardless of the input data.\n\n**1. Normalize.** Strip the length (norm) from each vector and store it as a single float. Now every vector is a unit direction on the hypersphere.\n\n**2. Random rotation.** Multiply all vectors by the same random orthogonal matrix. After rotation, each coordinate independently follows a Beta distribution that converges to Gaussian N(0, 1/d) in high dimensions. This holds for any input data -- the rotation makes the coordinate distribution predictable.\n\n**3. Per-coordinate calibration (TQ+).** The Beta distribution from step 2 is asymptotic — at finite dimensions, individual coordinates drift from the canonical shape (especially low-bit and word-vector-style embeddings). TQ+ fits two scalars per coordinate — a shift and a scale — during the first add, mapping each coordinate's empirical 5/95% quantiles onto the canonical Beta marginal. The Lloyd-Max codebook then quantizes against the *target* distribution it was designed for. The calibration is frozen after the first add and reused by subsequent adds — no retraining, no rebuilds, no separate train phase. Recall gain: up to +1.4pp at @1 on the cells that drift most (e.g. GloVe at 2-bit).\n\n**4. Lloyd-Max scalar quantization.** Since the distribution is known, we can precompute the optimal way to bucket each coordinate. For 2-bit, that's 4 buckets; for 4-bit, 16 buckets. The [Lloyd-Max algorithm](https://en.wikipedia.org/wiki/Lloyd%27s_algorithm) finds bucket boundaries and centroids that minimize mean squared error. These are computed once from the math, not from the data.\n\n**5. Bit-pack.** Each coordinate is now a small integer (0-3 for 2-bit, 0-15 for 4-bit). Pack these tightly into bytes. A 1536-dim vector goes from 6,144 bytes (FP32) to 384 bytes (2-bit). That's 16x compression.\n\n**6. Length-renormalized scoring.** Scalar quantization systematically underestimates inner products — the reconstructed unit direct",
+  "commitCount": 224,
+  "contributors": [
+    {
+      "login": "RyanCodrai",
+      "url": "https://github.com/RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4",
+      "contributions": 215
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 6
+    },
+    {
+      "login": "nicolas-geysse",
+      "url": "https://github.com/nicolas-geysse",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8360521?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "Kartalops",
+      "url": "https://github.com/Kartalops",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/13228820?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "raghavenderreddygrudhanti",
+      "url": "https://github.com/raghavenderreddygrudhanti",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/176050888?v=4",
+      "contributions": 1
+    }
+  ],
+  "releases": [],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/header.png\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\" style=\"max-width: 100%;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/caf6b784b3179786863dae677f066e65d7e15c9dcf1d084618796ef14bb2d8be/68747470733a2f2f696d672e736869656c64732e696f2f707970692f6c2f747572626f766563\" alt=\"License\" data-canonical-src=\"https://img.shields.io/pypi/l/turbovec\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/fbf0495c02790bbda88b64e34c56a0c2e2a8bca3e3b402815af5969199aa2155/68747470733a2f2f696d672e736869656c64732e696f2f707970692f762f747572626f7665633f6c6162656c3d7079706926636f6c6f723d626c7565\" alt=\"PyPI version\" data-canonical-src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://crates.io/crates/turbovec\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/7b670bfcb1974fa41e9ac4a6d4f796ecab90f85f840d010bdeeba6c5f1518a8a/68747470733a2f2f696d672e736869656c64732e696f2f6372617465732f762f747572626f7665633f6c6162656c3d6372617465732e696f26636f6c6f723d626c7565\" alt=\"crates.io version\" data-canonical-src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/de75e4b10bfe7ac9c06a92ac6ca7be20453daa45ea826b345cc545e37a0ab254/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f70617065722d61725869762d6233316231622e737667\" alt=\"TurboQuant paper\" data-canonical-src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" style=\"max-width: 100%;\"></a>\n</p>\n<hr>\n<p dir=\"auto\"><strong>A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.</strong></p>\n<p dir=\"auto\">turbovec is a Rust vector index with Python bindings, built on Google Research's <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><strong>TurboQuant</strong></a> algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.</p>\n<ul dir=\"auto\">\n<li><strong>Online ingest.</strong> Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.</li>\n<li><strong>Fast SIMD search.</strong> Hand-written NEON (ARM) and AVX-512BW (x86) kernels beat FAISS IndexPQFastScan by 10–19% on ARM; on x86 they win the 4-bit configs and trail by a few percent on 2-bit.</li>\n<li><strong>Filter at search time.</strong> Pass an id allowlist (or a slot bitmask) to <code>search()</code> and the kernel honours it directly. You always get up to <code>k</code> results from the allowed set — no over-fetching, no recall hit on selective filters.</li>\n<li><strong>Pure local.</strong> No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.</li>\n</ul>\n<p dir=\"auto\">Building RAG where privacy, memory, or latency matters? <strong>You're in the right place.</strong></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Python</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install turbovec\"><pre>pip install turbovec</pre></div>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(&quot;my_index.tv&quot;)\nloaded = TurboQuantIndex.load(&quot;my_index.tv&quot;)\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">TurboQuantIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">TurboQuantIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">vectors</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">more_vectors</span>)\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">indices</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">TurboQuantIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)</pre></div>\n<p dir=\"auto\"><code>vectors</code> and <code>query</code> are 2-D <code>float32</code> arrays of shape <code>(n, dim)</code> — other dtypes are rejected rather than silently converted, so cast with <code>np.asarray(x, dtype=np.float32)</code> first if needed.</p>\n<p dir=\"auto\">Need stable ids that survive deletes? Use <code>IdMapIndex</code>:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(&quot;my_index.tvim&quot;)\nloaded = IdMapIndex.load(&quot;my_index.tvim&quot;)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>([<span class=\"pl-c1\">1001</span>, <span class=\"pl-c1\">1002</span>, <span class=\"pl-c1\">1003</span>], <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>))\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)   <span class=\"pl-c\"># ids are your uint64 external ids</span>\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">remove</span>(<span class=\"pl-c1\">1002</span>)                         <span class=\"pl-c\"># O(1) by id</span>\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">IdMapIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Hybrid retrieval (filtered search)</h3></div>\n<p dir=\"auto\">Restrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(&quot;SELECT id FROM docs WHERE tenant=?&quot;, (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">idx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">ids</span>)\n\n<span class=\"pl-c\"># Stage 1: external system narrows to candidate ids.</span>\n<span class=\"pl-s1\">allowed</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>(<span class=\"pl-s1\">db</span>.<span class=\"pl-c1\">execute</span>(<span class=\"pl-s\">\"SELECT id FROM docs WHERE tenant=?\"</span>, (<span class=\"pl-s1\">t</span>,)).<span class=\"pl-c1\">fetchall</span>(),\n                   <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>)\n\n<span class=\"pl-c\"># Stage 2: dense rerank within the candidate set.</span>\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>, <span class=\"pl-s1\">allowlist</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">allowed</span>)</pre></div>\n<p dir=\"auto\">Filtering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.</p>\n<p dir=\"auto\">The output length is <code>min(k, len(allowed))</code> — when the allowlist is smaller than <code>k</code> you get exactly <code>len(allowed)</code> results rather than padded fallbacks.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/api.md\"><code>docs/api.md</code></a> for the full reference.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Framework integrations</h3></div>\n<p dir=\"auto\">Drop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/langchain.md\">LangChain</a> — <code>pip install turbovec[langchain]</code> · replaces <code>langchain_core.vectorstores.InMemoryVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/llama_index.md\">LlamaIndex</a> — <code>pip install turbovec[llama-index]</code> · replaces <code>llama_index.core.vector_stores.SimpleVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/haystack.md\">Haystack</a> — <code>pip install turbovec[haystack]</code> · replaces <code>haystack.document_stores.in_memory.InMemoryDocumentStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/agno.md\">Agno</a> — <code>pip install turbovec[agno]</code> · replaces <code>agno.vectordb.lancedb.LanceDb</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rust</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo add turbovec\"><pre>cargo add turbovec</pre></div>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&amp;vectors);\nlet results = index.search(&amp;queries, 10);\nindex.write(&quot;index.tv&quot;).unwrap();\nlet loaded = TurboQuantIndex::load(&quot;index.tv&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">TurboQuantIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> results = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">For stable external ids that survive deletes:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&amp;vectors, &amp;[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&amp;queries, 10);\nindex.remove(1002);\nindex.write(&quot;index.tvim&quot;).unwrap();\nlet loaded = IdMapIndex::load(&quot;index.tvim&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">IdMapIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add_with_ids</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">1001</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1002</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1003</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>scores<span class=\"pl-kos\">,</span> ids<span class=\"pl-kos\">)</span> = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">remove</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1002</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Recall</h2></div>\n<p dir=\"auto\">TurboQuant vs FAISS <code>IndexPQ</code> (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/recall_glove.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_glove.svg\" alt=\"Recall GloVe d=200\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/recall_d1536.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d1536.svg\" alt=\"Recall d=1536\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/recall_d3072.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d3072.svg\" alt=\"Recall d=3072\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Across OpenAI d=1536 and d=3072, TurboQuant beats FAISS by 0.2–1.9 points at R@1 across 2-bit and 4-bit, and both reach 1.0 by k=8 (≥0.997 already at k=4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TurboQuant beats FAISS by 0.9 points at 4-bit and is effectively tied at 2-bit (within 0.1 points) at R@1, both tracking FAISS closely by k≈16.</p>\n<p dir=\"auto\"><strong>A note on baselines.</strong> We compare against FAISS <code>IndexPQ</code> (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant paper</a> — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see <a href=\"https://pypi.org/project/turboquant-py/\" rel=\"nofollow\"><code>turboquant-py</code></a> at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands level with FAISS at 2-bit and ahead at 4-bit; TQ+ calibration closes the low-dim gap the base algorithm leaves.</p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_2bit.json\">d=1536 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_4bit.json\">d=1536 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_2bit.json\">d=3072 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_4bit.json\">d=3072 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_2bit.json\">GloVe 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_4bit.json\">GloVe 4-bit</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Compression</h2></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/compression.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/compression.svg\" alt=\"Compression\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Search Speed</h2></div>\n<p dir=\"auto\">All benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (Apple M3 Max)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/arm_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_st.svg\" alt=\"ARM Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/arm_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_mt.svg\" alt=\"ARM Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On ARM, TurboQuant beats FAISS FastScan by 10–19% across every config.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/x86_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_st.svg\" alt=\"x86 Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/x86_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_mt.svg\" alt=\"x86 Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On x86, TurboQuant wins the 4-bit configs by up to ~5% (d=3072 multi-threaded ties) and is modestly behind FAISS on 2-bit — most visibly d=1536 single-threaded (~8%), within a few percent on the rest — where FAISS's AVX-512 VBMI path has the edge on the short 2-bit accumulate loop.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Insertion &amp; Removal Speed</h2></div>\n<p dir=\"auto\">Same corpus as the search cells: 100K OpenAI vectors, median of 5 runs, fresh index per timed run. Insertion measures bulk <code>add()</code> into an empty index (one-time rotation/codebook init and TQ+ calibration fit included) and a warm 10K append with calibration frozen (the steady-state encode path), against FAISS <code>IndexPQFastScan</code> bulk add (training untimed). Removal measures per-op latency of <code>IdMapIndex.remove(id)</code> against raw <code>TurboQuantIndex.swap_remove</code> — both O(1) swap-and-pop; the gap is the id-map bookkeeping. Single-threaded cells pin <code>RAYON_NUM_THREADS=1</code>. Scripts: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/suite/\"><code>benchmarks/suite/</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (Apple M3 Max)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/arm_insert_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_st.svg\" alt=\"ARM Insertion — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/arm_insert_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_mt.svg\" alt=\"ARM Insertion — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/arm_remove_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_remove_st.svg\" alt=\"ARM Removal — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_st.json\">d=1536 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_st.json\">d=1536 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_st.json\">d=3072 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_st.json\">d=3072 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_mt.json\">MT</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/\"><code>speed_remove_*</code></a> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/x86_insert_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_st.svg\" alt=\"x86 Insertion — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/x86_insert_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_mt.svg\" alt=\"x86 Insertion — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/x86_remove_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_remove_st.svg\" alt=\"x86 Removal — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_st.json\">d=1536 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_st.json\">d=1536 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_st.json\">d=3072 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_st.json\">d=3072 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_mt.json\">MT</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/\"><code>speed_remove_*</code></a> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">Each vector is a direction on a high-dimensional hypersphere. TurboQuant compresses these directions using a simple insight: after applying a random rotation, every coordinate follows a known distribution -- regardless of the input data.</p>\n<p dir=\"auto\"><strong>1. Normalize.</strong> Strip the length (norm) from each vector and store it as a single float. Now every vector is a unit direction on the hypersphere.</p>\n<p dir=\"auto\"><strong>2. Random rotation.</strong> Multiply all vectors by the same random orthogonal matrix. After rotation, each coordinate independently follows a Beta distribution that converges to Gaussian N(0, 1/d) in high dimensions. This holds for any input data -- the rotation makes the coordinate distribution predictable.</p>\n<p dir=\"auto\"><strong>3. Per-coordinate calibration (TQ+).</strong> The Beta distribution from step 2 is asymptotic — at finite dimensions, individual coordinates drift from the canonical shape (especially low-bit and word-vector-style embeddings). TQ+ fits two scalars per coordinate — a shift and a scale — during the first add, mapping each coordinate's empirical 5/95% quantiles onto the canonical Beta marginal. The Lloyd-Max codebook then quantizes against the <em>target</em> distribution it was designed for. The calibration is frozen after the first add and reused by subsequent adds — no retraining, no rebuilds, no separate train phase. Recall gain: up to +1.4pp at @1 on the cells that drift most (e.g. GloVe at 2-bit).</p>\n<p dir=\"auto\"><strong>4. Lloyd-Max scalar quantization.</strong> Since the distribution is known, we can precompute the optimal way to bucket each coordinate. For 2-bit, that's 4 buckets; for 4-bit, 16 buckets. The <a href=\"https://en.wikipedia.org/wiki/Lloyd%27s_algorithm\" rel=\"nofollow\">Lloyd-Max algorithm</a> finds bucket boundaries and centroids that minimize mean squared error. These are computed once from the math, not from the data.</p>\n<p dir=\"auto\"><strong>5. Bit-pack.</strong> Each coordinate is now a small integer (0-3 for 2-bit, 0-15 for 4-bit). Pack these tightly into bytes. A 1536-dim vector goes from 6,144 bytes (FP32) to 384 bytes (2-bit). That's 16x compression.</p>\n<p dir=\"auto\"><strong>6. Length-renormalized scoring.</strong> Scalar quantization systematically underestimates inner products — the reconstructed unit direction is a little shorter than the original. We compute one scalar per vector at encode time — the inner product of the rotated unit vector with its own centroid reconstruction — and store <code>||v|| / ⟨u, x̂⟩</code> alongside each compressed vector. The search kernel multiplies the per-candidate score by this scalar before heap insertion, turning the inner-product estimator from downward-biased into unbiased at zero search-time cost and zero extra storage. The recall gain shows up most at low bit widths, where the quantization shrinkage is largest.</p>\n<p dir=\"auto\">Encoding cost: one extra <code>d</code>-dimensional dot product per vector to compute <code>⟨u, x̂⟩</code>. On 1M vectors at d=1536 this is sub-second of additional encode time — a one-shot price paid at ingest, not at query.</p>\n<p dir=\"auto\"><strong>Search.</strong> Instead of decompressing every database vector, we rotate the query once into the same domain and score directly against the codebook values. The scoring kernel uses SIMD intrinsics (NEON on ARM; AVX-512BW on modern x86, falling back to AVX2, then to a scalar path on pre-AVX2 CPUs) with nibble-split lookup tables for maximum throughput.</p>\n<p dir=\"auto\">The Lloyd-Max codebook achieves distortion within a factor of 2.7x of the information-theoretic lower bound (Shannon's distortion-rate limit); the length-renormalization step removes the residual bias the Lloyd-Max codebook introduces on the inner-product estimator itself.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Python (via maturin)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install maturin\ncd turbovec-python\nmaturin build --release\npip install target/wheels/*.whl\"><pre>pip install maturin\n<span class=\"pl-c1\">cd</span> turbovec-python\nmaturin build --release\npip install target/wheels/<span class=\"pl-k\">*</span>.whl</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<p dir=\"auto\">All x86_64 builds target <code>x86-64-v2</code> (SSE4.2 baseline, Nehalem 2008+) via <code>.cargo/config.toml</code>, so any x86-64-v2 CPU can run the whole crate. The AVX-512 and AVX2 kernels are <code>#[target_feature]</code>-gated and selected at runtime via <code>is_x86_feature_detected!</code>, so they kick in on hardware that supports them regardless of the compile baseline; CPUs with neither run the scalar fallback.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running benchmarks</h2></div>\n<p dir=\"auto\">Download datasets:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/download_data.py all            # all datasets\npython3 benchmarks/download_data.py glove          # GloVe d=200\npython3 benchmarks/download_data.py openai-1536    # OpenAI DBpedia d=1536\npython3 benchmarks/download_data.py openai-3072    # OpenAI DBpedia d=3072\"><pre>python3 benchmarks/download_data.py all            <span class=\"pl-c\"><span class=\"pl-c\">#</span> all datasets</span>\npython3 benchmarks/download_data.py glove          <span class=\"pl-c\"><span class=\"pl-c\">#</span> GloVe d=200</span>\npython3 benchmarks/download_data.py openai-1536    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=1536</span>\npython3 benchmarks/download_data.py openai-3072    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=3072</span></pre></div>\n<p dir=\"auto\">Each benchmark is a self-contained script in <code>benchmarks/suite/</code>. Run any one individually:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py\"><pre>python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py</pre></div>\n<p dir=\"auto\">Run all benchmarks for a category:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"for f in benchmarks/suite/speed_*arm*.py; do python3 &quot;$f&quot;; done    # all ARM speed\nfor f in benchmarks/suite/speed_*x86*.py; do python3 &quot;$f&quot;; done    # all x86 speed\nfor f in benchmarks/suite/recall_*.py; do python3 &quot;$f&quot;; done       # all recall\npython3 benchmarks/suite/compression.py                            # compression\"><pre><span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>arm<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all ARM speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>x86<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all x86 speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/recall_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>       <span class=\"pl-c\"><span class=\"pl-c\">#</span> all recall</span>\npython3 benchmarks/suite/compression.py                            <span class=\"pl-c\"><span class=\"pl-c\">#</span> compression</span></pre></div>\n<p dir=\"auto\">Results are saved as JSON to <code>benchmarks/results/</code>. Regenerate charts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/create_diagrams.py\"><pre>python3 benchmarks/create_diagrams.py</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">References</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate</a> (ICLR 2026) -- the paper this implements</li>\n<li><a href=\"https://arxiv.org/abs/2405.12497\" rel=\"nofollow\">RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search</a> (SIGMOD 2024) -- the source of the per-vector length-renormalization correction adapted in step 5</li>\n<li><a href=\"https://github.com/facebookresearch/faiss/wiki/Fast-accumulation-of-PQ-and-AQ-codes-(FastScan)\">FAISS Fast accumulation of PQ and AQ codes</a> -- turbovec's x86 SIMD kernel adapts FastScan's pack layout, nibble-LUT scoring, and u16 accumulator strategy</li>\n</ul>\n</article></div>",
+  "contributorCount": 5,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 2
+    }
+  ],
+  "firstCommitAt": "2026-03-26T14:09:56Z",
+  "recentIssues": [
+    {
+      "number": 275,
+      "title": "Benchmark suite: save time, load time, and save→search coverage",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/275",
+      "createdAt": "2026-07-28T17:56:46Z",
+      "comments": 1,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 274,
+      "title": "Hill-climb save (write) performance on ARM and x86",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/274",
+      "createdAt": "2026-07-28T17:55:59Z",
+      "comments": 2,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 273,
+      "title": "Hill-climb x86 insertion & removal performance",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/273",
+      "createdAt": "2026-07-28T17:55:37Z",
+      "comments": 1,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 259,
+      "title": "Cross-OS byte-hash determinism CI leg: prove the full v5 encode is bit-identical across platforms",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/259",
+      "createdAt": "2026-07-27T19:10:19Z",
+      "comments": 1,
+      "labels": [],
+      "author": "q-turbovec-bot"
+    },
+    {
+      "number": 258,
+      "title": "sectest: intake + summarize check",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/258",
+      "createdAt": "2026-07-27T16:28:57Z",
+      "comments": 1,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 216,
+      "title": "Long kernel calls are deaf to Ctrl-C: SIGINT queued until the Rust call returns (12.9s/7.7s measured delays)",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/216",
+      "createdAt": "2026-07-26T09:35:02Z",
+      "comments": 0,
+      "labels": [],
+      "author": "RyanCodrai"
+    }
+  ],
+  "participation": {
+    "all": 221,
+    "owner": 212,
+    "community": 9
+  },
+  "recentCommits": [
+    {
+      "sha": "30c3840",
+      "message": "perf: cold-load hill-climb — 4.1x faster x86, 3.8x faster ARM (file → first search) (#276)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/30c38402e08c7007cb9a04b219417c409f3f908c",
+      "date": "2026-07-28T19:11:20Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "aea9b75",
+      "message": "feat: v6 combined index format — the file is the search-ready index (#68) (#271)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/aea9b759e20bd33504c51e9a34f6fc82b1e6f7a1",
+      "date": "2026-07-28T12:41:20Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "c92878b",
+      "message": "Hill-climb insertion & removal performance (#264)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/c92878b21d74607df515fadc82ffdef4720ba440",
+      "date": "2026-07-28T11:35:04Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "5df6f3a",
+      "message": "ci: replace eyes-summary polling with an instant /summarize command (#269)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/5df6f3a1340e56dec8325a1526c43ab462690d02",
+      "date": "2026-07-27T22:58:47Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "845bf3c",
+      "message": "ci: eyes-summary — accept 👀 on any PR comment, not just the description (#268)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/845bf3cca45a45693fbad7ad2fdebf2e46e57ec4",
+      "date": "2026-07-27T22:52:57Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "b471cf7",
+      "message": "ci: eyes-summary — 👀 on a PR requests a plain-English /summarize comment (#267)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/b471cf7c695f061d1fd9404198f45bca55fbe4a1",
+      "date": "2026-07-27T22:48:24Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "c954946",
+      "message": "ci: trigger Claude via @q-turbovec-bot instead of @claude (#266)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/c954946dc50dae626bff06514db171598bc44682",
+      "date": "2026-07-27T22:27:51Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "73375af",
+      "message": "feat: fork-safe rayon (generation-keyed process-local pool) — closes #147 (#238)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/73375af75737956c38279c46f15d0934c40a32cb",
+      "date": "2026-07-27T22:03:22Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "e712ab1",
+      "message": "ci: allow turbovec-bot to trigger @claude (self-chaining agents) (#265)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/e712ab1136e91e6c4f652e755ddc8b9b78ad66f5",
+      "date": "2026-07-27T21:56:04Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    },
+    {
+      "sha": "b65e41e",
+      "message": "ci: raise @claude max-turns from 40 to 100 (#262)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/b65e41e931ddddb5e9ba2f92208f685fcd7d9714",
+      "date": "2026-07-27T19:43:49Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 276,
+      "title": "perf: cold-load hill-climb — 4.1x faster x86, 3.8x faster ARM (file → first search)",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/276",
+      "state": "merged",
+      "updatedAt": "2026-07-28T19:11:23Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 272,
+      "title": "Hill-climb cold load time (arm + x86 harmonic mean)",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/272",
+      "state": "closed",
+      "updatedAt": "2026-07-28T18:23:49Z",
+      "author": "RyanCodrai",
+      "draft": true
+    },
+    {
+      "number": 261,
+      "title": "ci: autonomous PR auto-merge via an isolated label executor",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/261",
+      "state": "closed",
+      "updatedAt": "2026-07-28T18:23:23Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 270,
+      "title": "feat: runtime-cache sidecars so loaded indexes skip the first-search rebuild (#68)",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/270",
+      "state": "closed",
+      "updatedAt": "2026-07-28T12:44:21Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 271,
+      "title": "feat: v6 combined index format — the file is the search-ready index (#68)",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/271",
+      "state": "merged",
+      "updatedAt": "2026-07-28T12:41:23Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 264,
+      "title": "Hill-climb insertion & removal performance",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/264",
+      "state": "merged",
+      "updatedAt": "2026-07-28T11:35:07Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 263,
+      "title": "ci: Agent-SDK goal-harness (@harness) — loop until delivery is verified",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/263",
+      "state": "open",
+      "updatedAt": "2026-07-27T23:10:47Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 269,
+      "title": "ci: instant /summarize command, replacing the 👀 polling workflow",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/269",
+      "state": "merged",
+      "updatedAt": "2026-07-27T22:58:49Z",
+      "author": "RyanCodrai",
+      "draft": false
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".cargo",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/.cargo"
+    },
+    {
+      "name": ".claude",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/.claude"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/.github"
+    },
+    {
+      "name": "benchmarks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/benchmarks"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/docs"
+    },
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/examples"
+    },
+    {
+      "name": "turbovec",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/turbovec"
+    },
+    {
+      "name": "turbovec-python",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/RyanCodrai/turbovec/tree/main/turbovec-python"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 107,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/.gitignore"
+    },
+    {
+      "name": "Cargo.lock",
+      "type": "file",
+      "size": 12753,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/Cargo.lock"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 366,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/Cargo.toml"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "size": 94862,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 3484,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "deny.toml",
+      "type": "file",
+      "size": 1573,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/deny.toml"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1068,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/LICENSE"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 16510,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/README.md"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 2744,
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/SECURITY.md"
+    }
+  ],
+  "branchCount": 13,
+  "tagCount": 29,
+  "community": {
+    "healthPercentage": 85,
+    "hasCodeOfConduct": false,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": true
+  },
+  "workflowRuns": [
+    {
+      "name": "Claude Code",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/30390925630",
+      "branch": "main",
+      "updatedAt": "2026-07-28T19:12:26Z"
+    },
+    {
+      "name": "Summarize command",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/30390925542",
+      "branch": "main",
+      "updatedAt": "2026-07-28T19:12:26Z"
+    },
+    {
+      "name": "CI",
+      "status": "success",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/30390854756",
+      "branch": "main",
+      "updatedAt": "2026-07-28T19:16:39Z"
+    },
+    {
+      "name": "Push on main",
+      "status": "success",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/30390849580",
+      "branch": "main",
+      "updatedAt": "2026-07-28T19:12:35Z"
+    }
+  ],
+  "fundingLinks": [],
+  "openIssuesOnly": 11,
+  "openPRs": 1,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 109,
+  "mergedPRs": 120,
+  "environmentCount": 2,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": "https://github.com/RyanCodrai/turbovec/security/policy",
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 17
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 38
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 40
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 14
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 17
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 17
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 8
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 29
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 43
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 7
+    },
+    {
+      "date": "2026-03-27",
+      "count": 10
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 14
+    },
+    {
+      "date": "2026-03-31",
+      "count": 7
+    },
+    {
+      "date": "2026-04-01",
+      "count": 10
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 7
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 16
+    },
+    {
+      "date": "2026-04-14",
+      "count": 7
+    },
+    {
+      "date": "2026-04-15",
+      "count": 8
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 9
+    },
+    {
+      "date": "2026-04-19",
+      "count": 6
+    },
+    {
+      "date": "2026-04-20",
+      "count": 8
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 1
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 5
+    },
+    {
+      "date": "2026-05-18",
+      "count": 8
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 4
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 6
+    },
+    {
+      "date": "2026-05-26",
+      "count": 2
+    },
+    {
+      "date": "2026-05-27",
+      "count": 5
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 2
+    },
+    {
+      "date": "2026-05-30",
+      "count": 2
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 6
+    },
+    {
+      "date": "2026-06-10",
+      "count": 2
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 3
+    },
+    {
+      "date": "2026-07-24",
+      "count": 11
+    },
+    {
+      "date": "2026-07-25",
+      "count": 15
+    },
+    {
+      "date": "2026-07-26",
+      "count": 15
+    },
+    {
+      "date": "2026-07-27",
+      "count": 25
+    },
+    {
+      "date": "2026-07-28",
+      "count": 3
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T19:53:09.066Z"
 }
