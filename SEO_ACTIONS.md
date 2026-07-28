@@ -16,16 +16,15 @@ on-page SEO.
 
 ## 1. Get indexed (do this first — nothing else matters until this happens)
 
-- [ ] **Google Search Console** — go to
-      [search.google.com/search-console](https://search.google.com/search-console),
-      add `reporadar.spreix.com` as a property (use the DNS or HTML-tag
-      verification method), then submit the sitemap:
-      `https://reporadar.spreix.com/sitemap.xml`. This is the single highest-
-      leverage action available — it tells Google the site exists instead of
-      waiting for accidental discovery.
-- [ ] **Bing Webmaster Tools** — same thing at
-      [bing.com/webmasters](https://www.bing.com/webmasters). Bing also feeds
-      some AI answer engines directly, so this matters for AEO too.
+- [x] **Google Search Console** — property verified (2026-07-28, HTML-file
+      method + HTML-tag method as backup, both confirmed live).
+      **Still needed: submit the sitemap** —
+      `https://reporadar.spreix.com/sitemap.xml` — inside Search Console
+      under Sitemaps, if not already done. Verification alone does not
+      trigger a crawl; the sitemap submission is what does.
+- [x] **Bing Webmaster Tools** — verified via the Google import (2026-07-28).
+      Same note: confirm the sitemap was picked up by the import, or submit
+      it manually under Sitemaps if not.
 - [ ] **Request indexing manually** for the homepage and 2-3 key pages
       (`/categories`, `/blog`, the newest daily report) inside Search Console's
       URL Inspection tool, once the property is verified — this can pull
