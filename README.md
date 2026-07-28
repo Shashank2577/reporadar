@@ -126,6 +126,28 @@ before any limit is at risk. If it ever gets there, add a `REPORADAR_TOKEN`
 secret (a classic PAT with `public_repo` scope, 5,000/hour guaranteed) — the
 workflows already use it automatically when present.
 
+### Rate-limit budgeting: targeting 90% of whatever's actually left
+
+Every run starts by calling `/rate_limit` (free — it doesn't count against
+the quota itself) to learn the real remaining budget in the current window,
+then computes a stop point at `remaining × (1 - TARGET_UTILIZATION)` (default
+90% target, so it stops once 10% is left as a safety margin — never a fixed
+call count). This matters because GitHub's hourly window is a **rolling**
+reset from whenever it started, not aligned to the wall-clock hour, so a cron
+firing at `:00` can land anywhere inside that window; checking live is what
+makes "use up to 90% every hour" correct regardless of that drift.
+
+Within that budget, priority order is: today's trending repos first (freshest
+signal), then the `RENOWNED_COUNT` most-starred tracked repos (default 100 —
+the pages most visitors actually look at, refreshed every run regardless of
+where the round-robin cursor sits), then the shard fills whatever's left for
+full-corpus coverage. At today's scale (49 tracked repos) there simply isn't
+enough real work to spend anywhere near 90% of a ~5,000-call budget — a full
+deep-facts refresh of every tracked repo only costs ~900 calls total, so
+usage stays low until the corpus or the refresh cadence grows into that
+budget. The mechanism doesn't manufacture busywork to hit a percentage; it
+uses what's actually there, up to the target.
+
 ## Deployment checklist
 
 1. **Push to GitHub.** Create a repository and push this project to `main`.

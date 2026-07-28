@@ -21,6 +21,30 @@ export function budgetExhausted(floor = 60) {
   return usage.remaining !== null && usage.remaining < floor;
 }
 
+// GitHub's own rate-limit reset is a rolling window from whenever the count
+// last started, not aligned to the wall-clock hour — so a run scheduled at
+// the top of the hour may land anywhere inside that window. Checking
+// /rate_limit fresh at the start of every run is what makes a percentage-of-
+// budget target correct regardless of that alignment. This endpoint is
+// explicitly exempt from counting against the quota itself.
+export async function checkRateLimit() {
+  const t = token();
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "reporadar-pipeline",
+  };
+  if (t) headers.Authorization = `Bearer ${t}`;
+  const res = await fetch(`${API}/rate_limit`, { headers });
+  if (!res.ok) return { remaining: null, limit: null, resetAt: null };
+  const data = await res.json();
+  const core = data.resources?.core || {};
+  usage.remaining = core.remaining ?? usage.remaining;
+  usage.limit = core.limit ?? usage.limit;
+  usage.resetAt = core.reset ? new Date(core.reset * 1000).toISOString() : usage.resetAt;
+  return { remaining: core.remaining ?? null, limit: core.limit ?? null, resetAt: usage.resetAt };
+}
+
 // Bounded-concurrency map: runs `fn` over `items` with at most `limit` in
 // flight at once. This is the safe form of "run calls in parallel" — the
 // total number of API calls made is identical to running sequentially (the

@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted, mapLimit } from "./lib/gh.mjs";
+import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted, mapLimit, checkRateLimit } from "./lib/gh.mjs";
 import {
   fetchStarHistoryBatch,
   fetchReleases,
@@ -45,18 +45,30 @@ const TRENDING_DIR = path.join(ROOT, "data", "trending");
 // stop being added once this is hit; already-tracked repos keep rotating.
 const MAX_TRACKED = Number(process.env.MAX_TRACKED || 3000);
 const FACTS_TTL_DAYS = 7;
-// Deep facts cost ~18 API calls per repo, so cap how many refresh per run.
-// GITHUB_TOKEN inside Actions allows 1,000 REST calls per hour per repository
-// (5,000/hour observed in practice); a shard run stays far under either.
-const FACTS_LIMIT = Number(process.env.FACTS_LIMIT || 25);
+// Deep facts cost ~18 API calls per repo. This is a high ceiling on purpose —
+// the real governor is the dynamic rate-limit floor below, computed fresh
+// each run, not this number.
+const FACTS_LIMIT = Number(process.env.FACTS_LIMIT || 300);
 // How many of a repo's ~18 independent facts calls run concurrently, and how
 // many repos in the shard are processed concurrently. Both are capped well
 // under GitHub's secondary/abuse-detection rate limit (~10 concurrent
 // requests per token is the commonly cited safe ceiling).
 const FACTS_CONCURRENCY = Number(process.env.FACTS_CONCURRENCY || 6);
-const REPO_CONCURRENCY = Number(process.env.REPO_CONCURRENCY || 4);
-// Stop starting new work when the remaining rate-limit budget gets this low.
-const RATE_FLOOR = Number(process.env.RATE_FLOOR || 80);
+const REPO_CONCURRENCY = Number(process.env.REPO_CONCURRENCY || 6);
+// Target using this fraction of whatever REST budget is actually left when
+// the run starts (checked fresh via /rate_limit, which is free) — not a
+// fixed call count. GitHub's hourly window resets on a rolling basis from
+// whenever it started, not the wall-clock hour, so re-checking live is what
+// makes "reach 90% every hour" correct regardless of when the cron fires
+// relative to that window.
+const TARGET_UTILIZATION = Number(process.env.TARGET_UTILIZATION || 0.9);
+// Absolute safety floor regardless of utilization target — never fully zero
+// out the budget, so a retry or another job in the same window doesn't 403.
+const MIN_RATE_FLOOR = Number(process.env.MIN_RATE_FLOOR || 20);
+// Highest-star tracked repos always get refreshed this run (budget
+// permitting), on top of whatever's trending today — these are the pages
+// most visitors actually look at, so they shouldn't wait on the round-robin.
+const RENOWNED_COUNT = Number(process.env.RENOWNED_COUNT || 100);
 // Bump to force a full facts refetch for every tracked repo on the next run.
 const FACTS_VERSION = 3;
 
@@ -69,6 +81,10 @@ const MIN_SHARD_SIZE = Number(process.env.MIN_SHARD_SIZE || 40);
 const CURSOR_FILE = path.join(ROOT, "data", ".pipeline-cursor.json");
 
 let factsDone = 0;
+// Set at the start of main() from a live /rate_limit check; module-level so
+// fetchFacts (called deep in the queue loop) can see it without threading it
+// through every call.
+let rateFloor = MIN_RATE_FLOOR;
 
 // Spread facts refreshes across days so they never all come due at once.
 function jitterDays(id) {
@@ -290,7 +306,7 @@ async function updateRepo(fullName, trendingEntry, date) {
   const factsStale =
     daysSince(profile.factsUpdatedAt) > FACTS_TTL_DAYS + jitterDays(fullName) ||
     (profile.factsVersion || 1) < FACTS_VERSION;
-  if (factsStale && factsDone < FACTS_LIMIT && !budgetExhausted(RATE_FLOOR)) {
+  if (factsStale && factsDone < FACTS_LIMIT && !budgetExhausted(rateFloor)) {
     await fetchFacts(fullName, profile);
     factsDone++;
   }
@@ -302,6 +318,19 @@ async function updateRepo(fullName, trendingEntry, date) {
 
 async function main() {
   const date = todayUTC();
+
+  const { remaining, limit, resetAt } = await checkRateLimit();
+  if (remaining !== null) {
+    rateFloor = Math.max(MIN_RATE_FLOOR, Math.round(remaining * (1 - TARGET_UTILIZATION)));
+    console.log(
+      `Rate limit: ${remaining}/${limit} remaining (resets ${resetAt}) | ` +
+        `targeting ${Math.round(TARGET_UTILIZATION * 100)}% -> stop below ${rateFloor} remaining ` +
+        `(budget for this run: ~${Math.max(remaining - rateFloor, 0)} calls)`
+    );
+  } else {
+    console.warn(`Could not read live rate limit; falling back to floor ${rateFloor}`);
+  }
+
   const trendingFiles = fs.existsSync(TRENDING_DIR)
     ? fs.readdirSync(TRENDING_DIR).filter((f) => f.endsWith(".json")).sort()
     : [];
@@ -319,18 +348,25 @@ async function main() {
     }
   }
 
-  // Every repo we already track, in a stable order (deterministic across
-  // runs regardless of when each was last touched — that's what makes the
-  // round-robin cursor below meaningful instead of chasing a moving target).
-  const trackedIds = fs.existsSync(REPO_DIR)
+  // Every repo we already track. Loaded once; the rotation needs a stable
+  // alphabetical order (deterministic across runs, so the cursor means the
+  // same thing every time), while the "renowned" list below needs the same
+  // repos ranked by stars instead.
+  const trackedProfiles = fs.existsSync(REPO_DIR)
     ? fs
         .readdirSync(REPO_DIR)
         .filter((f) => f.endsWith(".json"))
         .map((f) => readJson(path.join(REPO_DIR, f)))
         .filter(Boolean)
-        .map((p) => p.id)
-        .sort()
     : [];
+  const trackedIds = [...trackedProfiles].map((p) => p.id).sort();
+  // The most-starred tracked repos are refreshed every run regardless of
+  // where the round-robin cursor is — these are the pages most visitors
+  // actually look at, so they shouldn't wait on the rotation.
+  const renowned = [...trackedProfiles]
+    .sort((a, b) => (b.stars || 0) - (a.stars || 0))
+    .slice(0, RENOWNED_COUNT)
+    .map((p) => p.id);
 
   // New trending repos are added up to the population ceiling; once hit,
   // only already-tracked repos keep rotating (the corpus stops growing, it
@@ -363,12 +399,18 @@ async function main() {
   fs.mkdirSync(path.dirname(CURSOR_FILE), { recursive: true });
   fs.writeFileSync(CURSOR_FILE, JSON.stringify({ cursor: nextCursor, updatedAt: new Date().toISOString() }, null, 2));
 
-  // Always process today's trending repos (fresh signal matters immediately)
-  // plus this run's shard of the rotation (guarantees eventual coverage).
-  const queue = [...new Set([...trendingMap.keys(), ...newTrending, ...shard])];
+  // Priority order: today's trending (freshest signal) and the most-starred
+  // tracked repos (highest-traffic pages) always go first, then the shard
+  // fills in round-robin coverage for the rest. Set union preserves this
+  // order and dedupes; the actual cutoff for how much of the queue gets
+  // processed is the live rate-limit floor computed above, not this list's
+  // length — a small budget still does trending+renowned first, a 90%
+  // budget reaches deep into the shard too.
+  const queue = [...new Set([...trendingMap.keys(), ...newTrending, ...renowned, ...shard])];
   console.log(
     `Population: ${totalForShard} tracked | shard size: ${shardSize} (cursor ${cursor}->${nextCursor}) | ` +
-      `queue this run: ${queue.length} (${trendingMap.size} trending today, ${newTrending.length} newly added)`
+      `queue this run: ${queue.length} (${trendingMap.size} trending today, ${newTrending.length} newly added, ` +
+      `${renowned.length} renowned prioritized)`
   );
 
   // Repos in the shard are independent of each other, so processing several
@@ -379,7 +421,7 @@ async function main() {
   let nextIndex = 0;
   async function worker() {
     while (nextIndex < queue.length) {
-      if (budgetExhausted(RATE_FLOOR)) {
+      if (budgetExhausted(rateFloor)) {
         floorHit = true;
         return;
       }
