@@ -1,6 +1,12 @@
 {
   "id": "V4bel/dirtyfrag",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 4958,
+      "forks": 780
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-05-08",
@@ -47,5 +53,2827 @@
     "sampledAt": "2026-07-28T09:22:07.593Z"
   },
   "owner": "V4bel",
-  "name": "dirtyfrag"
+  "name": "dirtyfrag",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4",
+  "ownerType": "User",
+  "description": "",
+  "url": "https://github.com/V4bel/dirtyfrag",
+  "homepage": null,
+  "license": null,
+  "language": "C",
+  "topics": [],
+  "stars": 4958,
+  "forks": 780,
+  "watchers": 50,
+  "openIssues": 59,
+  "createdAt": "2026-05-07T18:18:28Z",
+  "pushedAt": "2026-05-10T17:29:21Z",
+  "defaultBranch": "master",
+  "archived": false,
+  "updatedAt": "2026-07-28T20:13:03.685Z",
+  "languages": {
+    "C": 67803
+  },
+  "readmeExcerpt": "# Dirty Frag: Universal Linux LPE\n\n<p align=\"center\">\n  <img src=\"assets/tux.png\" width=\"400\" alt=\"tux\">\n</p>\n\n# Abstract\n\n\n\nThis document describes the Dirty Frag vulnerability class, first discovered and reported by [Hyunwoo Kim (@v4bel)](https://x.com/v4bel), which can obtain root privileges on major Linux distributions by chaining the `xfrm-ESP Page-Cache Write (CVE-2026-43284)` vulnerability and the `RxRPC Page-Cache Write (CVE-2026-43500)` vulnerability.\n\nDirty Frag is a case that extends the bug class to which [Dirty Pipe](https://dirtypipe.cm4all.com/) and [Copy Fail](https://copy.fail/) belong. Because it is a deterministic logic bug that does not depend on a timing window, no race condition is required, the kernel does not panic when the exploit fails, and the success rate is very high.\n\nFor detailed technical information and the timeline, [see here](assets/write-up.md).\n\n- `xfrm-ESP Page-Cache Write (CVE-2026-43284)` was patched in mainline [f4c50a4034e6](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f4c50a4034e62ab75f1d5cdd191dd5f9c77fdff4).\n- `RxRPC Page-Cache Write (CVE-2026-43500)` was patched in mainline [aa54b1d27fe0](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=aa54b1d27fe0c2b78e664a34fd0fdf7cd1960d71).\n\n> [!NOTE]\n> At the time this document was first made public (2026-05-07), the embargo had been broken due to external factors, so no patch or CVE existed yet. After consultation with the maintainers on linux-distros@vs.openwall.org at that time, the Dirty Frag document was published at their request. For the disclosure timeline, refer to the technical details.\n\n# Exploiting\n\n## One-line special\n\n```\ngit clone https://github.com/V4bel/dirtyfrag.git && cd dirtyfrag && gcc -O0 -Wall -o exp exp.c -lutil && ./exp\n```\n\nThis PoC is provided as accurate information following consultation with linux-distros. Do not use it on systems that you are not authorized to test.\n\n## Cleanup\n\n⚠️  **Important:** After running this exploit, the page cache is contaminated. To clear the polluted page cache and ensure system stability, either run:\n\n```bash\necho 3 > /proc/sys/vm/drop_caches\n```\n\nor reboot the system.\n\n# Affected Versions\n\n- **CVE-2026-43284**: xfrm-ESP Page-Cache Write vulnerability is in scope from [cac2661c53f3 (2017-01-17)](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cac2661c53f3) up to [f4c50a4034e6 (2026-05-05)](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f4c50a4034e62ab75f1d5cdd191dd5f9c77fdff4).\n- **CVE-2026-43500**: RxRPC Page-Cache Write vulnerability is in scope from [2dc334f1a63a (2023-06-08)](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2dc334f1a63a) up to [aa54b1d27fe0 (2026-05-10)](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=aa54b1d27fe0c2b78e664a34fd0fdf7cd1960d71).\n\nIn other words, the effective lifetime of the vulnerabilities is about 9 years.\n\nThis Dirty Frag has been tested on the following distribution versions.\n\n- Ubuntu 24.04.4: 6.17.0-23-generic\n- RHEL 10.1: 6.12.0-124.49.1.el10_1.x86_64\n- openSUSE Tumbleweed: 7.0.2-1-default\n- CentOS Stream 10: 6.12.0-224.el10.x86_64\n- AlmaLinux 10: 6.12.0-124.52.3.el10_1.x86_64\n- Fedora 44: 6.19.14-300.fc44.x86_64\n- ...\n\n# Mitigation\n\n1. Use the following command to remove the modules in which the vulnerabilities occur and clear the page cache.\n```bash\nsh -c \"printf 'install esp4 /bin/false\\ninstall esp6 /bin/false\\ninstall rxrpc /bin/false\\n' > /etc/modprobe.d/dirtyfrag.conf; rmmod esp4 esp6 rxrpc 2>/dev/null; echo 3 > /proc/sys/vm/drop_caches; true\"\n```\n\n2. Once each distribution backports a patch, update accordingly.\n\n# FAQ\n\n## Why did you chain two vulnerabilities?\n\nxfrm-ESP Page-Cache Write provides a powerful arbitrary 4-byte STORE primitive like Copy Fail, and is included on most distributions, but it requires the privilege to create a namespace. \n\nUbuntu sometimes blocks unprivileged user namespace creation through AppArmor policy. In such an environment, xfrm-ESP Page-Cache Write cannot be triggered. RxRPC Page-Cache Write does not require the privilege to create a namespace, but the `rxrpc.ko` module itself is not included in most distributions. However, on Ubuntu, the `rxrpc.ko` module is loaded by default. \n\nChaining the two variants makes the blind spots cover each other, allowing root privileges to be obtained on every major distribution. For details, refer to the technical details document.\n\n## Another \"branded\" \"Dirty\" series?\n\nYeah, yeah, I know. However, this vulnerability is a descendant of \"Dirty Pipe\", and it is a bug class that \"dirties\" the `frag` member of `struct sk_buff`, so this name is the most appropriate.\n\n## What is its relationship with the \"Copy Fail\" vulnerability?\n\nCopy Fail was the motivation for starting this research. In particular, xfrm-ESP Page-Cache Write in the Dirty Frag vulnerability chain shares the same sink as Copy Fail. However, it is triggered regardless of whether the algif_aead module is available. In other words, even on systems where the publicly known Copy Fail mitigation (algif_aead blacklist) is applied, your Linux is still vulnerable to Dirty Frag.\n\n## So, how do I fix my Linux?\n\nRefer to the Mitigation section above.\n",
+  "commitCount": 18,
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Dirty Frag: Universal Linux LPE</h1></div>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/V4bel/dirtyfrag/blob/master/assets/tux.png\"><img src=\"https://raw.githubusercontent.com/V4bel/dirtyfrag/master/assets/tux.png\" width=\"400\" alt=\"tux\" style=\"max-width: 100%;\"></a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Abstract</h1></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/V4bel/dirtyfrag/blob/master/assets/demo.gif\"><img src=\"https://raw.githubusercontent.com/V4bel/dirtyfrag/master/assets/demo.gif\" alt=\"tux\" data-animated-image=\"\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">This document describes the Dirty Frag vulnerability class, first discovered and reported by <a href=\"https://x.com/v4bel\" rel=\"nofollow\">Hyunwoo Kim (@v4bel)</a>, which can obtain root privileges on major Linux distributions by chaining the <code>xfrm-ESP Page-Cache Write (CVE-2026-43284)</code> vulnerability and the <code>RxRPC Page-Cache Write (CVE-2026-43500)</code> vulnerability.</p>\n<p dir=\"auto\">Dirty Frag is a case that extends the bug class to which <a href=\"https://dirtypipe.cm4all.com/\" rel=\"nofollow\">Dirty Pipe</a> and <a href=\"https://copy.fail/\" rel=\"nofollow\">Copy Fail</a> belong. Because it is a deterministic logic bug that does not depend on a timing window, no race condition is required, the kernel does not panic when the exploit fails, and the success rate is very high.</p>\n<p dir=\"auto\">For detailed technical information and the timeline, <a href=\"https://github.com/V4bel/dirtyfrag/blob/master/assets/write-up.md\">see here</a>.</p>\n<ul dir=\"auto\">\n<li><code>xfrm-ESP Page-Cache Write (CVE-2026-43284)</code> was patched in mainline <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f4c50a4034e62ab75f1d5cdd191dd5f9c77fdff4\" rel=\"nofollow\">f4c50a4034e6</a>.</li>\n<li><code>RxRPC Page-Cache Write (CVE-2026-43500)</code> was patched in mainline <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=aa54b1d27fe0c2b78e664a34fd0fdf7cd1960d71\" rel=\"nofollow\">aa54b1d27fe0</a>.</li>\n</ul>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">At the time this document was first made public (2026-05-07), the embargo had been broken due to external factors, so no patch or CVE existed yet. After consultation with the maintainers on <a href=\"mailto:linux-distros@vs.openwall.org\">linux-distros@vs.openwall.org</a> at that time, the Dirty Frag document was published at their request. For the disclosure timeline, refer to the technical details.</p>\n</div>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Exploiting</h1></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">One-line special</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/V4bel/dirtyfrag.git &amp;&amp; cd dirtyfrag &amp;&amp; gcc -O0 -Wall -o exp exp.c -lutil &amp;&amp; ./exp\"><pre class=\"notranslate\"><code>git clone https://github.com/V4bel/dirtyfrag.git &amp;&amp; cd dirtyfrag &amp;&amp; gcc -O0 -Wall -o exp exp.c -lutil &amp;&amp; ./exp\n</code></pre></div>\n<p dir=\"auto\">This PoC is provided as accurate information following consultation with linux-distros. Do not use it on systems that you are not authorized to test.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Cleanup</h2></div>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji>  <strong>Important:</strong> After running this exploit, the page cache is contaminated. To clear the polluted page cache and ensure system stability, either run:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"echo 3 &gt; /proc/sys/vm/drop_caches\"><pre><span class=\"pl-c1\">echo</span> 3 <span class=\"pl-k\">&gt;</span> /proc/sys/vm/drop_caches</pre></div>\n<p dir=\"auto\">or reboot the system.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Affected Versions</h1></div>\n<ul dir=\"auto\">\n<li><strong>CVE-2026-43284</strong>: xfrm-ESP Page-Cache Write vulnerability is in scope from <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=cac2661c53f3\" rel=\"nofollow\">cac2661c53f3 (2017-01-17)</a> up to <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=f4c50a4034e62ab75f1d5cdd191dd5f9c77fdff4\" rel=\"nofollow\">f4c50a4034e6 (2026-05-05)</a>.</li>\n<li><strong>CVE-2026-43500</strong>: RxRPC Page-Cache Write vulnerability is in scope from <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=2dc334f1a63a\" rel=\"nofollow\">2dc334f1a63a (2023-06-08)</a> up to <a href=\"https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=aa54b1d27fe0c2b78e664a34fd0fdf7cd1960d71\" rel=\"nofollow\">aa54b1d27fe0 (2026-05-10)</a>.</li>\n</ul>\n<p dir=\"auto\">In other words, the effective lifetime of the vulnerabilities is about 9 years.</p>\n<p dir=\"auto\">This Dirty Frag has been tested on the following distribution versions.</p>\n<ul dir=\"auto\">\n<li>Ubuntu 24.04.4: 6.17.0-23-generic</li>\n<li>RHEL 10.1: 6.12.0-124.49.1.el10_1.x86_64</li>\n<li>openSUSE Tumbleweed: 7.0.2-1-default</li>\n<li>CentOS Stream 10: 6.12.0-224.el10.x86_64</li>\n<li>AlmaLinux 10: 6.12.0-124.52.3.el10_1.x86_64</li>\n<li>Fedora 44: 6.19.14-300.fc44.x86_64</li>\n<li>...</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Mitigation</h1></div>\n<ol dir=\"auto\">\n<li>Use the following command to remove the modules in which the vulnerabilities occur and clear the page cache.</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sh -c &quot;printf 'install esp4 /bin/false\\ninstall esp6 /bin/false\\ninstall rxrpc /bin/false\\n' &gt; /etc/modprobe.d/dirtyfrag.conf; rmmod esp4 esp6 rxrpc 2&gt;/dev/null; echo 3 &gt; /proc/sys/vm/drop_caches; true&quot;\"><pre>sh -c <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>printf 'install esp4 /bin/false\\ninstall esp6 /bin/false\\ninstall rxrpc /bin/false\\n' &gt; /etc/modprobe.d/dirtyfrag.conf; rmmod esp4 esp6 rxrpc 2&gt;/dev/null; echo 3 &gt; /proc/sys/vm/drop_caches; true<span class=\"pl-pds\">\"</span></span></pre></div>\n<ol start=\"2\" dir=\"auto\">\n<li>Once each distribution backports a patch, update accordingly.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">FAQ</h1></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why did you chain two vulnerabilities?</h2></div>\n<p dir=\"auto\">xfrm-ESP Page-Cache Write provides a powerful arbitrary 4-byte STORE primitive like Copy Fail, and is included on most distributions, but it requires the privilege to create a namespace.</p>\n<p dir=\"auto\">Ubuntu sometimes blocks unprivileged user namespace creation through AppArmor policy. In such an environment, xfrm-ESP Page-Cache Write cannot be triggered. RxRPC Page-Cache Write does not require the privilege to create a namespace, but the <code>rxrpc.ko</code> module itself is not included in most distributions. However, on Ubuntu, the <code>rxrpc.ko</code> module is loaded by default.</p>\n<p dir=\"auto\">Chaining the two variants makes the blind spots cover each other, allowing root privileges to be obtained on every major distribution. For details, refer to the technical details document.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Another \"branded\" \"Dirty\" series?</h2></div>\n<p dir=\"auto\">Yeah, yeah, I know. However, this vulnerability is a descendant of \"Dirty Pipe\", and it is a bug class that \"dirties\" the <code>frag</code> member of <code>struct sk_buff</code>, so this name is the most appropriate.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What is its relationship with the \"Copy Fail\" vulnerability?</h2></div>\n<p dir=\"auto\">Copy Fail was the motivation for starting this research. In particular, xfrm-ESP Page-Cache Write in the Dirty Frag vulnerability chain shares the same sink as Copy Fail. However, it is triggered regardless of whether the algif_aead module is available. In other words, even on systems where the publicly known Copy Fail mitigation (algif_aead blacklist) is applied, your Linux is still vulnerable to Dirty Frag.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">So, how do I fix my Linux?</h2></div>\n<p dir=\"auto\">Refer to the Mitigation section above.</p>\n</article></div>",
+  "releases": [],
+  "contributors": [
+    {
+      "login": "V4bel",
+      "url": "https://github.com/V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4",
+      "contributions": 16
+    },
+    {
+      "login": "Nriver",
+      "url": "https://github.com/Nriver",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6752679?v=4",
+      "contributions": 2
+    }
+  ],
+  "firstCommitAt": "2026-05-07T18:18:15Z",
+  "contributorCount": 2,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 12
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 5
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 12
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 2
+    },
+    {
+      "date": "2026-05-11",
+      "count": 3
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 69,
+      "title": "readme: Add another cache-dropping command",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/69",
+      "createdAt": "2026-05-17T10:09:59Z",
+      "comments": 0,
+      "labels": [],
+      "author": "user-name-beta"
+    },
+    {
+      "number": 68,
+      "title": "Failed to reproduce on my Debian VM.",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/68",
+      "createdAt": "2026-05-16T14:46:43Z",
+      "comments": 1,
+      "labels": [],
+      "author": "aravinda333"
+    },
+    {
+      "number": 67,
+      "title": "Unable to reproduce on Debian GNU/Linux 10 (buster)",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/67",
+      "createdAt": "2026-05-15T05:26:13Z",
+      "comments": 6,
+      "labels": [],
+      "author": "Zhealks"
+    },
+    {
+      "number": 64,
+      "title": "Cleaning not sufficient, machine unstable after exploit",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/64",
+      "createdAt": "2026-05-13T07:46:10Z",
+      "comments": 0,
+      "labels": [],
+      "author": "liar666"
+    },
+    {
+      "number": 63,
+      "title": "This doesn't work on aarch64 architectures - breaks su",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/63",
+      "createdAt": "2026-05-12T13:55:05Z",
+      "comments": 1,
+      "labels": [],
+      "author": "carylewis"
+    },
+    {
+      "number": 61,
+      "title": "The POC failed on Ubuntu 18. Is it safe from this vulnerability?",
+      "url": "https://github.com/V4bel/dirtyfrag/issues/61",
+      "createdAt": "2026-05-12T03:38:36Z",
+      "comments": 0,
+      "labels": [],
+      "author": "challvy"
+    }
+  ],
+  "participation": {
+    "all": 18,
+    "owner": 16,
+    "community": 2
+  },
+  "fileTree": [
+    {
+      "name": "assets",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/V4bel/dirtyfrag/tree/master/assets"
+    },
+    {
+      "name": "exp.c",
+      "type": "file",
+      "size": 67803,
+      "url": "https://github.com/V4bel/dirtyfrag/blob/master/exp.c"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 5364,
+      "url": "https://github.com/V4bel/dirtyfrag/blob/master/README.md"
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "aab16fc",
+      "message": "update",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/aab16fcada27142dd8ce8704906cf6736cf213b8",
+      "date": "2026-05-10T17:29:16Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "cb2bc34",
+      "message": "update",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/cb2bc342d10e3806e8e2e8c0ed7c9036a3a25a89",
+      "date": "2026-05-10T17:19:41Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "5bb21af",
+      "message": "update",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/5bb21af6dda0434f2f5cb760eee2a04dfa6c49a3",
+      "date": "2026-05-10T17:17:43Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "8beafb1",
+      "message": "template",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/8beafb186faef0546838007fb105247301a1311e",
+      "date": "2026-05-09T20:57:35Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "8827072",
+      "message": "typo",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/882707286f77c30a2966cebcbfba2e6ff24f4541",
+      "date": "2026-05-09T19:27:55Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "07995be",
+      "message": "template",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/07995be9d940f826deb0e9faa6d9f6e8fe2535e7",
+      "date": "2026-05-08T09:21:57Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "f3dd525",
+      "message": "CVE",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/f3dd525bf60d14543525595fd61aba90c384abe0",
+      "date": "2026-05-08T09:19:19Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "4bc7ffe",
+      "message": "template",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/4bc7ffe2fbfee1131657d00df14d8ede26219c20",
+      "date": "2026-05-08T09:12:55Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "7f0f3a1",
+      "message": "CVE",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/7f0f3a1390fb9946408f08e80818c0816bf2a8eb",
+      "date": "2026-05-08T09:10:42Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    },
+    {
+      "sha": "979a5d9",
+      "message": "Merge pull request #20 from Nriver/master",
+      "url": "https://github.com/V4bel/dirtyfrag/commit/979a5d992d134addf00437f7c71b75e0e847fc58",
+      "date": "2026-05-08T07:24:45Z",
+      "author": "V4bel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/42788779?v=4"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Copilot code review",
+      "status": "failure",
+      "url": "https://github.com/V4bel/dirtyfrag/actions/runs/25607260003",
+      "branch": "refs/pull/56/head",
+      "updatedAt": "2026-05-09T17:29:35Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 14,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 47,
+  "openPRs": 12,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 7,
+  "mergedPRs": 1,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "branchCount": 1,
+  "tagCount": 1,
+  "recentPulls": [
+    {
+      "number": 57,
+      "title": "docs: add Pop!_OS 24.04 LTS to tested distributions",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/57",
+      "state": "closed",
+      "updatedAt": "2026-07-02T15:26:29Z",
+      "author": "develop4God",
+      "draft": false
+    },
+    {
+      "number": 72,
+      "title": "feat: Refactor toolchain into a unified Python package infrastructure",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/72",
+      "state": "open",
+      "updatedAt": "2026-05-29T21:39:35Z",
+      "author": "MohammadRaziei",
+      "draft": false
+    },
+    {
+      "number": 71,
+      "title": "Create dirtyfrag.py",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/71",
+      "state": "open",
+      "updatedAt": "2026-05-24T15:50:35Z",
+      "author": "SleepTheGod",
+      "draft": false
+    },
+    {
+      "number": 70,
+      "title": "Add userspace pcbc(fcrypt) fallback and nscd invalidation for AF_ALG-blocked environments",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/70",
+      "state": "open",
+      "updatedAt": "2026-05-22T04:25:55Z",
+      "author": "0oAstro",
+      "draft": false
+    },
+    {
+      "number": 56,
+      "title": "Fix formatting of comments in exp.c",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/56",
+      "state": "closed",
+      "updatedAt": "2026-05-18T14:38:49Z",
+      "author": "jishan-arab",
+      "draft": false
+    },
+    {
+      "number": 48,
+      "title": "Updates to limit problems with partial mitigation",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/48",
+      "state": "closed",
+      "updatedAt": "2026-05-15T17:16:10Z",
+      "author": "sei-vsarvepalli",
+      "draft": false
+    },
+    {
+      "number": 66,
+      "title": "Update README instructions for rebooting system",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/66",
+      "state": "closed",
+      "updatedAt": "2026-05-14T12:09:08Z",
+      "author": "BrayaxBrian",
+      "draft": false
+    },
+    {
+      "number": 65,
+      "title": "docs: Add Arch Linux to vulnerable systems",
+      "url": "https://github.com/V4bel/dirtyfrag/pull/65",
+      "state": "open",
+      "updatedAt": "2026-05-14T11:24:57Z",
+      "author": "Matheos96",
+      "draft": false
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T20:13:14.838Z"
 }
