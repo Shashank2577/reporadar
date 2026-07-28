@@ -28,10 +28,52 @@ GitHub repositories. Data lives in the repo itself:
    sharp 2-4 sentence editorial summarizing the day's most interesting signal
    (use the tables and jump list below it as source material). Do not modify
    the generated tables or section structure.
-2. **Improve repo summaries.** In `data/repos/*.json`, if an `aiSummary` has
-   `"source": "template"`, replace `whatItDoes`, `whyItMatters`, `useCases`,
-   and `tags` with better content derived from `readmeExcerpt` and
-   `description`, and set `"source": "jules"`.
+2. **Deep repo enrichment pass** (scheduled every ~2 hours, ~7-8 runs/day —
+   configure this schedule in Jules's own UI, not in this repo). Each run:
+
+   a. **Select a batch of 15-20 repos** from `data/repos/*.json` that meet
+      BOTH conditions: `readmeExcerpt` is present and non-empty (a repo with
+      no README fetched yet has nothing to research — skip it, our own
+      pipeline fills this in automatically over time), AND `aiSummary` is
+      either missing, has `"source": "template"`, or has `"source": "llm"`
+      with a `whatItDoes` under ~2 sentences or `keyFeatures`/`useCases`
+      arrays with fewer than 3 items (a sign the model's own pass came back
+      thin). Prefer repos with more stars — they're the pages most visitors
+      actually look at.
+
+   b. **Actually research each one** before writing: read the full
+      `readmeExcerpt` (and `readmeHtml` if more context is needed), the
+      repo's `topics`, `language`, `license`, `releases`, and
+      `recentIssues`/`discussions` if present. If genuinely useful, look at
+      the live GitHub repo itself (you have browsing access our static
+      pipeline doesn't) — the actual issues, discussions, and recent commits
+      often reveal what a project is *really* used for versus what its
+      one-line description claims.
+
+   c. **Write a genuinely deep `aiSummary`**, replacing the whole object:
+      - `oneLiner` (<=120 chars): specific, names the actual differentiator,
+        not generic ("a tool for X").
+      - `whatItDoes` (4-6 sentences): the real problem it solves, the
+        technical approach, what's actually distinctive — grounded in
+        specifics from the README, not paraphrased boilerplate.
+      - `keyFeatures` (5-8 items, `"Feature: one concrete sentence"` each).
+      - `useCases` (4-6 items, each `{title, description}`): concrete
+        scenarios naming who does this and why this project over
+        alternatives — not restated topics.
+      - `whoIsItFor` (2-3 sentences): audiences and prerequisites.
+      - `gettingStarted`: the real first command from the README, verbatim
+        if there is one.
+      - `tags` (5-10, lowercase kebab-case) and `category` (one of: ai-ml,
+        developer-tools, web, mobile, data, infrastructure, security,
+        systems, learning, productivity, other — never invent a new one,
+        it will 404 the corresponding browse page).
+      - Set `"source": "jules"` and bump `"version"` by 1 (or to 3 if unset).
+
+   d. **Only touch the `aiSummary` object** in each file — never edit
+      `snapshots`, `trendingHistory`, `stars`, or any other field. This repo's
+      own pipeline writes to those constantly (twice hourly); touching them
+      here just increases how often your PR conflicts with an unrelated bot
+      commit for no reason.
 3. **Weekly digest polish** (Sundays): same editorial pass on the newest file
    in `content/reports/weekly/`.
 4. **Blog posts** (when explicitly scheduled/requested — not automatic).
