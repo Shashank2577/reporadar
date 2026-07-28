@@ -198,6 +198,29 @@ uses what's actually there, up to the target.
    in the Vercel dashboard (Analytics tab) to start seeing real visitor and
    performance data; both are free on Hobby.
 
+## Backfilling trending history
+
+GitHub's own trending page has no history or archive API — it only ever
+shows the current day. `scripts/backfill-trending-history.mjs` reconstructs a
+day-by-day "most stars gained that day" ranking for however far back you ask,
+from the same GH Archive dataset (via ClickHouse's public playground) used
+for star-history backfill:
+
+```
+node scripts/backfill-trending-history.mjs 200   # last 200 days, or set BACKFILL_DAYS
+```
+
+This costs **zero GitHub API calls** — it only queries ClickHouse and writes
+`data/trending/<date>.json` files plus minimal repo stubs (`id`, `owner`,
+`name`, and a `trendingHistory` entry per day they appeared). It never
+overwrites a trending file that already has real scraped data. The existing
+hourly/morning/evening pipeline then fills in full facts, README, contributors,
+star history, and AI summaries for every newly discovered repo on its normal
+rate-limited rotation (the 90%-utilization budgeting above is exactly what
+makes a large one-time population jump like this safe to absorb over a few
+runs instead of needing a special bulk-import mode). Safe to re-run any time
+with a larger day count — it only adds what's missing.
+
 ## Data model
 
 - `data/trending/<date>.json` — raw daily/weekly/monthly trending lists

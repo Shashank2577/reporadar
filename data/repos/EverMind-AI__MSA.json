@@ -1,0 +1,3151 @@
+{
+  "id": "EverMind-AI/MSA",
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 3509,
+      "forks": 225
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-03-21",
+      "period": "daily",
+      "rank": 20,
+      "starsGained": 187
+    }
+  ],
+  "owner": "EverMind-AI",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/229275294?v=4",
+  "ownerType": "Organization",
+  "name": "MSA",
+  "description": "Memory Sparse Attention -  A scalable, end-to-end trainable latent-memory framework for 100M-token contexts.",
+  "url": "https://github.com/EverMind-AI/MSA",
+  "homepage": "https://arxiv.org/abs/2603.23516",
+  "license": null,
+  "language": "Python",
+  "topics": [],
+  "stars": 3509,
+  "forks": 225,
+  "watchers": 64,
+  "openIssues": 4,
+  "createdAt": "2025-10-29T10:05:21Z",
+  "pushedAt": "2026-05-06T09:24:05Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-28T09:21:11.675Z",
+  "languages": {
+    "Python": 297024,
+    "Shell": 4683
+  },
+  "releases": [],
+  "readmeExcerpt": "# MSA: Memory Sparse Attention\n*A scalable, end-to-end trainable latent-memory framework for 100M-token contexts*\n\n[**arXiv**](https://arxiv.org/abs/2603.23516) • [**Zenodo**](https://zenodo.org/records/19103670)\n\n   \n\n[中文](./README_ZH.md)\n\n## 📝 Abstract\n\nLong-term memory is essential for general intelligence, yet the **full attention** bottleneck constrains most LLMs' **effective context length** to **128K–1M**. Existing attempts，hybrid linear attention, fixed-size state memory (e.g., RNNs), and external storage like **RAG/agents**，either suffer rapid precision decay and latency growth at extreme scales, lack end-to-end differentiability or dynamic memory maintenance, or require complex pipelines. We present **Memory Sparse Attention (MSA)**: an **end-to-end trainable, scalable sparse** **latent-state memory** framework. Core ideas include:\n\n- **Scalable sparse attention** + **document-wise RoPE** (parallel/global) achieving **near-linear complexity** in both training and inference;\n- **KV cache compression** with a **Memory Parallel** inference engine to deliver **100M token** throughput on **2×A800** GPUs;\n- **Memory Interleave** for multi-round, multi-hop reasoning across scattered memory segments.\n\nOn long-context QA and NIAH (Needle-in-a-Haystack) benchmarks, **MSA** surpasses same-backbone RAG, best-of-breed RAG stacks, and leading long-context models. Across an unprecedented **16K→100M token** range, MSA shows **< 9%** degradation, suggesting a practical path to **decouple memory capacity from reasoning**.\n\n> **Scaling from 16K→100M tokens**: MSA fuses top-k selection with sparse attention to remain end-to-end differentiable while allowing document decoupling at inference. On MS MARCO, MSA sustains **<9%** degradation and exhibits strong extrapolation.\n> *Some baseline curves end early due to their context limits.*\n\n\n*Figure 1: MSA scalability under extreme-long contexts*\n\n---\n\n## ✨ Key Contributions\n\n- **Memory-Sparse Attention (MSA)**: an **end-to-end trainable**, **scalable sparse attention** layer with **document-wise RoPE**, realizing **O(L)** complexity and **<9%** degradation from **16K→100M tokens**.\n- **KV cache compression + Memory Parallel**: tiered storage (GPU-resident routing keys, CPU content K/V), distributed scoring, and on-demand transfers to enable **100M-token** inference on **2×A800**.\n- **Memory Interleave**: adaptive alternating \"generative retrieval → context expansion → generation,\" significantly boosting **multi-hop** reasoning across documents.\n- **Comprehensive evaluation**: MSA outperforms same-backbone RAG, best-of-breed RAG pipelines, and top long-context models on long-context QA and NIAH, showing superior **stability** and **accuracy** at scale.\n\n---\n\n## 🧩 Overall Design\n\n### Architecture\n\nMSA integrates **retrieval and generation** into a single differentiable loop. Document latent states (**K/V/Kᵣ**) are **chunk-mean pooled** for compression. A **router projector** computes relevance via cosine similarity (mean-pooled over heads, then token-wise max), selects **Top‑k documents**, then concatenates their **compressed K/V** with the query's local **K/V** for autoregressive decoding. Routing applies only to **upper layers**; lower layers keep **independent document processing** for hierarchical alignment.\n\n- **Parallel (document-wise) RoPE**: Each document resets positions from 0, preventing position drift between **train-short** and **infer-long**, enabling 64k training to extrapolate to 100M.\n- **Global RoPE (active context)**: The query's starting index is **offset by k** (Top‑k retrieved blocks), preserving causal ordering: *background → query → generation*.\n\n**Figure 2: MSA layer (sparse attention + document-wise RoPE)**\n\n\n*Figure 2: Memory-Sparse Attention layer and parallel/global RoPE*\n\n---\n\n### Inference Pipeline\n\nMSA uses a **three-stage** pipeline (Fig. 3):\n\n1. **Global Memory Encoding (offline)**: forward over the corpus to cache chunk-pooled **(K̄, V̄, K̄ᵣ)**.\n2. **Online Routing & Context Assembly**: project query to **Qᵣ**, match with **K̄ᵣ** to pick **Top‑k**, then load only the selected **K̄/V̄** and concatenate with local context.\n3. **Sparse Generation**: autoregress over the **sparse context**.\n\n**Memory Parallel** shards **K̄ᵣ** across GPUs (query broadcast → local scoring → global reduce). Content **K̄/V̄** stays in host DRAM and is **asynchronously fetched** when selected—balancing **VRAM** and **throughput** for **100M-token** deployment.\n\n**Figure 3: Three-stage inference & Memory Interleave**\n\n\n*Figure 3: Offline encoding → online routing → sparse generation; optional multi-round interleave for multi-hop*\n\n---\n\n## 🚀 Results\n\n> **Setup**\n> **QA**: 9 datasets (MS MARCO v1, NQ, DuReader, TriviaQA(10M), NarrativeQA, PopQA, 2WikiMultiHopQA, HotpotQA, MuSiQue), memory banks **277K→10M tokens**, metric: **LLM judge (0–5)**.\n> **NIAH (RULER)**: 8 subtasks, **32K→1M tokens**, report average accuracy.\n> **Backbone**: Qwen3‑4B‑Instruct‑2507. Compare to same-backbone RAG and best-of-breed RAG stacks (KaLMv2 + large generators, optional reranker).\n\n### Table 1: MSA vs same-backbone RAG (Qwen3‑4B)\n\n**Summary**: Average **3.760**, improving over standard RAG (**+16.0%**), RAG+rerank (**+11.5%**), and HippoRAG2 (**+14.8%**) using their best@k; MSA leads on all but NarrativeQA within the same-backbone group.\n\n\n| Dataset | Tokens | Qwen3-4B R@1 | R@5 | R@10 | Qwen3-4B (RR) R@1 | R@5 | R@10 | HippoRAG2 R@1 | R@5 | R@10 | MSA (adaptive) |\n|---------|--------|--------------|------|-------|----------------------|------|-------|------------------|------|--------|----------------|\n| MS MARCO v1 | 7.34M | 2.893 | 3.011 | 3.005 | 2.934 | <u>3.032</u> | 3.017 | 2.676 | 3.005 | 3.019 | **4.141** |\n| Natural Questions | 1.47M | 3.452 | 3.374 | 3.297 | <u>3.494</u> | 3.408 | 3.385 | 3.338 | 3.389 | 3.374 | **3.545** |\n| DuReader | 277K | 3.726 | 3.579 | 3.594 | <u>3.848</u> | 3.618 | 3.607 | 2.941 | 3.485 | 3.415 | **4.155** |\n| TriviaQA (10M) | 10M | 4.133 | 4.414 | 4.273 | 4.313 | 4.375 | 4.391 | 4.188 | <u>4.430</u> | 4.367 | **4.621** |\n| NarrativeQA | 538K | 1.611 | 2.567 | 2.860 | **3.638** | 3.492 | <u>3.536</u> | 1.959 | 2.628 | 2.655 | 3.395 |\n| PopQA | 1.18M | 2.959 | 3.273 | 3.299 | <u>3.315</u> | 3.264 | 3.266 | 3.111 | 3.249 | 3.249 | **3.433** |\n| 2WikiMultiHopQA | 722K | 1.065 | 3.055 | 3.136 | 1.187 | 3.057 | 3.159 | 1.045 | 3.180 | <u>3.330</u> | **4.280** |\n| HotpotQA | 1.35M | 2.252 | 3.582 | 3.787 | 2.642 | 3.990 | <u>4.022</u> | 3.230 | 3.770 | 3.970 | **4.061** |\n| MuSiQue | 1.41M | 0.936 | 1.752 | 1.928 | 1.144 | 1.960 | 1.965 | 1.020 | 1.907 | <u>2.095</u> | **2.211** |\n| **Average** | — | 2.559 | 3.179 | 3.242 | 2.946 | 3.355 | <u>3.372</u> | 2.612 | 3.227 | 3.275 | **3.760** |\n\n*Table 1: Same-backbone RAG vs MSA (@1/@5/@10 vs MSA @adaptive)*\n\n---\n\n### Table 2: MSA vs best-of-breed RAG (large backbones)\n\n**Summary**: Against **KaLMv2+Qwen3‑235B** and **KaLMv2+Llama‑3.3‑70B** (w/ and w/o reranking), MSA achieves the best score on **4/9** datasets and an average **3.760**, with relative gains of **+7.2%**, **+5.0%**, **+10.7%**, and **+5.4%** over the strongest configurations respectively. Gaps on a few datasets (e.g., MuSiQue) are largely attributable to parameter-count and intrinsic reasoning capacity.\n\n\n| Dataset | KaLMv2 + Qwen3‑235B R@1 | R@5 | R@10 | Qwen3‑235B (RR) R@1 | R@5 | R@10 | KaLMv2 + Llama‑3.3 R@1 | R@5 | R@10 | Llama‑3.3 (RR) R@1 | R@5 | R@10 | MSA (adaptive) |\n|---------|---------------------------|------|-------|--------------------------|------|-------|------------------------------|------|--------|-------------------------|------|--------|----------------|\n| MS MARCO v1 | 2.846 | <u>3.028</u> | 3.027 | 2.886 | 3.020 | 2.995 | 2.649 | 2.904 | 2.919 | 2.881 | 2.955 | 2.952 | **4.141** |\n| Natural Questions | <u>3.711</u> | 3.670 | 3.694 | 3.621 | 3.610 | 3.645 | 3.675 | 3.674 | 3.662 | **3.756** | 3.665 | 3.647 | 3.545 |\n| DuReader | 4.044 | 3.991 | 3.978 | 3.973 | 3.932 | 3.891 | <u>4.051</u> | 3.846 | 3.742 | 3.967 | 3.776 | 3.780 | **4.155** |\n| TriviaQA (10M) | 4.367 | 4.656 | 4.578 | 4.492 | 4.320 | 4.555 | 4.273 | **4.740** | <u>4.719</u> | 4.547 | 4.703 | 4.695 | 4.621 |\n| NarrativeQA | 1.413 | 2.130 | 2.427 | 3.212 | **3.427** | 3.375 | 1.290 | 2.123 | 2.382 | 3.150 | 3.263 | 3.317 | <u>3.395</u> |\n| PopQA | 2.810 | 3.347 | <u>3.396</u> | 3.268 | 3.380 | 3.376 | 2.787 | 3.298 | 3.305 | 3.337 | 3.384 | 3.362 | **3.433** |\n| 2WikiMultiHopQA | 2.646 | 3.579 | 3.582 | 1.855 | 3.381 | <u>3.583</u> | 1.339 | 3.263 | 3.445 | 1.651 | 3.332 | 3.541 | **4.280** |\n| HotpotQA | 3.497 | 4.090 | **4.225** | 3.341 | 4.141 | 4.194 | 3.070 | 3.896 | 4.127 | 3.428 | 4.145 | <u>4.203</u> | 4.061 |\n| MuSiQue | 1.988 | 2.462 | **2.647** | 1.801 | 2.522 | 2.605 | 1.704 | 2.317 | 2.258 | 1.895 | 2.462 | <u>2.614</u> | 2.211 |\n| **Average** | 3.036 | 3.439 | 3.506 | 3.161 | 3.526 | <u>3.580</u> | 2.760 | 3.340 | 3.396 | 3.179 | 3.521 | 3.568 | **3.760** |\n\n*Table 2: SOTA RAG stacks (strong retriever + large generator + optional reranker) vs MSA*\n\n---\n\n### Figure 4: RULER NIAH stability (32K→1M)\n\n**Summary**: MSA maintains **94.84%** at **1M tokens**. The unmodified backbone collapses beyond **128K** (down to **24.69% @1M**). Hybrid linear-attention long-context models degrade noticeably at **≥128K/256K**. External-memory agents (e.g., RL‑MemoryAgent‑14B) remain stable but are weaker in **absolute accuracy** and show steeper decay than MSA.\n\n\n*Figure 4: Accuracy vs context length (higher is better)*\n\n---\n\n## Implementation Notes\n\n- **Training**: 158.95B-token continuous pretraining with **auxiliary routing loss**, followed by two-stage SFT (**8k→64k** curriculum).\n- **Ablations** (paper Table 4): curriculum extension, Memory Interleave, continuous pretraining, and injecting original text all contribute substantially; removing them causes **5%–37%** drops depending on task.\n\n---\n\n## 🚀 Quick Start\n\n> For full details (project structure, supported benchmarks, etc.), see [**QUICK_START.md**](./QUICK_START.md).\n\n**1. Install**\n\n```bash\nconda create -n msa python=3.12 -y && conda activate msa\npip install -r requirements.txt\npip install flash-attn==2.7.4.post1 --no-build-isolation\n```\n\n**2. Download model**\n\n```bash\nmkdir ckpt\nhuggingface-cli download --resume-download EverMind-AI/MSA-4B --local-dir ckpt/MSA-4B\n```\n\n**3. Download benchmarks**\n\nBenchmark data is hosted on [EverMind-AI/MSA-RAG-BENCHMARKS](https://huggingface.co/datasets/EverMind-AI/MSA-RAG-BENCHMARKS) and will be automatically downloaded to `data/` on first run.\n\n**4. Run**\n\n```bash\n# Run inference on benchmarks\nbash scripts/run_benchmarks.sh eval_benchmark\n\n# Compute LLM-based scores\nbash scripts/calculate_llm_score.sh eval_benchmark\n```\n\n---\n\n## Citation\n\n```bibtex\n@misc{chen2026msamemorysparseattention,\n      title={MSA: Memory Sparse Attention for Efficient End-to-End Memory Model Scaling to 100M Tokens},\n      author={Yu Chen and Runkai Chen and Sheng Yi and Xinda Zhao and Xiaohong Li and Jianjin Zhang and Jun Sun and Chuanrui Hu and Yunyun Han and Lidong Bing and Yafeng Deng and Tianqiao Chen},\n      year={2026},\n      eprint={2603.23516},\n      archivePrefix={arXiv},\n      primaryClass={cs.CL},\n      url={https://arxiv.org/abs/2603.23516},\n}\n```\n\n### Acknowledgments\nThis repository and documentation page are maintained by the MSA authors. For project updates, please visit the **Homepage**: https://evermind.ai/\n",
+  "commitCount": 72,
+  "contributors": [
+    {
+      "login": "chenrunkai",
+      "url": "https://github.com/chenrunkai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/43931261?v=4",
+      "contributions": 47
+    },
+    {
+      "login": "cyfyifanchen",
+      "url": "https://github.com/cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4",
+      "contributions": 15
+    },
+    {
+      "login": "ZJianjin",
+      "url": "https://github.com/ZJianjin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10485909?v=4",
+      "contributions": 6
+    },
+    {
+      "login": "c925777075",
+      "url": "https://github.com/c925777075",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/52441996?v=4",
+      "contributions": 4
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">MSA: Memory Sparse Attention</h1></div>\n<p dir=\"auto\"><em>A scalable, end-to-end trainable latent-memory framework for 100M-token contexts</em></p>\n<p dir=\"auto\"><a href=\"https://arxiv.org/abs/2603.23516\" rel=\"nofollow\"><strong>arXiv</strong></a> • <a href=\"https://zenodo.org/records/19103670\" rel=\"nofollow\"><strong>Zenodo</strong></a></p>\n<p dir=\"auto\"><a href=\"https://huggingface.co/EverMind-AI/MSA-4B\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/f4c791d55b1dee1cc5a6a718815e0b1c59020862c6f2d4838f9f5b06c5363ed6/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f48756767696e67466163652d4d53412d2d34422d79656c6c6f773f6c6f676f3d68756767696e6766616365\" alt=\"Models\" data-canonical-src=\"https://img.shields.io/badge/HuggingFace-MSA--4B-yellow?logo=huggingface\" style=\"max-width: 100%;\"></a> <a href=\"https://opensource.org/licenses/MIT\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/fdf2982b9f5d7489dcf44570e714e3a15fce6253e0cc6b5aa61a075aac2ff71b/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542d79656c6c6f772e737667\" alt=\"License: MIT\" data-canonical-src=\"https://img.shields.io/badge/License-MIT-yellow.svg\" style=\"max-width: 100%;\"></a> <a href=\"https://github.com/EverMind-AI\"><img src=\"https://camo.githubusercontent.com/9299ca9777e6f27a3606f2a1b467e5d733c9c19ee45ab697aa557322d6358936/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f457665724d696e642d4f7267616e697a6174696f6e2d626c75653f6c6f676f3d676974687562\" alt=\"EverMind\" data-canonical-src=\"https://img.shields.io/badge/EverMind-Organization-blue?logo=github\" style=\"max-width: 100%;\"></a> <a href=\"https://github.com/EverMind-AI/everos\"><img src=\"https://camo.githubusercontent.com/ff013b09de915c30d3a78ff00ed58f1b5486953fa4baacfd50278004d91df261/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f457665724f532d5265706f2d677265656e3f6c6f676f3d676974687562\" alt=\"EverOS\" data-canonical-src=\"https://img.shields.io/badge/EverOS-Repo-green?logo=github\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://github.com/EverMind-AI/MSA/blob/main/README_ZH.md\">中文</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">📝 Abstract</h2></div>\n<p dir=\"auto\">Long-term memory is essential for general intelligence, yet the <strong>full attention</strong> bottleneck constrains most LLMs' <strong>effective context length</strong> to <strong>128K–1M</strong>. Existing attempts，hybrid linear attention, fixed-size state memory (e.g., RNNs), and external storage like <strong>RAG/agents</strong>，either suffer rapid precision decay and latency growth at extreme scales, lack end-to-end differentiability or dynamic memory maintenance, or require complex pipelines. We present <strong>Memory Sparse Attention (MSA)</strong>: an <strong>end-to-end trainable, scalable sparse</strong> <strong>latent-state memory</strong> framework. Core ideas include:</p>\n<ul dir=\"auto\">\n<li><strong>Scalable sparse attention</strong> + <strong>document-wise RoPE</strong> (parallel/global) achieving <strong>near-linear complexity</strong> in both training and inference;</li>\n<li><strong>KV cache compression</strong> with a <strong>Memory Parallel</strong> inference engine to deliver <strong>100M token</strong> throughput on <strong>2×A800</strong> GPUs;</li>\n<li><strong>Memory Interleave</strong> for multi-round, multi-hop reasoning across scattered memory segments.</li>\n</ul>\n<p dir=\"auto\">On long-context QA and NIAH (Needle-in-a-Haystack) benchmarks, <strong>MSA</strong> surpasses same-backbone RAG, best-of-breed RAG stacks, and leading long-context models. Across an unprecedented <strong>16K→100M token</strong> range, MSA shows <strong>&lt; 9%</strong> degradation, suggesting a practical path to <strong>decouple memory capacity from reasoning</strong>.</p>\n<blockquote>\n<p dir=\"auto\"><strong>Scaling from 16K→100M tokens</strong>: MSA fuses top-k selection with sparse attention to remain end-to-end differentiable while allowing document decoupling at inference. On MS MARCO, MSA sustains <strong>&lt;9%</strong> degradation and exhibits strong extrapolation.\n<em>Some baseline curves end early due to their context limits.</em></p>\n</blockquote>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/EverMind-AI/MSA/blob/main/assets/fig1_scaling.png\"><img src=\"https://raw.githubusercontent.com/EverMind-AI/MSA/main/assets/fig1_scaling.png\" alt=\"Figure 1: Scaling curve 16K→100M tokens\" style=\"max-width: 100%;\"></a>\n<em>Figure 1: MSA scalability under extreme-long contexts</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">✨ Key Contributions</h2></div>\n<ul dir=\"auto\">\n<li><strong>Memory-Sparse Attention (MSA)</strong>: an <strong>end-to-end trainable</strong>, <strong>scalable sparse attention</strong> layer with <strong>document-wise RoPE</strong>, realizing <strong>O(L)</strong> complexity and <strong>&lt;9%</strong> degradation from <strong>16K→100M tokens</strong>.</li>\n<li><strong>KV cache compression + Memory Parallel</strong>: tiered storage (GPU-resident routing keys, CPU content K/V), distributed scoring, and on-demand transfers to enable <strong>100M-token</strong> inference on <strong>2×A800</strong>.</li>\n<li><strong>Memory Interleave</strong>: adaptive alternating \"generative retrieval → context expansion → generation,\" significantly boosting <strong>multi-hop</strong> reasoning across documents.</li>\n<li><strong>Comprehensive evaluation</strong>: MSA outperforms same-backbone RAG, best-of-breed RAG pipelines, and top long-context models on long-context QA and NIAH, showing superior <strong>stability</strong> and <strong>accuracy</strong> at scale.</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">🧩 Overall Design</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Architecture</h3></div>\n<p dir=\"auto\">MSA integrates <strong>retrieval and generation</strong> into a single differentiable loop. Document latent states (<strong>K/V/Kᵣ</strong>) are <strong>chunk-mean pooled</strong> for compression. A <strong>router projector</strong> computes relevance via cosine similarity (mean-pooled over heads, then token-wise max), selects <strong>Top‑k documents</strong>, then concatenates their <strong>compressed K/V</strong> with the query's local <strong>K/V</strong> for autoregressive decoding. Routing applies only to <strong>upper layers</strong>; lower layers keep <strong>independent document processing</strong> for hierarchical alignment.</p>\n<ul dir=\"auto\">\n<li><strong>Parallel (document-wise) RoPE</strong>: Each document resets positions from 0, preventing position drift between <strong>train-short</strong> and <strong>infer-long</strong>, enabling 64k training to extrapolate to 100M.</li>\n<li><strong>Global RoPE (active context)</strong>: The query's starting index is <strong>offset by k</strong> (Top‑k retrieved blocks), preserving causal ordering: <em>background → query → generation</em>.</li>\n</ul>\n<p dir=\"auto\"><strong>Figure 2: MSA layer (sparse attention + document-wise RoPE)</strong></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/EverMind-AI/MSA/blob/main/assets/fig2_msa_layer.png\"><img src=\"https://raw.githubusercontent.com/EverMind-AI/MSA/main/assets/fig2_msa_layer.png\" alt=\"Figure 2: MSA layer\" style=\"max-width: 100%;\"></a>\n<em>Figure 2: Memory-Sparse Attention layer and parallel/global RoPE</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Inference Pipeline</h3></div>\n<p dir=\"auto\">MSA uses a <strong>three-stage</strong> pipeline (Fig. 3):</p>\n<ol dir=\"auto\">\n<li><strong>Global Memory Encoding (offline)</strong>: forward over the corpus to cache chunk-pooled <strong>(K̄, V̄, K̄ᵣ)</strong>.</li>\n<li><strong>Online Routing &amp; Context Assembly</strong>: project query to <strong>Qᵣ</strong>, match with <strong>K̄ᵣ</strong> to pick <strong>Top‑k</strong>, then load only the selected <strong>K̄/V̄</strong> and concatenate with local context.</li>\n<li><strong>Sparse Generation</strong>: autoregress over the <strong>sparse context</strong>.</li>\n</ol>\n<p dir=\"auto\"><strong>Memory Parallel</strong> shards <strong>K̄ᵣ</strong> across GPUs (query broadcast → local scoring → global reduce). Content <strong>K̄/V̄</strong> stays in host DRAM and is <strong>asynchronously fetched</strong> when selected—balancing <strong>VRAM</strong> and <strong>throughput</strong> for <strong>100M-token</strong> deployment.</p>\n<p dir=\"auto\"><strong>Figure 3: Three-stage inference &amp; Memory Interleave</strong></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/EverMind-AI/MSA/blob/main/assets/fig3_inference.png\"><img src=\"https://raw.githubusercontent.com/EverMind-AI/MSA/main/assets/fig3_inference.png\" alt=\"Figure 3: Inference\" style=\"max-width: 100%;\"></a>\n<em>Figure 3: Offline encoding → online routing → sparse generation; optional multi-round interleave for multi-hop</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">🚀 Results</h2></div>\n<blockquote>\n<p dir=\"auto\"><strong>Setup</strong>\n<strong>QA</strong>: 9 datasets (MS MARCO v1, NQ, DuReader, TriviaQA(10M), NarrativeQA, PopQA, 2WikiMultiHopQA, HotpotQA, MuSiQue), memory banks <strong>277K→10M tokens</strong>, metric: <strong>LLM judge (0–5)</strong>.\n<strong>NIAH (RULER)</strong>: 8 subtasks, <strong>32K→1M tokens</strong>, report average accuracy.\n<strong>Backbone</strong>: Qwen3‑4B‑Instruct‑2507. Compare to same-backbone RAG and best-of-breed RAG stacks (KaLMv2 + large generators, optional reranker).</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Table 1: MSA vs same-backbone RAG (Qwen3‑4B)</h3></div>\n<p dir=\"auto\"><strong>Summary</strong>: Average <strong>3.760</strong>, improving over standard RAG (<strong>+16.0%</strong>), RAG+rerank (<strong>+11.5%</strong>), and HippoRAG2 (<strong>+14.8%</strong>) using their best@k; MSA leads on all but NarrativeQA within the same-backbone group.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Dataset</th>\n<th>Tokens</th>\n<th>Qwen3-4B R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>Qwen3-4B (RR) R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>HippoRAG2 R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>MSA (adaptive)</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>MS MARCO v1</td>\n<td>7.34M</td>\n<td>2.893</td>\n<td>3.011</td>\n<td>3.005</td>\n<td>2.934</td>\n<td>3.032</td>\n<td>3.017</td>\n<td>2.676</td>\n<td>3.005</td>\n<td>3.019</td>\n<td><strong>4.141</strong></td>\n</tr>\n<tr>\n<td>Natural Questions</td>\n<td>1.47M</td>\n<td>3.452</td>\n<td>3.374</td>\n<td>3.297</td>\n<td>3.494</td>\n<td>3.408</td>\n<td>3.385</td>\n<td>3.338</td>\n<td>3.389</td>\n<td>3.374</td>\n<td><strong>3.545</strong></td>\n</tr>\n<tr>\n<td>DuReader</td>\n<td>277K</td>\n<td>3.726</td>\n<td>3.579</td>\n<td>3.594</td>\n<td>3.848</td>\n<td>3.618</td>\n<td>3.607</td>\n<td>2.941</td>\n<td>3.485</td>\n<td>3.415</td>\n<td><strong>4.155</strong></td>\n</tr>\n<tr>\n<td>TriviaQA (10M)</td>\n<td>10M</td>\n<td>4.133</td>\n<td>4.414</td>\n<td>4.273</td>\n<td>4.313</td>\n<td>4.375</td>\n<td>4.391</td>\n<td>4.188</td>\n<td>4.430</td>\n<td>4.367</td>\n<td><strong>4.621</strong></td>\n</tr>\n<tr>\n<td>NarrativeQA</td>\n<td>538K</td>\n<td>1.611</td>\n<td>2.567</td>\n<td>2.860</td>\n<td><strong>3.638</strong></td>\n<td>3.492</td>\n<td>3.536</td>\n<td>1.959</td>\n<td>2.628</td>\n<td>2.655</td>\n<td>3.395</td>\n</tr>\n<tr>\n<td>PopQA</td>\n<td>1.18M</td>\n<td>2.959</td>\n<td>3.273</td>\n<td>3.299</td>\n<td>3.315</td>\n<td>3.264</td>\n<td>3.266</td>\n<td>3.111</td>\n<td>3.249</td>\n<td>3.249</td>\n<td><strong>3.433</strong></td>\n</tr>\n<tr>\n<td>2WikiMultiHopQA</td>\n<td>722K</td>\n<td>1.065</td>\n<td>3.055</td>\n<td>3.136</td>\n<td>1.187</td>\n<td>3.057</td>\n<td>3.159</td>\n<td>1.045</td>\n<td>3.180</td>\n<td>3.330</td>\n<td><strong>4.280</strong></td>\n</tr>\n<tr>\n<td>HotpotQA</td>\n<td>1.35M</td>\n<td>2.252</td>\n<td>3.582</td>\n<td>3.787</td>\n<td>2.642</td>\n<td>3.990</td>\n<td>4.022</td>\n<td>3.230</td>\n<td>3.770</td>\n<td>3.970</td>\n<td><strong>4.061</strong></td>\n</tr>\n<tr>\n<td>MuSiQue</td>\n<td>1.41M</td>\n<td>0.936</td>\n<td>1.752</td>\n<td>1.928</td>\n<td>1.144</td>\n<td>1.960</td>\n<td>1.965</td>\n<td>1.020</td>\n<td>1.907</td>\n<td>2.095</td>\n<td><strong>2.211</strong></td>\n</tr>\n<tr>\n<td><strong>Average</strong></td>\n<td>—</td>\n<td>2.559</td>\n<td>3.179</td>\n<td>3.242</td>\n<td>2.946</td>\n<td>3.355</td>\n<td>3.372</td>\n<td>2.612</td>\n<td>3.227</td>\n<td>3.275</td>\n<td><strong>3.760</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><em>Table 1: Same-backbone RAG vs MSA (@1/@5/@10 vs MSA @adaptive)</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Table 2: MSA vs best-of-breed RAG (large backbones)</h3></div>\n<p dir=\"auto\"><strong>Summary</strong>: Against <strong>KaLMv2+Qwen3‑235B</strong> and <strong>KaLMv2+Llama‑3.3‑70B</strong> (w/ and w/o reranking), MSA achieves the best score on <strong>4/9</strong> datasets and an average <strong>3.760</strong>, with relative gains of <strong>+7.2%</strong>, <strong>+5.0%</strong>, <strong>+10.7%</strong>, and <strong>+5.4%</strong> over the strongest configurations respectively. Gaps on a few datasets (e.g., MuSiQue) are largely attributable to parameter-count and intrinsic reasoning capacity.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Dataset</th>\n<th>KaLMv2 + Qwen3‑235B R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>Qwen3‑235B (RR) R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>KaLMv2 + Llama‑3.3 R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>Llama‑3.3 (RR) R@1</th>\n<th>R@5</th>\n<th>R@10</th>\n<th>MSA (adaptive)</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>MS MARCO v1</td>\n<td>2.846</td>\n<td>3.028</td>\n<td>3.027</td>\n<td>2.886</td>\n<td>3.020</td>\n<td>2.995</td>\n<td>2.649</td>\n<td>2.904</td>\n<td>2.919</td>\n<td>2.881</td>\n<td>2.955</td>\n<td>2.952</td>\n<td><strong>4.141</strong></td>\n</tr>\n<tr>\n<td>Natural Questions</td>\n<td>3.711</td>\n<td>3.670</td>\n<td>3.694</td>\n<td>3.621</td>\n<td>3.610</td>\n<td>3.645</td>\n<td>3.675</td>\n<td>3.674</td>\n<td>3.662</td>\n<td><strong>3.756</strong></td>\n<td>3.665</td>\n<td>3.647</td>\n<td>3.545</td>\n</tr>\n<tr>\n<td>DuReader</td>\n<td>4.044</td>\n<td>3.991</td>\n<td>3.978</td>\n<td>3.973</td>\n<td>3.932</td>\n<td>3.891</td>\n<td>4.051</td>\n<td>3.846</td>\n<td>3.742</td>\n<td>3.967</td>\n<td>3.776</td>\n<td>3.780</td>\n<td><strong>4.155</strong></td>\n</tr>\n<tr>\n<td>TriviaQA (10M)</td>\n<td>4.367</td>\n<td>4.656</td>\n<td>4.578</td>\n<td>4.492</td>\n<td>4.320</td>\n<td>4.555</td>\n<td>4.273</td>\n<td><strong>4.740</strong></td>\n<td>4.719</td>\n<td>4.547</td>\n<td>4.703</td>\n<td>4.695</td>\n<td>4.621</td>\n</tr>\n<tr>\n<td>NarrativeQA</td>\n<td>1.413</td>\n<td>2.130</td>\n<td>2.427</td>\n<td>3.212</td>\n<td><strong>3.427</strong></td>\n<td>3.375</td>\n<td>1.290</td>\n<td>2.123</td>\n<td>2.382</td>\n<td>3.150</td>\n<td>3.263</td>\n<td>3.317</td>\n<td>3.395</td>\n</tr>\n<tr>\n<td>PopQA</td>\n<td>2.810</td>\n<td>3.347</td>\n<td>3.396</td>\n<td>3.268</td>\n<td>3.380</td>\n<td>3.376</td>\n<td>2.787</td>\n<td>3.298</td>\n<td>3.305</td>\n<td>3.337</td>\n<td>3.384</td>\n<td>3.362</td>\n<td><strong>3.433</strong></td>\n</tr>\n<tr>\n<td>2WikiMultiHopQA</td>\n<td>2.646</td>\n<td>3.579</td>\n<td>3.582</td>\n<td>1.855</td>\n<td>3.381</td>\n<td>3.583</td>\n<td>1.339</td>\n<td>3.263</td>\n<td>3.445</td>\n<td>1.651</td>\n<td>3.332</td>\n<td>3.541</td>\n<td><strong>4.280</strong></td>\n</tr>\n<tr>\n<td>HotpotQA</td>\n<td>3.497</td>\n<td>4.090</td>\n<td><strong>4.225</strong></td>\n<td>3.341</td>\n<td>4.141</td>\n<td>4.194</td>\n<td>3.070</td>\n<td>3.896</td>\n<td>4.127</td>\n<td>3.428</td>\n<td>4.145</td>\n<td>4.203</td>\n<td>4.061</td>\n</tr>\n<tr>\n<td>MuSiQue</td>\n<td>1.988</td>\n<td>2.462</td>\n<td><strong>2.647</strong></td>\n<td>1.801</td>\n<td>2.522</td>\n<td>2.605</td>\n<td>1.704</td>\n<td>2.317</td>\n<td>2.258</td>\n<td>1.895</td>\n<td>2.462</td>\n<td>2.614</td>\n<td>2.211</td>\n</tr>\n<tr>\n<td><strong>Average</strong></td>\n<td>3.036</td>\n<td>3.439</td>\n<td>3.506</td>\n<td>3.161</td>\n<td>3.526</td>\n<td>3.580</td>\n<td>2.760</td>\n<td>3.340</td>\n<td>3.396</td>\n<td>3.179</td>\n<td>3.521</td>\n<td>3.568</td>\n<td><strong>3.760</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><em>Table 2: SOTA RAG stacks (strong retriever + large generator + optional reranker) vs MSA</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Figure 4: RULER NIAH stability (32K→1M)</h3></div>\n<p dir=\"auto\"><strong>Summary</strong>: MSA maintains <strong>94.84%</strong> at <strong>1M tokens</strong>. The unmodified backbone collapses beyond <strong>128K</strong> (down to <strong>24.69% @1M</strong>). Hybrid linear-attention long-context models degrade noticeably at <strong>≥128K/256K</strong>. External-memory agents (e.g., RL‑MemoryAgent‑14B) remain stable but are weaker in <strong>absolute accuracy</strong> and show steeper decay than MSA.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/EverMind-AI/MSA/blob/main/assets/fig4_ruler_niah.png\"><img src=\"https://raw.githubusercontent.com/EverMind-AI/MSA/main/assets/fig4_ruler_niah.png\" alt=\"Figure 4: RULER NIAH 32K→1M\" style=\"max-width: 100%;\"></a>\n<em>Figure 4: Accuracy vs context length (higher is better)</em></p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Implementation Notes</h2></div>\n<ul dir=\"auto\">\n<li><strong>Training</strong>: 158.95B-token continuous pretraining with <strong>auxiliary routing loss</strong>, followed by two-stage SFT (<strong>8k→64k</strong> curriculum).</li>\n<li><strong>Ablations</strong> (paper Table 4): curriculum extension, Memory Interleave, continuous pretraining, and injecting original text all contribute substantially; removing them causes <strong>5%–37%</strong> drops depending on task.</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">🚀 Quick Start</h2></div>\n<blockquote>\n<p dir=\"auto\">For full details (project structure, supported benchmarks, etc.), see <a href=\"https://github.com/EverMind-AI/MSA/blob/main/QUICK_START.md\"><strong>QUICK_START.md</strong></a>.</p>\n</blockquote>\n<p dir=\"auto\"><strong>1. Install</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"conda create -n msa python=3.12 -y &amp;&amp; conda activate msa\npip install -r requirements.txt\npip install flash-attn==2.7.4.post1 --no-build-isolation\"><pre>conda create -n msa python=3.12 -y <span class=\"pl-k\">&amp;&amp;</span> conda activate msa\npip install -r requirements.txt\npip install flash-attn==2.7.4.post1 --no-build-isolation</pre></div>\n<p dir=\"auto\"><strong>2. Download model</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"mkdir ckpt\nhuggingface-cli download --resume-download EverMind-AI/MSA-4B --local-dir ckpt/MSA-4B\"><pre>mkdir ckpt\nhuggingface-cli download --resume-download EverMind-AI/MSA-4B --local-dir ckpt/MSA-4B</pre></div>\n<p dir=\"auto\"><strong>3. Download benchmarks</strong></p>\n<p dir=\"auto\">Benchmark data is hosted on <a href=\"https://huggingface.co/datasets/EverMind-AI/MSA-RAG-BENCHMARKS\" rel=\"nofollow\">EverMind-AI/MSA-RAG-BENCHMARKS</a> and will be automatically downloaded to <code>data/</code> on first run.</p>\n<p dir=\"auto\"><strong>4. Run</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Run inference on benchmarks\nbash scripts/run_benchmarks.sh eval_benchmark\n\n# Compute LLM-based scores\nbash scripts/calculate_llm_score.sh eval_benchmark\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Run inference on benchmarks</span>\nbash scripts/run_benchmarks.sh eval_benchmark\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Compute LLM-based scores</span>\nbash scripts/calculate_llm_score.sh eval_benchmark</pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Citation</h2></div>\n<div class=\"highlight highlight-text-bibtex notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"@misc{chen2026msamemorysparseattention,\n      title={MSA: Memory Sparse Attention for Efficient End-to-End Memory Model Scaling to 100M Tokens},\n      author={Yu Chen and Runkai Chen and Sheng Yi and Xinda Zhao and Xiaohong Li and Jianjin Zhang and Jun Sun and Chuanrui Hu and Yunyun Han and Lidong Bing and Yafeng Deng and Tianqiao Chen},\n      year={2026},\n      eprint={2603.23516},\n      archivePrefix={arXiv},\n      primaryClass={cs.CL},\n      url={https://arxiv.org/abs/2603.23516},\n}\"><pre><span class=\"pl-k\">@misc</span>{<span class=\"pl-en\">chen2026msamemorysparseattention</span>,\n      <span class=\"pl-s\">title</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>MSA: Memory Sparse Attention for Efficient End-to-End Memory Model Scaling to 100M Tokens<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">author</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>Yu Chen and Runkai Chen and Sheng Yi and Xinda Zhao and Xiaohong Li and Jianjin Zhang and Jun Sun and Chuanrui Hu and Yunyun Han and Lidong Bing and Yafeng Deng and Tianqiao Chen<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">year</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>2026<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">eprint</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>2603.23516<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">archivePrefix</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>arXiv<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">primaryClass</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>cs.CL<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">url</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>https://arxiv.org/abs/2603.23516<span class=\"pl-pds\">}</span></span>,\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Acknowledgments</h3></div>\n<p dir=\"auto\">This repository and documentation page are maintained by the MSA authors. For project updates, please visit the <strong>Homepage</strong>: <a href=\"https://evermind.ai/\" rel=\"nofollow\">https://evermind.ai/</a></p>\n</article></div>",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 14
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 15,
+      "title": "MSA-4B Memory File Construction for RULER and LongBench Evaluation",
+      "url": "https://github.com/EverMind-AI/MSA/issues/15",
+      "createdAt": "2026-04-16T06:54:05Z",
+      "comments": 1,
+      "labels": [],
+      "author": "q1lin570"
+    },
+    {
+      "number": 4,
+      "title": "Clarification on Multi-hop Inference Pipeline, Re-routing Overhead, SFT Details, and Naming Convention",
+      "url": "https://github.com/EverMind-AI/MSA/issues/4",
+      "createdAt": "2026-03-27T05:32:08Z",
+      "comments": 0,
+      "labels": [],
+      "author": "xiaohongrsx"
+    },
+    {
+      "number": 2,
+      "title": "Related work",
+      "url": "https://github.com/EverMind-AI/MSA/issues/2",
+      "createdAt": "2026-03-19T13:51:30Z",
+      "comments": 0,
+      "labels": [],
+      "author": "xidulu"
+    }
+  ],
+  "contributorCount": 4,
+  "firstCommitAt": "2025-10-29T10:05:21Z",
+  "codeFrequency": [
+    {
+      "week": "2025-10-26",
+      "additions": 392,
+      "deletions": 299
+    },
+    {
+      "week": "2025-11-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-09",
+      "additions": 21,
+      "deletions": 3
+    },
+    {
+      "week": "2025-11-16",
+      "additions": 2,
+      "deletions": 2
+    },
+    {
+      "week": "2025-11-23",
+      "additions": 2542,
+      "deletions": 2540
+    },
+    {
+      "week": "2025-11-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-04",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-11",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 157,
+      "deletions": 104
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 9,
+      "deletions": 22
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 7898,
+      "deletions": 441
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 3,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 3
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "participation": {
+    "all": 72,
+    "owner": 0,
+    "community": 72
+  },
+  "workflowRuns": [],
+  "recentCommits": [
+    {
+      "sha": "77fbdfd",
+      "message": "Merge pull request #18 from cyfyifanchen/0506",
+      "url": "https://github.com/EverMind-AI/MSA/commit/77fbdfde88e150cd91307fd710067cf06828cfdc",
+      "date": "2026-05-06T09:24:05Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "5c31a1f",
+      "message": "docs: remove embedded image from README",
+      "url": "https://github.com/EverMind-AI/MSA/commit/5c31a1ff15a01070d14bab92c2b3ad5070ded662",
+      "date": "2026-05-06T09:23:41Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "30405b2",
+      "message": "Merge pull request #16 from cyfyifanchen/feat/0416",
+      "url": "https://github.com/EverMind-AI/MSA/commit/30405b2a134c98b73fac3e51f60ce8e6036fc95b",
+      "date": "2026-04-16T09:54:03Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "52997f9",
+      "message": "docs: add logo image to README",
+      "url": "https://github.com/EverMind-AI/MSA/commit/52997f9fb65757fea343adabe4efc25a80e657a4",
+      "date": "2026-04-16T09:53:38Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "b80027a",
+      "message": "Merge pull request #12 from cyfyifanchen/0405",
+      "url": "https://github.com/EverMind-AI/MSA/commit/b80027a876104797182715ce5a6cd9403598279b",
+      "date": "2026-04-05T07:15:16Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "638d333",
+      "message": "docs: update EverOS repo badge link in README",
+      "url": "https://github.com/EverMind-AI/MSA/commit/638d3333f7e623bbaee337f1f028d328616c0151",
+      "date": "2026-04-05T07:14:38Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "355fd8f",
+      "message": "Merge pull request #11 from cyfyifanchen/0403-fixing-name",
+      "url": "https://github.com/EverMind-AI/MSA/commit/355fd8f542de8ebc13dccaa8ae74266652f5499c",
+      "date": "2026-04-03T06:22:45Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "48ce34b",
+      "message": "docs: fixing the name of evermemos",
+      "url": "https://github.com/EverMind-AI/MSA/commit/48ce34bdc016a4253ea90dbbf694abd329faf7af",
+      "date": "2026-04-03T06:22:25Z",
+      "author": "cyfyifanchen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2340896?v=4"
+    },
+    {
+      "sha": "a769a4d",
+      "message": "hf-cli version fixed",
+      "url": "https://github.com/EverMind-AI/MSA/commit/a769a4da53b46af7faf88be2d7fd7e9bf1b2bf66",
+      "date": "2026-04-03T03:02:08Z",
+      "author": "c925777075",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/52441996?v=4"
+    },
+    {
+      "sha": "378cf4a",
+      "message": "fixed",
+      "url": "https://github.com/EverMind-AI/MSA/commit/378cf4aa7cda6eaa66ac66c9c69f1614cd1dcc6d",
+      "date": "2026-04-03T02:26:22Z",
+      "author": "c925777075",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/52441996?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 19,
+      "title": "把线上chat模式并入",
+      "url": "https://github.com/EverMind-AI/MSA/pull/19",
+      "state": "open",
+      "updatedAt": "2026-06-08T17:17:00Z",
+      "author": "beautifulbo",
+      "draft": false
+    },
+    {
+      "number": 18,
+      "title": "docs: remove embedded image from README",
+      "url": "https://github.com/EverMind-AI/MSA/pull/18",
+      "state": "merged",
+      "updatedAt": "2026-05-06T09:24:06Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 16,
+      "title": "docs: add logo image to README",
+      "url": "https://github.com/EverMind-AI/MSA/pull/16",
+      "state": "merged",
+      "updatedAt": "2026-04-16T09:54:07Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 12,
+      "title": "docs: update EverOS repo badge link in README",
+      "url": "https://github.com/EverMind-AI/MSA/pull/12",
+      "state": "merged",
+      "updatedAt": "2026-04-05T07:15:20Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 11,
+      "title": "docs: fixing the name of evermemos",
+      "url": "https://github.com/EverMind-AI/MSA/pull/11",
+      "state": "merged",
+      "updatedAt": "2026-04-03T06:22:49Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 10,
+      "title": "docs: changing names of the repo",
+      "url": "https://github.com/EverMind-AI/MSA/pull/10",
+      "state": "closed",
+      "updatedAt": "2026-04-03T06:19:24Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "docs: consolidate README files and standardize to English",
+      "url": "https://github.com/EverMind-AI/MSA/pull/8",
+      "state": "merged",
+      "updatedAt": "2026-04-01T02:58:07Z",
+      "author": "cyfyifanchen",
+      "draft": false
+    },
+    {
+      "number": 1,
+      "title": "docs: Add Chinese README (README_zh.md)",
+      "url": "https://github.com/EverMind-AI/MSA/pull/1",
+      "state": "closed",
+      "updatedAt": "2026-03-31T08:00:43Z",
+      "author": "Annihilater",
+      "draft": false
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "assets",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/EverMind-AI/MSA/tree/main/assets"
+    },
+    {
+      "name": "paper",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/EverMind-AI/MSA/tree/main/paper"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/EverMind-AI/MSA/tree/main/scripts"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/EverMind-AI/MSA/tree/main/src"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 70,
+      "url": "https://github.com/EverMind-AI/MSA/blob/main/.gitignore"
+    },
+    {
+      "name": "QUICK_START.md",
+      "type": "file",
+      "size": 3228,
+      "url": "https://github.com/EverMind-AI/MSA/blob/main/QUICK_START.md"
+    },
+    {
+      "name": "README_ZH.md",
+      "type": "file",
+      "size": 12030,
+      "url": "https://github.com/EverMind-AI/MSA/blob/main/README_ZH.md"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 12268,
+      "url": "https://github.com/EverMind-AI/MSA/blob/main/README.md"
+    },
+    {
+      "name": "requirements.txt",
+      "type": "file",
+      "size": 103,
+      "url": "https://github.com/EverMind-AI/MSA/blob/main/requirements.txt"
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 25,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "manifestDependencies": {
+    "manifest": "requirements.txt",
+    "dependencies": [
+      {
+        "name": "tqdm",
+        "version": null
+      },
+      {
+        "name": "openai",
+        "version": null
+      },
+      {
+        "name": "torch",
+        "version": "==2.6"
+      },
+      {
+        "name": "torchvision",
+        "version": "==0.21.0"
+      },
+      {
+        "name": "transformers",
+        "version": "==4.51.3"
+      },
+      {
+        "name": "liger_kernel",
+        "version": "==0.5.10"
+      },
+      {
+        "name": "accelerate",
+        "version": "==1.0.1"
+      }
+    ],
+    "total": 7
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 3,
+  "openPRs": 1,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 6,
+  "mergedPRs": 7,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 30
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 2
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 2
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 14
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 4
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 1
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 9
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 1
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 1
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 1
+    },
+    {
+      "date": "2025-10-30",
+      "count": 15
+    },
+    {
+      "date": "2025-10-31",
+      "count": 14
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 2
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 2
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 13
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 1
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 3
+    },
+    {
+      "date": "2026-03-19",
+      "count": 1
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 1
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 2
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 3
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 4
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 1
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 1
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 1
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T09:21:21.454Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2026-03-15",
+        "stars": 1657
+      },
+      {
+        "date": "2026-03-22",
+        "stars": 2408
+      },
+      {
+        "date": "2026-03-29",
+        "stars": 2667
+      },
+      {
+        "date": "2026-04-05",
+        "stars": 3163
+      },
+      {
+        "date": "2026-04-12",
+        "stars": 3320
+      },
+      {
+        "date": "2026-04-19",
+        "stars": 3423
+      },
+      {
+        "date": "2026-04-26",
+        "stars": 3444
+      },
+      {
+        "date": "2026-05-03",
+        "stars": 3460
+      },
+      {
+        "date": "2026-05-10",
+        "stars": 3477
+      },
+      {
+        "date": "2026-05-17",
+        "stars": 3493
+      },
+      {
+        "date": "2026-05-31",
+        "stars": 3498
+      },
+      {
+        "date": "2026-06-07",
+        "stars": 3504
+      },
+      {
+        "date": "2026-06-14",
+        "stars": 3509
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 5.398,
+    "sampledAt": "2026-07-28T09:22:06.807Z"
+  }
+}
