@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { allCategories, reposByCategory, toBrowserRepo, CATEGORIES } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
+import { itemListJsonLd } from "@/lib/site";
 
 export function generateStaticParams() {
   return allCategories().map(({ category }) => ({ category }));
@@ -28,6 +29,10 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
 
   return (
     <div data-pagefind-body>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(`Best ${meta.title} repositories`, repos.map((r) => r.id))) }}
+      />
       <h1 className="text-2xl font-semibold tracking-tight">{meta.title}</h1>
       <p className="mt-2 max-w-2xl text-muted">{meta.description}</p>
       <p className="mt-1 text-sm text-muted">

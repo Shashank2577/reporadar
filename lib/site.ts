@@ -14,3 +14,21 @@ export const site = {
 export function absoluteUrl(path: string): string {
   return `${site.url}${path.startsWith("/") ? path : `/${path}`}`;
 }
+
+// ItemList structured data for ranked listing pages (trending, topic,
+// language, category browse pages) — tells search engines these are ranked
+// lists of distinct entities, which is what backs list/carousel-style rich
+// results for "best X" and "top X" style queries.
+export function itemListJsonLd(name: string, repoIds: string[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name,
+    itemListElement: repoIds.map((id, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      url: absoluteUrl(`/repos/${id}`),
+      name: id,
+    })),
+  };
+}

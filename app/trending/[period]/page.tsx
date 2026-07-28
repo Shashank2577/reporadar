@@ -5,6 +5,7 @@ import { getAllRepos, getLatestTrending, toBrowserRepo } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import RepoBrowser from "@/components/RepoBrowser";
 import Blankslate from "@/components/Blankslate";
+import { itemListJsonLd } from "@/lib/site";
 
 const PERIODS = ["daily", "weekly", "monthly"] as const;
 type Period = (typeof PERIODS)[number];
@@ -49,6 +50,12 @@ export default async function TrendingPage({ params }: { params: Promise<{ perio
 
   return (
     <div data-pagefind-body>
+      {items.length ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(l.title, items.map((r) => r.id))) }}
+        />
+      ) : null}
       <h1 className="text-2xl font-semibold tracking-tight">
         {l.heading}
         {trending ? <span className="text-muted"> — {formatDate(trending.date)}</span> : null}

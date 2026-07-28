@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { allLanguages, getAllRepos, languageSlug, toBrowserRepo } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
+import { itemListJsonLd } from "@/lib/site";
 
 function langFromSlug(slug: string): string | null {
   return allLanguages().find(({ language }) => languageSlug(language) === slug)?.language || null;
@@ -32,6 +33,10 @@ export default async function LanguagePage({ params }: { params: Promise<{ lang:
 
   return (
     <div data-pagefind-body>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(`Trending ${language} repositories`, repos.map((r) => r.id))) }}
+      />
       <h1 className="text-2xl font-semibold tracking-tight">
         Trending <span className="text-accent">{language}</span> repositories
       </h1>

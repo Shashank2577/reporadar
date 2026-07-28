@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { allTopics, reposByTopic, toBrowserRepo } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
+import { itemListJsonLd } from "@/lib/site";
 
 export function generateStaticParams() {
   return allTopics().map(({ topic }) => ({ topic }));
@@ -27,6 +28,10 @@ export default async function TopicPage({ params }: { params: Promise<{ topic: s
 
   return (
     <div data-pagefind-body>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(`Trending ${t} repositories`, repos.map((r) => r.id))) }}
+      />
       <h1 className="text-2xl font-semibold tracking-tight">
         Trending repositories: <span className="text-accent">{t}</span>
       </h1>
