@@ -1,6 +1,12 @@
 {
   "id": "anthropics/claudes-c-compiler",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 2744,
+      "forks": 239
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-02-06",
@@ -83,5 +89,3011 @@
     "sampledAt": "2026-07-28T09:22:07.792Z"
   },
   "owner": "anthropics",
-  "name": "claudes-c-compiler"
+  "name": "claudes-c-compiler",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/76263028?v=4",
+  "ownerType": "Organization",
+  "description": "Claude Opus 4.6 wrote a dependency-free C compiler in Rust, with backends targeting x86 (64- and 32-bit), ARM, and RISC-V, capable of compiling a booting Linux kernel.",
+  "url": "https://github.com/anthropics/claudes-c-compiler",
+  "homepage": null,
+  "license": "CC0-1.0",
+  "language": "Rust",
+  "topics": [],
+  "stars": 2744,
+  "forks": 239,
+  "watchers": 35,
+  "openIssues": 61,
+  "createdAt": "2026-02-04T22:42:22Z",
+  "pushedAt": "2026-02-05T17:14:51Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-28T21:59:08.160Z",
+  "commitCount": 3982,
+  "readmeExcerpt": "# CCC — Claude's C Compiler\n\nA C compiler written entirely from scratch in Rust, targeting x86-64, i686,\nAArch64, and RISC-V 64. Zero compiler-specific dependencies — the frontend,\nSSA-based IR, optimizer, code generator, peephole optimizers, assembler,\nlinker, and DWARF debug info generation are all implemented from scratch.\nClaude's C Compiler produces ELF executables without any external toolchain.\n\n> Note: With the exception of this one paragraph that was written by a human, 100% of the code and documentation in this repository was written by Claude Opus 4.6. A human guided some of this process by writing test cases that Claude was told to pass, but never interactively pair-programmed with Claude to debug or to provide feedback on code quality. As a result, I do not recommend you use this code! None of it has been validated for correctness. Claude wrote this exclusively on a Linux host; it probably will not work on MacOS/Windows — neither I nor Claude have tried. The docs may be wrong and make claims that are false. See [our blog post](https://anthropic.com/engineering/building-c-compiler) for more detail.\n\n## Prerequisites\n\n- **Rust** (stable, 2021 edition) — install via [rustup](https://rustup.rs/)\n- **Linux host** — the compiler targets Linux ELF executables and relies on\n  Linux system headers / C runtime libraries (glibc or musl) being installed\n  on the host\n- For cross-compilation targets (ARM, RISC-V, i686), the corresponding\n  cross-compilation sysroots should be installed (e.g.,\n  `aarch64-linux-gnu-gcc`, `riscv64-linux-gnu-gcc`)\n\n## Building\n\n```bash\ncargo build --release\n```\n\nThis produces five binaries in `target/release/`, all compiled from the same\nsource. The target architecture is selected by the binary name at runtime:\n\n| Binary | Target |\n|--------|--------|\n| `ccc` | x86-64 (default) |\n| `ccc-x86` | x86-64 |\n| `ccc-arm` | AArch64 |\n| `ccc-riscv` | RISC-V 64 |\n| `ccc-i686` | i686 (32-bit x86) |\n\n## Quick Start\n\nCompile and run a simple C program:\n\n```bash\n# Write a test program\ncat > hello.c << 'EOF'\n#include <stdio.h>\nint main(void) {\n    printf(\"Hello from CCC!\\n\");\n    return 0;\n}\nEOF\n\n# Compile and run (x86-64)\n./target/release/ccc -o hello hello.c\n./hello\n\n# Cross-compile for AArch64 and run under QEMU\n./target/release/ccc-arm -o hello-arm hello.c\nqemu-aarch64 -L /usr/aarch64-linux-gnu ./hello-arm\n```\n\nCCC works as a drop-in GCC replacement. Point your build system at it:\n\n```bash\n# Build a project with make\nmake CC=/path/to/ccc-x86\n\n# Build a project with CMake\ncmake -DCMAKE_C_COMPILER=/path/to/ccc-x86 ..\n\n# Build a project with configure scripts\n./configure CC=/path/to/ccc-x86\n```\n\n## Usage\n\n```bash\n# Compile and link\nccc -o output input.c                # x86-64\nccc-arm -o output input.c            # AArch64\nccc-riscv -o output input.c          # RISC-V 64\nccc-i686 -o output input.c           # i686\n\n# GCC-compatible flags\nccc -S input.c                       # Emit assembly\nccc -c input.c                       # Compile to object file\nccc -E input.c                       # Preprocess only\nccc -O2 -o output input.c            # Optimize (accepts -O0 through -O3, -Os, -Oz)\nccc -g -o output input.c             # DWARF debug info\nccc -DFOO=1 -Iinclude/ input.c       # Define macros, add include paths\nccc -Werror -Wall input.c            # Warning control\nccc -fPIC -shared -o lib.so lib.c    # Position-independent code\nccc -x c -E -                        # Read from stdin\n\n# Build system integration (reports as GCC 14.2.0 for compatibility)\nccc -dumpmachine     # x86_64-linux-gnu / aarch64-linux-gnu / riscv64-linux-gnu / i686-linux-gnu\nccc -dumpversion     # 14\n```\n\nThe compiler accepts most GCC flags. Unrecognized flags (e.g., architecture-\nspecific `-m` flags, unknown `-f` flags) are silently ignored so `ccc` can\nserve as a drop-in GCC replacement in build systems.\n\n### Assembler and Linker Modes\n\nBy default, the compiler uses its **builtin assembler and linker** for all\nfour architectures. No external toolchain is required. You can verify this\nwith `--version`, which shows `Backend: standalone` when using the builtin\ntools.\n\nTo build with optional GCC fallback support (e.g., for debugging), enable\nCargo features at compile time:\n\n```bash\n# Build with GCC assembler and linker fallback\ncargo build --release --features gcc_assembler,gcc_linker\n\n# Build with GCC fallback for -m16 boot code only\ncargo build --release --features gcc_m16\n```\n\n| Feature | Description |\n|---------|-------------|\n| `gcc_assembler` | Use GCC as the assembler instead of the builtin |\n| `gcc_linker` | Use GCC as the linker instead of the builtin |\n| `gcc_m16` | Use GCC for `-m16` (16-bit real mode boot code) |\n\nWhen compiled with GCC fallback features enabled, `--version` shows which\ncomponents use GCC (e.g., `Backend: gcc_assembler, gcc_linker`).\n\n## Status\n\nThe compiler can build real-world C codebases across all four architectures,\nincluding the Linux kernel. Projects that compile and pass their test suites\ninclude PostgreSQL (all 237 regression tests), SQLite, QuickJS, zlib, Lua,\nlibsodium, libpng, jq, libjpeg-turbo, mbedTLS, libuv, Redis, libffi, musl,\nTCC, and DOOM — all using the fully standalone assembler and linker with no\nexternal toolchain. Over 150 additional projects have also been built\nsuccessfully, including FFmpeg (all 7331 FATE checkasm tests on x86-64 and\nAArch64), GNU coreutils, Busybox, CPython, QEMU, and LuaJIT.\n\n### Known Limitations\n\n- **Optimization levels**: All levels (`-O0` through `-O3`, `-Os`, `-Oz`) run\n  the same optimization pipeline. Separate tiers will be added as the compiler\n  matures.\n- **Long double**: x86 80-bit extended precision is supported via x87 FPU\n  instructions. On ARM/RISC-V, `long double` is IEEE binary128 via\n  compiler-rt/libgcc soft-float libcalls.\n- **Complex numbers**: `_Complex` arithmetic has some edge-case failures.\n- **GNU extensions**: Partial `__attribute__` support. NEON intrinsics are\n  partially implemented (core 128-bit operations work).\n- **Atomics**: `_Atomic` is parsed but treated as the underlying type (the\n  qualifier is not tracked through the type system).\n\n## Testing\n\nThe compiler has two kinds of tests:\n\n**Unit tests** (in-source `#[test]` functions for individual passes and modules):\n\n```bash\ncargo test --release\n```\n\n**Integration tests** (end-to-end compilation tests in `tests/`). Each test is\na directory containing a `main.c` source file and expected output files:\n\n```\ntests/\n  some-test-name/\n    main.c              # C source to compile\n    expected.stdout     # Expected stdout (if any)\n    expected.ret        # Expected exit code (if any)\n    expected.skip.arm   # Skip marker for specific architectures (optional)\n```\n\nTests are run by compiling `main.c` with `ccc`, executing the resulting binary,\nand comparing stdout and the exit code against the expected files.\n\n## Environment Variables\n\n| Variable | Purpose |\n|----------|---------|\n| `CCC_TIME_PHASES` | Print per-phase compilation timing to stderr |\n| `CCC_TIME_PASSES` | Print per-pass optimization timing and change counts to stderr |\n| `CCC_DISABLE_PASSES` | Disable specific optimization passes (comma-separated, or `all`) |\n| `CCC_KEEP_ASM` | Preserve intermediate `.s` files next to output |\n| `CCC_ASM_DEBUG` | Dump preprocessed assembly to `/tmp/asm_debug_<name>.s` |\n\n## Project Organization\n\n```\nsrc/                Compiler source code (Rust)\n  frontend/         C source -> typed AST (preprocessor, lexer, parser, sema)\n  ir/               Target-independent SSA IR (lowering, mem2reg)\n  passes/           SSA optimization passes (15 passes + shared loop analysis)\n  backend/          IR -> assembly -> machine code -> ELF (4 architectures)\n  common/           Shared types, symbol table, diagnostics\n  driver/           CLI parsing, pipeline orchestration\n\ninclude/            Bundled C headers (x86 SIMD: SSE through AVX-512, AES-NI, FMA, SHA, BMI2; ARM NEON)\ntests/              Compiler tests (each test is a directory with main.c and expected output)\nideas/              Future work proposals and improvement notes\n```\n\nEach `src/` subdirectory has its own `README.md` with detailed design\ndocumentation. For the full architecture, compilation pipeline data flow,\nand key design decisions, see [DESIGN_DOC.md](DESIGN_DOC.md).\n",
+  "contributors": [
+    {
+      "login": "claude",
+      "url": "https://github.com/claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4",
+      "contributions": 3980
+    },
+    {
+      "login": "carlini",
+      "url": "https://github.com/carlini",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1269300?v=4",
+      "contributions": 2
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">CCC — Claude's C Compiler</h1></div>\n<p dir=\"auto\">A C compiler written entirely from scratch in Rust, targeting x86-64, i686,\nAArch64, and RISC-V 64. Zero compiler-specific dependencies — the frontend,\nSSA-based IR, optimizer, code generator, peephole optimizers, assembler,\nlinker, and DWARF debug info generation are all implemented from scratch.\nClaude's C Compiler produces ELF executables without any external toolchain.</p>\n<blockquote>\n<p dir=\"auto\">Note: With the exception of this one paragraph that was written by a human, 100% of the code and documentation in this repository was written by Claude Opus 4.6. A human guided some of this process by writing test cases that Claude was told to pass, but never interactively pair-programmed with Claude to debug or to provide feedback on code quality. As a result, I do not recommend you use this code! None of it has been validated for correctness. Claude wrote this exclusively on a Linux host; it probably will not work on MacOS/Windows — neither I nor Claude have tried. The docs may be wrong and make claims that are false. See <a href=\"https://anthropic.com/engineering/building-c-compiler\" rel=\"nofollow\">our blog post</a> for more detail.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Prerequisites</h2></div>\n<ul dir=\"auto\">\n<li><strong>Rust</strong> (stable, 2021 edition) — install via <a href=\"https://rustup.rs/\" rel=\"nofollow\">rustup</a></li>\n<li><strong>Linux host</strong> — the compiler targets Linux ELF executables and relies on\nLinux system headers / C runtime libraries (glibc or musl) being installed\non the host</li>\n<li>For cross-compilation targets (ARM, RISC-V, i686), the corresponding\ncross-compilation sysroots should be installed (e.g.,\n<code>aarch64-linux-gnu-gcc</code>, <code>riscv64-linux-gnu-gcc</code>)</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<p dir=\"auto\">This produces five binaries in <code>target/release/</code>, all compiled from the same\nsource. The target architecture is selected by the binary name at runtime:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Binary</th>\n<th>Target</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>ccc</code></td>\n<td>x86-64 (default)</td>\n</tr>\n<tr>\n<td><code>ccc-x86</code></td>\n<td>x86-64</td>\n</tr>\n<tr>\n<td><code>ccc-arm</code></td>\n<td>AArch64</td>\n</tr>\n<tr>\n<td><code>ccc-riscv</code></td>\n<td>RISC-V 64</td>\n</tr>\n<tr>\n<td><code>ccc-i686</code></td>\n<td>i686 (32-bit x86)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<p dir=\"auto\">Compile and run a simple C program:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Write a test program\ncat &gt; hello.c &lt;&lt; 'EOF'\n#include &lt;stdio.h&gt;\nint main(void) {\n    printf(&quot;Hello from CCC!\\n&quot;);\n    return 0;\n}\nEOF\n\n# Compile and run (x86-64)\n./target/release/ccc -o hello hello.c\n./hello\n\n# Cross-compile for AArch64 and run under QEMU\n./target/release/ccc-arm -o hello-arm hello.c\nqemu-aarch64 -L /usr/aarch64-linux-gnu ./hello-arm\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Write a test program</span>\ncat <span class=\"pl-k\">&gt;</span> hello.c <span class=\"pl-s\"><span class=\"pl-k\">&lt;&lt;</span> '<span class=\"pl-k\">EOF</span>'</span>\n<span class=\"pl-s\">#include &lt;stdio.h&gt;</span>\n<span class=\"pl-s\">int main(void) {</span>\n<span class=\"pl-s\">    printf(\"Hello from CCC!\\n\");</span>\n<span class=\"pl-s\">    return 0;</span>\n<span class=\"pl-s\">}</span>\n<span class=\"pl-s\"><span class=\"pl-k\">EOF</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Compile and run (x86-64)</span>\n./target/release/ccc -o hello hello.c\n./hello\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Cross-compile for AArch64 and run under QEMU</span>\n./target/release/ccc-arm -o hello-arm hello.c\nqemu-aarch64 -L /usr/aarch64-linux-gnu ./hello-arm</pre></div>\n<p dir=\"auto\">CCC works as a drop-in GCC replacement. Point your build system at it:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build a project with make\nmake CC=/path/to/ccc-x86\n\n# Build a project with CMake\ncmake -DCMAKE_C_COMPILER=/path/to/ccc-x86 ..\n\n# Build a project with configure scripts\n./configure CC=/path/to/ccc-x86\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build a project with make</span>\nmake CC=/path/to/ccc-x86\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build a project with CMake</span>\ncmake -DCMAKE_C_COMPILER=/path/to/ccc-x86 ..\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build a project with configure scripts</span>\n./configure CC=/path/to/ccc-x86</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Compile and link\nccc -o output input.c                # x86-64\nccc-arm -o output input.c            # AArch64\nccc-riscv -o output input.c          # RISC-V 64\nccc-i686 -o output input.c           # i686\n\n# GCC-compatible flags\nccc -S input.c                       # Emit assembly\nccc -c input.c                       # Compile to object file\nccc -E input.c                       # Preprocess only\nccc -O2 -o output input.c            # Optimize (accepts -O0 through -O3, -Os, -Oz)\nccc -g -o output input.c             # DWARF debug info\nccc -DFOO=1 -Iinclude/ input.c       # Define macros, add include paths\nccc -Werror -Wall input.c            # Warning control\nccc -fPIC -shared -o lib.so lib.c    # Position-independent code\nccc -x c -E -                        # Read from stdin\n\n# Build system integration (reports as GCC 14.2.0 for compatibility)\nccc -dumpmachine     # x86_64-linux-gnu / aarch64-linux-gnu / riscv64-linux-gnu / i686-linux-gnu\nccc -dumpversion     # 14\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Compile and link</span>\nccc -o output input.c                <span class=\"pl-c\"><span class=\"pl-c\">#</span> x86-64</span>\nccc-arm -o output input.c            <span class=\"pl-c\"><span class=\"pl-c\">#</span> AArch64</span>\nccc-riscv -o output input.c          <span class=\"pl-c\"><span class=\"pl-c\">#</span> RISC-V 64</span>\nccc-i686 -o output input.c           <span class=\"pl-c\"><span class=\"pl-c\">#</span> i686</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> GCC-compatible flags</span>\nccc -S input.c                       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Emit assembly</span>\nccc -c input.c                       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Compile to object file</span>\nccc -E input.c                       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Preprocess only</span>\nccc -O2 -o output input.c            <span class=\"pl-c\"><span class=\"pl-c\">#</span> Optimize (accepts -O0 through -O3, -Os, -Oz)</span>\nccc -g -o output input.c             <span class=\"pl-c\"><span class=\"pl-c\">#</span> DWARF debug info</span>\nccc -DFOO=1 -Iinclude/ input.c       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Define macros, add include paths</span>\nccc -Werror -Wall input.c            <span class=\"pl-c\"><span class=\"pl-c\">#</span> Warning control</span>\nccc -fPIC -shared -o lib.so lib.c    <span class=\"pl-c\"><span class=\"pl-c\">#</span> Position-independent code</span>\nccc -x c -E -                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> Read from stdin</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build system integration (reports as GCC 14.2.0 for compatibility)</span>\nccc -dumpmachine     <span class=\"pl-c\"><span class=\"pl-c\">#</span> x86_64-linux-gnu / aarch64-linux-gnu / riscv64-linux-gnu / i686-linux-gnu</span>\nccc -dumpversion     <span class=\"pl-c\"><span class=\"pl-c\">#</span> 14</span></pre></div>\n<p dir=\"auto\">The compiler accepts most GCC flags. Unrecognized flags (e.g., architecture-\nspecific <code>-m</code> flags, unknown <code>-f</code> flags) are silently ignored so <code>ccc</code> can\nserve as a drop-in GCC replacement in build systems.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Assembler and Linker Modes</h3></div>\n<p dir=\"auto\">By default, the compiler uses its <strong>builtin assembler and linker</strong> for all\nfour architectures. No external toolchain is required. You can verify this\nwith <code>--version</code>, which shows <code>Backend: standalone</code> when using the builtin\ntools.</p>\n<p dir=\"auto\">To build with optional GCC fallback support (e.g., for debugging), enable\nCargo features at compile time:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build with GCC assembler and linker fallback\ncargo build --release --features gcc_assembler,gcc_linker\n\n# Build with GCC fallback for -m16 boot code only\ncargo build --release --features gcc_m16\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build with GCC assembler and linker fallback</span>\ncargo build --release --features gcc_assembler,gcc_linker\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build with GCC fallback for -m16 boot code only</span>\ncargo build --release --features gcc_m16</pre></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Feature</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>gcc_assembler</code></td>\n<td>Use GCC as the assembler instead of the builtin</td>\n</tr>\n<tr>\n<td><code>gcc_linker</code></td>\n<td>Use GCC as the linker instead of the builtin</td>\n</tr>\n<tr>\n<td><code>gcc_m16</code></td>\n<td>Use GCC for <code>-m16</code> (16-bit real mode boot code)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">When compiled with GCC fallback features enabled, <code>--version</code> shows which\ncomponents use GCC (e.g., <code>Backend: gcc_assembler, gcc_linker</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Status</h2></div>\n<p dir=\"auto\">The compiler can build real-world C codebases across all four architectures,\nincluding the Linux kernel. Projects that compile and pass their test suites\ninclude PostgreSQL (all 237 regression tests), SQLite, QuickJS, zlib, Lua,\nlibsodium, libpng, jq, libjpeg-turbo, mbedTLS, libuv, Redis, libffi, musl,\nTCC, and DOOM — all using the fully standalone assembler and linker with no\nexternal toolchain. Over 150 additional projects have also been built\nsuccessfully, including FFmpeg (all 7331 FATE checkasm tests on x86-64 and\nAArch64), GNU coreutils, Busybox, CPython, QEMU, and LuaJIT.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Known Limitations</h3></div>\n<ul dir=\"auto\">\n<li><strong>Optimization levels</strong>: All levels (<code>-O0</code> through <code>-O3</code>, <code>-Os</code>, <code>-Oz</code>) run\nthe same optimization pipeline. Separate tiers will be added as the compiler\nmatures.</li>\n<li><strong>Long double</strong>: x86 80-bit extended precision is supported via x87 FPU\ninstructions. On ARM/RISC-V, <code>long double</code> is IEEE binary128 via\ncompiler-rt/libgcc soft-float libcalls.</li>\n<li><strong>Complex numbers</strong>: <code>_Complex</code> arithmetic has some edge-case failures.</li>\n<li><strong>GNU extensions</strong>: Partial <code>__attribute__</code> support. NEON intrinsics are\npartially implemented (core 128-bit operations work).</li>\n<li><strong>Atomics</strong>: <code>_Atomic</code> is parsed but treated as the underlying type (the\nqualifier is not tracked through the type system).</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<p dir=\"auto\">The compiler has two kinds of tests:</p>\n<p dir=\"auto\"><strong>Unit tests</strong> (in-source <code>#[test]</code> functions for individual passes and modules):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --release\"><pre>cargo <span class=\"pl-c1\">test</span> --release</pre></div>\n<p dir=\"auto\"><strong>Integration tests</strong> (end-to-end compilation tests in <code>tests/</code>). Each test is\na directory containing a <code>main.c</code> source file and expected output files:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"tests/\n  some-test-name/\n    main.c              # C source to compile\n    expected.stdout     # Expected stdout (if any)\n    expected.ret        # Expected exit code (if any)\n    expected.skip.arm   # Skip marker for specific architectures (optional)\"><pre class=\"notranslate\"><code>tests/\n  some-test-name/\n    main.c              # C source to compile\n    expected.stdout     # Expected stdout (if any)\n    expected.ret        # Expected exit code (if any)\n    expected.skip.arm   # Skip marker for specific architectures (optional)\n</code></pre></div>\n<p dir=\"auto\">Tests are run by compiling <code>main.c</code> with <code>ccc</code>, executing the resulting binary,\nand comparing stdout and the exit code against the expected files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Environment Variables</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Variable</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>CCC_TIME_PHASES</code></td>\n<td>Print per-phase compilation timing to stderr</td>\n</tr>\n<tr>\n<td><code>CCC_TIME_PASSES</code></td>\n<td>Print per-pass optimization timing and change counts to stderr</td>\n</tr>\n<tr>\n<td><code>CCC_DISABLE_PASSES</code></td>\n<td>Disable specific optimization passes (comma-separated, or <code>all</code>)</td>\n</tr>\n<tr>\n<td><code>CCC_KEEP_ASM</code></td>\n<td>Preserve intermediate <code>.s</code> files next to output</td>\n</tr>\n<tr>\n<td><code>CCC_ASM_DEBUG</code></td>\n<td>Dump preprocessed assembly to <code>/tmp/asm_debug_&lt;name&gt;.s</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Project Organization</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"src/                Compiler source code (Rust)\n  frontend/         C source -&gt; typed AST (preprocessor, lexer, parser, sema)\n  ir/               Target-independent SSA IR (lowering, mem2reg)\n  passes/           SSA optimization passes (15 passes + shared loop analysis)\n  backend/          IR -&gt; assembly -&gt; machine code -&gt; ELF (4 architectures)\n  common/           Shared types, symbol table, diagnostics\n  driver/           CLI parsing, pipeline orchestration\n\ninclude/            Bundled C headers (x86 SIMD: SSE through AVX-512, AES-NI, FMA, SHA, BMI2; ARM NEON)\ntests/              Compiler tests (each test is a directory with main.c and expected output)\nideas/              Future work proposals and improvement notes\"><pre class=\"notranslate\"><code>src/                Compiler source code (Rust)\n  frontend/         C source -&gt; typed AST (preprocessor, lexer, parser, sema)\n  ir/               Target-independent SSA IR (lowering, mem2reg)\n  passes/           SSA optimization passes (15 passes + shared loop analysis)\n  backend/          IR -&gt; assembly -&gt; machine code -&gt; ELF (4 architectures)\n  common/           Shared types, symbol table, diagnostics\n  driver/           CLI parsing, pipeline orchestration\n\ninclude/            Bundled C headers (x86 SIMD: SSE through AVX-512, AES-NI, FMA, SHA, BMI2; ARM NEON)\ntests/              Compiler tests (each test is a directory with main.c and expected output)\nideas/              Future work proposals and improvement notes\n</code></pre></div>\n<p dir=\"auto\">Each <code>src/</code> subdirectory has its own <code>README.md</code> with detailed design\ndocumentation. For the full architecture, compilation pipeline data flow,\nand key design decisions, see <a href=\"https://github.com/anthropics/claudes-c-compiler/blob/main/DESIGN_DOC.md\">DESIGN_DOC.md</a>.</p>\n</article></div>",
+  "languages": {
+    "Rust": 8154079,
+    "C": 325007,
+    "Shell": 1825
+  },
+  "releases": [],
+  "contributorCount": 2,
+  "firstCommitAt": "2026-01-23T01:04:22Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 9
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 48
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 57
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 35
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 21
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 21
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 22
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 27
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 22
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 24
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 15
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 16
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 20
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 13
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 20
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 21
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 18
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 25
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 20
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 23
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 19
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 27
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 20
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 23
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 22
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 18
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 20
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 33
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 17
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 17
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 17
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 34
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 31
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 20
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 18
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 10
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 9
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 13
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 14
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 16
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 26
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 13
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 14
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 14
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 20
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 14
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 23
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 34
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 31
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 19
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 32
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 39
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 19
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 46
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 31
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 40
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 45
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 42
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 16
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 31
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 24
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 36
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 54
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 46
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 40
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 30
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 13
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 55
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 70
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 13
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 50
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 45
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 96
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 48
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 45
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 47
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 44
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 80
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 37
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 36
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 44
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 37
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 17
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 19
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 12
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 21
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 11
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 33
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 30
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 44
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 56
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 39
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 42
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 46
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 33
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 34
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 38
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 42
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 37
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 21
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 27
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 30
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 20
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 29
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 20
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 30
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 25
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 38
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 33
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 49
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 28
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 12
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 14
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 14
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 19
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 32
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 21
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 36
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 25
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 12
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 11
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 793
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 2040
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 1126
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 356
+    },
+    {
+      "date": "2026-01-24",
+      "count": 437
+    },
+    {
+      "date": "2026-01-25",
+      "count": 405
+    },
+    {
+      "date": "2026-01-26",
+      "count": 381
+    },
+    {
+      "date": "2026-01-27",
+      "count": 286
+    },
+    {
+      "date": "2026-01-28",
+      "count": 292
+    },
+    {
+      "date": "2026-01-29",
+      "count": 305
+    },
+    {
+      "date": "2026-01-30",
+      "count": 332
+    },
+    {
+      "date": "2026-01-31",
+      "count": 39
+    },
+    {
+      "date": "2026-02-01",
+      "count": 46
+    },
+    {
+      "date": "2026-02-02",
+      "count": 10
+    },
+    {
+      "date": "2026-02-03",
+      "count": 77
+    },
+    {
+      "date": "2026-02-04",
+      "count": 435
+    },
+    {
+      "date": "2026-02-05",
+      "count": 558
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "participation": {
+    "all": 3982,
+    "owner": 0,
+    "community": 3982
+  },
+  "recentIssues": [
+    {
+      "number": 265,
+      "title": "bug: void expression as function argument",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/265",
+      "createdAt": "2026-05-20T10:18:41Z",
+      "comments": 0,
+      "labels": [],
+      "author": "SchirraL"
+    },
+    {
+      "number": 264,
+      "title": "bug(assembler,inc): with a number and with a rax",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/264",
+      "createdAt": "2026-04-10T17:18:49Z",
+      "comments": 2,
+      "labels": [],
+      "author": "HackingRepo"
+    },
+    {
+      "number": 263,
+      "title": "bug: On assembler case senstivity",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/263",
+      "createdAt": "2026-04-10T17:12:12Z",
+      "comments": 0,
+      "labels": [],
+      "author": "HackingRepo"
+    },
+    {
+      "number": 262,
+      "title": "ice(): _Alignas() with a negative number",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/262",
+      "createdAt": "2026-04-10T16:07:44Z",
+      "comments": 0,
+      "labels": [],
+      "author": "HackingRepo"
+    },
+    {
+      "number": 261,
+      "title": "Compiler not check for types and const qualifier",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/261",
+      "createdAt": "2026-04-10T14:48:13Z",
+      "comments": 6,
+      "labels": [],
+      "author": "HackingRepo"
+    },
+    {
+      "number": 260,
+      "title": "Compiler compile invalid code",
+      "url": "https://github.com/anthropics/claudes-c-compiler/issues/260",
+      "createdAt": "2026-04-10T14:27:12Z",
+      "comments": 23,
+      "labels": [],
+      "author": "HackingRepo"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "current_tasks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/anthropics/claudes-c-compiler/tree/main/current_tasks"
+    },
+    {
+      "name": "ideas",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/anthropics/claudes-c-compiler/tree/main/ideas"
+    },
+    {
+      "name": "include",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/anthropics/claudes-c-compiler/tree/main/include"
+    },
+    {
+      "name": "projects",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/anthropics/claudes-c-compiler/tree/main/projects"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/anthropics/claudes-c-compiler/tree/main/src"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 55,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/.gitignore"
+    },
+    {
+      "name": "BUILDING_LINUX.txt",
+      "type": "file",
+      "size": 2382,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/BUILDING_LINUX.txt"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 803,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/Cargo.toml"
+    },
+    {
+      "name": "DESIGN_DOC.md",
+      "type": "file",
+      "size": 19621,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/DESIGN_DOC.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 7048,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/LICENSE"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 8321,
+      "url": "https://github.com/anthropics/claudes-c-compiler/blob/main/README.md"
+    }
+  ],
+  "workflowRuns": [],
+  "recentCommits": [
+    {
+      "sha": "6f1b99a",
+      "message": "Add steps to reproduce kernel defconfig build",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/6f1b99acb2f4ec2414592136c2009fe7713deec3",
+      "date": "2026-02-05T17:07:47Z",
+      "author": "carlini",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1269300?v=4"
+    },
+    {
+      "sha": "e6f3fad",
+      "message": "Add disclaimer and LICENSE",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/e6f3fad053d1ad5f3c9370dbc4221668d858ce6f",
+      "date": "2026-02-05T16:44:54Z",
+      "author": "carlini",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1269300?v=4"
+    },
+    {
+      "sha": "d3730ef",
+      "message": "Remove crate-wide and per-item clippy silences",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/d3730ef04a5a6afd7b833e4b5b6aa71f7c2f6a31",
+      "date": "2026-02-05T16:33:44Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "592265b",
+      "message": "Lock task: fix i686 double param high word store",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/592265b4b50a0d04d2b910e1a3fa03acf8604d92",
+      "date": "2026-02-05T16:18:59Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "876de6b",
+      "message": "Lock task: fix ARM assembler global branch relocations",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/876de6b2e1db9b6edc340497bd8979cc2ac9d884",
+      "date": "2026-02-05T16:15:08Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "ebe3088",
+      "message": "Fix x86 README: peephole optimizer has 7 phases, not 8",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/ebe30889b47fe4d3a0a8f4bd3b7a8c463bbe25b1",
+      "date": "2026-02-05T16:09:57Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "fbb367a",
+      "message": "Lock task: fix x86 README peephole phase count",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/fbb367a6df1058c02e4de06b0e7d38b7dcf4615e",
+      "date": "2026-02-05T16:09:32Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "99bbe22",
+      "message": "Remove task lock: fix x86 assembler .word/.short numeric label resolution",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/99bbe22ec36c50e60bdbec29d0ee1851eeda4262",
+      "date": "2026-02-05T15:57:10Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "f3d17c8",
+      "message": "Fix x86 assembler: .word/.short numeric label references and R_X86_64_16 relocations",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/f3d17c865385402a17d55953d39ee906364b9d39",
+      "date": "2026-02-05T15:49:50Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    },
+    {
+      "sha": "ff1e789",
+      "message": "Lock task: fix ARM assembler MOVW symbolic relocations",
+      "url": "https://github.com/anthropics/claudes-c-compiler/commit/ff1e789ac9b557d998599c4718fa06744d8f1c6a",
+      "date": "2026-02-05T15:57:04Z",
+      "author": "claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 257,
+      "title": "Docker image for Linux/macos contributors + stable Rust / AArch64 sysroot fixes",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/257",
+      "state": "open",
+      "updatedAt": "2026-06-23T08:01:23Z",
+      "author": "ZhdanovP",
+      "draft": false
+    },
+    {
+      "number": 246,
+      "title": "fix: save some $$$",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/246",
+      "state": "open",
+      "updatedAt": "2026-06-22T13:35:10Z",
+      "author": "rosubra",
+      "draft": false
+    },
+    {
+      "number": 267,
+      "title": "fix(preprocessor): add Fedora GCC include paths alongside Debian ones",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/267",
+      "state": "open",
+      "updatedAt": "2026-06-21T08:37:30Z",
+      "author": "rurban",
+      "draft": false
+    },
+    {
+      "number": 252,
+      "title": "Multi-phase optimization pipeline: peephole, SCCP, IVSR, symbol interning",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/252",
+      "state": "open",
+      "updatedAt": "2026-06-21T08:36:19Z",
+      "author": "CrazyTodd-one",
+      "draft": false
+    },
+    {
+      "number": 259,
+      "title": "A security policy missing",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/259",
+      "state": "open",
+      "updatedAt": "2026-04-10T14:19:29Z",
+      "author": "HackingRepo",
+      "draft": false
+    },
+    {
+      "number": 240,
+      "title": "feat: Add Nix flake, lock, and direnv config",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/240",
+      "state": "closed",
+      "updatedAt": "2026-03-25T00:07:02Z",
+      "author": "cdenihan",
+      "draft": false
+    },
+    {
+      "number": 254,
+      "title": "Fix is_one() to recognize float constants, enabling x*1.0 and x/1.0 simplification",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/254",
+      "state": "open",
+      "updatedAt": "2026-03-09T06:19:23Z",
+      "author": "MaxwellCalkin",
+      "draft": false
+    },
+    {
+      "number": 255,
+      "title": "Add C23 bool, true, and false keywords (fixes #250)",
+      "url": "https://github.com/anthropics/claudes-c-compiler/pull/255",
+      "state": "open",
+      "updatedAt": "2026-03-09T06:19:22Z",
+      "author": "MaxwellCalkin",
+      "draft": false
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 37,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 48,
+  "openPRs": 13,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 116,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-01-18",
+      "additions": 101223,
+      "deletions": 52243
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 196406,
+      "deletions": 113982
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 196556,
+      "deletions": 110863
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T21:59:11.665Z"
 }

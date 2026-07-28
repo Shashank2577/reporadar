@@ -1,6 +1,12 @@
 {
   "id": "agno-agi/dash",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-28",
+      "stars": 2225,
+      "forks": 250
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-02-03",
@@ -77,5 +83,1396 @@
     "sampledAt": "2026-07-28T09:22:07.792Z"
   },
   "owner": "agno-agi",
-  "name": "dash"
+  "name": "dash",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/104874993?v=4",
+  "ownerType": "Organization",
+  "description": "A self-learning data agent built with systems engineering principles. It grounds answers in 6 layers of context and improves with every query.",
+  "url": "https://github.com/agno-agi/dash",
+  "homepage": "https://agno.com",
+  "license": "Apache-2.0",
+  "language": "Python",
+  "topics": [
+    "agno",
+    "ai-agents",
+    "text-to-sql"
+  ],
+  "stars": 2225,
+  "forks": 250,
+  "watchers": 19,
+  "openIssues": 14,
+  "createdAt": "2026-01-30T13:54:17Z",
+  "pushedAt": "2026-07-10T10:21:52Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-28T21:58:46.378Z",
+  "languages": {
+    "Python": 114054,
+    "Shell": 14625,
+    "Dockerfile": 1022
+  },
+  "commitCount": 67,
+  "readmeExcerpt": "# Dash\n\nA **self-learning data agent** built with systems engineering principles. It grounds answers in 6 layers of context and improves with every query.\n\nChat with Dash via Slack, the terminal, or the [AgentOS](https://os.agno.com?utm_source=github&utm_medium=example-repo&utm_campaign=agent-example&utm_content=dash&utm_term=agentos) web UI.\n\n## Quick Start\n\n```sh\n# Clone the repo\ngit clone https://github.com/agno-agi/dash.git && cd dash\n\ncp example.env .env\n# Edit .env and add your OPENAI_API_KEY\n\n# Start the system\ndocker compose up -d --build\n\n# Generate sample data and load knowledge\ndocker exec -it dash-api python scripts/generate_data.py\ndocker exec -it dash-api python scripts/load_knowledge.py\n```\n\nConfirm Dash is running at [http://localhost:8000/docs](http://localhost:8000/docs).\n\n### Connect to the Web UI\n\n1. Open [os.agno.com](https://os.agno.com?utm_source=github&utm_medium=example-repo&utm_campaign=agent-example&utm_content=dash&utm_term=agentos) and login\n2. Add OS → Local → `http://localhost:8000`\n3. Click \"Connect\"\n\n**Try it** (SaaS metrics dataset):\n\n- What's our current MRR?\n- Which plan has the highest churn rate?\n- Show me revenue trends by plan over the last 6 months\n- Which customers are at risk of churning?\n\n## Deploy to Railway\n\nRailway deployment uses `.env.production` to keep production credentials separate from local dev.\n\n```sh\ncp example.env .env.production\n# Edit .env.production — set OPENAI_API_KEY\n```\n\n### Step 1: Deploy infrastructure\n\nThis creates the Railway project, database, and app service. The app will crash-loop until the JWT key is added in the next step — that's expected.\n\n```sh\nrailway login\n./scripts/railway_up.sh\n```\n\n### Step 2: Get your JWT key\n\nProduction requires a `JWT_VERIFICATION_KEY` from [AgentOS](https://os.agno.com?utm_source=github&utm_medium=example-repo&utm_campaign=agent-example&utm_content=dash&utm_term=agentos). You need the Railway domain from step 1 to set this up.\n\n1. Copy your Railway domain from the output of step 1 (e.g. `dash-production-xxxx.up.railway.app`)\n2. Open [os.agno.com](https://os.agno.com?utm_source=github&utm_medium=example-repo&utm_campaign=agent-example&utm_content=dash&utm_term=agentos) and login\n3. Add OS → Live → paste your Railway URL\n4. Go to **Settings** and generate a key pair\n5. Add the public key to `.env.production` (wrap in single quotes):\n\n```bash\nJWT_VERIFICATION_KEY='-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq...\n-----END PUBLIC KEY-----'\n```\n\n### Step 3: Push environment and redeploy\n\n```sh\n./scripts/railway_env.sh\n./scripts/railway_redeploy.sh\n```\n\n`railway_env.sh` reads `.env.production` and sets each variable on the Railway service. Safe to run repeatedly. Handles multiline values (PEM keys) correctly.\n\n### Production operations\n\nDatabase scripts must run inside Railway's network (the internal hostname `pgvector.railway.internal` isn't reachable from your local machine). Use SSH to connect to the running container:\n\n```sh\nrailway ssh --service dash\n# Inside the container:\npython scripts/generate_data.py\npython scripts/load_knowledge.py\n```\n\nOther operations run locally:\n\n```sh\nrailway logs --service dash\nrailway open\n```\n\n## Why Dash Exists\n\nAsk a question in English, get a correct, meaningful answer. That's the goal. But raw LLMs writing SQL hit a wall fast: schemas lack meaning, types are misleading, tribal knowledge is missing, there's no way to learn from mistakes, and results lack interpretation.\n\nThe root cause is missing context and missing memory. Dash solves this with **six layers of grounded context**, a **self-learning loop** that improves with every query, and a focus on delivering insights you can act on.\n\n## Architecture: Five Layers, One System\n\nAgentic software is just software with the business logic replaced by agents. Everything else is systems engineering. Dash is built across five layers that reinforce each other.\n\n```\nAgent Engineering     →  dash/team.py + dash/agents/\nData Engineering      →  knowledge/ + Agno Learning Machine + PostgreSQL\nSecurity Engineering  →  AgentOS auth + RBAC + read-only SQL enforcement\nInterface Engineering →  app/main.py (FastAPI) + Slack + AgentOS\nInfrastructure        →  Dockerfile + compose.yaml + scripts/\n```\n\n### 1. Agent Engineering\n\nThe agent team and execution flow. Model, instructions, tools, knowledge, and the self-learning loop.\n\n```\nAgentOS (app/main.py)  [scheduler=True, tracing=True]\n ├── FastAPI / Uvicorn\n ├── Slack Interface (optional)\n └── Dash Team (dash/team.py, coordinate mode)\n     ├─ Analyst (dash/agents/analyst.py)         reads public + dash\n     │  ├─ SQLTools (read-only)  → public schema (company data)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ save_validated_query  → knowledge base\n     │  └─ ReasoningTools\n     ├─ Engineer (dash/agents/engineer.py)       reads public, writes dash\n     │  ├─ SQLTools (full)       → dash schema (agent-managed)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ update_knowledge      → knowledge base (schema changes)\n     │  └─ ReasoningTools\n     │\n     Leader tools: SlackTools (optional)\n     Knowledge:    dash_knowledge (table schemas, queries, business rules, dash views)\n     Learnings:    dash_learnings (error patterns, type gotchas, fixes)\n```\n\n### 2. Data Engineering\n\nContext is data. Memory is data. Knowledge is data. All managed with data engineering principles: well-designed schemas, structured querying, databases for fast read/writes.\n\n**Six layers of grounded context:**\n\n| Layer | Purpose | Source |\n|------|--------|--------|\n| **Table Usage** | Schema, columns, relationships | `knowledge/tables/*.json` |\n| **Human Annotations** | Metrics, definitions, business rules | `knowledge/business/*.json` |\n| **Query Patterns** | SQL that is known to work | `knowledge/queries/*.sql` |\n| **Institutional Knowledge** | Docs, wikis, external references | MCP (optional) |\n| **Learnings** | Error patterns and discovered fixes | Agno `Learning Machine` |\n| **Runtime Context** | Live schema changes | `introspect_schema` tool |\n\n**The self-learning loop:**\n\n```\nUser Question\n     ↓\nRetrieve Knowledge + Learnings\n     ↓\nReason about intent\n     ↓\nGenerate grounded SQL\n     ↓\nExecute and interpret\n     ↓\n ┌────┴────┐\n ↓         ↓\nSuccess    Error\n ↓         ↓\n ↓         Diagnose → Fix → Save Learning\n ↓                           (never repeated)\n ↓\nReturn insight\n ↓\nOptionally save as Knowledge\n```\n\nTwo complementary systems:\n\n| System | Stores | How It Evolves |\n|------|--------|----------------|\n| **Knowledge** | Validated queries and business context | Curated by you + Dash |\n| **Learnings** | Error patterns and fixes | Managed by `Learning Machine` automatically |\n\n**Dual schema enforcement:** A structural boundary between company data and agent-managed data.\n\n| Schema | Owner | Access |\n|--------|-------|--------|\n| `public` | Company (loaded externally) | Read-only — never modified by agents |\n| `dash` | Engineer agent | Views, summary tables, computed data |\n\nThe Engineer builds reusable data assets (`dash.monthly_mrr`, `dash.customer_health_score`, `dash.churn_risk`) and records them to knowledge. The Analyst discovers and prefers these views over raw table queries.\n\n### 3. Security Engineering\n\nAuth uses RBAC with JWT verification in production. Every query is scoped to `user_id`. Read-only access is a tool configuration, not a prompt instruction. The Analyst agent's SQL tools are scoped to read-only at the system level.\n\nSee [Security](#security) for setup details.\n\n### 4. Interface Engineering\n\nOne agent definition, multiple surfaces. Dash is reachable via REST API (FastAPI), Slack threads, and the AgentOS web UI. Each surface has its own identity system: a Slack user ID maps to sessions via thread timestamps, the API uses JWT-backed auth.\n\n### 5. Infrastructure Engineering\n\nDockerfile, Docker Compose, one-command deployment. Scheduled tasks for proactive behavior. The infrastructure layer is boring on purpose. 95% of running an agent is identical to running any other service.\n\n## Slack\n\nDash can receive Slack DMs, @mentions, and thread replies, and can also post to channels proactively.\n\nQuick setup:\n1. Run Dash and give it a public URL (ngrok locally, or your Railway domain).\n2. Follow [docs/SLACK_CONNECT.md](docs/SLACK_CONNECT.md) to create and install the Slack app from the manifest.\n3. Set `SLACK_TOKEN` and `SLACK_SIGNING_SECRET`, then restart Dash.\n4. In Slack, confirm Event Subscriptions is verified and send a DM or `@mention` to test it.\n\nEach Slack thread maps to one Dash session. For the manifest, ngrok commands, Railway deployment, permissions, and troubleshooting, see [docs/SLACK_CONNECT.md](docs/SLACK_CONNECT.md).\n\n## Data Model (SaaS Metrics)\n\nSynthetic B2B SaaS dataset (~900 customers, 2 years of data):\n\n| Table | Description |\n|-------|-------------|\n| `customers` | Company info, industry, size, acquisition source, status |\n| `subscriptions` | Plan, MRR, seats, billing cycle, lifecycle status |\n| `plan_changes` | Upgrades, downgrades, cancellations with MRR impact |\n| `invoices` | Billing records, payment status, billing periods |\n| `usage_metrics` | Daily API calls, active users, storage, reports |\n| `support_tickets` | Priority, category, resolution time, satisfaction |\n\n## Adding Knowledge\n\nDash works best when it understands how your organization talks about data.\n\n```\nknowledge/\n├── tables/      # Table meaning and caveats\n├── queries/     # Proven SQL patterns\n└── business/    # Metrics and language\n```\n\n### Table Metadata\n\n```json\n{\n  \"table_name\": \"customers\",\n  \"table_description\": \"B2B SaaS customer accounts with company info and lifecycle status\",\n  \"use_cases\": [\"Churn analysis\", \"Cohort segmentation\", \"Acquisition reporting\"],\n  \"data_quality_notes\": [\n    \"signup_date is DATE (not TIMESTAMP) — no time component\",\n    \"status values: active, churned, trial\",\n    \"company_size is self-reported\"\n  ]\n}\n```\n\n### Query Patterns\n\n```sql\n-- <query monthly_mrr>\n-- <description>Monthly MRR from active subscriptions</description>\n-- <query>\nSELECT\n    DATE_TRUNC('month', started_at) AS month,\n    SUM(mrr) AS total_mrr\nFROM subscriptions\nWHERE ended_at IS NULL\nGROUP BY 1\nORDER BY 1 DESC\n-- </query>\n```\n\n### Business Rules\n\n```json\n{\n  \"metrics\": [\n    {\n      \"name\": \"MRR\",\n      \"definition\": \"Sum of active subscriptions excluding trials\"\n    }\n  ],\n  \"common_gotchas\": [\n    {\n      \"issue\": \"Active subscription detection\",\n      \"solution\": \"Filter on ended_at IS NULL, not status column\"\n    }\n  ]\n}\n```\n\n### Load Knowledge\n\n```sh\npython scripts/load_knowledge.py            # Upsert changes\npython scripts/load_knowledge.py --recreate  # Fresh start\n```\n\n## Evaluations\n\nFive eval categories using Agno's eval framework:\n\n| Category | Eval Type | What It Tests |\n|----------|-----------|---------------|\n| accuracy | AccuracyEval (1-10) | Correct data and meaningful insights |\n| routing | ReliabilityEval | Team routes to correct agent/tools |\n| security | AgentAsJudgeEval (binary) | No credential or secret leaks |\n| governance | AgentAsJudgeEval (binary) | Refuses destructive SQL operations |\n| boundaries | AgentAsJudgeEval (binary) | Schema access boundaries respected |\n\n```sh\npython -m evals                      # Run all evals\npython -m evals --category accuracy  # Run specific category\npython -m evals --verbose            # Show response details\n```\n\n## Local Development\n\n```sh\n./scripts/venv_setup.sh && source .venv/bin/activate\ndocker compose up -d dash-db\npython scripts/generate_data.py\npython scripts/load_knowledge.py\npython -m dash            # CLI mode\npython -m app.main        # AgentOS mode (web UI at os.agno.com)\n```\n\n## Environment Variables\n\n| Variable | Required | Default | Purpose |\n|----------|----------|---------|---------|\n| `OPENAI_API_KEY` | Yes | — | OpenAI API key |\n| `SLACK_TOKEN` | No | `\"\"` | Slack bot token (interface + tools) |\n| `SLACK_SIGNING_SECRET` | No | `\"\"` | Slack signing secret (interface ",
+  "contributors": [
+    {
+      "login": "ashpreetbedi",
+      "url": "https://github.com/ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4",
+      "contributions": 63
+    },
+    {
+      "login": "Mustafa-Esoofally",
+      "url": "https://github.com/Mustafa-Esoofally",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/63255402?v=4",
+      "contributions": 4
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Dash</h1></div>\n<p dir=\"auto\">A <strong>self-learning data agent</strong> built with systems engineering principles. It grounds answers in 6 layers of context and improves with every query.</p>\n<p dir=\"auto\">Chat with Dash via Slack, the terminal, or the <a href=\"https://os.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=agentos\" rel=\"nofollow\">AgentOS</a> web UI.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Clone the repo\ngit clone https://github.com/agno-agi/dash.git &amp;&amp; cd dash\n\ncp example.env .env\n# Edit .env and add your OPENAI_API_KEY\n\n# Start the system\ndocker compose up -d --build\n\n# Generate sample data and load knowledge\ndocker exec -it dash-api python scripts/generate_data.py\ndocker exec -it dash-api python scripts/load_knowledge.py\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Clone the repo</span>\ngit clone https://github.com/agno-agi/dash.git <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> dash\n\ncp example.env .env\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Edit .env and add your OPENAI_API_KEY</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Start the system</span>\ndocker compose up -d --build\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Generate sample data and load knowledge</span>\ndocker <span class=\"pl-c1\">exec</span> -it dash-api python scripts/generate_data.py\ndocker <span class=\"pl-c1\">exec</span> -it dash-api python scripts/load_knowledge.py</pre></div>\n<p dir=\"auto\">Confirm Dash is running at <a href=\"http://localhost:8000/docs\" rel=\"nofollow\">http://localhost:8000/docs</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connect to the Web UI</h3></div>\n<ol dir=\"auto\">\n<li>Open <a href=\"https://os.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=agentos\" rel=\"nofollow\">os.agno.com</a> and login</li>\n<li>Add OS → Local → <code>http://localhost:8000</code></li>\n<li>Click \"Connect\"</li>\n</ol>\n<p dir=\"auto\"><strong>Try it</strong> (SaaS metrics dataset):</p>\n<ul dir=\"auto\">\n<li>What's our current MRR?</li>\n<li>Which plan has the highest churn rate?</li>\n<li>Show me revenue trends by plan over the last 6 months</li>\n<li>Which customers are at risk of churning?</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Deploy to Railway</h2></div>\n<p dir=\"auto\">Railway deployment uses <code>.env.production</code> to keep production credentials separate from local dev.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cp example.env .env.production\n# Edit .env.production — set OPENAI_API_KEY\"><pre>cp example.env .env.production\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Edit .env.production — set OPENAI_API_KEY</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Step 1: Deploy infrastructure</h3></div>\n<p dir=\"auto\">This creates the Railway project, database, and app service. The app will crash-loop until the JWT key is added in the next step — that's expected.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"railway login\n./scripts/railway_up.sh\"><pre>railway login\n./scripts/railway_up.sh</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Step 2: Get your JWT key</h3></div>\n<p dir=\"auto\">Production requires a <code>JWT_VERIFICATION_KEY</code> from <a href=\"https://os.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=agentos\" rel=\"nofollow\">AgentOS</a>. You need the Railway domain from step 1 to set this up.</p>\n<ol dir=\"auto\">\n<li>Copy your Railway domain from the output of step 1 (e.g. <code>dash-production-xxxx.up.railway.app</code>)</li>\n<li>Open <a href=\"https://os.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=agentos\" rel=\"nofollow\">os.agno.com</a> and login</li>\n<li>Add OS → Live → paste your Railway URL</li>\n<li>Go to <strong>Settings</strong> and generate a key pair</li>\n<li>Add the public key to <code>.env.production</code> (wrap in single quotes):</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"JWT_VERIFICATION_KEY='-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq...\n-----END PUBLIC KEY-----'\"><pre>JWT_VERIFICATION_KEY=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>-----BEGIN PUBLIC KEY-----</span>\n<span class=\"pl-s\">MIIBIjANBgkq...</span>\n<span class=\"pl-s\">-----END PUBLIC KEY-----<span class=\"pl-pds\">'</span></span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Step 3: Push environment and redeploy</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./scripts/railway_env.sh\n./scripts/railway_redeploy.sh\"><pre>./scripts/railway_env.sh\n./scripts/railway_redeploy.sh</pre></div>\n<p dir=\"auto\"><code>railway_env.sh</code> reads <code>.env.production</code> and sets each variable on the Railway service. Safe to run repeatedly. Handles multiline values (PEM keys) correctly.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Production operations</h3></div>\n<p dir=\"auto\">Database scripts must run inside Railway's network (the internal hostname <code>pgvector.railway.internal</code> isn't reachable from your local machine). Use SSH to connect to the running container:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"railway ssh --service dash\n# Inside the container:\npython scripts/generate_data.py\npython scripts/load_knowledge.py\"><pre>railway ssh --service dash\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Inside the container:</span>\npython scripts/generate_data.py\npython scripts/load_knowledge.py</pre></div>\n<p dir=\"auto\">Other operations run locally:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"railway logs --service dash\nrailway open\"><pre>railway logs --service dash\nrailway open</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why Dash Exists</h2></div>\n<p dir=\"auto\">Ask a question in English, get a correct, meaningful answer. That's the goal. But raw LLMs writing SQL hit a wall fast: schemas lack meaning, types are misleading, tribal knowledge is missing, there's no way to learn from mistakes, and results lack interpretation.</p>\n<p dir=\"auto\">The root cause is missing context and missing memory. Dash solves this with <strong>six layers of grounded context</strong>, a <strong>self-learning loop</strong> that improves with every query, and a focus on delivering insights you can act on.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture: Five Layers, One System</h2></div>\n<p dir=\"auto\">Agentic software is just software with the business logic replaced by agents. Everything else is systems engineering. Dash is built across five layers that reinforce each other.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Agent Engineering     →  dash/team.py + dash/agents/\nData Engineering      →  knowledge/ + Agno Learning Machine + PostgreSQL\nSecurity Engineering  →  AgentOS auth + RBAC + read-only SQL enforcement\nInterface Engineering →  app/main.py (FastAPI) + Slack + AgentOS\nInfrastructure        →  Dockerfile + compose.yaml + scripts/\"><pre class=\"notranslate\"><code>Agent Engineering     →  dash/team.py + dash/agents/\nData Engineering      →  knowledge/ + Agno Learning Machine + PostgreSQL\nSecurity Engineering  →  AgentOS auth + RBAC + read-only SQL enforcement\nInterface Engineering →  app/main.py (FastAPI) + Slack + AgentOS\nInfrastructure        →  Dockerfile + compose.yaml + scripts/\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Agent Engineering</h3></div>\n<p dir=\"auto\">The agent team and execution flow. Model, instructions, tools, knowledge, and the self-learning loop.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"AgentOS (app/main.py)  [scheduler=True, tracing=True]\n ├── FastAPI / Uvicorn\n ├── Slack Interface (optional)\n └── Dash Team (dash/team.py, coordinate mode)\n     ├─ Analyst (dash/agents/analyst.py)         reads public + dash\n     │  ├─ SQLTools (read-only)  → public schema (company data)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ save_validated_query  → knowledge base\n     │  └─ ReasoningTools\n     ├─ Engineer (dash/agents/engineer.py)       reads public, writes dash\n     │  ├─ SQLTools (full)       → dash schema (agent-managed)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ update_knowledge      → knowledge base (schema changes)\n     │  └─ ReasoningTools\n     │\n     Leader tools: SlackTools (optional)\n     Knowledge:    dash_knowledge (table schemas, queries, business rules, dash views)\n     Learnings:    dash_learnings (error patterns, type gotchas, fixes)\"><pre class=\"notranslate\"><code>AgentOS (app/main.py)  [scheduler=True, tracing=True]\n ├── FastAPI / Uvicorn\n ├── Slack Interface (optional)\n └── Dash Team (dash/team.py, coordinate mode)\n     ├─ Analyst (dash/agents/analyst.py)         reads public + dash\n     │  ├─ SQLTools (read-only)  → public schema (company data)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ save_validated_query  → knowledge base\n     │  └─ ReasoningTools\n     ├─ Engineer (dash/agents/engineer.py)       reads public, writes dash\n     │  ├─ SQLTools (full)       → dash schema (agent-managed)\n     │  ├─ introspect_schema     → both schemas\n     │  ├─ update_knowledge      → knowledge base (schema changes)\n     │  └─ ReasoningTools\n     │\n     Leader tools: SlackTools (optional)\n     Knowledge:    dash_knowledge (table schemas, queries, business rules, dash views)\n     Learnings:    dash_learnings (error patterns, type gotchas, fixes)\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Data Engineering</h3></div>\n<p dir=\"auto\">Context is data. Memory is data. Knowledge is data. All managed with data engineering principles: well-designed schemas, structured querying, databases for fast read/writes.</p>\n<p dir=\"auto\"><strong>Six layers of grounded context:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Layer</th>\n<th>Purpose</th>\n<th>Source</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Table Usage</strong></td>\n<td>Schema, columns, relationships</td>\n<td><code>knowledge/tables/*.json</code></td>\n</tr>\n<tr>\n<td><strong>Human Annotations</strong></td>\n<td>Metrics, definitions, business rules</td>\n<td><code>knowledge/business/*.json</code></td>\n</tr>\n<tr>\n<td><strong>Query Patterns</strong></td>\n<td>SQL that is known to work</td>\n<td><code>knowledge/queries/*.sql</code></td>\n</tr>\n<tr>\n<td><strong>Institutional Knowledge</strong></td>\n<td>Docs, wikis, external references</td>\n<td>MCP (optional)</td>\n</tr>\n<tr>\n<td><strong>Learnings</strong></td>\n<td>Error patterns and discovered fixes</td>\n<td>Agno <code>Learning Machine</code></td>\n</tr>\n<tr>\n<td><strong>Runtime Context</strong></td>\n<td>Live schema changes</td>\n<td><code>introspect_schema</code> tool</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>The self-learning loop:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"User Question\n     ↓\nRetrieve Knowledge + Learnings\n     ↓\nReason about intent\n     ↓\nGenerate grounded SQL\n     ↓\nExecute and interpret\n     ↓\n ┌────┴────┐\n ↓         ↓\nSuccess    Error\n ↓         ↓\n ↓         Diagnose → Fix → Save Learning\n ↓                           (never repeated)\n ↓\nReturn insight\n ↓\nOptionally save as Knowledge\"><pre class=\"notranslate\"><code>User Question\n     ↓\nRetrieve Knowledge + Learnings\n     ↓\nReason about intent\n     ↓\nGenerate grounded SQL\n     ↓\nExecute and interpret\n     ↓\n ┌────┴────┐\n ↓         ↓\nSuccess    Error\n ↓         ↓\n ↓         Diagnose → Fix → Save Learning\n ↓                           (never repeated)\n ↓\nReturn insight\n ↓\nOptionally save as Knowledge\n</code></pre></div>\n<p dir=\"auto\">Two complementary systems:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Stores</th>\n<th>How It Evolves</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Knowledge</strong></td>\n<td>Validated queries and business context</td>\n<td>Curated by you + Dash</td>\n</tr>\n<tr>\n<td><strong>Learnings</strong></td>\n<td>Error patterns and fixes</td>\n<td>Managed by <code>Learning Machine</code> automatically</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Dual schema enforcement:</strong> A structural boundary between company data and agent-managed data.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Schema</th>\n<th>Owner</th>\n<th>Access</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>public</code></td>\n<td>Company (loaded externally)</td>\n<td>Read-only — never modified by agents</td>\n</tr>\n<tr>\n<td><code>dash</code></td>\n<td>Engineer agent</td>\n<td>Views, summary tables, computed data</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The Engineer builds reusable data assets (<code>dash.monthly_mrr</code>, <code>dash.customer_health_score</code>, <code>dash.churn_risk</code>) and records them to knowledge. The Analyst discovers and prefers these views over raw table queries.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3. Security Engineering</h3></div>\n<p dir=\"auto\">Auth uses RBAC with JWT verification in production. Every query is scoped to <code>user_id</code>. Read-only access is a tool configuration, not a prompt instruction. The Analyst agent's SQL tools are scoped to read-only at the system level.</p>\n<p dir=\"auto\">See <a href=\"#security\">Security</a> for setup details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">4. Interface Engineering</h3></div>\n<p dir=\"auto\">One agent definition, multiple surfaces. Dash is reachable via REST API (FastAPI), Slack threads, and the AgentOS web UI. Each surface has its own identity system: a Slack user ID maps to sessions via thread timestamps, the API uses JWT-backed auth.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">5. Infrastructure Engineering</h3></div>\n<p dir=\"auto\">Dockerfile, Docker Compose, one-command deployment. Scheduled tasks for proactive behavior. The infrastructure layer is boring on purpose. 95% of running an agent is identical to running any other service.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Slack</h2></div>\n<p dir=\"auto\">Dash can receive Slack DMs, @mentions, and thread replies, and can also post to channels proactively.</p>\n<p dir=\"auto\">Quick setup:</p>\n<ol dir=\"auto\">\n<li>Run Dash and give it a public URL (ngrok locally, or your Railway domain).</li>\n<li>Follow <a href=\"https://github.com/agno-agi/dash/blob/main/docs/SLACK_CONNECT.md\">docs/SLACK_CONNECT.md</a> to create and install the Slack app from the manifest.</li>\n<li>Set <code>SLACK_TOKEN</code> and <code>SLACK_SIGNING_SECRET</code>, then restart Dash.</li>\n<li>In Slack, confirm Event Subscriptions is verified and send a DM or <code>@mention</code> to test it.</li>\n</ol>\n<p dir=\"auto\">Each Slack thread maps to one Dash session. For the manifest, ngrok commands, Railway deployment, permissions, and troubleshooting, see <a href=\"https://github.com/agno-agi/dash/blob/main/docs/SLACK_CONNECT.md\">docs/SLACK_CONNECT.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Data Model (SaaS Metrics)</h2></div>\n<p dir=\"auto\">Synthetic B2B SaaS dataset (~900 customers, 2 years of data):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Table</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>customers</code></td>\n<td>Company info, industry, size, acquisition source, status</td>\n</tr>\n<tr>\n<td><code>subscriptions</code></td>\n<td>Plan, MRR, seats, billing cycle, lifecycle status</td>\n</tr>\n<tr>\n<td><code>plan_changes</code></td>\n<td>Upgrades, downgrades, cancellations with MRR impact</td>\n</tr>\n<tr>\n<td><code>invoices</code></td>\n<td>Billing records, payment status, billing periods</td>\n</tr>\n<tr>\n<td><code>usage_metrics</code></td>\n<td>Daily API calls, active users, storage, reports</td>\n</tr>\n<tr>\n<td><code>support_tickets</code></td>\n<td>Priority, category, resolution time, satisfaction</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Adding Knowledge</h2></div>\n<p dir=\"auto\">Dash works best when it understands how your organization talks about data.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"knowledge/\n├── tables/      # Table meaning and caveats\n├── queries/     # Proven SQL patterns\n└── business/    # Metrics and language\"><pre class=\"notranslate\"><code>knowledge/\n├── tables/      # Table meaning and caveats\n├── queries/     # Proven SQL patterns\n└── business/    # Metrics and language\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Table Metadata</h3></div>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{\n  &quot;table_name&quot;: &quot;customers&quot;,\n  &quot;table_description&quot;: &quot;B2B SaaS customer accounts with company info and lifecycle status&quot;,\n  &quot;use_cases&quot;: [&quot;Churn analysis&quot;, &quot;Cohort segmentation&quot;, &quot;Acquisition reporting&quot;],\n  &quot;data_quality_notes&quot;: [\n    &quot;signup_date is DATE (not TIMESTAMP) — no time component&quot;,\n    &quot;status values: active, churned, trial&quot;,\n    &quot;company_size is self-reported&quot;\n  ]\n}\"><pre>{\n  <span class=\"pl-ent\">\"table_name\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>customers<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"table_description\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>B2B SaaS customer accounts with company info and lifecycle status<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"use_cases\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Churn analysis<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Cohort segmentation<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Acquisition reporting<span class=\"pl-pds\">\"</span></span>],\n  <span class=\"pl-ent\">\"data_quality_notes\"</span>: [\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>signup_date is DATE (not TIMESTAMP) — no time component<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>status values: active, churned, trial<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>company_size is self-reported<span class=\"pl-pds\">\"</span></span>\n  ]\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Query Patterns</h3></div>\n<div class=\"highlight highlight-source-sql notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"-- &lt;query monthly_mrr&gt;\n-- &lt;description&gt;Monthly MRR from active subscriptions&lt;/description&gt;\n-- &lt;query&gt;\nSELECT\n    DATE_TRUNC('month', started_at) AS month,\n    SUM(mrr) AS total_mrr\nFROM subscriptions\nWHERE ended_at IS NULL\nGROUP BY 1\nORDER BY 1 DESC\n-- &lt;/query&gt;\"><pre><span class=\"pl-c\"><span class=\"pl-c\">--</span> &lt;query monthly_mrr&gt;</span>\n<span class=\"pl-c\"><span class=\"pl-c\">--</span> &lt;description&gt;Monthly MRR from active subscriptions&lt;/description&gt;</span>\n<span class=\"pl-c\"><span class=\"pl-c\">--</span> &lt;query&gt;</span>\n<span class=\"pl-k\">SELECT</span>\n    DATE_TRUNC(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>month<span class=\"pl-pds\">'</span></span>, started_at) <span class=\"pl-k\">AS</span> month,\n    <span class=\"pl-c1\">SUM</span>(mrr) <span class=\"pl-k\">AS</span> total_mrr\n<span class=\"pl-k\">FROM</span> subscriptions\n<span class=\"pl-k\">WHERE</span> ended_at IS <span class=\"pl-k\">NULL</span>\n<span class=\"pl-k\">GROUP BY</span> <span class=\"pl-c1\">1</span>\n<span class=\"pl-k\">ORDER BY</span> <span class=\"pl-c1\">1</span> <span class=\"pl-k\">DESC</span>\n<span class=\"pl-c\"><span class=\"pl-c\">--</span> &lt;/query&gt;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Business Rules</h3></div>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{\n  &quot;metrics&quot;: [\n    {\n      &quot;name&quot;: &quot;MRR&quot;,\n      &quot;definition&quot;: &quot;Sum of active subscriptions excluding trials&quot;\n    }\n  ],\n  &quot;common_gotchas&quot;: [\n    {\n      &quot;issue&quot;: &quot;Active subscription detection&quot;,\n      &quot;solution&quot;: &quot;Filter on ended_at IS NULL, not status column&quot;\n    }\n  ]\n}\"><pre>{\n  <span class=\"pl-ent\">\"metrics\"</span>: [\n    {\n      <span class=\"pl-ent\">\"name\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>MRR<span class=\"pl-pds\">\"</span></span>,\n      <span class=\"pl-ent\">\"definition\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Sum of active subscriptions excluding trials<span class=\"pl-pds\">\"</span></span>\n    }\n  ],\n  <span class=\"pl-ent\">\"common_gotchas\"</span>: [\n    {\n      <span class=\"pl-ent\">\"issue\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Active subscription detection<span class=\"pl-pds\">\"</span></span>,\n      <span class=\"pl-ent\">\"solution\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Filter on ended_at IS NULL, not status column<span class=\"pl-pds\">\"</span></span>\n    }\n  ]\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Load Knowledge</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python scripts/load_knowledge.py            # Upsert changes\npython scripts/load_knowledge.py --recreate  # Fresh start\"><pre>python scripts/load_knowledge.py            <span class=\"pl-c\"><span class=\"pl-c\">#</span> Upsert changes</span>\npython scripts/load_knowledge.py --recreate  <span class=\"pl-c\"><span class=\"pl-c\">#</span> Fresh start</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Evaluations</h2></div>\n<p dir=\"auto\">Five eval categories using Agno's eval framework:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Category</th>\n<th>Eval Type</th>\n<th>What It Tests</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>accuracy</td>\n<td>AccuracyEval (1-10)</td>\n<td>Correct data and meaningful insights</td>\n</tr>\n<tr>\n<td>routing</td>\n<td>ReliabilityEval</td>\n<td>Team routes to correct agent/tools</td>\n</tr>\n<tr>\n<td>security</td>\n<td>AgentAsJudgeEval (binary)</td>\n<td>No credential or secret leaks</td>\n</tr>\n<tr>\n<td>governance</td>\n<td>AgentAsJudgeEval (binary)</td>\n<td>Refuses destructive SQL operations</td>\n</tr>\n<tr>\n<td>boundaries</td>\n<td>AgentAsJudgeEval (binary)</td>\n<td>Schema access boundaries respected</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python -m evals                      # Run all evals\npython -m evals --category accuracy  # Run specific category\npython -m evals --verbose            # Show response details\"><pre>python -m evals                      <span class=\"pl-c\"><span class=\"pl-c\">#</span> Run all evals</span>\npython -m evals --category accuracy  <span class=\"pl-c\"><span class=\"pl-c\">#</span> Run specific category</span>\npython -m evals --verbose            <span class=\"pl-c\"><span class=\"pl-c\">#</span> Show response details</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Local Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./scripts/venv_setup.sh &amp;&amp; source .venv/bin/activate\ndocker compose up -d dash-db\npython scripts/generate_data.py\npython scripts/load_knowledge.py\npython -m dash            # CLI mode\npython -m app.main        # AgentOS mode (web UI at os.agno.com)\"><pre>./scripts/venv_setup.sh <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">source</span> .venv/bin/activate\ndocker compose up -d dash-db\npython scripts/generate_data.py\npython scripts/load_knowledge.py\npython -m dash            <span class=\"pl-c\"><span class=\"pl-c\">#</span> CLI mode</span>\npython -m app.main        <span class=\"pl-c\"><span class=\"pl-c\">#</span> AgentOS mode (web UI at os.agno.com)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Environment Variables</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Variable</th>\n<th>Required</th>\n<th>Default</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>OPENAI_API_KEY</code></td>\n<td>Yes</td>\n<td>—</td>\n<td>OpenAI API key</td>\n</tr>\n<tr>\n<td><code>SLACK_TOKEN</code></td>\n<td>No</td>\n<td><code>\"\"</code></td>\n<td>Slack bot token (interface + tools)</td>\n</tr>\n<tr>\n<td><code>SLACK_SIGNING_SECRET</code></td>\n<td>No</td>\n<td><code>\"\"</code></td>\n<td>Slack signing secret (interface only)</td>\n</tr>\n<tr>\n<td><code>DB_HOST</code></td>\n<td>No</td>\n<td><code>localhost</code></td>\n<td>PostgreSQL host</td>\n</tr>\n<tr>\n<td><code>DB_PORT</code></td>\n<td>No</td>\n<td><code>5432</code></td>\n<td>PostgreSQL port</td>\n</tr>\n<tr>\n<td><code>DB_USER</code></td>\n<td>No</td>\n<td><code>ai</code></td>\n<td>PostgreSQL user</td>\n</tr>\n<tr>\n<td><code>DB_PASS</code></td>\n<td>No</td>\n<td><code>ai</code></td>\n<td>PostgreSQL password</td>\n</tr>\n<tr>\n<td><code>DB_DATABASE</code></td>\n<td>No</td>\n<td><code>ai</code></td>\n<td>PostgreSQL database</td>\n</tr>\n<tr>\n<td><code>PORT</code></td>\n<td>No</td>\n<td><code>8000</code></td>\n<td>API port</td>\n</tr>\n<tr>\n<td><code>RUNTIME_ENV</code></td>\n<td>No</td>\n<td><code>prd</code></td>\n<td><code>dev</code> enables hot reload</td>\n</tr>\n<tr>\n<td><code>AGENTOS_URL</code></td>\n<td>No</td>\n<td><code>http://127.0.0.1:8000</code></td>\n<td>Scheduler callback URL (production)</td>\n</tr>\n<tr>\n<td><code>JWT_VERIFICATION_KEY</code></td>\n<td>Production</td>\n<td>—</td>\n<td>RBAC public key from <a href=\"https://os.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=agentos\" rel=\"nofollow\">os.agno.com</a></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Security</h2></div>\n<p dir=\"auto\">Production deployments require authentication via <a href=\"https://docs.agno.com/agent-os/security/overview?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=security\" rel=\"nofollow\">Agno AgentOS</a>. Dash enables <a href=\"https://docs.agno.com/agent-os/security/rbac?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=rbac\" rel=\"nofollow\">RBAC authorization</a> when <code>RUNTIME_ENV=prd</code> (the default). Without a valid <code>JWT_VERIFICATION_KEY</code>, production endpoints will reject all requests.</p>\n<p dir=\"auto\">Local development (<code>RUNTIME_ENV=dev</code>, set by Docker Compose) runs without auth so you can iterate freely.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Auth Setup</h3></div>\n<p dir=\"auto\">See <a href=\"#deploy-to-railway\">Deploy to Railway</a> for the full setup flow, including how to get your <code>JWT_VERIFICATION_KEY</code> from AgentOS. The Agno control plane handles JWT issuance, session management, traces, metrics, and the web UI. See the <a href=\"https://docs.agno.com/agent-os/security/overview?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=security\" rel=\"nofollow\">AgentOS Security docs</a> for details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Schema-Level Enforcement</h3></div>\n<p dir=\"auto\">Beyond API-level auth, Dash enforces data access at the database level:</p>\n<ul dir=\"auto\">\n<li><strong>Analyst</strong> connects with <code>default_transaction_read_only=on</code> — PostgreSQL rejects any write attempt</li>\n<li><strong>Engineer</strong> writes are scoped to the <code>dash</code> schema — a SQLAlchemy event listener blocks any DDL/DML targeting <code>public</code></li>\n<li><strong>Leader</strong> has no direct database access</li>\n</ul>\n<p dir=\"auto\">These are infrastructure guardrails, not prompt instructions. They hold regardless of what the model generates.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Learn More</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://openai.com/index/inside-our-in-house-data-agent/\" rel=\"nofollow\">OpenAI's In-House Data Agent</a> — the inspiration</li>\n<li><a href=\"https://www.ashpreetbedi.com/articles/sql-agent\" rel=\"nofollow\">Self-Improving SQL Agent</a> — deep dive on an earlier architecture</li>\n<li><a href=\"https://docs.agno.com?utm_source=github&amp;utm_medium=example-repo&amp;utm_campaign=agent-example&amp;utm_content=dash&amp;utm_term=docs\" rel=\"nofollow\">Agno Docs</a></li>\n</ul>\n<p align=\"center\" dir=\"auto\">Built on <a href=\"https://github.com/agno-agi/agno\">Agno</a> · the runtime for agentic software</p>\n</article></div>",
+  "releases": [],
+  "contributorCount": 2,
+  "firstCommitAt": "2026-01-30T10:46:16Z",
+  "recentIssues": [
+    {
+      "number": 15,
+      "title": "Does Dash address \"Silent Wrong Answer\"?",
+      "url": "https://github.com/agno-agi/dash/issues/15",
+      "createdAt": "2026-04-22T00:55:53Z",
+      "comments": 0,
+      "labels": [],
+      "author": "lovaxi"
+    },
+    {
+      "number": 12,
+      "title": "Decoupling runtime state,knowldege db and the data db",
+      "url": "https://github.com/agno-agi/dash/issues/12",
+      "createdAt": "2026-03-05T19:12:31Z",
+      "comments": 0,
+      "labels": [],
+      "author": "KaunilD"
+    },
+    {
+      "number": 7,
+      "title": "[Feature]: User‑configurable custom SQL schema",
+      "url": "https://github.com/agno-agi/dash/issues/7",
+      "createdAt": "2026-02-09T22:30:58Z",
+      "comments": 0,
+      "labels": [],
+      "author": "qdrddr"
+    },
+    {
+      "number": 6,
+      "title": "[Feature]: VectorChord extention as a replacement for PGVector",
+      "url": "https://github.com/agno-agi/dash/issues/6",
+      "createdAt": "2026-02-09T16:44:39Z",
+      "comments": 0,
+      "labels": [],
+      "author": "qdrddr"
+    }
+  ],
+  "participation": {
+    "all": 67,
+    "owner": 0,
+    "community": 67
+  },
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 31,
+      "title": "Reconcile to agno 2.7.0 + agnoctl 0.1.0",
+      "url": "https://github.com/agno-agi/dash/pull/31",
+      "state": "merged",
+      "updatedAt": "2026-07-07T12:21:17Z",
+      "author": "ashpreetbedi",
+      "draft": false
+    },
+    {
+      "number": 28,
+      "title": "chore: update dash — agno 2.5.14→2.7.0a6, replica/hygiene sweep",
+      "url": "https://github.com/agno-agi/dash/pull/28",
+      "state": "open",
+      "updatedAt": "2026-07-07T00:13:25Z",
+      "author": "ashpreetbedi",
+      "draft": true
+    },
+    {
+      "number": 29,
+      "title": "docs: refresh dash README to house style",
+      "url": "https://github.com/agno-agi/dash/pull/29",
+      "state": "open",
+      "updatedAt": "2026-07-07T00:13:15Z",
+      "author": "ashpreetbedi",
+      "draft": true
+    },
+    {
+      "number": 30,
+      "title": "feat: enable built-in MCP server — Phase-1 MCP-first reference",
+      "url": "https://github.com/agno-agi/dash/pull/30",
+      "state": "open",
+      "updatedAt": "2026-07-07T00:09:15Z",
+      "author": "ashpreetbedi",
+      "draft": true
+    },
+    {
+      "number": 16,
+      "title": "docs: improve README",
+      "url": "https://github.com/agno-agi/dash/pull/16",
+      "state": "closed",
+      "updatedAt": "2026-07-01T10:45:00Z",
+      "author": "Kartalops",
+      "draft": false
+    },
+    {
+      "number": 17,
+      "title": "fix: make model configurable via DASH_MODEL env var (default: gpt-4o)",
+      "url": "https://github.com/agno-agi/dash/pull/17",
+      "state": "closed",
+      "updatedAt": "2026-07-01T10:44:39Z",
+      "author": "Kartalops",
+      "draft": false
+    },
+    {
+      "number": 18,
+      "title": "ci: use 'uv run mypy' in validate script",
+      "url": "https://github.com/agno-agi/dash/pull/18",
+      "state": "closed",
+      "updatedAt": "2026-07-01T10:44:10Z",
+      "author": "Kartalops",
+      "draft": false
+    },
+    {
+      "number": 19,
+      "title": "docs: add roadmap section",
+      "url": "https://github.com/agno-agi/dash/pull/19",
+      "state": "closed",
+      "updatedAt": "2026-07-01T10:43:46Z",
+      "author": "Kartalops",
+      "draft": false
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "6d86fca",
+      "message": "Bump default model gpt-5.4 → gpt-5.6-sol (code + judge + docs)",
+      "url": "https://github.com/agno-agi/dash/commit/6d86fca8e85b17349238389f5fad92d15e8f633f",
+      "date": "2026-07-10T09:50:33Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "ee84f01",
+      "message": "Merge pull request #31 from agno-agi/chore/agno-2.7.0a7",
+      "url": "https://github.com/agno-agi/dash/commit/ee84f01b24176685b667d9e081dc1a2c355dbc2e",
+      "date": "2026-07-07T12:21:15Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "7680478",
+      "message": "style: ruff-format evals/run.py",
+      "url": "https://github.com/agno-agi/dash/commit/76804788d9bb2f48ac143f1ed4d656a323d32cb8",
+      "date": "2026-07-07T12:19:21Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "04ddbc2",
+      "message": "agno 2.7.0 + agnoctl 0.1.0: bump to the first stable release of the v2.7 line",
+      "url": "https://github.com/agno-agi/dash/commit/04ddbc2691436ab085bd50e8020357e7984b7936",
+      "date": "2026-07-07T12:12:42Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "e2a3383",
+      "message": "chore: reconcile to agno 2.7.0a7 + agnoctl 0.1.0a7",
+      "url": "https://github.com/agno-agi/dash/commit/e2a3383461cdac47f2a1ab19b939fc2a2fc08a7c",
+      "date": "2026-07-07T00:35:41Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "dfcf2be",
+      "message": "chore: add changes",
+      "url": "https://github.com/agno-agi/dash/commit/dfcf2bedeb13ad78d10d6cdeabb309766f98075e",
+      "date": "2026-04-08T11:50:49Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "67606fe",
+      "message": "chore: add changes",
+      "url": "https://github.com/agno-agi/dash/commit/67606fe34dc4e2aadb8e0d2380eb11a72f5c1524",
+      "date": "2026-04-07T23:20:08Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "7b421c1",
+      "message": "chore: add changes",
+      "url": "https://github.com/agno-agi/dash/commit/7b421c129d1f3c269cc3d79a996497072687cfd8",
+      "date": "2026-04-07T22:27:58Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "580b43f",
+      "message": "chore: add changes",
+      "url": "https://github.com/agno-agi/dash/commit/580b43fe9c1aa4f4d721350c18e024dc59f45343",
+      "date": "2026-04-07T21:56:34Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    },
+    {
+      "sha": "887d998",
+      "message": "Merge pull request #14 from agno-agi/docs/slack-setup",
+      "url": "https://github.com/agno-agi/dash/commit/887d998f0867a9e8f47e3040676125cf1e4ef2e2",
+      "date": "2026-04-07T18:20:57Z",
+      "author": "ashpreetbedi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22579644?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/.github"
+    },
+    {
+      "name": "app",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/app"
+    },
+    {
+      "name": "dash",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/dash"
+    },
+    {
+      "name": "db",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/db"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/docs"
+    },
+    {
+      "name": "evals",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/evals"
+    },
+    {
+      "name": "knowledge",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/knowledge"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/agno-agi/dash/tree/main/scripts"
+    },
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "size": 243,
+      "url": "https://github.com/agno-agi/dash/blob/main/.dockerignore"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 905,
+      "url": "https://github.com/agno-agi/dash/blob/main/.gitignore"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 9819,
+      "url": "https://github.com/agno-agi/dash/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "compose.yaml",
+      "type": "file",
+      "size": 1306,
+      "url": "https://github.com/agno-agi/dash/blob/main/compose.yaml"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 2272,
+      "url": "https://github.com/agno-agi/dash/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "Dockerfile",
+      "type": "file",
+      "size": 1022,
+      "url": "https://github.com/agno-agi/dash/blob/main/Dockerfile"
+    },
+    {
+      "name": "example.env",
+      "type": "file",
+      "size": 2119,
+      "url": "https://github.com/agno-agi/dash/blob/main/example.env"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 11339,
+      "url": "https://github.com/agno-agi/dash/blob/main/LICENSE"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 1099,
+      "url": "https://github.com/agno-agi/dash/blob/main/pyproject.toml"
+    },
+    {
+      "name": "railway.json",
+      "type": "file",
+      "size": 472,
+      "url": "https://github.com/agno-agi/dash/blob/main/railway.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 14905,
+      "url": "https://github.com/agno-agi/dash/blob/main/README.md"
+    },
+    {
+      "name": "requirements.txt",
+      "type": "file",
+      "size": 1609,
+      "url": "https://github.com/agno-agi/dash/blob/main/requirements.txt"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "agno",
+        "version": "[os"
+      }
+    ],
+    "total": 1
+  },
+  "workflowRuns": [
+    {
+      "name": "Validate",
+      "status": "success",
+      "url": "https://github.com/agno-agi/dash/actions/runs/29086093836",
+      "branch": "main",
+      "updatedAt": "2026-07-10T10:22:34Z"
+    }
+  ],
+  "branchCount": 9,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 62,
+    "hasCodeOfConduct": false,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 5,
+  "openPRs": 9,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 1,
+  "mergedPRs": 3,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-01-25",
+      "additions": 12615,
+      "deletions": 9763
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 2750,
+      "deletions": 2013
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 242,
+      "deletions": 257
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 5032,
+      "deletions": 2792
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 19,
+      "deletions": 36
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-28T21:58:58.184Z"
 }
