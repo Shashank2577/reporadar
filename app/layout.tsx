@@ -26,6 +26,10 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image" },
   robots: { index: true, follow: true },
+  // Google Search Console: HTML-tag verification, alongside the HTML-file
+  // method (public/google98141b62810e293b.html) — either one satisfies
+  // Google independently, so this is a redundant, more robust second path.
+  verification: { google: "Y0flsDpqvxtVY_P7cpuuQP-ZEOr7lbVEAhyO1KMWH_0" },
 };
 
 const websiteJsonLd = {
