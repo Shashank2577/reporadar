@@ -5,6 +5,7 @@ import { getBlogPost, getBlogPosts } from "@/lib/data";
 import { renderMarkdown } from "@/lib/markdown";
 import { formatDate } from "@/lib/format";
 import { absoluteUrl, site } from "@/lib/site";
+import NewsletterInline from "@/components/NewsletterInline";
 
 export function generateStaticParams() {
   return getBlogPosts().map((p) => ({ slug: p.slug }));
@@ -56,6 +57,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
       </p>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">{post.title}</h1>
       <div className="prose mt-6" dangerouslySetInnerHTML={{ __html: renderMarkdown(post.body) }} />
+      <NewsletterInline />
     </article>
   );
 }

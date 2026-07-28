@@ -5,6 +5,7 @@ import { getReport, getReports, type Report } from "@/lib/data";
 import { renderMarkdown } from "@/lib/markdown";
 import { formatDate } from "@/lib/format";
 import { absoluteUrl, site } from "@/lib/site";
+import NewsletterInline from "@/components/NewsletterInline";
 
 type Params = { kind: Report["kind"]; slug: string };
 
@@ -69,7 +70,8 @@ export default async function ReportPage({ params }: { params: Promise<Params> }
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{report.title}</h1>
       </header>
       <div className="prose mt-6" dangerouslySetInnerHTML={{ __html: renderMarkdown(report.body) }} />
-      <nav className="mt-10 flex justify-between border-t border-border pt-4 text-sm" aria-label="Report navigation">
+      <NewsletterInline />
+      <nav className="mt-6 flex justify-between border-t border-border pt-4 text-sm" aria-label="Report navigation">
         {older ? (
           <Link href={`/reports/${kind}/${older.slug}`} className="text-accent hover:underline">
             Older: {older.slug}
