@@ -11,6 +11,7 @@ const nav = [
   { href: "/trending/daily", label: "Trending today" },
   { href: "/trending/weekly", label: "Trending this week" },
   { href: "/trending/monthly", label: "Trending this month" },
+  { href: "/trending/archive", label: "Trending archive (by date)" },
   { href: "/reports", label: "Reports archive" },
   { href: "/topics", label: "All topics" },
   { href: "/languages", label: "All languages" },

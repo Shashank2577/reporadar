@@ -236,6 +236,19 @@ export function getLatestTrending(): TrendingDay | null {
   return readJson<TrendingDay>(path.join(TRENDING_DIR, files[files.length - 1]));
 }
 
+export function getAllTrendingDates(): string[] {
+  if (!fs.existsSync(TRENDING_DIR)) return [];
+  return fs
+    .readdirSync(TRENDING_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, ""))
+    .sort((a, b) => b.localeCompare(a));
+}
+
+export function getTrendingByDate(date: string): TrendingDay | null {
+  return readJson<TrendingDay>(path.join(TRENDING_DIR, `${date}.json`));
+}
+
 export function getReports(kind?: Report["kind"]): Report[] {
   const kinds = kind ? [kind] : (["daily", "weekly", "monthly"] as const);
   const reports: Report[] = [];

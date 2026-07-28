@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getAllRepos, getReports, getBlogPosts, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
+import { getAllRepos, getReports, getBlogPosts, getAllTrendingDates, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -11,6 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl("/trending/daily"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/trending/weekly"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl("/trending/monthly"), lastModified: now, changeFrequency: "weekly", priority: 0.8 },
+    { url: absoluteUrl("/trending/archive"), lastModified: now, changeFrequency: "daily", priority: 0.6 },
     { url: absoluteUrl("/reports"), lastModified: now, changeFrequency: "daily", priority: 0.8 },
     { url: absoluteUrl("/repos"), lastModified: now, changeFrequency: "daily", priority: 0.9 },
     { url: absoluteUrl("/blog"), lastModified: now, changeFrequency: "weekly", priority: 0.7 },
@@ -57,6 +58,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.5,
   }));
 
+  const archiveDates: MetadataRoute.Sitemap = getAllTrendingDates().map((date) => ({
+    url: absoluteUrl(`/trending/archive/${date}`),
+    lastModified: new Date(date),
+    changeFrequency: "yearly",
+    priority: 0.3,
+  }));
+
   const blogPosts: MetadataRoute.Sitemap = getBlogPosts().map((p) => ({
     url: absoluteUrl(`/blog/${p.slug}`),
     lastModified: p.date ? new Date(p.date) : now,
@@ -64,5 +72,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.6,
   }));
 
-  return [...statics, ...repos, ...reports, ...blogPosts, ...categories, ...topics, ...languages];
+  return [...statics, ...repos, ...reports, ...blogPosts, ...categories, ...topics, ...languages, ...archiveDates];
 }

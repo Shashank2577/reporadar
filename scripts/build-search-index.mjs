@@ -77,6 +77,11 @@ function collectRoutes() {
   for (const c of categories) routes.add(`/categories/${c}`);
 
   for (const period of ["daily", "weekly", "monthly"]) routes.add(`/trending/${period}`);
+  // The archive index is worth full-text search; the ~200+ individual date
+  // pages are near-duplicates of each other for search purposes (same repo
+  // names repeated) — they're still discoverable via the sitemap for SEO,
+  // just not worth bloating the Pagefind index with.
+  routes.add("/trending/archive");
 
   const reportsDir = path.join(ROOT, "content", "reports");
   for (const kind of ["daily", "weekly", "monthly"]) {

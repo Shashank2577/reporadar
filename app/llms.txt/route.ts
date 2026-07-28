@@ -28,6 +28,7 @@ export function GET() {
     `- [Categories](${absoluteUrl("/categories")}): browse by project type (${categories.map((c) => c.title).join(", ")})`,
     `- [Trending today](${absoluteUrl("/trending/daily")}): today's trending repositories, ranked`,
     `- [Trending this week](${absoluteUrl("/trending/weekly")}) and [this month](${absoluteUrl("/trending/monthly")})`,
+    `- [Trending archive](${absoluteUrl("/trending/archive")}): what was trending on any specific day`,
     `- [Reports archive](${absoluteUrl("/reports")}): every daily, weekly, and monthly report`,
     `- [Topics](${absoluteUrl("/topics")}) and [Languages](${absoluteUrl("/languages")}): browse by tag or language`,
     `- [RSS feed](${absoluteUrl("/feed.xml")}): all reports, machine-readable`,
