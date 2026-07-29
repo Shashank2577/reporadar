@@ -1,6 +1,12 @@
 {
   "id": "johnsoncodehk/typescript-native-bridge",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 220,
+      "forks": 4
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-07-10",
@@ -21,5 +27,2944 @@
     "sampledAt": "2026-07-28T09:22:08.579Z"
   },
   "owner": "johnsoncodehk",
-  "name": "typescript-native-bridge"
+  "name": "typescript-native-bridge",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4",
+  "ownerType": "User",
+  "description": "A typescript-shaped drop-in backed by typescript-go (tsgo) over an in-process cgo NAPI/FFI bridge — no IPC.",
+  "url": "https://github.com/johnsoncodehk/typescript-native-bridge",
+  "homepage": null,
+  "license": "Apache-2.0",
+  "language": "TypeScript",
+  "topics": [],
+  "stars": 220,
+  "forks": 4,
+  "watchers": 3,
+  "openIssues": 4,
+  "createdAt": "2026-06-27T05:30:06Z",
+  "pushedAt": "2026-07-29T04:09:24Z",
+  "defaultBranch": "master",
+  "archived": false,
+  "updatedAt": "2026-07-29T09:11:02.062Z",
+  "languages": {
+    "TypeScript": 673721,
+    "JavaScript": 624380,
+    "Go": 239218,
+    "C": 17048,
+    "Shell": 1554
+  },
+  "readmeExcerpt": "# typescript-native-bridge (TNB)\n\n> Published on npm as [`typescript-native-bridge`](https://www.npmjs.com/package/typescript-native-bridge).\n\n**A drop-in `typescript` replacement that type-checks on Go.** Swap the `typescript`\npackage for this fork and keep using `tsc`, `vue-tsc`, `svelte-check`, `astro-check`,\n`glint`, ESLint, and your editor exactly as before — the checker runs on **tsgo**\n(Microsoft's Go TypeScript compiler) in-process instead of JavaScript. No new CLI, no\nnew LSP, no per-tool config, no code changes.\n\n---\n\n## Why not just use TypeScript 7 (tsgo)?\n\n`typescript@7` is Microsoft's Go-native rewrite — but it doesn't drop into the tools you\nactually use:\n\n- **`vue-tsc` / `astro-check` / `svelte-check` / `glint`** are built on the **classic**\n  `typescript` programmatic API (`createProgram`, Volar hooks, custom hosts). v7's\n  programmatic surface is the new tsgo API — not a drop-in replacement for the classic\n  one, so those tools can't just move to it.\n- **ESLint (typescript-eslint)** imports the classic `typescript` API and calls\n  `getTypeChecker()` — same API mismatch.\n- **Editors** run `tsserver` + Language Service Plugins (`@vue/typescript-plugin` for\n  `.vue`) — tsgo's LSP doesn't support that plugin model.\n\nTNB keeps the **classic package surface** and puts the v7 engine (tsgo 7.x) behind it\nin-process — so one `typescript` override accelerates all of them at once.\n\n---\n\n## Install\n\n### pnpm (monorepos)\n\n```yaml\n# pnpm-workspace.yaml\noverrides:\n  typescript: npm:typescript-native-bridge@<version>\n```\n\n```bash\npnpm install\npnpm exec vue-tsc -b --noEmit    # or your project's typecheck script\n```\n\nIf packages depend on `typescript` via `catalog:`, update the **catalog entry too**,\nor those packages still resolve stock TypeScript:\n\n```yaml\ncatalog:\n  typescript: npm:typescript-native-bridge@<version>\noverrides:\n  typescript: npm:typescript-native-bridge@<version>\n```\n\n### npm\n\n```jsonc\n// package.json\n{\n  \"devDependencies\": {\n    \"typescript\": \"npm:typescript-native-bridge@<version>\"\n  },\n  \"overrides\": {\n    \"typescript\": \"$typescript\"\n  }\n}\n```\n\nUse the alias **and** the `$typescript` override reference as shown — putting\n`npm:typescript-native-bridge@…` directly inside `overrides` is rejected or mis-resolved\nby some npm versions (issue #8). `<version>` is an exact version\n(e.g. `6.0.3-bridge.6.tsgo.7.0.2` — pin exactly; caret ranges don't match\nprerelease versions) or the `latest` dist-tag.\n\n### yarn\n\n```jsonc\n// package.json\n{\n  \"resolutions\": {\n    \"typescript\": \"npm:typescript-native-bridge@<version>\"\n  }\n}\n```\n\n### Local path (pinning a git checkout)\n\n```yaml\n# pnpm-workspace.yaml\noverrides:\n  typescript: link:../typescript-native-bridge\n```\n\nThe checkout must be built first (requires Go — `npm run setup` in the TNB repo).\n\n**After any override change: reinstall.** The override applies repo-wide — `vue-tsc`,\n`@typescript-eslint/parser`, and every other transitive `typescript` consumer picks up\nthe fork.\n\n---\n\n## Confirm it's working\n\nOn the **first** type-check in a process, TNB prints to **stderr**:\n\n```\n┌─────────────────────────────────────────────────────────┐\n│  ✅  TNB ACTIVE — `typescript` is the tsgo-backed fork  │\n└─────────────────────────────────────────────────────────┘\n```\n\n**No banner = stock `typescript` is still loaded.** See [Troubleshooting](#troubleshooting).\n\n```bash\nnode -e \"console.log(require.resolve('typescript'))\"\n# should point at typescript-native-bridge, not node_modules/typescript@6.x\n```\n\n---\n\n## Verified compatible tools\n\nVerified means: the tool runs on the fork and its behavior matches tsgo's on the\nstated workload (no crash, no silent under-reporting, no false positives beyond\nthe [differences from tsgo](#behavior-and-differences-from-tsgo)).\n\n| Tool | Status | Verified on |\n|---|---|---|\n| `tsc` | ✅ | compiler test corpus |\n| `vue-tsc` | ✅ | elk.zone monorepo (~2,000 files): **emitted-error parity** with stock, ~3.1× faster |\n| `astro-check` | ✅ | fixture project: output identical to stock |\n| `svelte-check` | ✅ | fixture project: output identical to stock (incl. `svelteHTML` ambient shims) |\n| `glint` | ✅ | fixture project: same error set as stock (transformed `.gts` virtual files) |\n| ESLint + typescript-eslint (type-aware rules) | ✅ | 1,000-file type-aware corpus: lint output byte-identical to stock |\n| `tsserver` + `@vue/typescript-plugin` | ✅ | volar language-tools test suite: 205/209 pass (4 skipped) |\n| `tsslint` | ✅ | runs as the volar repo's own linter |\n\nContinuous verification: a nightly CI gate replays the language-service probe\ncorpus (quickinfo / definition / references / diagnostics, ~19k units) against the\nsame stock build — no new divergences allowed. If your tool isn't listed, try it and\nfile an issue; the fork covers any tool that drives the standard `typescript`\nCompiler API.\n\n### Framework specifics\n\n- `.vue`, `.svelte`, `.astro`, `.mdx`, `.gts` etc. via the standard\n  `extraFileExtensions` contract — no hard-coded per-framework special case.\n- Host-injected **virtual content** (Volar virtual TS, glint's transformed modules,\n  svelte's ambient shims) reaches the Go checker.\n- `allowArbitraryExtensions` is inferred `true` when host extra extensions are present\n  and tsconfig leaves it unset; explicit `false` opts out.\n- **Not supported:** custom `resolveModuleNames` / `resolveModuleNameLiterals` that\n  remap an import to a different physical file (the bridge is synchronous JS→Go; tsgo\n  cannot call back into JS resolvers).\n\n---\n\n## Performance\n\nMeasured on this repo's benchmarks (Apple Silicon; your repo will differ — measure):\n\n| Workload | Stock `typescript` | TNB | |\n|---|---|---|---|\n| `vue-tsc -b` full check (elk.zone, ~2000 files) | 9.7s | **3.1s** | ~3.1× |\n| type-aware ESLint, single-run (plain TS, one program) | 7.6s | 7.7s | parity |\n| JS heap peak (1000-file type-aware ESLint run) | 1.57GB | **0.90GB** | −43% |\n\n**The rule is simple: wherever the time is in the checker, TNB is faster.** The Go\nengine does the whole-program semantic pass ~10× faster than the JS checker — the\nquestion for any workload is how much of its time that phase is.\n\n**Editor / LS path (Volar + tsserver):** the V8-arena transport (fixed-layout\nrecords written straight into V8 memory) plus a binary blob codec for the\nauto-import export map keep per-keystroke work near the transport floor. Measured\non a 5,537-request roam over the volar corpus: completionInfo **0.3ms** mean with\n**290 bytes and 1.0 RPC** per request; quickinfo **0.5ms**; references **4.8ms**;\ntotal JSON transport **7.7MB**.\n\n**`vue-tsc -b` (checker-dominated — the big win):**\n\n| | Stock | TNB |\n|---|---|---|\n| Type-checking | ~5.6s (JS checker) | ~0.6s (Go checker) |\n| Tool overhead (Volar codegen, JS, transport) | ~4.1s | ~2.5s |\n| **Total** | **9.7s** | **3.1s** |\n\nThe single-run ESLint row is the control case: its type-checking share is small (the\ntool spends its time on parsing, AST conversion and rule execution — work both sides\npay), so the total lands at parity. Workloads dominated by transport volume rather\nthan checker work (e.g. watch-mode ESLint issuing ~469K tiny queries — one program\nrebuild per linted file) measure the JS↔Go boundary, not the engine; the V8-arena\ntransport (fixed-layout records written straight into V8 memory, DataView reads,\ninterned strings) keeps that boundary near its floor, and memory stays well below\nstock either way.\n\n---\n\n## Editor / tsserver (VS Code, Cursor)\n\nCLI typecheck picks up TNB automatically. **The editor does not** — VS Code ships its\nown TypeScript and only uses yours when you opt in.\n\n**1. Workspace settings** (commit `.vscode/settings.json` for the team):\n\n```jsonc\n{\n  \"js/ts.tsdk.path\": \"node_modules/typescript/lib\",\n  \"js/ts.tsdk.promptToUseWorkspaceVersion\": true\n}\n```\n\nUse a path relative to the workspace folder that contains `node_modules`.\n\n**2. Switch to the workspace version** (once per machine):\n\nCommand Palette → **TypeScript: Select TypeScript Version** → **Use Workspace Version**.\n\n**3. Verify:** the version picker shows a path under `node_modules/typescript/lib`; the\nOutput → TypeScript channel may show **TNB ACTIVE** on first project load. Vue/Nuxt users:\nkeep `@vue/typescript-plugin` in `tsconfig` `compilerOptions.plugins` as today — it runs\nas a tsserver LS Plugin on this fork.\n\n| | CLI | Editor |\n|---|---|---|\n| Override needed | Yes | Yes (same `node_modules/typescript`) |\n| Extra config | No | `js/ts.tsdk.path` + Use Workspace Version |\n\n---\n\n## Behavior and differences from tsgo\n\nThe checker's behavior is **tsgo 7.0.2's** (Microsoft's Go TypeScript), not stock\nTypeScript 6.0.3's — migrating from stock means inheriting tsgo's diagnostics,\nbundled libs, and display output as-is.\n\nTNB's own changes to tsgo behavior — the complete list, enforced by CI:\n\n| Change | Why | Upstream | Removal |\n|---|---|---|---|\n| `getTypeFromTypeNodeWorker` resolves type-position entity names (identifier / qualified name / property access) | Silent wrong result on the headline path: hover on `P` in `[P, (typeof OBJ)[P][number]]` read `any` instead of the type parameter (issue #30) | repro branch `repro/type-position-entity-reads-any` (issue pending) | When the upstream fix lands |\n\nAnything that looks like a difference from stock 6.0.3 but isn't listed here is\ntsgo's own behavior, not TNB's. Found an actual TNB-only divergence? File an\nissue with a minimal repro.\n\n---\n\n## Platform support\n\nThe bridge binary ships as per-platform optional dependencies; `npm install` pulls only\nthe one matching your machine (the main package is pure JS):\n\n| Platform | Sub-package |\n|---|---|\n| macOS Apple Silicon | `@typescript-native-bridge/darwin-arm64` |\n| macOS Intel | `@typescript-native-bridge/darwin-x64` |\n| Linux x64 | `@typescript-native-bridge/linux-x64` |\n| Linux arm64 | `@typescript-native-bridge/linux-arm64` |\n| Linux arm (32-bit) | `@typescript-native-bridge/linux-arm` |\n| Windows x64 | `@typescript-native-bridge/win32-x64` |\n| Windows arm64 | `@typescript-native-bridge/win32-arm64` |\n\nLinux packages target glibc 2.31 and are rejected by the release gate if they\nacquire a newer symbol requirement. **Alpine/musl is not supported**: Go's\n`-buildmode=c-shared` runtime crashes at load on musl libc — even a trivial\nhello-world c-shared library segfaults, on Go 1.22 through 1.26 alike\n([golang/go#13492](https://github.com/golang/go/issues/13492), a 10-year-open\nupstream issue with an active fix in\n[golang/go#75048](https://github.com/golang/go/issues/75048); tsgo's own CLI\nworks on Alpine only because it ships CGO-free static binaries, and a NAPI\nbridge cannot be CGO-free). Workaround: run the typecheck/lint step in a\nglibc-based image (`node:24` or `node:24-bookworm-slim`) and deploy into the\nAlpine stage of your multi-stage build; `apk add gcompat` does not help.\n\nOn an unsupported platform the loader fails with a clear \"unsupported platform or\nmissing optional dependency\" error — build from source there (clone with submodules,\nthen `npm run setup`; requires Go + a C toolchain).\n\n---\n\n## Troubleshooting\n\n### No banner appears\n\n| Check | Action |\n|---|---|\n| Override at workspace **root** | Monorepo: `pnpm-workspace.yaml`, not a leaf package |\n| pnpm 11 | Move `package.json` → `pnpm.overrides` to `pnpm-workspace.yaml` → `overrides:` (pnpm 11 no longer reads the `pnpm` field — silently ignored) |\n| `catalog:` pin | Update catalog **and** overrides |\n| Stale install | `pnpm install` again; clear CI cache if needed |\n| Wrong resolution | `node -e \"console.log(require.resolve('typescript'))\"` |\n\n### CLI works, editor doesn't (or vice versa)\n\n- **CLI OK, editor not:** add the [tsdk settings](#editor--tsserver-vs-code-cursor) and\n  run **TypeScript: Select TypeScript Version → Use Workspace Version**. The override\n  alone is not enough for the editor.\n- **Editor OK, CLI not:** check `require.resolve('typescript')` — should point at TNB.\n  Reinstall after changing overrides.\n\n### Type errors differ from stock\n\nE",
+  "commitCount": 370,
+  "releases": [
+    {
+      "name": "v6.0.3-bridge.7.tsgo.7.0.2",
+      "tag": "v6.0.3-bridge.7.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/releases/tag/v6.0.3-bridge.7.tsgo.7.0.2",
+      "publishedAt": "2026-07-27T03:06:23Z",
+      "prerelease": false,
+      "body": "## What's Changed\n* fix(bridge): survive Node worker_threads hosts (ESLint --concurrency) by @christopher-buss in https://github.com/johnsoncodehk/typescript-native-bridge/pull/24\n* fix(bridge): resolve imported extra-extension files by @haoqunjiang in https://github.com/johnsoncodehk/typescript-native-bridge/pull/32\n\n## New Contributors\n* @christopher-buss made their first contribution in https://github.com/johnsoncodehk/typescript-native-bridge/pull/24\n* @haoqunjiang made their first contribution in https://github.com/johnsoncodehk/typescript-native-bridge/pull/32\n\n**Full Changelog**: https://github.com/johnsoncodehk/typescript-native-bridge/compare/v6.0.3-bridge.6.tsgo.7.0.2...v6.0.3-bridge.7.tsgo.7.0.2",
+      "downloads": 0,
+      "reactions": 3
+    },
+    {
+      "name": "v6.0.3-bridge.6.tsgo.7.0.2",
+      "tag": "v6.0.3-bridge.6.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/releases/tag/v6.0.3-bridge.6.tsgo.7.0.2",
+      "publishedAt": "2026-07-23T13:12:56Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/johnsoncodehk/typescript-native-bridge/compare/v6.0.3-bridge.4.tsgo.7.0.2...v6.0.3-bridge.6.tsgo.7.0.2",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v6.0.3-bridge.4.tsgo.7.0.2",
+      "tag": "v6.0.3-bridge.4.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/releases/tag/v6.0.3-bridge.4.tsgo.7.0.2",
+      "publishedAt": "2026-07-23T08:23:05Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/johnsoncodehk/typescript-native-bridge/compare/v6.0.3-bridge.3.tsgo.7.0.2...v6.0.3-bridge.4.tsgo.7.0.2",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v6.0.3-bridge.3.tsgo.7.0.2",
+      "tag": "v6.0.3-bridge.3.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/releases/tag/v6.0.3-bridge.3.tsgo.7.0.2",
+      "publishedAt": "2026-07-23T07:14:26Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/johnsoncodehk/typescript-native-bridge/compare/v6.0.3-bridge.2.tsgo.7.0.2...v6.0.3-bridge.3.tsgo.7.0.2",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v6.0.3-bridge.2.tsgo.7.0.2",
+      "tag": "v6.0.3-bridge.2.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/releases/tag/v6.0.3-bridge.2.tsgo.7.0.2",
+      "publishedAt": "2026-07-23T01:16:43Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/johnsoncodehk/typescript-native-bridge/compare/v6.0.3-bridge.1.tsgo.7.0.2...v6.0.3-bridge.2.tsgo.7.0.2",
+      "downloads": 0,
+      "reactions": 4
+    }
+  ],
+  "contributors": [
+    {
+      "login": "johnsoncodehk",
+      "url": "https://github.com/johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4",
+      "contributions": 365
+    },
+    {
+      "login": "KazariAI",
+      "url": "https://github.com/KazariAI",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/166915487?v=4",
+      "contributions": 3
+    },
+    {
+      "login": "christopher-buss",
+      "url": "https://github.com/christopher-buss",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/32301681?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "haoqunjiang",
+      "url": "https://github.com/haoqunjiang",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/3277634?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">typescript-native-bridge (TNB)</h1></div>\n<blockquote>\n<p dir=\"auto\">Published on npm as <a href=\"https://www.npmjs.com/package/typescript-native-bridge\" rel=\"nofollow\"><code>typescript-native-bridge</code></a>.</p>\n</blockquote>\n<p dir=\"auto\"><strong>A drop-in <code>typescript</code> replacement that type-checks on Go.</strong> Swap the <code>typescript</code>\npackage for this fork and keep using <code>tsc</code>, <code>vue-tsc</code>, <code>svelte-check</code>, <code>astro-check</code>,\n<code>glint</code>, ESLint, and your editor exactly as before — the checker runs on <strong>tsgo</strong>\n(Microsoft's Go TypeScript compiler) in-process instead of JavaScript. No new CLI, no\nnew LSP, no per-tool config, no code changes.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why not just use TypeScript 7 (tsgo)?</h2></div>\n<p dir=\"auto\"><code>typescript@7</code> is Microsoft's Go-native rewrite — but it doesn't drop into the tools you\nactually use:</p>\n<ul dir=\"auto\">\n<li><strong><code>vue-tsc</code> / <code>astro-check</code> / <code>svelte-check</code> / <code>glint</code></strong> are built on the <strong>classic</strong>\n<code>typescript</code> programmatic API (<code>createProgram</code>, Volar hooks, custom hosts). v7's\nprogrammatic surface is the new tsgo API — not a drop-in replacement for the classic\none, so those tools can't just move to it.</li>\n<li><strong>ESLint (typescript-eslint)</strong> imports the classic <code>typescript</code> API and calls\n<code>getTypeChecker()</code> — same API mismatch.</li>\n<li><strong>Editors</strong> run <code>tsserver</code> + Language Service Plugins (<code>@vue/typescript-plugin</code> for\n<code>.vue</code>) — tsgo's LSP doesn't support that plugin model.</li>\n</ul>\n<p dir=\"auto\">TNB keeps the <strong>classic package surface</strong> and puts the v7 engine (tsgo 7.x) behind it\nin-process — so one <code>typescript</code> override accelerates all of them at once.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">pnpm (monorepos)</h3></div>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# pnpm-workspace.yaml\noverrides:\n  typescript: npm:typescript-native-bridge@&lt;version&gt;\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> pnpm-workspace.yaml</span>\n<span class=\"pl-ent\">overrides</span>:\n  <span class=\"pl-ent\">typescript</span>: <span class=\"pl-s\">npm:typescript-native-bridge@&lt;version&gt;</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pnpm install\npnpm exec vue-tsc -b --noEmit    # or your project's typecheck script\"><pre>pnpm install\npnpm <span class=\"pl-c1\">exec</span> vue-tsc -b --noEmit    <span class=\"pl-c\"><span class=\"pl-c\">#</span> or your project's typecheck script</span></pre></div>\n<p dir=\"auto\">If packages depend on <code>typescript</code> via <code>catalog:</code>, update the <strong>catalog entry too</strong>,\nor those packages still resolve stock TypeScript:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"catalog:\n  typescript: npm:typescript-native-bridge@&lt;version&gt;\noverrides:\n  typescript: npm:typescript-native-bridge@&lt;version&gt;\"><pre><span class=\"pl-ent\">catalog</span>:\n  <span class=\"pl-ent\">typescript</span>: <span class=\"pl-s\">npm:typescript-native-bridge@&lt;version&gt;</span>\n<span class=\"pl-ent\">overrides</span>:\n  <span class=\"pl-ent\">typescript</span>: <span class=\"pl-s\">npm:typescript-native-bridge@&lt;version&gt;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">npm</h3></div>\n<div class=\"highlight highlight-source-json-comments notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// package.json\n{\n  &quot;devDependencies&quot;: {\n    &quot;typescript&quot;: &quot;npm:typescript-native-bridge@&lt;version&gt;&quot;\n  },\n  &quot;overrides&quot;: {\n    &quot;typescript&quot;: &quot;$typescript&quot;\n  }\n}\"><pre><span class=\"pl-c\"><span class=\"pl-c\">//</span> package.json</span>\n{\n  <span class=\"pl-ent\">\"devDependencies\"</span>: {\n    <span class=\"pl-ent\">\"typescript\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>npm:typescript-native-bridge@&lt;version&gt;<span class=\"pl-pds\">\"</span></span>\n  },\n  <span class=\"pl-ent\">\"overrides\"</span>: {\n    <span class=\"pl-ent\">\"typescript\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>$typescript<span class=\"pl-pds\">\"</span></span>\n  }\n}</pre></div>\n<p dir=\"auto\">Use the alias <strong>and</strong> the <code>$typescript</code> override reference as shown — putting\n<code>npm:typescript-native-bridge@…</code> directly inside <code>overrides</code> is rejected or mis-resolved\nby some npm versions (issue #8). <code>&lt;version&gt;</code> is an exact version\n(e.g. <code>6.0.3-bridge.6.tsgo.7.0.2</code> — pin exactly; caret ranges don't match\nprerelease versions) or the <code>latest</code> dist-tag.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">yarn</h3></div>\n<div class=\"highlight highlight-source-json-comments notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// package.json\n{\n  &quot;resolutions&quot;: {\n    &quot;typescript&quot;: &quot;npm:typescript-native-bridge@&lt;version&gt;&quot;\n  }\n}\"><pre><span class=\"pl-c\"><span class=\"pl-c\">//</span> package.json</span>\n{\n  <span class=\"pl-ent\">\"resolutions\"</span>: {\n    <span class=\"pl-ent\">\"typescript\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>npm:typescript-native-bridge@&lt;version&gt;<span class=\"pl-pds\">\"</span></span>\n  }\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Local path (pinning a git checkout)</h3></div>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# pnpm-workspace.yaml\noverrides:\n  typescript: link:../typescript-native-bridge\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> pnpm-workspace.yaml</span>\n<span class=\"pl-ent\">overrides</span>:\n  <span class=\"pl-ent\">typescript</span>: <span class=\"pl-s\">link:../typescript-native-bridge</span></pre></div>\n<p dir=\"auto\">The checkout must be built first (requires Go — <code>npm run setup</code> in the TNB repo).</p>\n<p dir=\"auto\"><strong>After any override change: reinstall.</strong> The override applies repo-wide — <code>vue-tsc</code>,\n<code>@typescript-eslint/parser</code>, and every other transitive <code>typescript</code> consumer picks up\nthe fork.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Confirm it's working</h2></div>\n<p dir=\"auto\">On the <strong>first</strong> type-check in a process, TNB prints to <strong>stderr</strong>:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"┌─────────────────────────────────────────────────────────┐\n│  ✅  TNB ACTIVE — `typescript` is the tsgo-backed fork  │\n└─────────────────────────────────────────────────────────┘\"><pre class=\"notranslate\"><code>┌─────────────────────────────────────────────────────────┐\n│  ✅  TNB ACTIVE — `typescript` is the tsgo-backed fork  │\n└─────────────────────────────────────────────────────────┘\n</code></pre></div>\n<p dir=\"auto\"><strong>No banner = stock <code>typescript</code> is still loaded.</strong> See <a href=\"#troubleshooting\">Troubleshooting</a>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"node -e &quot;console.log(require.resolve('typescript'))&quot;\n# should point at typescript-native-bridge, not node_modules/typescript@6.x\"><pre>node -e <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>console.log(require.resolve('typescript'))<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> should point at typescript-native-bridge, not node_modules/typescript@6.x</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Verified compatible tools</h2></div>\n<p dir=\"auto\">Verified means: the tool runs on the fork and its behavior matches tsgo's on the\nstated workload (no crash, no silent under-reporting, no false positives beyond\nthe <a href=\"#behavior-and-differences-from-tsgo\">differences from tsgo</a>).</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tool</th>\n<th>Status</th>\n<th>Verified on</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>tsc</code></td>\n<td>✅</td>\n<td>compiler test corpus</td>\n</tr>\n<tr>\n<td><code>vue-tsc</code></td>\n<td>✅</td>\n<td>elk.zone monorepo (~2,000 files): <strong>emitted-error parity</strong> with stock, ~3.1× faster</td>\n</tr>\n<tr>\n<td><code>astro-check</code></td>\n<td>✅</td>\n<td>fixture project: output identical to stock</td>\n</tr>\n<tr>\n<td><code>svelte-check</code></td>\n<td>✅</td>\n<td>fixture project: output identical to stock (incl. <code>svelteHTML</code> ambient shims)</td>\n</tr>\n<tr>\n<td><code>glint</code></td>\n<td>✅</td>\n<td>fixture project: same error set as stock (transformed <code>.gts</code> virtual files)</td>\n</tr>\n<tr>\n<td>ESLint + typescript-eslint (type-aware rules)</td>\n<td>✅</td>\n<td>1,000-file type-aware corpus: lint output byte-identical to stock</td>\n</tr>\n<tr>\n<td><code>tsserver</code> + <code>@vue/typescript-plugin</code></td>\n<td>✅</td>\n<td>volar language-tools test suite: 205/209 pass (4 skipped)</td>\n</tr>\n<tr>\n<td><code>tsslint</code></td>\n<td>✅</td>\n<td>runs as the volar repo's own linter</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Continuous verification: a nightly CI gate replays the language-service probe\ncorpus (quickinfo / definition / references / diagnostics, ~19k units) against the\nsame stock build — no new divergences allowed. If your tool isn't listed, try it and\nfile an issue; the fork covers any tool that drives the standard <code>typescript</code>\nCompiler API.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Framework specifics</h3></div>\n<ul dir=\"auto\">\n<li><code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.mdx</code>, <code>.gts</code> etc. via the standard\n<code>extraFileExtensions</code> contract — no hard-coded per-framework special case.</li>\n<li>Host-injected <strong>virtual content</strong> (Volar virtual TS, glint's transformed modules,\nsvelte's ambient shims) reaches the Go checker.</li>\n<li><code>allowArbitraryExtensions</code> is inferred <code>true</code> when host extra extensions are present\nand tsconfig leaves it unset; explicit <code>false</code> opts out.</li>\n<li><strong>Not supported:</strong> custom <code>resolveModuleNames</code> / <code>resolveModuleNameLiterals</code> that\nremap an import to a different physical file (the bridge is synchronous JS→Go; tsgo\ncannot call back into JS resolvers).</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Performance</h2></div>\n<p dir=\"auto\">Measured on this repo's benchmarks (Apple Silicon; your repo will differ — measure):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Workload</th>\n<th>Stock <code>typescript</code></th>\n<th>TNB</th>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>vue-tsc -b</code> full check (elk.zone, ~2000 files)</td>\n<td>9.7s</td>\n<td><strong>3.1s</strong></td>\n<td>~3.1×</td>\n</tr>\n<tr>\n<td>type-aware ESLint, single-run (plain TS, one program)</td>\n<td>7.6s</td>\n<td>7.7s</td>\n<td>parity</td>\n</tr>\n<tr>\n<td>JS heap peak (1000-file type-aware ESLint run)</td>\n<td>1.57GB</td>\n<td><strong>0.90GB</strong></td>\n<td>−43%</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>The rule is simple: wherever the time is in the checker, TNB is faster.</strong> The Go\nengine does the whole-program semantic pass ~10× faster than the JS checker — the\nquestion for any workload is how much of its time that phase is.</p>\n<p dir=\"auto\"><strong>Editor / LS path (Volar + tsserver):</strong> the V8-arena transport (fixed-layout\nrecords written straight into V8 memory) plus a binary blob codec for the\nauto-import export map keep per-keystroke work near the transport floor. Measured\non a 5,537-request roam over the volar corpus: completionInfo <strong>0.3ms</strong> mean with\n<strong>290 bytes and 1.0 RPC</strong> per request; quickinfo <strong>0.5ms</strong>; references <strong>4.8ms</strong>;\ntotal JSON transport <strong>7.7MB</strong>.</p>\n<p dir=\"auto\"><strong><code>vue-tsc -b</code> (checker-dominated — the big win):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>Stock</th>\n<th>TNB</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Type-checking</td>\n<td>~5.6s (JS checker)</td>\n<td>~0.6s (Go checker)</td>\n</tr>\n<tr>\n<td>Tool overhead (Volar codegen, JS, transport)</td>\n<td>~4.1s</td>\n<td>~2.5s</td>\n</tr>\n<tr>\n<td><strong>Total</strong></td>\n<td><strong>9.7s</strong></td>\n<td><strong>3.1s</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The single-run ESLint row is the control case: its type-checking share is small (the\ntool spends its time on parsing, AST conversion and rule execution — work both sides\npay), so the total lands at parity. Workloads dominated by transport volume rather\nthan checker work (e.g. watch-mode ESLint issuing ~469K tiny queries — one program\nrebuild per linted file) measure the JS↔Go boundary, not the engine; the V8-arena\ntransport (fixed-layout records written straight into V8 memory, DataView reads,\ninterned strings) keeps that boundary near its floor, and memory stays well below\nstock either way.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Editor / tsserver (VS Code, Cursor)</h2></div>\n<p dir=\"auto\">CLI typecheck picks up TNB automatically. <strong>The editor does not</strong> — VS Code ships its\nown TypeScript and only uses yours when you opt in.</p>\n<p dir=\"auto\"><strong>1. Workspace settings</strong> (commit <code>.vscode/settings.json</code> for the team):</p>\n<div class=\"highlight highlight-source-json-comments notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{\n  &quot;js/ts.tsdk.path&quot;: &quot;node_modules/typescript/lib&quot;,\n  &quot;js/ts.tsdk.promptToUseWorkspaceVersion&quot;: true\n}\"><pre>{\n  <span class=\"pl-ent\">\"js/ts.tsdk.path\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>node_modules/typescript/lib<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"js/ts.tsdk.promptToUseWorkspaceVersion\"</span>: <span class=\"pl-c1\">true</span>\n}</pre></div>\n<p dir=\"auto\">Use a path relative to the workspace folder that contains <code>node_modules</code>.</p>\n<p dir=\"auto\"><strong>2. Switch to the workspace version</strong> (once per machine):</p>\n<p dir=\"auto\">Command Palette → <strong>TypeScript: Select TypeScript Version</strong> → <strong>Use Workspace Version</strong>.</p>\n<p dir=\"auto\"><strong>3. Verify:</strong> the version picker shows a path under <code>node_modules/typescript/lib</code>; the\nOutput → TypeScript channel may show <strong>TNB ACTIVE</strong> on first project load. Vue/Nuxt users:\nkeep <code>@vue/typescript-plugin</code> in <code>tsconfig</code> <code>compilerOptions.plugins</code> as today — it runs\nas a tsserver LS Plugin on this fork.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>CLI</th>\n<th>Editor</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Override needed</td>\n<td>Yes</td>\n<td>Yes (same <code>node_modules/typescript</code>)</td>\n</tr>\n<tr>\n<td>Extra config</td>\n<td>No</td>\n<td><code>js/ts.tsdk.path</code> + Use Workspace Version</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Behavior and differences from tsgo</h2></div>\n<p dir=\"auto\">The checker's behavior is <strong>tsgo 7.0.2's</strong> (Microsoft's Go TypeScript), not stock\nTypeScript 6.0.3's — migrating from stock means inheriting tsgo's diagnostics,\nbundled libs, and display output as-is.</p>\n<p dir=\"auto\">TNB's own changes to tsgo behavior — the complete list, enforced by CI:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Change</th>\n<th>Why</th>\n<th>Upstream</th>\n<th>Removal</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>getTypeFromTypeNodeWorker</code> resolves type-position entity names (identifier / qualified name / property access)</td>\n<td>Silent wrong result on the headline path: hover on <code>P</code> in <code>[P, (typeof OBJ)[P][number]]</code> read <code>any</code> instead of the type parameter (issue #30)</td>\n<td>repro branch <code>repro/type-position-entity-reads-any</code> (issue pending)</td>\n<td>When the upstream fix lands</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Anything that looks like a difference from stock 6.0.3 but isn't listed here is\ntsgo's own behavior, not TNB's. Found an actual TNB-only divergence? File an\nissue with a minimal repro.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Platform support</h2></div>\n<p dir=\"auto\">The bridge binary ships as per-platform optional dependencies; <code>npm install</code> pulls only\nthe one matching your machine (the main package is pure JS):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Platform</th>\n<th>Sub-package</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>macOS Apple Silicon</td>\n<td><code>@typescript-native-bridge/darwin-arm64</code></td>\n</tr>\n<tr>\n<td>macOS Intel</td>\n<td><code>@typescript-native-bridge/darwin-x64</code></td>\n</tr>\n<tr>\n<td>Linux x64</td>\n<td><code>@typescript-native-bridge/linux-x64</code></td>\n</tr>\n<tr>\n<td>Linux arm64</td>\n<td><code>@typescript-native-bridge/linux-arm64</code></td>\n</tr>\n<tr>\n<td>Linux arm (32-bit)</td>\n<td><code>@typescript-native-bridge/linux-arm</code></td>\n</tr>\n<tr>\n<td>Windows x64</td>\n<td><code>@typescript-native-bridge/win32-x64</code></td>\n</tr>\n<tr>\n<td>Windows arm64</td>\n<td><code>@typescript-native-bridge/win32-arm64</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Linux packages target glibc 2.31 and are rejected by the release gate if they\nacquire a newer symbol requirement. <strong>Alpine/musl is not supported</strong>: Go's\n<code>-buildmode=c-shared</code> runtime crashes at load on musl libc — even a trivial\nhello-world c-shared library segfaults, on Go 1.22 through 1.26 alike\n(<a href=\"https://github.com/golang/go/issues/13492\" data-hovercard-type=\"issue\" data-hovercard-url=\"/golang/go/issues/13492/hovercard\">golang/go#13492</a>, a 10-year-open\nupstream issue with an active fix in\n<a href=\"https://github.com/golang/go/issues/75048\" data-hovercard-type=\"pull_request\" data-hovercard-url=\"/golang/go/pull/75048/hovercard\">golang/go#75048</a>; tsgo's own CLI\nworks on Alpine only because it ships CGO-free static binaries, and a NAPI\nbridge cannot be CGO-free). Workaround: run the typecheck/lint step in a\nglibc-based image (<code>node:24</code> or <code>node:24-bookworm-slim</code>) and deploy into the\nAlpine stage of your multi-stage build; <code>apk add gcompat</code> does not help.</p>\n<p dir=\"auto\">On an unsupported platform the loader fails with a clear \"unsupported platform or\nmissing optional dependency\" error — build from source there (clone with submodules,\nthen <code>npm run setup</code>; requires Go + a C toolchain).</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Troubleshooting</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">No banner appears</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Check</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Override at workspace <strong>root</strong></td>\n<td>Monorepo: <code>pnpm-workspace.yaml</code>, not a leaf package</td>\n</tr>\n<tr>\n<td>pnpm 11</td>\n<td>Move <code>package.json</code> → <code>pnpm.overrides</code> to <code>pnpm-workspace.yaml</code> → <code>overrides:</code> (pnpm 11 no longer reads the <code>pnpm</code> field — silently ignored)</td>\n</tr>\n<tr>\n<td><code>catalog:</code> pin</td>\n<td>Update catalog <strong>and</strong> overrides</td>\n</tr>\n<tr>\n<td>Stale install</td>\n<td><code>pnpm install</code> again; clear CI cache if needed</td>\n</tr>\n<tr>\n<td>Wrong resolution</td>\n<td><code>node -e \"console.log(require.resolve('typescript'))\"</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">CLI works, editor doesn't (or vice versa)</h3></div>\n<ul dir=\"auto\">\n<li><strong>CLI OK, editor not:</strong> add the <a href=\"#editor--tsserver-vs-code-cursor\">tsdk settings</a> and\nrun <strong>TypeScript: Select TypeScript Version → Use Workspace Version</strong>. The override\nalone is not enough for the editor.</li>\n<li><strong>Editor OK, CLI not:</strong> check <code>require.resolve('typescript')</code> — should point at TNB.\nReinstall after changing overrides.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Type errors differ from stock</h3></div>\n<p dir=\"auto\">Expected — the checker's behavior is tsgo 7.0.2's, not stock 6.0.3's, so output\ncan differ from stock (see <a href=\"#behavior-and-differences-from-tsgo\">Behavior and differences from\ntsgo</a>). What <strong>is</strong> a bug: output that\ndiffers from tsgo itself — file an issue with a minimal repro.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Missing native bridge</h3></div>\n<p dir=\"auto\">Error mentioning <code>bridge.dylib</code> / <code>bridge.so</code> / <code>bridge.dll</code> / \"unsupported platform\" →\nsee <a href=\"#platform-support\">Platform support</a> (build from source, or use a <code>link:</code> install\nbuilt with <code>npm run setup</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Debug a slow run</h3></div>\n<p dir=\"auto\"><code>TSGO_PROFILE=1</code> prints a <code>[tsgo-profile]</code> RPC/timing summary to stderr on process exit.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Uninstall / rollback</h2></div>\n<p dir=\"auto\">Remove the <code>typescript</code> override, reinstall, confirm:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pnpm install\nnode -e &quot;console.log(require.resolve('typescript'))&quot;   # stock typescript@6.x again\"><pre>pnpm install\nnode -e <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>console.log(require.resolve('typescript'))<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> stock typescript@6.x again</span></pre></div>\n<p dir=\"auto\">No source changes required.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">FAQ</h2></div>\n<p dir=\"auto\"><strong>Do I need to change my code?</strong> No.</p>\n<p dir=\"auto\"><strong>Do I configure <code>vue-tsc</code> / ESLint / my editor plugin separately?</strong> No. They import\n<code>typescript</code>; one override covers them.</p>\n<p dir=\"auto\"><strong>Is this the same as TypeScript 7 / tsgo?</strong> Same engine, different package. TNB pins\ntsgo 7.x as its checker (the version string ends in <code>tsgo.7.0.2</code>), but keeps the classic\n<code>typescript</code> API and <code>tsserver</code> in front of it. <code>typescript@7</code> gives you the new tsgo\nAPI and its own LSP instead — see <a href=\"#why-not-just-use-typescript-7-tsgo\">Why not just use TypeScript 7?</a></p>\n<p dir=\"auto\"><strong>How much faster is it?</strong> See <a href=\"#performance\">Performance</a> — biggest on <code>vue-tsc</code>-style\nfull-program workloads. Measure on your own repo.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Apache-2.0. See <a href=\"https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/LICENSE\">LICENSE</a> and <a href=\"https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/NOTICE\">NOTICE</a>.</p>\n<p dir=\"auto\">This package is a derivative work of <a href=\"https://github.com/microsoft/TypeScript\">Microsoft TypeScript</a>\nand <a href=\"https://github.com/microsoft/typescript-go\">microsoft/typescript-go</a>.</p>\n</article></div>",
+  "recentIssues": [
+    {
+      "number": 42,
+      "title": "Non-deterministic TS2430 on merged global `Window` — count and reported sites vary across identical `vue-tsc` runs (plain tsgo is stable)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/issues/42",
+      "createdAt": "2026-07-28T11:45:45Z",
+      "comments": 1,
+      "labels": [],
+      "author": "Togetic"
+    },
+    {
+      "number": 41,
+      "title": "High tsserver memory usage",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/issues/41",
+      "createdAt": "2026-07-27T12:51:11Z",
+      "comments": 0,
+      "labels": [],
+      "author": "yschroe"
+    },
+    {
+      "number": 40,
+      "title": "Is support for nestjs-cli in scope?",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/issues/40",
+      "createdAt": "2026-07-27T09:49:21Z",
+      "comments": 2,
+      "labels": [],
+      "author": "wonderbeel"
+    },
+    {
+      "number": 38,
+      "title": "Not compatible with Astro check",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/issues/38",
+      "createdAt": "2026-07-26T14:46:28Z",
+      "comments": 4,
+      "labels": [],
+      "author": "lloydjatkinson"
+    }
+  ],
+  "firstCommitAt": "2026-06-27T06:20:53Z",
+  "contributorCount": 4,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 11
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "participation": {
+    "all": 369,
+    "owner": 365,
+    "community": 4
+  },
+  "recentCommits": [
+    {
+      "sha": "3224987",
+      "message": "fix(package): exclude source maps from the npm tarball (#43)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/3224987d6d5beec9f3264ab1df35a67d1b0b0ba3",
+      "date": "2026-07-29T04:09:24Z",
+      "author": "KazariAI",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/166915487?v=4"
+    },
+    {
+      "sha": "53858dc",
+      "message": "fix(bridge): two auto-import registry invalidation bugs (#5847)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/53858dcda01ace8151ce1684d86aa9948398b69e",
+      "date": "2026-07-27T08:51:44Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "c975e6e",
+      "message": "ci: re-pin volar to 37c5a2367 (unused-param filter refactor)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/c975e6ef3d71b5ab43afa429029a6fd5d8f1d939",
+      "date": "2026-07-27T04:02:45Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "daa6b99",
+      "message": "ci: re-pin volar to 0ec2d1935 (#5847 de-flake)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/daa6b995405b0b1aa753e42e6138624adb806cc4",
+      "date": "2026-07-27T03:45:50Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "4e556e2",
+      "message": "fix(bridge): define _GNU_SOURCE for glibc's Dl_info (linux release builds)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/4e556e2aeccce1e604544fcc19c6737d34c10fcd",
+      "date": "2026-07-27T03:01:33Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "d117628",
+      "message": "chore(release): 6.0.3-bridge.7.tsgo.7.0.2",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/d117628726a6f4239bafcf8a2262ea75a5086ec1",
+      "date": "2026-07-27T02:52:26Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "b1226d9",
+      "message": "ci(nightly): drop the astro-check probe until #38 has a repro",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/b1226d91eae39257c0b32229d5b1a4f67f2ca21f",
+      "date": "2026-07-27T02:41:34Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "b5fe502",
+      "message": "fix(bridge): synchronize before reading program in completions/quickinfo short-circuits",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/b5fe5028a8ace17e4b54efba8841b40b36ad053f",
+      "date": "2026-07-27T02:35:38Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "f75990f",
+      "message": "perf(bridge): forward host edits as overlay deltas instead of full text",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/f75990f72ce9eef79b0178867499a9ab9b7f2f5e",
+      "date": "2026-07-27T01:42:16Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    },
+    {
+      "sha": "b023648",
+      "message": "test(baselines): re-pin sim-nav baseline for the volar diagnostic-codes branch",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/commit/b02364860cedeb36c49ae0826c0489f71f055dfb",
+      "date": "2026-07-27T01:36:10Z",
+      "author": "johnsoncodehk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/16279759?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/tree/master/.github"
+    },
+    {
+      "name": "bin",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/tree/master/bin"
+    },
+    {
+      "name": "patches",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/tree/master/patches"
+    },
+    {
+      "name": "test",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/tree/master/test"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/tree/master/tools"
+    },
+    {
+      "name": ".gitattributes",
+      "type": "file",
+      "size": 352,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/.gitattributes"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 91,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/.gitignore"
+    },
+    {
+      "name": ".gitmodules",
+      "type": "file",
+      "size": 231,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/.gitmodules"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 8493,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/AGENTS.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 9197,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/LICENSE"
+    },
+    {
+      "name": "NOTICE",
+      "type": "file",
+      "size": 88022,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/NOTICE"
+    },
+    {
+      "name": "package-lock.json",
+      "type": "file",
+      "size": 378,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/package-lock.json"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 2367,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/package.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 14121,
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/blob/master/README.md"
+    },
+    {
+      "name": "typescript",
+      "type": "file",
+      "size": 0,
+      "url": "https://github.com/microsoft/TypeScript/tree/050880ce59e30b356b686bd3144efe24f875ebc8"
+    },
+    {
+      "name": "typescript-go",
+      "type": "file",
+      "size": 0,
+      "url": "https://github.com/microsoft/typescript-go/tree/2bd066d87f5bafd315be9f40889d0a60b9e58e0b"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 36,
+      "title": "fix(bridge): respect native default-library classification",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/pull/36",
+      "state": "closed",
+      "updatedAt": "2026-07-29T04:27:19Z",
+      "author": "KazariAI",
+      "draft": false
+    },
+    {
+      "number": 43,
+      "title": "fix(package): exclude source maps from the npm tarball",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/pull/43",
+      "state": "merged",
+      "updatedAt": "2026-07-29T04:25:38Z",
+      "author": "KazariAI",
+      "draft": false
+    },
+    {
+      "number": 34,
+      "title": "fix(tools): sync lockfile after version bump",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/pull/34",
+      "state": "closed",
+      "updatedAt": "2026-07-25T02:47:14Z",
+      "author": "KazariAI",
+      "draft": false
+    },
+    {
+      "number": 32,
+      "title": "fix(bridge): resolve imported extra-extension files",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/pull/32",
+      "state": "merged",
+      "updatedAt": "2026-07-24T10:07:46Z",
+      "author": "haoqunjiang",
+      "draft": false
+    },
+    {
+      "number": 24,
+      "title": "fix(bridge): survive Node worker_threads hosts (ESLint --concurrency)",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/pull/24",
+      "state": "merged",
+      "updatedAt": "2026-07-23T23:55:30Z",
+      "author": "christopher-buss",
+      "draft": false
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 8,
+  "workflowRuns": [
+    {
+      "name": "nightly",
+      "status": "success",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/actions/runs/30422402496",
+      "branch": "master",
+      "updatedAt": "2026-07-29T04:45:40Z"
+    },
+    {
+      "name": "ci",
+      "status": "failure",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/actions/runs/30421502045",
+      "branch": "master",
+      "updatedAt": "2026-07-29T04:22:27Z"
+    },
+    {
+      "name": "release",
+      "status": "success",
+      "url": "https://github.com/johnsoncodehk/typescript-native-bridge/actions/runs/30233574468",
+      "branch": "v6.0.3-bridge.7.tsgo.7.0.2",
+      "updatedAt": "2026-07-27T03:06:29Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 42,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 4,
+  "openPRs": 0,
+  "releaseCount": 7,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 34,
+  "mergedPRs": 3,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": {
+    "tag": "v6.0.3-bridge.7.tsgo.7.0.2",
+    "publishedAt": "2026-07-27T03:06:23Z"
+  },
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 79
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 38
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 88
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 115
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 48
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 1
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 18
+    },
+    {
+      "date": "2026-06-30",
+      "count": 16
+    },
+    {
+      "date": "2026-07-01",
+      "count": 10
+    },
+    {
+      "date": "2026-07-02",
+      "count": 8
+    },
+    {
+      "date": "2026-07-03",
+      "count": 16
+    },
+    {
+      "date": "2026-07-04",
+      "count": 11
+    },
+    {
+      "date": "2026-07-05",
+      "count": 9
+    },
+    {
+      "date": "2026-07-06",
+      "count": 6
+    },
+    {
+      "date": "2026-07-07",
+      "count": 3
+    },
+    {
+      "date": "2026-07-08",
+      "count": 4
+    },
+    {
+      "date": "2026-07-09",
+      "count": 8
+    },
+    {
+      "date": "2026-07-10",
+      "count": 4
+    },
+    {
+      "date": "2026-07-11",
+      "count": 4
+    },
+    {
+      "date": "2026-07-12",
+      "count": 9
+    },
+    {
+      "date": "2026-07-13",
+      "count": 12
+    },
+    {
+      "date": "2026-07-14",
+      "count": 8
+    },
+    {
+      "date": "2026-07-15",
+      "count": 5
+    },
+    {
+      "date": "2026-07-16",
+      "count": 8
+    },
+    {
+      "date": "2026-07-17",
+      "count": 24
+    },
+    {
+      "date": "2026-07-18",
+      "count": 22
+    },
+    {
+      "date": "2026-07-19",
+      "count": 10
+    },
+    {
+      "date": "2026-07-20",
+      "count": 25
+    },
+    {
+      "date": "2026-07-21",
+      "count": 3
+    },
+    {
+      "date": "2026-07-22",
+      "count": 11
+    },
+    {
+      "date": "2026-07-23",
+      "count": 26
+    },
+    {
+      "date": "2026-07-24",
+      "count": 34
+    },
+    {
+      "date": "2026-07-25",
+      "count": 6
+    },
+    {
+      "date": "2026-07-26",
+      "count": 8
+    },
+    {
+      "date": "2026-07-27",
+      "count": 39
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 1
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T09:11:13.754Z"
 }

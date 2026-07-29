@@ -1,6 +1,12 @@
 {
   "id": "pascalorg/editor",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 19139,
+      "forks": 2557
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-03-22",
@@ -37,6 +43,12 @@
       "period": "daily",
       "rank": 17,
       "starsGained": 139
+    },
+    {
+      "date": "2026-07-29",
+      "period": "daily",
+      "rank": 1,
+      "starsGained": 341
     }
   ],
   "starHistory": {
@@ -175,5 +187,3099 @@
     "sampledAt": "2026-07-28T09:22:09.174Z"
   },
   "owner": "pascalorg",
-  "name": "editor"
+  "name": "editor",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/214160140?v=4",
+  "ownerType": "Organization",
+  "description": "Create and share 3D architectural projects.",
+  "url": "https://github.com/pascalorg/editor",
+  "homepage": "https://editor.pascal.app",
+  "license": "MIT",
+  "language": "TypeScript",
+  "topics": [],
+  "stars": 19139,
+  "forks": 2557,
+  "watchers": 114,
+  "openIssues": 31,
+  "createdAt": "2025-10-16T19:35:06Z",
+  "pushedAt": "2026-07-28T20:43:07Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T09:09:50.428Z",
+  "commitCount": 1237,
+  "languages": {
+    "TypeScript": 12869163,
+    "CSS": 14861,
+    "Shell": 13882,
+    "JavaScript": 5330
+  },
+  "readmeExcerpt": "# Pascal Editor\n\nA 3D building editor built with React Three Fiber and WebGPU.\n\n\n\n\n\n\n\nhttps://github.com/user-attachments/assets/8b50e7cf-cebe-4579-9cf3-8786b35f7b6b\n\n## Using Published Packages\n\nThe viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting `<Viewer>`:\n\n```bash\nnpm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\n```\n\n```typescript\nimport { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\n```\n\nSee the [`@pascal-app/viewer` quick start](packages/viewer/README.md#usage) for a React example.\n\n\n## Repository Architecture\n\nThis is a Turborepo monorepo with four main runtime packages:\n\n```\neditor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   └── ui/              # Shared UI components\n```\n\n### Separation of Concerns\n\n| Package | Responsibility |\n|---------|---------------|\n| **@pascal-app/core** | Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus |\n| **@pascal-app/viewer** | 3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing |\n| **@pascal-app/editor** | Editing tools, panels, selection, and direct-manipulation UI |\n| **@pascal-app/nodes** | Built-in registry plugin with node definitions, renderers, geometry, and systems |\n| **apps/editor** | Standalone Next.js host for the editor packages |\n\nThe **viewer** renders the scene with sensible defaults. The **editor** extends it with interactive tools, selection management, and editing capabilities.\n\n### Stores\n\nEach package has its own Zustand store for managing state:\n\n| Store | Package | Responsibility |\n|-------|---------|----------------|\n| `useScene` | `@pascal-app/core` | Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo. |\n| `useViewer` | `@pascal-app/viewer` | Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode. |\n| `useEditor` | `apps/editor` | Editor state: active tool, structure layer visibility, panel states, editor-specific preferences. |\n\n**Access patterns:**\n\n```typescript\n// Subscribe to state changes (React component)\nconst nodes = useScene((state) => state.nodes)\nconst levelId = useViewer((state) => state.selection.levelId)\nconst activeTool = useEditor((state) => state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\n```\n\n---\n\n## Core Concepts\n\n### Nodes\n\nNodes are the data primitives that describe the 3D scene. All nodes extend `BaseNode`:\n\n```typescript\nBaseNode {\n  id: string              // Auto-generated with type prefix (e.g., \"wall_abc123\")\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\n```\n\n**Node Hierarchy:**\n\n```\nSite\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n```\n\nNodes are stored in a **flat dictionary** (`Record<id, Node>`), not a nested tree. Parent-child relationships are defined via `parentId` and `children` arrays.\n\n---\n\n### Scene State (Zustand Store)\n\nThe scene is managed by a Zustand store in `@pascal-app/core`:\n\n```typescript\nuseScene.getState() = {\n  nodes: Record<id, AnyNode>,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set<string>,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\n```\n\n**Middleware:**\n- **Persist** - Saves to IndexedDB (excludes transient nodes)\n- **Temporal** (Zundo) - Undo/redo with 50-step history\n\n---\n\n### Scene Registry\n\nThe registry maps node IDs to their Three.js objects for fast lookup:\n\n```typescript\nsceneRegistry = {\n  nodes: Map<id, Object3D>,    // ID → 3D object\n  byType: {\n    wall: Set<id>,\n    item: Set<id>,\n    zone: Set<id>,\n    // ...\n  }\n}\n```\n\nRenderers register their refs using the `useRegistry` hook:\n\n```tsx\nconst ref = useRef<Mesh>(null!)\nuseRegistry(node.id, 'wall', ref)\n```\n\nThis allows systems to access 3D objects directly without traversing the scene graph.\n\n---\n\n### Node Renderers\n\nRenderers are React components that create Three.js objects for each node type:\n\n```\nSceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n```\n\n**Pattern:**\n1. Renderer creates a placeholder mesh/group\n2. Registers it with `useRegistry`\n3. Systems update geometry based on node data\n\nExample (simplified):\n```tsx\nconst WallRenderer = ({ node }) => {\n  const ref = useRef<Mesh>(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    <mesh ref={ref}>\n      <boxGeometry args={[0, 0, 0]} />  {/* Replaced by WallSystem */}\n      <meshStandardMaterial />\n      {node.children.map(id => <NodeRenderer key={id} nodeId={id} />)}\n    </mesh>\n  )\n}\n```\n\n---\n\n### Systems\n\nSystems are React components that run in the render loop (`useFrame`) to update geometry and transforms. They process **dirty nodes** marked by the store.\n\n**Core Systems (in `@pascal-app/core`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `WallSystem` | Generates wall geometry with mitering and CSG cutouts for doors/windows |\n| `SlabSystem` | Generates floor geometry from polygons |\n| `CeilingSystem` | Generates ceiling geometry |\n| `RoofSystem` | Generates roof geometry |\n| `ItemSystem` | Positions items on walls, ceilings, or floors (slab elevation) |\n\n**Viewer Systems (in `@pascal-app/viewer`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `LevelSystem` | Handles level visibility and vertical positioning (stacked/exploded/solo modes) |\n| `ScanSystem` | Controls 3D scan visibility |\n| `GuideSystem` | Controls guide image visibility |\n\n**Processing Pattern:**\n```typescript\nuseFrame(() => {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\n```\n\n---\n\n### Dirty Nodes\n\nWhen a node changes, it's marked as **dirty** in `useScene.getState().dirtyNodes`. Systems check this set each frame and only recompute geometry for dirty nodes.\n\n```typescript\n// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\n```\n\n**Manual marking:**\n```typescript\nuseScene.getState().dirtyNodes.add(wallId)\n```\n\n---\n\n### Event Bus\n\nInter-component communication uses a typed event emitter (mitt):\n\n```typescript\n// Node events\nemitter.on('wall:click', (event) => { ... })\nemitter.on('item:enter', (event) => { ... })\nemitter.on('zone:context-menu', (event) => { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) => { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () => void\n}\n```\n\n---\n\n### Spatial Grid Manager\n\nHandles collision detection and placement validation:\n\n```typescript\nspatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\n```\n\nUsed by item placement tools to validate positions and calculate slab elevations.\n\n---\n\n## Editor Architecture\n\nThe editor extends the viewer with:\n\n### Tools\n\nTools are activated via the toolbar and handle user input for specific operations:\n\n- **SelectTool** - Selection and manipulation\n- **WallTool** - Draw walls\n- **ZoneTool** - Create zones\n- **ItemTool** - Place furniture/fixtures\n- **SlabTool** - Create floor slabs\n\n### Selection Manager\n\nThe editor uses a custom selection manager with hierarchical navigation:\n\n```\nSite → Building → Level → Zone → Items\n```\n\nEach depth level has its own selection strategy for hover/click behavior.\n\n### Editor-Specific Systems\n\n- `ZoneSystem` - Controls zone visibility based on level mode\n- Custom camera controls with node focusing\n\n---\n\n## Data Flow\n\n```\nUser Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n```\n\n---\n\n## Building a Plugin\n\nThe editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same `Plugin` manifest the built-ins use — there is no separate internal API.\n\n- **Developer guide** — [Create a plugin](https://editor.pascal.app/docs/developers/plugins): the `Plugin` shape, panel contributions, discovery, lifecycle, and what's in/out of v1.\n- **Worked example** — [`pascalorg/plugin-trees`](https://github.com/pascalorg/plugin-trees): a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.\n\n---\n\n## Technology Stack\n\n- **React 19** + **Next.js 16**\n- **Three.js** (WebGPU renderer)\n- **React Three Fiber** + **Drei**\n- **Zustand** (state management)\n- **Zod** (schema validation)\n- **Zundo** (undo/redo)\n- **three-bvh-csg** (Boolean geometry operations)\n- **Turborepo** (monorepo management)\n- **Bun** (package manager)\n\n---\n\n## Getting Started\n\n### Development\n\nRun the development server from the **root directory** to enable hot reload for all packages:\n\n```bash\n# Install dependencies\nbun install\n\n# Run development server (builds packages + starts editor with watch mode)\nbun dev\n\n# This will:\n# 1. Build @pascal-app/core and @pascal-app/viewer\n# 2. Start watching both packages for changes\n# 3. Start the Next.js editor dev server\n# Open http://localhost:3002\n```\n\n**Important:** Always run `bun dev` from the root directory to ensure the package watchers are running. This enables hot reload when you edit files in `packages/core/src/` or `packages/viewer/src/`.\n\n### Building for Production\n\n```bash\n# Build all packages\nturbo build\n\n# Build specific package\nturbo build --filter=@pascal-app/core\n```\n\n### Publishing Packages\n\n```bash\n# Build packages\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n# Publish to npm\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public\n```\n\n---\n\n## Key Files\n\n| Path | Description |\n|------|-------------|\n| `packages/core/src/schema/` | Node type definitions (Zod schemas) |\n| `packages/core/src/store/use-scene.ts` | Scene state store |\n| `packages/core/src/hooks/scene-registry/` | 3D object registry |\n| `packages/core/src/systems/` | Geometry generation systems |\n| `packages/viewer/src/components/renderers/` | Node renderers |\n| `packages/viewer/src/components/viewer/` | Main Viewer component |\n| `apps/editor/components/tools/` | Editor tools |\n| `apps/editor/store/` | Editor-specific state |\n\n---\n\n## Contributors\n\n<a href=\"https://github.com/Aymericr\"><img sr",
+  "firstCommitAt": "2026-01-13T22:26:59Z",
+  "contributors": [
+    {
+      "login": "wass08",
+      "url": "https://github.com/wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4",
+      "contributions": 728
+    },
+    {
+      "login": "sudhir9297",
+      "url": "https://github.com/sudhir9297",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4",
+      "contributions": 177
+    },
+    {
+      "login": "Aymericr",
+      "url": "https://github.com/Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4",
+      "contributions": 172
+    },
+    {
+      "login": "open-pascal",
+      "url": "https://github.com/open-pascal",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/271033448?v=4",
+      "contributions": 51
+    },
+    {
+      "login": "anton-pascal",
+      "url": "https://github.com/anton-pascal",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/257628774?v=4",
+      "contributions": 38
+    },
+    {
+      "login": "AdrianPerez3",
+      "url": "https://github.com/AdrianPerez3",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/70107702?v=4",
+      "contributions": 23
+    },
+    {
+      "login": "ruok-dev",
+      "url": "https://github.com/ruok-dev",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/251900461?v=4",
+      "contributions": 8
+    },
+    {
+      "login": "WawaSenseiDev",
+      "url": "https://github.com/WawaSenseiDev",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/232127047?v=4",
+      "contributions": 6
+    },
+    {
+      "login": "github-actions[bot]",
+      "url": "https://github.com/apps/github-actions",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4",
+      "contributions": 6
+    },
+    {
+      "login": "kleenkanteen",
+      "url": "https://github.com/kleenkanteen",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/67878058?v=4",
+      "contributions": 5
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pascal Editor</h1></div>\n<p dir=\"auto\">A 3D building editor built with React Three Fiber and WebGPU.</p>\n<p dir=\"auto\"><a href=\"https://github.com/pascalorg/editor/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"MIT License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/core\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8a8c086de309040b65826cd58531b97e54fb2ed5879acf239805855438c3c50f/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f636f72653f6c6162656c3d25343070617363616c2d617070253246636f7265\" alt=\"npm @pascal-app/core\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/core?label=%40pascal-app%2Fcore\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/viewer\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/b2c5b591a1f49675cc695c2e83f72e39a79b7ef70fd6eb6ff7507fbe40c360a0/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f7669657765723f6c6162656c3d25343070617363616c2d617070253246766965776572\" alt=\"npm @pascal-app/viewer\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/viewer?label=%40pascal-app%2Fviewer\" style=\"max-width: 100%;\"></a>\n<a href=\"https://discord.gg/SaBRA9t2\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c1436607f9edd988df13ebe8debf4a6fc18a9d305e663150eb65600605a3ef62/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446973636f72642d4a6f696e2532305365727665722d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465\" alt=\"Discord\" data-canonical-src=\"https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&amp;logoColor=white\" style=\"max-width: 100%;\"></a>\n<a href=\"https://x.com/pascal_app\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/5aa572af0c485dd448be7f0bd86af5ee5202221aebf08e5f0c68211c298bb0c9/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f666f6c6c6f772d25343070617363616c5f5f6170702d626c61636b3f6c6f676f3d78266c6f676f436f6c6f723d7768697465\" alt=\"X (Twitter)\" data-canonical-src=\"https://img.shields.io/badge/follow-%40pascal__app-black?logo=x&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<details open=\"\" class=\"details-reset border rounded-2\">\n  <summary class=\"tmp-px-3 py-2\">\n    <svg aria-hidden=\"true\" data-component=\"Octicon\" height=\"16\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" data-view-component=\"true\" class=\"octicon octicon-device-camera-video\">\n    <path d=\"M16 3.75v8.5a.75.75 0 0 1-1.136.643L11 10.575v.675A1.75 1.75 0 0 1 9.25 13h-7.5A1.75 1.75 0 0 1 0 11.25v-6.5C0 3.784.784 3 1.75 3h7.5c.966 0 1.75.784 1.75 1.75v.675l3.864-2.318A.75.75 0 0 1 16 3.75Zm-6.5 1a.25.25 0 0 0-.25-.25h-7.5a.25.25 0 0 0-.25.25v6.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-6.5ZM11 8.825l3.5 2.1v-5.85l-3.5 2.1Z\"></path>\n</svg>\n    <span class=\"m-1\">pascal_editor.mp4</span>\n    <span class=\"dropdown-caret\"></span>\n  </summary>\n\n  <video src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODUzMTY0OTAsIm5iZiI6MTc4NTMxNjE5MCwicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDcyOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA3MjlUMDkwOTUwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MWY4NzA3YTY1ZWJlYmQyMzk4ZmU3OTMwOGM0ZWEyYTdlMjI1MTFiOWY1NDU4OGU2YTI5N2U3ODExNWZjNTdkNyZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.Q8dBe2UsCt3eDPlYLZe6t3SAl8ks91HINXZmxF0_yiQ\" data-canonical-src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODUzMTY0OTAsIm5iZiI6MTc4NTMxNjE5MCwicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDcyOSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA3MjlUMDkwOTUwWiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MWY4NzA3YTY1ZWJlYmQyMzk4ZmU3OTMwOGM0ZWEyYTdlMjI1MTFiOWY1NDU4OGU2YTI5N2U3ODExNWZjNTdkNyZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.Q8dBe2UsCt3eDPlYLZe6t3SAl8ks91HINXZmxF0_yiQ\" controls=\"controls\" muted=\"muted\" class=\"d-block rounded-bottom-2 border-top width-fit\" style=\"max-height:640px; min-height: 200px\">\n\n  </video>\n</details>\n\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Using Published Packages</h2></div>\n<p dir=\"auto\">The viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting <code>&lt;Viewer&gt;</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\"><pre>npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes</pre></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">loadPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/core'</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">builtinPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/nodes'</span>\n\n<span class=\"pl-k\">await</span> <span class=\"pl-en\">loadPlugin</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">builtinPlugin</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">See the <a href=\"https://github.com/pascalorg/editor/blob/main/packages/viewer/README.md#usage\"><code>@pascal-app/viewer</code> quick start</a> for a React example.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository Architecture</h2></div>\n<p dir=\"auto\">This is a Turborepo monorepo with four main runtime packages:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   └── ui/              # Shared UI components\"><pre class=\"notranslate\"><code>editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   └── ui/              # Shared UI components\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Separation of Concerns</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>@pascal-app/core</strong></td>\n<td>Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/viewer</strong></td>\n<td>3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/editor</strong></td>\n<td>Editing tools, panels, selection, and direct-manipulation UI</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/nodes</strong></td>\n<td>Built-in registry plugin with node definitions, renderers, geometry, and systems</td>\n</tr>\n<tr>\n<td><strong>apps/editor</strong></td>\n<td>Standalone Next.js host for the editor packages</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The <strong>viewer</strong> renders the scene with sensible defaults. The <strong>editor</strong> extends it with interactive tools, selection management, and editing capabilities.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Stores</h3></div>\n<p dir=\"auto\">Each package has its own Zustand store for managing state:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Store</th>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>useScene</code></td>\n<td><code>@pascal-app/core</code></td>\n<td>Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo.</td>\n</tr>\n<tr>\n<td><code>useViewer</code></td>\n<td><code>@pascal-app/viewer</code></td>\n<td>Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode.</td>\n</tr>\n<tr>\n<td><code>useEditor</code></td>\n<td><code>apps/editor</code></td>\n<td>Editor state: active tool, structure layer visibility, panel states, editor-specific preferences.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Access patterns:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Subscribe to state changes (React component)\nconst nodes = useScene((state) =&gt; state.nodes)\nconst levelId = useViewer((state) =&gt; state.selection.levelId)\nconst activeTool = useEditor((state) =&gt; state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\"><pre><span class=\"pl-c\">// Subscribe to state changes (React component)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">nodes</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useScene</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">levelId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useViewer</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">selection</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">levelId</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">activeTool</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useEditor</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">tool</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Access state outside React (callbacks, systems)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n<span class=\"pl-s1\">useViewer</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setSelection</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">levelId</span>: <span class=\"pl-s\">'level_123'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Core Concepts</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Nodes</h3></div>\n<p dir=\"auto\">Nodes are the data primitives that describe the 3D scene. All nodes extend <code>BaseNode</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"BaseNode {\n  id: string              // Auto-generated with type prefix (e.g., &quot;wall_abc123&quot;)\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\"><pre><span class=\"pl-v\">BaseNode</span> <span class=\"pl-kos\">{</span>\n  id: <span class=\"pl-s1\">string</span>              <span class=\"pl-c\">// Auto-generated with type prefix (e.g., \"wall_abc123\")</span>\n  type: <span class=\"pl-s1\">string</span>            <span class=\"pl-c\">// Discriminator for type-safe handling</span>\n  parentId: <span class=\"pl-s1\">string</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// Parent node reference</span>\n  visible: <span class=\"pl-s1\">boolean</span>\n  camera?: <span class=\"pl-v\">Camera</span>         <span class=\"pl-c\">// Optional saved camera position</span>\n  metadata?: <span class=\"pl-c1\">JSON</span>         <span class=\"pl-c\">// Arbitrary metadata (e.g., { isTransient: true })</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Node Hierarchy:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\"><pre class=\"notranslate\"><code>Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n</code></pre></div>\n<p dir=\"auto\">Nodes are stored in a <strong>flat dictionary</strong> (<code>Record&lt;id, Node&gt;</code>), not a nested tree. Parent-child relationships are defined via <code>parentId</code> and <code>children</code> arrays.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene State (Zustand Store)</h3></div>\n<p dir=\"auto\">The scene is managed by a Zustand store in <code>@pascal-app/core</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState() = {\n  nodes: Record&lt;id, AnyNode&gt;,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set&lt;string&gt;,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-c1\"></span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Record</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">AnyNode</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>  <span class=\"pl-c\">// All nodes</span>\n  <span class=\"pl-c1\">rootNodeIds</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>       <span class=\"pl-c\">// Top-level nodes (sites)</span>\n  <span class=\"pl-c1\">dirtyNodes</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">string</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>     <span class=\"pl-c\">// Nodes pending system updates</span>\n\n  <span class=\"pl-c1\">createNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">parentId</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">updates</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">deleteNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Middleware:</strong></p>\n<ul dir=\"auto\">\n<li><strong>Persist</strong> - Saves to IndexedDB (excludes transient nodes)</li>\n<li><strong>Temporal</strong> (Zundo) - Undo/redo with 50-step history</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene Registry</h3></div>\n<p dir=\"auto\">The registry maps node IDs to their Three.js objects for fast lookup:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sceneRegistry = {\n  nodes: Map&lt;id, Object3D&gt;,    // ID → 3D object\n  byType: {\n    wall: Set&lt;id&gt;,\n    item: Set&lt;id&gt;,\n    zone: Set&lt;id&gt;,\n    // ...\n  }\n}\"><pre><span class=\"pl-s1\">sceneRegistry</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Map</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">Object3D</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>    <span class=\"pl-c\">// ID → 3D object</span>\n  <span class=\"pl-c1\">byType</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">wall</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">item</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">zone</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">// ...</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Renderers register their refs using the <code>useRegistry</code> hook:</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const ref = useRef&lt;Mesh&gt;(null!)\nuseRegistry(node.id, 'wall', ref)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">This allows systems to access 3D objects directly without traversing the scene graph.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Node Renderers</h3></div>\n<p dir=\"auto\">Renderers are React components that create Three.js objects for each node type:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\"><pre class=\"notranslate\"><code>SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n</code></pre></div>\n<p dir=\"auto\"><strong>Pattern:</strong></p>\n<ol dir=\"auto\">\n<li>Renderer creates a placeholder mesh/group</li>\n<li>Registers it with <code>useRegistry</code></li>\n<li>Systems update geometry based on node data</li>\n</ol>\n<p dir=\"auto\">Example (simplified):</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const WallRenderer = ({ node }) =&gt; {\n  const ref = useRef&lt;Mesh&gt;(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    &lt;mesh ref={ref}&gt;\n      &lt;boxGeometry args={[0, 0, 0]} /&gt;  {/* Replaced by WallSystem */}\n      &lt;meshStandardMaterial /&gt;\n      {node.children.map(id =&gt; &lt;NodeRenderer key={id} nodeId={id} /&gt;)}\n    &lt;/mesh&gt;\n  )\n}\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-v\">WallRenderer</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> node <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span>\n\n  <span class=\"pl-k\">return</span> <span class=\"pl-kos\">(</span>\n    <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">mesh</span> <span class=\"pl-c1\">ref</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">ref</span><span class=\"pl-kos\">}</span><span class=\"pl-c1\">&gt;</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">boxGeometry</span> <span class=\"pl-c1\">args</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span>  <span class=\"pl-kos\">{</span><span class=\"pl-c\">/* Replaced by WallSystem */</span><span class=\"pl-kos\">}</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">meshStandardMaterial</span> <span class=\"pl-kos\">/&gt;</span>\n      <span class=\"pl-kos\">{</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">children</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">map</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-c1\">&lt;</span><span class=\"pl-v\">NodeRenderer</span> <span class=\"pl-c1\">key</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-c1\">nodeId</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span>\n    <span class=\"pl-kos\">&lt;/</span><span class=\"pl-s1\">mesh</span><span class=\"pl-c1\">&gt;</span>\n  <span class=\"pl-kos\">)</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Systems</h3></div>\n<p dir=\"auto\">Systems are React components that run in the render loop (<code>useFrame</code>) to update geometry and transforms. They process <strong>dirty nodes</strong> marked by the store.</p>\n<p dir=\"auto\"><strong>Core Systems (in <code>@pascal-app/core</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>WallSystem</code></td>\n<td>Generates wall geometry with mitering and CSG cutouts for doors/windows</td>\n</tr>\n<tr>\n<td><code>SlabSystem</code></td>\n<td>Generates floor geometry from polygons</td>\n</tr>\n<tr>\n<td><code>CeilingSystem</code></td>\n<td>Generates ceiling geometry</td>\n</tr>\n<tr>\n<td><code>RoofSystem</code></td>\n<td>Generates roof geometry</td>\n</tr>\n<tr>\n<td><code>ItemSystem</code></td>\n<td>Positions items on walls, ceilings, or floors (slab elevation)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Viewer Systems (in <code>@pascal-app/viewer</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>LevelSystem</code></td>\n<td>Handles level visibility and vertical positioning (stacked/exploded/solo modes)</td>\n</tr>\n<tr>\n<td><code>ScanSystem</code></td>\n<td>Controls 3D scan visibility</td>\n</tr>\n<tr>\n<td><code>GuideSystem</code></td>\n<td>Controls guide image visibility</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Processing Pattern:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useFrame(() =&gt; {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\"><pre><span class=\"pl-en\">useFrame</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">id</span> <span class=\"pl-k\">of</span> <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">obj</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sceneRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">get</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n\n    <span class=\"pl-c\">// Update geometry, transforms, etc.</span>\n    <span class=\"pl-en\">updateGeometry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">obj</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">node</span><span class=\"pl-kos\">)</span>\n\n    <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">delete</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Dirty Nodes</h3></div>\n<p dir=\"auto\">When a node changes, it's marked as <strong>dirty</strong> in <code>useScene.getState().dirtyNodes</code>. Systems check this set each frame and only recompute geometry for dirty nodes.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\"><pre><span class=\"pl-c\">// Automatic: createNode, updateNode, deleteNode mark nodes dirty</span>\n<span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">thickness</span>: <span class=\"pl-c1\">0.2</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// → wallId added to dirtyNodes</span>\n<span class=\"pl-c\">// → WallSystem regenerates geometry next frame</span>\n<span class=\"pl-c\">// → wallId removed from dirtyNodes</span></pre></div>\n<p dir=\"auto\"><strong>Manual marking:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState().dirtyNodes.add(wallId)\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Event Bus</h3></div>\n<p dir=\"auto\">Inter-component communication uses a typed event emitter (mitt):</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Node events\nemitter.on('wall:click', (event) =&gt; { ... })\nemitter.on('item:enter', (event) =&gt; { ... })\nemitter.on('zone:context-menu', (event) =&gt; { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) =&gt; { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () =&gt; void\n}\"><pre><span class=\"pl-c\">// Node events</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'wall:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'item:enter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'zone:context-menu'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Grid events (background)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'grid:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Event payload</span>\n<span class=\"pl-v\">NodeEvent</span><span class=\"pl-kos\"></span> <span class=\"pl-kos\">{</span>\n  node: <span class=\"pl-v\">AnyNode</span>\n  position: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  localPosition: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  normal?: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  stopPropagation: <span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-s1\"></span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Spatial Grid Manager</h3></div>\n<p dir=\"auto\">Handles collision detection and placement validation:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"spatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\"><pre><span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnFloor</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">position</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">rotation</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnWall</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">t</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">height</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getSlabElevationAt</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Used by item placement tools to validate positions and calculate slab elevations.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Editor Architecture</h2></div>\n<p dir=\"auto\">The editor extends the viewer with:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Tools</h3></div>\n<p dir=\"auto\">Tools are activated via the toolbar and handle user input for specific operations:</p>\n<ul dir=\"auto\">\n<li><strong>SelectTool</strong> - Selection and manipulation</li>\n<li><strong>WallTool</strong> - Draw walls</li>\n<li><strong>ZoneTool</strong> - Create zones</li>\n<li><strong>ItemTool</strong> - Place furniture/fixtures</li>\n<li><strong>SlabTool</strong> - Create floor slabs</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Selection Manager</h3></div>\n<p dir=\"auto\">The editor uses a custom selection manager with hierarchical navigation:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site → Building → Level → Zone → Items\"><pre class=\"notranslate\"><code>Site → Building → Level → Zone → Items\n</code></pre></div>\n<p dir=\"auto\">Each depth level has its own selection strategy for hover/click behavior.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Editor-Specific Systems</h3></div>\n<ul dir=\"auto\">\n<li><code>ZoneSystem</code> - Controls zone visibility based on level mode</li>\n<li>Custom camera controls with node focusing</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Data Flow</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\"><pre class=\"notranslate\"><code>User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n</code></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building a Plugin</h2></div>\n<p dir=\"auto\">The editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same <code>Plugin</code> manifest the built-ins use — there is no separate internal API.</p>\n<ul dir=\"auto\">\n<li><strong>Developer guide</strong> — <a href=\"https://editor.pascal.app/docs/developers/plugins\" rel=\"nofollow\">Create a plugin</a>: the <code>Plugin</code> shape, panel contributions, discovery, lifecycle, and what's in/out of v1.</li>\n<li><strong>Worked example</strong> — <a href=\"https://github.com/pascalorg/plugin-trees\"><code>pascalorg/plugin-trees</code></a>: a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Technology Stack</h2></div>\n<ul dir=\"auto\">\n<li><strong>React 19</strong> + <strong>Next.js 16</strong></li>\n<li><strong>Three.js</strong> (WebGPU renderer)</li>\n<li><strong>React Three Fiber</strong> + <strong>Drei</strong></li>\n<li><strong>Zustand</strong> (state management)</li>\n<li><strong>Zod</strong> (schema validation)</li>\n<li><strong>Zundo</strong> (undo/redo)</li>\n<li><strong>three-bvh-csg</strong> (Boolean geometry operations)</li>\n<li><strong>Turborepo</strong> (monorepo management)</li>\n<li><strong>Bun</strong> (package manager)</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Getting Started</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Development</h3></div>\n<p dir=\"auto\">Run the development server from the <strong>root directory</strong> to enable hot reload for all packages:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Install dependencies\nbun install\n\n# Run development server (builds packages + starts editor with watch mode)\nbun dev\n\n# This will:\n# 1. Build @pascal-app/core and @pascal-app/viewer\n# 2. Start watching both packages for changes\n# 3. Start the Next.js editor dev server\n# Open http://localhost:3002\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Install dependencies</span>\nbun install\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Run development server (builds packages + starts editor with watch mode)</span>\nbun dev\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> This will:</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Build @pascal-app/core and @pascal-app/viewer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Start watching both packages for changes</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Start the Next.js editor dev server</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Open http://localhost:3002</span></pre></div>\n<p dir=\"auto\"><strong>Important:</strong> Always run <code>bun dev</code> from the root directory to ensure the package watchers are running. This enables hot reload when you edit files in <code>packages/core/src/</code> or <code>packages/viewer/src/</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for Production</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build all packages\nturbo build\n\n# Build specific package\nturbo build --filter=@pascal-app/core\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build all packages</span>\nturbo build\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build specific package</span>\nturbo build --filter=@pascal-app/core</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Publishing Packages</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build packages\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n# Publish to npm\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build packages</span>\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Publish to npm</span>\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public</pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Files</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>packages/core/src/schema/</code></td>\n<td>Node type definitions (Zod schemas)</td>\n</tr>\n<tr>\n<td><code>packages/core/src/store/use-scene.ts</code></td>\n<td>Scene state store</td>\n</tr>\n<tr>\n<td><code>packages/core/src/hooks/scene-registry/</code></td>\n<td>3D object registry</td>\n</tr>\n<tr>\n<td><code>packages/core/src/systems/</code></td>\n<td>Geometry generation systems</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/renderers/</code></td>\n<td>Node renderers</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/viewer/</code></td>\n<td>Main Viewer component</td>\n</tr>\n<tr>\n<td><code>apps/editor/components/tools/</code></td>\n<td>Editor tools</td>\n</tr>\n<tr>\n<td><code>apps/editor/store/</code></td>\n<td>Editor-specific state</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributors</h2></div>\n<p dir=\"auto\"><a href=\"https://github.com/Aymericr\"><img src=\"https://avatars.githubusercontent.com/u/4444492?v=4\" width=\"60\" height=\"60\" alt=\"Aymeric Rabot\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/wass08\"><img src=\"https://avatars.githubusercontent.com/u/6551176?v=4\" width=\"60\" height=\"60\" alt=\"Wassim Samad\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/sudhir9297\"><img src=\"https://avatars.githubusercontent.com/sudhir9297?v=4\" width=\"60\" height=\"60\" alt=\"Sudhir\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n<hr>\n<p dir=\"auto\"><a href=\"https://trendshift.io/repositories/23831\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/93310c4e4c31854e7af5b46996b4eaa96c5f721cad8d076ea68d5d9ed011dbfb/68747470733a2f2f7472656e6473686966742e696f2f6170692f62616467652f7265706f7369746f726965732f3233383331\" alt=\"pascalorg/editor | Trendshift\" width=\"250\" height=\"55\" data-canonical-src=\"https://trendshift.io/api/badge/repositories/23831\" style=\"max-width: 100%; height: auto; max-height: 55px;; aspect-ratio: 250 / 55; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n</article></div>",
+  "releases": [
+    {
+      "name": "v0.9.1 — Preset System, Rooms & Templates, Building Manipulation",
+      "tag": "v0.9.1",
+      "url": "https://github.com/pascalorg/editor/releases/tag/v0.9.1",
+      "publishedAt": "2026-06-10T03:17:29Z",
+      "prerelease": false,
+      "body": "## 🏗️ Pascal Editor v0.9.1 — Preset System, Rooms & Templates, Building Manipulation\n\nThis release ships a first-class **preset system**, **room presets & template scans**, a deep **building-manipulation overhaul** (rotation, unified handles, tap-to-engage move), **editor sound design**, **viewer shadow improvements**, and a full **dependency/security refresh**. It also publishes the npm packages announced in v0.9.0 — everything lands on the registry as 0.9.1.\n\n### ✨ Features\n\n- **Preset system** — capture builds as presets with framing + zoom-limited thumbnails, browse them in a hierarchical function-tree with an icon-grid category bar, and place them with parameters, move tool, shadows, isolation, and a green/red validity box ([#341](https://github.com/pascalorg/editor/pull/341), [#344](https://github.com/pascalorg/editor/pull/344), [#345](https://github.com/pascalorg/editor/pull/345), [#349](https://github.com/pascalorg/editor/pull/349), [#354](https://github.com/pascalorg/editor/pull/354), [#357](https://github.com/pascalorg/editor/pull/357), [#366](https://github.com/pascalorg/editor/pull/366))\n- **Rooms & templates** — save furnished rooms as reusable presets; template scans",
+      "downloads": 0,
+      "reactions": 10
+    },
+    {
+      "name": "v0.9.0 — In-World Handles, Render Modes & IFC Importer",
+      "tag": "v0.9.0",
+      "url": "https://github.com/pascalorg/editor/releases/tag/v0.9.0",
+      "publishedAt": "2026-05-27T18:48:43Z",
+      "prerelease": false,
+      "body": "## 🏗️ Pascal Editor v0.9.0 — In-World Handles, Render Modes & IFC Importer\n\nThis release ships the **node-registry plugin architecture**, **in-world selection handles**, a full **IFC → Pascal importer**, **Solid/Rendered render modes**, **six roof accessories**, a complete **elevator system**, and an expanded material library.\n\n### ✨ Features\n\n- **In-world selection handles** — resize arrows and floorplan move handles for wall, door, window, stair, fence, elevator, column, shelf, roof segments, slab, and ceiling. New `NodeDefinition.handles` descriptor and `EditorApi` IoC interface ([#334](https://github.com/pascalorg/editor/pull/334))\n- **Viewer render modes** — Solid / Rendered toggle, surface-role clay materials, scene themes (light / dark), textured surfaces, edge + ink pass ([#332](https://github.com/pascalorg/editor/pull/332))\n- **Six roof accessories** — chimney, dormer, skylight, solar-panel, ridge-vent, box-vent as first-class `NodeDefinition` kinds with CSG roof cuts ([#330](https://github.com/pascalorg/editor/pull/330))\n- **IFC → Pascal converter** — new `packages/ifc-converter` package and `apps/ifc-converter` app; imports IFCWALL dimensions and profile-typed columns (",
+      "downloads": 0,
+      "reactions": 6
+    },
+    {
+      "name": "v0.8.0 — Community Sync & MCP on npm",
+      "tag": "v0.8.0",
+      "url": "https://github.com/pascalorg/editor/releases/tag/v0.8.0",
+      "publishedAt": "2026-05-10T00:47:25Z",
+      "prerelease": false,
+      "body": "## 🌍 Pascal Editor v0.8.0 — Community Sync & MCP on npm\n\nThis release brings our community-driven improvements into the open-source packages, and marks the **first public npm release of `@pascal-app/mcp`** — the Model Context Protocol server for Pascal.\n\n### 📦 New Package: `@pascal-app/mcp`\n\n`@pascal-app/mcp` is now available on npm!\n\n```\nnpm install @pascal-app/mcp\n```\n\nThe MCP server exposes the Pascal scene graph to AI hosts (Claude Desktop, Cursor, and any MCP-compatible client) via the [Model Context Protocol](https://modelcontextprotocol.io). It ships with:\n\n- **19 MCP tools** — scene querying, mutation, undo/redo, export, validation, and vision\n- **4 MCP resources** — current scene, summary, item catalog, and level constraints\n- **3 MCP prompts** — `from_brief`, `iterate_on_feedback`, `renovation_from_photos`\n- **stdio and Streamable HTTP transports**\n- **`pascal-mcp` CLI binary** with `--stdio`, `--http`, and `--scene` flags\n- **Local `SqliteSceneStore`** backed by built-in SQLite (Bun/Node), shared across MCP and the editor via `PASCAL_DATA_DIR` / `PASCAL_DB_PATH`\n\n### ✨ Changes\n\n- **Item catalog schema** — items now carry `source` (`library` | `community` | `mine`) and ",
+      "downloads": 0,
+      "reactions": 12
+    },
+    {
+      "name": "v0.7.0",
+      "tag": "v0.7.0",
+      "url": "https://github.com/pascalorg/editor/releases/tag/v0.7.0",
+      "publishedAt": "2026-05-09T14:38:28Z",
+      "prerelease": false,
+      "body": "## 🎉 Pascal Editor v0.7.0\n\nA major feature release with significant expansions to the door and window systems, a new column node, material paint mode, improved 2D editor, and MCP server support.\n\n### ✨ Features\n\n- **Expanded door system** — garage door types, interior door variants, animated open/close, swing angles, frameless openings, dual-side handles, and first-person collider support ([#292](https://github.com/pascalorg/editor/pull/292), [#293](https://github.com/pascalorg/editor/pull/293))\n- **Expanded window system** — multiple window types (casement, awning, bay, etc.), animated open/close, first-person window interaction, shape-specific settings, and bay caps ([#292](https://github.com/pascalorg/editor/pull/292), [#295](https://github.com/pascalorg/editor/pull/295))\n- **Column node** — new procedural column type in core schema with full preset system: shaft profiles (straight, tapered, bulged), base/capital styles, fluting, spiral detail, and more ([#292](https://github.com/pascalorg/editor/pull/292))\n- **Material paint mode** — dedicated paint workflow for applying materials directly to scene elements with category-based compatibility ([#271](https://github.com/pascalorg",
+      "downloads": 0,
+      "reactions": 3
+    },
+    {
+      "name": "v0.6.0",
+      "tag": "v0.6.0",
+      "url": "https://github.com/pascalorg/editor/releases/tag/v0.6.0",
+      "publishedAt": "2026-04-22T06:05:55Z",
+      "prerelease": false,
+      "body": "## 🎉 Pascal Editor v0.6.0\n\nA major feature release with new building tools, material editing, and quality-of-life improvements.\n\n### ✨ Features\n\n- **Multi-surface material system** — per-surface materials for walls, stairs, roofs with click-targeted 3D editing ([#266](https://github.com/pascalorg/editor/pull/266))\n- **Automatic wall-room generation** — closed wall loops auto-split and generate slabs ([#255](https://github.com/pascalorg/editor/pull/255), [#257](https://github.com/pascalorg/editor/pull/257))\n- **Stair-slab integration** — stair-driven cutouts in slabs and ceilings\n- **Full curved fence support** + endpoint move tools ([#267](https://github.com/pascalorg/editor/pull/267))\n- **Grid snap toolbar controls**\n- **Auto ceilings** from wall loops\n- **13 new material presets** — granite, marble, parquet, wallpaper, wood varieties\n\n### 🐛 Fixes\n\n- Robust undo/redo with nested history pause/resume — no more drag flooding\n- WebGPU renderer init fixes, post-processing stability ([#233](https://github.com/pascalorg/editor/pull/233), [#234](https://github.com/pascalorg/editor/pull/234))\n- Improved snapping across all geometry types\n- Prevent crash when duplicating elements ([#239]",
+      "downloads": 0,
+      "reactions": 14
+    }
+  ],
+  "contributorCount": 26,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 19
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 25
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 15
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 11
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 13
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 14
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 18
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 18
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 22
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 9
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 19
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 15
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 20
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 19
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 22
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 14
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 16
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 15
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 12
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 11
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 23
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 22
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 31
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 25
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 18
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 20
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 17
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 20
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 17
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 17
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 14
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 14
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 16
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 1
+    }
+  ],
+  "participation": {
+    "all": 1237,
+    "owner": 0,
+    "community": 1237
+  },
+  "recentIssues": [
+    {
+      "number": 557,
+      "title": "Pascall App is Working?",
+      "url": "https://github.com/pascalorg/editor/issues/557",
+      "createdAt": "2026-07-28T14:28:17Z",
+      "comments": 0,
+      "labels": [
+        "bug"
+      ],
+      "author": "NishinoTSK"
+    },
+    {
+      "number": 552,
+      "title": "Discord invite link is ded",
+      "url": "https://github.com/pascalorg/editor/issues/552",
+      "createdAt": "2026-07-27T19:10:53Z",
+      "comments": 2,
+      "labels": [
+        "bug"
+      ],
+      "author": "krazyjakee"
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 19
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 40
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 62
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 32
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 44
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 71
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 59
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 39
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 20
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 4
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 23
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 15
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 10
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 55
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 42
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 37
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 27
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 116
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 45
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 16
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 28
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 48
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 69
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 72
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 7
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 24
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 15
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 40
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 2
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 6
+    },
+    {
+      "date": "2026-01-15",
+      "count": 4
+    },
+    {
+      "date": "2026-01-16",
+      "count": 5
+    },
+    {
+      "date": "2026-01-17",
+      "count": 4
+    },
+    {
+      "date": "2026-01-18",
+      "count": 4
+    },
+    {
+      "date": "2026-01-19",
+      "count": 6
+    },
+    {
+      "date": "2026-01-20",
+      "count": 3
+    },
+    {
+      "date": "2026-01-21",
+      "count": 14
+    },
+    {
+      "date": "2026-01-22",
+      "count": 7
+    },
+    {
+      "date": "2026-01-23",
+      "count": 6
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 14
+    },
+    {
+      "date": "2026-01-27",
+      "count": 11
+    },
+    {
+      "date": "2026-01-28",
+      "count": 8
+    },
+    {
+      "date": "2026-01-29",
+      "count": 15
+    },
+    {
+      "date": "2026-01-30",
+      "count": 14
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 10
+    },
+    {
+      "date": "2026-02-03",
+      "count": 6
+    },
+    {
+      "date": "2026-02-04",
+      "count": 2
+    },
+    {
+      "date": "2026-02-05",
+      "count": 9
+    },
+    {
+      "date": "2026-02-06",
+      "count": 3
+    },
+    {
+      "date": "2026-02-07",
+      "count": 2
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 11
+    },
+    {
+      "date": "2026-02-10",
+      "count": 10
+    },
+    {
+      "date": "2026-02-11",
+      "count": 16
+    },
+    {
+      "date": "2026-02-12",
+      "count": 7
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 8
+    },
+    {
+      "date": "2026-02-17",
+      "count": 10
+    },
+    {
+      "date": "2026-02-18",
+      "count": 29
+    },
+    {
+      "date": "2026-02-19",
+      "count": 13
+    },
+    {
+      "date": "2026-02-20",
+      "count": 11
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 10
+    },
+    {
+      "date": "2026-02-24",
+      "count": 13
+    },
+    {
+      "date": "2026-02-25",
+      "count": 15
+    },
+    {
+      "date": "2026-02-26",
+      "count": 9
+    },
+    {
+      "date": "2026-02-27",
+      "count": 9
+    },
+    {
+      "date": "2026-02-28",
+      "count": 3
+    },
+    {
+      "date": "2026-03-01",
+      "count": 1
+    },
+    {
+      "date": "2026-03-02",
+      "count": 7
+    },
+    {
+      "date": "2026-03-03",
+      "count": 3
+    },
+    {
+      "date": "2026-03-04",
+      "count": 11
+    },
+    {
+      "date": "2026-03-05",
+      "count": 7
+    },
+    {
+      "date": "2026-03-06",
+      "count": 10
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 10
+    },
+    {
+      "date": "2026-03-11",
+      "count": 9
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 1
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 1
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 2
+    },
+    {
+      "date": "2026-03-21",
+      "count": 1
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 5
+    },
+    {
+      "date": "2026-03-25",
+      "count": 6
+    },
+    {
+      "date": "2026-03-26",
+      "count": 10
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 2
+    },
+    {
+      "date": "2026-03-29",
+      "count": 1
+    },
+    {
+      "date": "2026-03-30",
+      "count": 9
+    },
+    {
+      "date": "2026-03-31",
+      "count": 3
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 2
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 1
+    },
+    {
+      "date": "2026-04-06",
+      "count": 2
+    },
+    {
+      "date": "2026-04-07",
+      "count": 3
+    },
+    {
+      "date": "2026-04-08",
+      "count": 1
+    },
+    {
+      "date": "2026-04-09",
+      "count": 3
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 3
+    },
+    {
+      "date": "2026-04-14",
+      "count": 3
+    },
+    {
+      "date": "2026-04-15",
+      "count": 7
+    },
+    {
+      "date": "2026-04-16",
+      "count": 15
+    },
+    {
+      "date": "2026-04-17",
+      "count": 11
+    },
+    {
+      "date": "2026-04-18",
+      "count": 16
+    },
+    {
+      "date": "2026-04-19",
+      "count": 7
+    },
+    {
+      "date": "2026-04-20",
+      "count": 9
+    },
+    {
+      "date": "2026-04-21",
+      "count": 10
+    },
+    {
+      "date": "2026-04-22",
+      "count": 4
+    },
+    {
+      "date": "2026-04-23",
+      "count": 2
+    },
+    {
+      "date": "2026-04-24",
+      "count": 8
+    },
+    {
+      "date": "2026-04-25",
+      "count": 2
+    },
+    {
+      "date": "2026-04-26",
+      "count": 1
+    },
+    {
+      "date": "2026-04-27",
+      "count": 9
+    },
+    {
+      "date": "2026-04-28",
+      "count": 9
+    },
+    {
+      "date": "2026-04-29",
+      "count": 7
+    },
+    {
+      "date": "2026-04-30",
+      "count": 5
+    },
+    {
+      "date": "2026-05-01",
+      "count": 6
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 5
+    },
+    {
+      "date": "2026-05-05",
+      "count": 6
+    },
+    {
+      "date": "2026-05-06",
+      "count": 5
+    },
+    {
+      "date": "2026-05-07",
+      "count": 5
+    },
+    {
+      "date": "2026-05-08",
+      "count": 2
+    },
+    {
+      "date": "2026-05-09",
+      "count": 4
+    },
+    {
+      "date": "2026-05-10",
+      "count": 11
+    },
+    {
+      "date": "2026-05-11",
+      "count": 3
+    },
+    {
+      "date": "2026-05-12",
+      "count": 6
+    },
+    {
+      "date": "2026-05-13",
+      "count": 5
+    },
+    {
+      "date": "2026-05-14",
+      "count": 44
+    },
+    {
+      "date": "2026-05-15",
+      "count": 46
+    },
+    {
+      "date": "2026-05-16",
+      "count": 1
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 15
+    },
+    {
+      "date": "2026-05-19",
+      "count": 16
+    },
+    {
+      "date": "2026-05-20",
+      "count": 6
+    },
+    {
+      "date": "2026-05-21",
+      "count": 6
+    },
+    {
+      "date": "2026-05-22",
+      "count": 2
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 2
+    },
+    {
+      "date": "2026-05-27",
+      "count": 5
+    },
+    {
+      "date": "2026-05-28",
+      "count": 4
+    },
+    {
+      "date": "2026-05-29",
+      "count": 5
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 1
+    },
+    {
+      "date": "2026-06-02",
+      "count": 8
+    },
+    {
+      "date": "2026-06-03",
+      "count": 10
+    },
+    {
+      "date": "2026-06-04",
+      "count": 1
+    },
+    {
+      "date": "2026-06-05",
+      "count": 4
+    },
+    {
+      "date": "2026-06-06",
+      "count": 4
+    },
+    {
+      "date": "2026-06-07",
+      "count": 10
+    },
+    {
+      "date": "2026-06-08",
+      "count": 11
+    },
+    {
+      "date": "2026-06-09",
+      "count": 12
+    },
+    {
+      "date": "2026-06-10",
+      "count": 12
+    },
+    {
+      "date": "2026-06-11",
+      "count": 2
+    },
+    {
+      "date": "2026-06-12",
+      "count": 1
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 4
+    },
+    {
+      "date": "2026-06-15",
+      "count": 11
+    },
+    {
+      "date": "2026-06-16",
+      "count": 14
+    },
+    {
+      "date": "2026-06-17",
+      "count": 25
+    },
+    {
+      "date": "2026-06-18",
+      "count": 9
+    },
+    {
+      "date": "2026-06-19",
+      "count": 6
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 2
+    },
+    {
+      "date": "2026-06-23",
+      "count": 12
+    },
+    {
+      "date": "2026-06-24",
+      "count": 12
+    },
+    {
+      "date": "2026-06-25",
+      "count": 23
+    },
+    {
+      "date": "2026-06-26",
+      "count": 12
+    },
+    {
+      "date": "2026-06-27",
+      "count": 11
+    },
+    {
+      "date": "2026-06-28",
+      "count": 1
+    },
+    {
+      "date": "2026-06-29",
+      "count": 3
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 1
+    },
+    {
+      "date": "2026-07-02",
+      "count": 2
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 3
+    },
+    {
+      "date": "2026-07-07",
+      "count": 1
+    },
+    {
+      "date": "2026-07-08",
+      "count": 10
+    },
+    {
+      "date": "2026-07-09",
+      "count": 9
+    },
+    {
+      "date": "2026-07-10",
+      "count": 1
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 2
+    },
+    {
+      "date": "2026-07-14",
+      "count": 2
+    },
+    {
+      "date": "2026-07-15",
+      "count": 4
+    },
+    {
+      "date": "2026-07-16",
+      "count": 2
+    },
+    {
+      "date": "2026-07-17",
+      "count": 3
+    },
+    {
+      "date": "2026-07-18",
+      "count": 2
+    },
+    {
+      "date": "2026-07-19",
+      "count": 13
+    },
+    {
+      "date": "2026-07-20",
+      "count": 2
+    },
+    {
+      "date": "2026-07-21",
+      "count": 5
+    },
+    {
+      "date": "2026-07-22",
+      "count": 4
+    },
+    {
+      "date": "2026-07-23",
+      "count": 10
+    },
+    {
+      "date": "2026-07-24",
+      "count": 6
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 2
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "42ac4be",
+      "message": "feat(editor): hide crop switcher when host preselects a capture crop (#558)",
+      "url": "https://github.com/pascalorg/editor/commit/42ac4be1ce5f3fee74806aa093267b6fee77d47d",
+      "date": "2026-07-28T20:43:07Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "ab76686",
+      "message": "editor: improve floorplan modes and annotations (#549)",
+      "url": "https://github.com/pascalorg/editor/commit/ab76686b8ba77a7e97fc7e238f5252017bb98826",
+      "date": "2026-07-27T22:57:59Z",
+      "author": "sudhir9297",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4"
+    },
+    {
+      "sha": "daa1f3e",
+      "message": "feat: add material browse categories (#546)",
+      "url": "https://github.com/pascalorg/editor/commit/daa1f3e99bd5656168b34affc9e70f5c024e3d7b",
+      "date": "2026-07-24T18:22:13Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "7309fc8",
+      "message": "editor: stabilize floorplan and camera interactions (#545)",
+      "url": "https://github.com/pascalorg/editor/commit/7309fc8f1d0ed61c51547f08466f61a3cd32ea1c",
+      "date": "2026-07-24T16:33:58Z",
+      "author": "sudhir9297",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4"
+    },
+    {
+      "sha": "f0985df",
+      "message": "fix(core): preserve legacy site children during scene healing (#544)",
+      "url": "https://github.com/pascalorg/editor/commit/f0985df887796503e2ba863c18377c372b384ca2",
+      "date": "2026-07-24T14:12:27Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "99812cd",
+      "message": "Improve editor placement and selection workflows (#543)",
+      "url": "https://github.com/pascalorg/editor/commit/99812cd4cb6bcf84d05459606e6dcca249e0b0d2",
+      "date": "2026-07-24T13:35:10Z",
+      "author": "Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4"
+    },
+    {
+      "sha": "b95d737",
+      "message": "Fix composite node duplication placement (#542)",
+      "url": "https://github.com/pascalorg/editor/commit/b95d737eb60d23bc316e89b367691bd513ecc5a5",
+      "date": "2026-07-24T12:17:05Z",
+      "author": "Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4"
+    },
+    {
+      "sha": "3b70deb",
+      "message": "editor: improve floorplan navigation performance (#541)",
+      "url": "https://github.com/pascalorg/editor/commit/3b70deb837a47126e62e37f36bc8db2e58a47590",
+      "date": "2026-07-24T12:00:03Z",
+      "author": "sudhir9297",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4"
+    },
+    {
+      "sha": "28ab27f",
+      "message": "Merge pull request #539 from pascalorg/feat/realtime-collaboration-sfx",
+      "url": "https://github.com/pascalorg/editor/commit/28ab27f5ec78efdf6c932303c70816933aec0cc1",
+      "date": "2026-07-23T22:33:14Z",
+      "author": "Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4"
+    },
+    {
+      "sha": "d0afde1",
+      "message": "Merge remote-tracking branch 'origin/main' into feat/realtime-collaboration-sfx",
+      "url": "https://github.com/pascalorg/editor/commit/d0afde192e47cc90ae5b0b24f97460cfb304d649",
+      "date": "2026-07-23T22:28:45Z",
+      "author": "Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".agents",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.agents"
+    },
+    {
+      "name": ".claude",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.claude"
+    },
+    {
+      "name": ".codex",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.codex"
+    },
+    {
+      "name": ".cursor",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.cursor"
+    },
+    {
+      "name": ".devcontainer",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.devcontainer"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.github"
+    },
+    {
+      "name": ".vscode",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/.vscode"
+    },
+    {
+      "name": "apps",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/apps"
+    },
+    {
+      "name": "packages",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/packages"
+    },
+    {
+      "name": "public",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/public"
+    },
+    {
+      "name": "styles",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/styles"
+    },
+    {
+      "name": "tooling",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/tooling"
+    },
+    {
+      "name": "wiki",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/tree/main/wiki"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 229,
+      "url": "https://github.com/pascalorg/editor/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 647,
+      "url": "https://github.com/pascalorg/editor/blob/main/.gitignore"
+    },
+    {
+      "name": ".npmrc",
+      "type": "file",
+      "size": 0,
+      "url": "https://github.com/pascalorg/editor/blob/main/.npmrc"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 3613,
+      "url": "https://github.com/pascalorg/editor/blob/main/AGENTS.md"
+    },
+    {
+      "name": "biome.jsonc",
+      "type": "file",
+      "size": 3725,
+      "url": "https://github.com/pascalorg/editor/blob/main/biome.jsonc"
+    },
+    {
+      "name": "bun.lock",
+      "type": "file",
+      "size": 223623,
+      "url": "https://github.com/pascalorg/editor/blob/main/bun.lock"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "size": 5413,
+      "url": "https://github.com/pascalorg/editor/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 9,
+      "url": "https://github.com/pascalorg/editor/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 2564,
+      "url": "https://github.com/pascalorg/editor/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "design-qa.md",
+      "type": "file",
+      "size": 4073,
+      "url": "https://github.com/pascalorg/editor/blob/main/design-qa.md"
+    },
+    {
+      "name": "GEMINI.md",
+      "type": "file",
+      "size": 9,
+      "url": "https://github.com/pascalorg/editor/blob/main/GEMINI.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1074,
+      "url": "https://github.com/pascalorg/editor/blob/main/LICENSE"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 2301,
+      "url": "https://github.com/pascalorg/editor/blob/main/package.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 13502,
+      "url": "https://github.com/pascalorg/editor/blob/main/README.md"
+    },
+    {
+      "name": "SETUP.md",
+      "type": "file",
+      "size": 1393,
+      "url": "https://github.com/pascalorg/editor/blob/main/SETUP.md"
+    },
+    {
+      "name": "turbo.json",
+      "type": "file",
+      "size": 808,
+      "url": "https://github.com/pascalorg/editor/blob/main/turbo.json"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 558,
+      "title": "Hide crop switcher when host preselects a capture crop",
+      "url": "https://github.com/pascalorg/editor/pull/558",
+      "state": "merged",
+      "updatedAt": "2026-07-28T20:43:07Z",
+      "author": "wass08",
+      "draft": false
+    },
+    {
+      "number": 556,
+      "title": "perf(core,viewer): stop rebuilding wall geometry every frame",
+      "url": "https://github.com/pascalorg/editor/pull/556",
+      "state": "open",
+      "updatedAt": "2026-07-28T13:49:37Z",
+      "author": "toycenterboss-bot",
+      "draft": false
+    },
+    {
+      "number": 554,
+      "title": "editor: keep room surfaces in sync with wall topology",
+      "url": "https://github.com/pascalorg/editor/pull/554",
+      "state": "open",
+      "updatedAt": "2026-07-28T11:31:40Z",
+      "author": "sudhir9297",
+      "draft": false
+    },
+    {
+      "number": 549,
+      "title": "editor: improve floorplan modes and annotations",
+      "url": "https://github.com/pascalorg/editor/pull/549",
+      "state": "merged",
+      "updatedAt": "2026-07-27T22:58:00Z",
+      "author": "sudhir9297",
+      "draft": false
+    },
+    {
+      "number": 551,
+      "title": "fix(editor): use a literal dev port so `bun dev` works on Windows",
+      "url": "https://github.com/pascalorg/editor/pull/551",
+      "state": "open",
+      "updatedAt": "2026-07-27T22:24:54Z",
+      "author": "evolv3ai",
+      "draft": false
+    },
+    {
+      "number": 553,
+      "title": "feat(ifc): preserve unsupported IFC geometry",
+      "url": "https://github.com/pascalorg/editor/pull/553",
+      "state": "open",
+      "updatedAt": "2026-07-27T21:52:22Z",
+      "author": "yorhodes",
+      "draft": false
+    },
+    {
+      "number": 550,
+      "title": "fix(nodes): reuse wall draft preview geometry",
+      "url": "https://github.com/pascalorg/editor/pull/550",
+      "state": "open",
+      "updatedAt": "2026-07-27T13:59:47Z",
+      "author": "JimmyZheng-ZJU",
+      "draft": false
+    },
+    {
+      "number": 548,
+      "title": "ci: run the test suite in CI",
+      "url": "https://github.com/pascalorg/editor/pull/548",
+      "state": "open",
+      "updatedAt": "2026-07-27T08:15:23Z",
+      "author": "vjureta",
+      "draft": false
+    }
+  ],
+  "branchCount": 160,
+  "tagCount": 13,
+  "community": {
+    "healthPercentage": 62,
+    "hasCodeOfConduct": false,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": true
+  },
+  "workflowRuns": [
+    {
+      "name": "CI",
+      "status": "success",
+      "url": "https://github.com/pascalorg/editor/actions/runs/30397561650",
+      "branch": "main",
+      "updatedAt": "2026-07-28T20:44:53Z"
+    },
+    {
+      "name": "mcp-ci",
+      "status": "action_required",
+      "url": "https://github.com/pascalorg/editor/actions/runs/30365255186",
+      "branch": "pr/wall-geometry-rebuild",
+      "updatedAt": "2026-07-28T13:48:42Z"
+    }
+  ],
+  "fundingLinks": [],
+  "openIssuesOnly": 15,
+  "openPRs": 16,
+  "releaseCount": 13,
+  "discussionsEnabled": true,
+  "discussionCount": 21,
+  "discussions": [
+    {
+      "title": "Docker image",
+      "url": "https://github.com/pascalorg/editor/discussions/559",
+      "createdAt": "2026-07-29T06:06:41Z",
+      "comments": 0,
+      "category": "Show and tell"
+    },
+    {
+      "title": "Editor's architecture and codebase explanation",
+      "url": "https://github.com/pascalorg/editor/discussions/555",
+      "createdAt": "2026-07-28T11:58:05Z",
+      "comments": 0,
+      "category": "Show and tell"
+    },
+    {
+      "title": "Add export 3D printable STL option",
+      "url": "https://github.com/pascalorg/editor/discussions/331",
+      "createdAt": "2026-05-22T14:30:25Z",
+      "comments": 1,
+      "category": "Ideas"
+    },
+    {
+      "title": "Quick Start with docker",
+      "url": "https://github.com/pascalorg/editor/discussions/183",
+      "createdAt": "2026-03-26T06:47:40Z",
+      "comments": 1,
+      "category": "Show and tell"
+    },
+    {
+      "title": "i18n by claude code",
+      "url": "https://github.com/pascalorg/editor/discussions/352",
+      "createdAt": "2026-05-31T01:31:32Z",
+      "comments": 1,
+      "category": "Ideas"
+    }
+  ],
+  "closedIssues": 54,
+  "mergedPRs": 377,
+  "environmentCount": 3,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": {
+    "tag": "v0.9.1",
+    "publishedAt": "2026-06-10T03:17:29Z"
+  },
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T09:10:02.124Z"
 }

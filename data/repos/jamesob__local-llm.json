@@ -1,6 +1,12 @@
 {
   "id": "jamesob/local-llm",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 1674,
+      "forks": 99
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-07-04",
@@ -29,5 +35,2711 @@
     "sampledAt": "2026-07-28T09:22:08.579Z"
   },
   "owner": "jamesob",
-  "name": "local-llm"
+  "name": "local-llm",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4",
+  "ownerType": "User",
+  "description": "Everything I know about running LLMs locally",
+  "url": "https://github.com/jamesob/local-llm",
+  "homepage": null,
+  "license": null,
+  "language": "Shell",
+  "topics": [],
+  "stars": 1674,
+  "forks": 99,
+  "watchers": 13,
+  "openIssues": 2,
+  "createdAt": "2026-07-03T13:06:03Z",
+  "pushedAt": "2026-07-10T16:46:17Z",
+  "defaultBranch": "master",
+  "archived": false,
+  "updatedAt": "2026-07-29T09:10:50.512Z",
+  "languages": {
+    "Shell": 2228,
+    "Dockerfile": 98
+  },
+  "readmeExcerpt": "# jamesob's guide to running SOTA LLMs locally\n\n*Note: nothing in this README aside from the tables was written by AI.*\n\n---\n\nHave $2k burning a hole in your pocket and want some local, state-of-the-art machine\nintelligence? \n\nHow about $40k?\n\nIf Dario and Altman are giving you heartburn (they should be), read on to figure out\nhow to run this new kind of computing locally.\n\n---\n\nIn this repo you'll find\n\n- the hardware I use to run SOTA locally,\n  - why I bought what and little-known *secrets* for configuring it,\n- how I run speech-to-text (STT) locally,\n- ready-to-run configuration for running models I think are good within Docker containers.\n\n## Contents\n\n| Section | TL;DR |\n|---|---|\n| [How much are you willing to spend?](#how-much-are-you-willing-to-spend) | $2k gets you Qwen and good STT (pretty far!); $40k gets you almost-Opus |\n| [Base system](#base-system) | Last-gen EPYC + eBay DDR4 for $5.6k |\n| [GPUs](#gpus) | 4× RTX PRO 6000, 384GB VRAM (where the money went) |\n| [c-payne switch sub-BOM](#c-payne-pcie-gen4-switch-sub-bom-c-paynecom) | Indie PCIe switching from [c-payne.com](https://c-payne.com) so GPUs talk peer-to-peer |\n| [GPU mount](#gpu-mount) | A day of carpentry |\n| [Making the switch behave](#getting-the-pci-switches-to-work-properly) | BIOS bifurcation, link speed, ASPM |\n| [Kernel / GRUB params](#kernel--grub-parameters) | `iommu=off` or NCCL hangs |\n| [ACS disable](#acs-disable-critical-for-switch-p2p) | Keep P2P traffic inside the switch fabric |\n| [GPU power limiting](#gpu-power-limiting) | Running $46k of silicon on a 110V circuit |\n| [Result](#result) | Gen4 line rate: 27.5/50.4 GB/s, sub-µs latency |\n| [`runners/`](./runners) | Ready-to-run serving configs: [GLM-5.2-594B](./runners/GLM-5.2-594B): vLLM docker-compose, DCP4+MTP5, ~80 t/s @ 460k ctx |\n| [`runners/stt`](./runners/stt) | Ready-to-run speech-to-text config with `cohere-transcribe` |\n| [`tools/`](./tools) | [`measure-gpu-speed.sh`](./tools/measure-gpu-speed.sh): P2P bandwidth/latency benchmark |\n| [Resources](#resources) | rtx6kpro repo, c-payne |\n\n## My setup\n\nI was lucky/dumb enough to buy 4x RTX Pro 6000s back when they were cheaper. Because\nRAM is now so expensive, I opted to build a last-gen DDR4 system to host these cards,\nthe parts for which I got off eBay. This allowed me to keep base system cost reasonable\nwhile still getting a lot of VRAM.\n\n\n\nAnother somewhat unusual thing I did was to use PCIe4 switches (from\n[c-payne.com](c-payne.com)). This allows the GPUs to communicate to one another\n\"directly\" at wire speeds during the allreduce step in tensor parallelism, rather than\nhaving to send all data through the PCI root complex. The upshot of this is reduced\nlatency between the cards with less of a need for expensive PCIe5 hardware.\n\n\n\nConsequently, I'm spending money on VRAM (where it counts) rather than on a PCIe5/DDR5\nbase system, which is terrifically expensive as of July 2026.\n\nBy using an older host-gen4 setup rather than gen5, we're saving about $10,000 in host\ncosts while still getting very good performance in VRAM, which is what we want.\nGenerally, spilling over into system RAM makes LLM performance unusably slower for\nagentic workloads.\n\nMy particular BOM is detailed below.\n\n\n### How much are you willing to spend?\n\n#### ~$2k\n\nA great way to go is 2x RTX 3090s for a total of **48GB VRAM** total. You can then run\n[Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B), which is an awesome model.\n\nYou can also run SOTA speech-to-text (STT) with\n[`cohere-transcribe`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) (I\nwas previously using \n[`whisper-large-v3`](https://huggingface.co/openai/whisper-large-v3)), which I find very\nuseful. That's the model - you could then access it with my cross-platform [`stt`\nharness](https://github.com/jamesob/stt).\n\nI've found local STT surprisingly useful - and I feel comfortable using it, unlike a\nhosted equivalent. You can find a ready-to-run config in\n[`./runners/stt`](./runners/stt) that only assumes the presence of ~11GB of VRAM on an\nNvidia GPU.\n\n#### ~$20k\n\n(TODO) \n\n- 2x RTX 6000 Pro\n- 4x DGX Sparks networked together\n- Apple hardware\n\nI don't have any experience with this regime so I'm not of much help here.\n\n#### ~$40k\n\nAt this level, you get the next step up in model intelligence. Something pretty\nclose to Claude Opus.\n\nYou'd buy 4x RTX 6000 Pros for a total of **384GB of VRAM**.\n\n\n##### Current best models for 4x RTX6kPRO\n\n| Date | Best model | My config |\n|---|---|---|\n| 2026-07-01 | [`GLM-5.2-Int8Mix-NVFP4-REAP-594B`](https://huggingface.co/madeby561/GLM-5.2-Int8Mix-NVFP4-REAP-594B) | [Runner config](./runners/GLM-5.2-594B) |\n\n##### Other approaches\n\nNote: these are my recommendations, but there are other completely valid ways to spend\nyour money. For example, there's probably also some regime where rather than getting 4\nrtx6kpros, you allocate most of your money to building out a [linked 4x DGX Spark\ncluster](https://youtu.be/QJqKqxQR36Y?si=MiKNYtIzut_5pnXy) for a total of 512GB VRAM\nand use that as the slow, big brain to drive Qwen3.7-27b to do the rote tasks quickly.\n\n\n## Hardware\n\nHere's the hardware I wound up purchasing for the 4x RTX 6000 pro machine.\n\n\n\n### Base system\n\nA modest, last-gen EPYC system purchased in parts almost entirely from eBay.\n\n| Component | Spec | Price |\n|---|---|---|\n| Motherboard | ASRock Rack ROMED8-2T (SP3, 7× PCIe 4.0 x16, dual 10GbE) | $715 |\n| CPU | AMD EPYC Milan 7313P (16-core 3.0GHz) | $504 |\n| RAM | 8× 16GB Crucial CT16G4RFD4213 DDR4 ECC RDIMM (128GB total, eBay) | $642 |\n| CPU Cooler | Noctua NH-U14s | $140 |\n| Case | AAAWave Sluice V2 open frame | $100 |\n| PSUs | 2× Super Flower 1700W | $750 |\n| PCIe Switch | c-payne Microchip Switchtec PM40100 Gen4 (see sub-BOM below) | ~$1,330 |\n| Boot NVMe | 4TB M.2 | $291 |\n| Storage NVMe | (2x) 8TB M.2 (model weights) | $1,200 |\n| Fans | 3× 120mm PWM | $15 |\n| **Total** | | **$5,687** |\n\n### GPUs\n\n| Component | Spec | Price |\n|---|---|---|\n| GPUs | 4× NVIDIA RTX PRO 6000 Blackwell Workstation (96GB each, **384GB VRAM total**) | **~$46,000** |\n\n### c-payne PCIe Gen4 Switch Sub-BOM (c-payne.com)\n\n| Part | Qty | Unit (€) | Notes |\n|---|---|---|---|\n| PCIe gen4 Switch 5× x16 — Microchip Switchtec PM40100 | 1 | 1.050 | 2× SlimSAS 8i upstream, 5× x16 quad-width-spaced downstream, aux x4 SlimSAS, 3× 8-pin EPS power |\n| SlimSAS PCIe gen4 Host Adapter x16 — REDRIVER AIC (DS160PR810) | 1 | 140 | Plugs into ROMED8-2T x16 slot, feeds switch upstream |\n| SlimSAS SFF-8654 8i cable — PCIe gen4 | 2 | ~30 | Each carries x8; pair = x16 upstream |\n| **Total** | | | **~€1,220 (~$1,330 USD)** |\n\n### GPU mount\n\nI had to custom fabricate a wood enclosure for the PCI switch and GPUs, which took\nabout a day.\n\n\n\nI found the PCI switch's builtin fan very loud and seemingly useless, so I simply\nunplugged that from the board.\n\n\n### Hoarding model weights\n\nI save all model weights locally on a ZFS filesystem that's replicated across the two\n8TB drives, which is mounted at `~/storage`.\n\nFor any model I want to run, I first download the model using \n```\nhf download <model-name> --local-dir ~/storage/<model-name>\n```\n\n### Running models\n\nOnce the model weights are cached locally, I have a specific directory for each model\nthat contains a `docker-compose.yml` file that cordones off the running of each model\nto its own Docker container.\n\nYou can find these configurations in [`./runners/`](./runners).\n\nEach container mounts in `~/storage/models` in read-only mode to obtain the weights\nthat I've cached locally.\n\nI then use `opencode` hosted on a VM on another machine to access the models once\nthey're serving on `http://clank.j.co:5000`. \n\nI use a network-internal DNS server to point `clank.j.co` to the LLM machine, but you\ncould simply do `http://<llm-machine-ip>:5000` too.\n\n\n### The harness itself\n\nI created a VM and clanked up an application that basically just creates a tmux session\nfor each directory within the VM's `~/src` tree, which then runs an `opencode` instance\nthat backs up to the inference machine's HTTP API (`http://clank.j.co:5000`).\n\n\n\nOne key to making the opensource models good is tooling them properly; a summary of my\n`skills/` is:\n\n- camofox, kagi.com API key, and searXNG for web browsing and search,\n- Telegram bot for communication and alerting,\n- a local private Gitea instance for collaborating on source code.\n\nThe clanker will either work with me interactively in a session, or can be farmed off\nto work on Gitea issues and file PRs there.\n\nAll this happens in a sandboxed VM where the only communication back to the host system\nhappens via a shared filesystem mount, so the thing can go ham and install whatever it\nwants.\n\n### Getting the PCI switches to work properly\n\nThere was a lot of fiddling with the BIOS in order to make sure the motherboard wasn't\ndownregulating the PCI switch speeds.\n\n#### BIOS Configuration (ROMED8-2T)\n\n| Setting | Value | Why |\n|---|---|---|\n| `Chipset Configuration → AMD PCIE Link Width` (switch slot) | **x16** (was x8/x8) | Bifurcation was splitting the slot; upstream link trained at Gen4 x8. Requires both SlimSAS 8i cables connected (each carries x8). |\n| PCIe Link Speed (switch slot) | **Gen4** (not Auto) | Blackwell Gen5 devices auto-negotiating down through the Gen4 switch could fail training and fall to Gen1. Forcing Gen4 stabilizes it. |\n| ASPM | **Disabled** | ASPM L1 drops idle links to 2.5GT/s. This turned out to be the explanation for the \"Gen1 downgraded\" lspci readings — links were actually running Gen4 under load (verified via p2pBandwidthLatencyTest), but disabling ASPM removes the cosmetic scare and any re-train latency. |\n| Re-Size BAR | **Enabled** | Required for full 96GB VRAM BAR exposure and GPU P2P. |\n| SR-IOV | **Disabled** | Bare-metal inference; avoids IOMMU overhead and P2P interference. |\n| Preferred IO | **Auto** | Optionally set Manual → bus `81` (the c-payne switch) for marginal latency gains, but left at Auto — it's a squeeze-more optimization, not a fix, and bus numbers shift after BIOS changes. |\n\n#### Reducing gain on the redriver\n\nPer c-payne's advice, I did reduce the gain to \"lvl 3\" using [his\ntool](https://c-payne.com/c-payne-tool), which was probably the most finicky part of\nthe process.\n\nThe gain level is going to be a function of how long your SAS connector cables are.\n\n#### Picking the right SAS cables\n\nI screwed up and ordered too few of the cables from c-payne directly, so I bought what\nI thought was the same SAS cable off of Amazon. There was actually a slight difference\nthat was causing issues, and I had to reorder cables - so double-check that you're\ngetting the right stuff!\n\n## Kernel / GRUB Parameters\n\n```bash\n# /etc/default/grub\nGRUB_CMDLINE_LINUX=\"iommu=off amd_iommu=off nomodeset\"\nsudo update-grub\n\n# nvidia_uvm P2P fix\necho 'options nvidia_uvm uvm_disable_hmm=1' | sudo tee /etc/modprobe.d/uvm.conf\nsudo update-initramfs -u\n```\n\nWithout `iommu=off`, NCCL hangs on multi-GPU P2P.\n\n## ACS Disable (critical for switch P2P)\n\nWith ACS enabled (default), P2P traffic gets bounced through the CPU root port\ninstead of staying inside the switch fabric, negating the switch entirely.\n`pcie_acs_override` requires a patched kernel, so we disable via setpci at runtime.\n\n```bash\n# /usr/local/bin/disable-acs.sh\n#!/bin/bash\nif [ \"$EUID\" -ne 0 ]; then\n  echo \"ERROR: must be run as root\"\n  exit 1\nfi\n\nfor BDF in $(lspci -d \"*:*:*\" | awk '{print $1}'); do\n  setpci -v -s ${BDF} ECAP_ACS+0x6.w > /dev/null 2>&1\n  if [ $? -ne 0 ]; then\n    continue\n  fi\n  echo \"Disabling ACS on $(lspci -s ${BDF})\"\n  setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000\ndone\n```\n\nRun on every boot via systemd oneshot:\n\n```ini\n# /etc/systemd/system/disable-acs.service\n[Unit]\nDescription=Disable PCIe ACS for GPU P2P\nAfter=multi-user.target\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/disable-acs.sh\n\n[Install]\nWantedBy=multi-user.target\n```\n\nVerify: `lspci -vvv | grep ACSCtl` should show all minus signs, and\n`nvidia-smi topo -m` sh",
+  "commitCount": 21,
+  "contributors": [
+    {
+      "login": "jamesob",
+      "url": "https://github.com/jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4",
+      "contributions": 21
+    }
+  ],
+  "releases": [],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">jamesob's guide to running SOTA LLMs locally</h1></div>\n<p dir=\"auto\"><em>Note: nothing in this README aside from the tables was written by AI.</em></p>\n<hr>\n<p dir=\"auto\">Have $2k burning a hole in your pocket and want some local, state-of-the-art machine\nintelligence?</p>\n<p dir=\"auto\">How about $40k?</p>\n<p dir=\"auto\">If Dario and Altman are giving you heartburn (they should be), read on to figure out\nhow to run this new kind of computing locally.</p>\n<hr>\n<p dir=\"auto\">In this repo you'll find</p>\n<ul dir=\"auto\">\n<li>the hardware I use to run SOTA locally,\n<ul dir=\"auto\">\n<li>why I bought what and little-known <em>secrets</em> for configuring it,</li>\n</ul>\n</li>\n<li>how I run speech-to-text (STT) locally,</li>\n<li>ready-to-run configuration for running models I think are good within Docker containers.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contents</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Section</th>\n<th>TL;DR</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"#how-much-are-you-willing-to-spend\">How much are you willing to spend?</a></td>\n<td>$2k gets you Qwen and good STT (pretty far!); $40k gets you almost-Opus</td>\n</tr>\n<tr>\n<td><a href=\"#base-system\">Base system</a></td>\n<td>Last-gen EPYC + eBay DDR4 for $5.6k</td>\n</tr>\n<tr>\n<td><a href=\"#gpus\">GPUs</a></td>\n<td>4× RTX PRO 6000, 384GB VRAM (where the money went)</td>\n</tr>\n<tr>\n<td><a href=\"#c-payne-pcie-gen4-switch-sub-bom-c-paynecom\">c-payne switch sub-BOM</a></td>\n<td>Indie PCIe switching from <a href=\"https://c-payne.com\" rel=\"nofollow\">c-payne.com</a> so GPUs talk peer-to-peer</td>\n</tr>\n<tr>\n<td><a href=\"#gpu-mount\">GPU mount</a></td>\n<td>A day of carpentry</td>\n</tr>\n<tr>\n<td><a href=\"#getting-the-pci-switches-to-work-properly\">Making the switch behave</a></td>\n<td>BIOS bifurcation, link speed, ASPM</td>\n</tr>\n<tr>\n<td><a href=\"#kernel--grub-parameters\">Kernel / GRUB params</a></td>\n<td><code>iommu=off</code> or NCCL hangs</td>\n</tr>\n<tr>\n<td><a href=\"#acs-disable-critical-for-switch-p2p\">ACS disable</a></td>\n<td>Keep P2P traffic inside the switch fabric</td>\n</tr>\n<tr>\n<td><a href=\"#gpu-power-limiting\">GPU power limiting</a></td>\n<td>Running $46k of silicon on a 110V circuit</td>\n</tr>\n<tr>\n<td><a href=\"#result\">Result</a></td>\n<td>Gen4 line rate: 27.5/50.4 GB/s, sub-µs latency</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/jamesob/local-llm/blob/master/runners\"><code>runners/</code></a></td>\n<td>Ready-to-run serving configs: <a href=\"https://github.com/jamesob/local-llm/blob/master/runners/GLM-5.2-594B\">GLM-5.2-594B</a>: vLLM docker-compose, DCP4+MTP5, ~80 t/s @ 460k ctx</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/jamesob/local-llm/blob/master/runners/stt\"><code>runners/stt</code></a></td>\n<td>Ready-to-run speech-to-text config with <code>cohere-transcribe</code></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/jamesob/local-llm/blob/master/tools\"><code>tools/</code></a></td>\n<td><a href=\"https://github.com/jamesob/local-llm/blob/master/tools/measure-gpu-speed.sh\"><code>measure-gpu-speed.sh</code></a>: P2P bandwidth/latency benchmark</td>\n</tr>\n<tr>\n<td><a href=\"#resources\">Resources</a></td>\n<td>rtx6kpro repo, c-payne</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">My setup</h2></div>\n<p dir=\"auto\">I was lucky/dumb enough to buy 4x RTX Pro 6000s back when they were cheaper. Because\nRAM is now so expensive, I opted to build a last-gen DDR4 system to host these cards,\nthe parts for which I got off eBay. This allowed me to keep base system cost reasonable\nwhile still getting a lot of VRAM.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/rig.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/rig.png\" alt=\"my rig\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Another somewhat unusual thing I did was to use PCIe4 switches (from\n<a href=\"https://github.com/jamesob/local-llm/blob/master/c-payne.com\">c-payne.com</a>). This allows the GPUs to communicate to one another\n\"directly\" at wire speeds during the allreduce step in tensor parallelism, rather than\nhaving to send all data through the PCI root complex. The upshot of this is reduced\nlatency between the cards with less of a need for expensive PCIe5 hardware.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/switch.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/switch.png\" alt=\"switch\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Consequently, I'm spending money on VRAM (where it counts) rather than on a PCIe5/DDR5\nbase system, which is terrifically expensive as of July 2026.</p>\n<p dir=\"auto\">By using an older host-gen4 setup rather than gen5, we're saving about $10,000 in host\ncosts while still getting very good performance in VRAM, which is what we want.\nGenerally, spilling over into system RAM makes LLM performance unusably slower for\nagentic workloads.</p>\n<p dir=\"auto\">My particular BOM is detailed below.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">How much are you willing to spend?</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">~$2k</h4></div>\n<p dir=\"auto\">A great way to go is 2x RTX 3090s for a total of <strong>48GB VRAM</strong> total. You can then run\n<a href=\"https://huggingface.co/Qwen/Qwen3.6-27B\" rel=\"nofollow\">Qwen3.6-27B</a>, which is an awesome model.</p>\n<p dir=\"auto\">You can also run SOTA speech-to-text (STT) with\n<a href=\"https://huggingface.co/CohereLabs/cohere-transcribe-03-2026\" rel=\"nofollow\"><code>cohere-transcribe</code></a> (I\nwas previously using\n<a href=\"https://huggingface.co/openai/whisper-large-v3\" rel=\"nofollow\"><code>whisper-large-v3</code></a>), which I find very\nuseful. That's the model - you could then access it with my cross-platform <a href=\"https://github.com/jamesob/stt\"><code>stt</code>\nharness</a>.</p>\n<p dir=\"auto\">I've found local STT surprisingly useful - and I feel comfortable using it, unlike a\nhosted equivalent. You can find a ready-to-run config in\n<a href=\"https://github.com/jamesob/local-llm/blob/master/runners/stt\"><code>./runners/stt</code></a> that only assumes the presence of ~11GB of VRAM on an\nNvidia GPU.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">~$20k</h4></div>\n<p dir=\"auto\">(TODO)</p>\n<ul dir=\"auto\">\n<li>2x RTX 6000 Pro</li>\n<li>4x DGX Sparks networked together</li>\n<li>Apple hardware</li>\n</ul>\n<p dir=\"auto\">I don't have any experience with this regime so I'm not of much help here.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">~$40k</h4></div>\n<p dir=\"auto\">At this level, you get the next step up in model intelligence. Something pretty\nclose to Claude Opus.</p>\n<p dir=\"auto\">You'd buy 4x RTX 6000 Pros for a total of <strong>384GB of VRAM</strong>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h5 class=\"heading-element\" dir=\"auto\">Current best models for 4x RTX6kPRO</h5></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Date</th>\n<th>Best model</th>\n<th>My config</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>2026-07-01</td>\n<td><a href=\"https://huggingface.co/madeby561/GLM-5.2-Int8Mix-NVFP4-REAP-594B\" rel=\"nofollow\"><code>GLM-5.2-Int8Mix-NVFP4-REAP-594B</code></a></td>\n<td><a href=\"https://github.com/jamesob/local-llm/blob/master/runners/GLM-5.2-594B\">Runner config</a></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h5 class=\"heading-element\" dir=\"auto\">Other approaches</h5></div>\n<p dir=\"auto\">Note: these are my recommendations, but there are other completely valid ways to spend\nyour money. For example, there's probably also some regime where rather than getting 4\nrtx6kpros, you allocate most of your money to building out a <a href=\"https://youtu.be/QJqKqxQR36Y?si=MiKNYtIzut_5pnXy\" rel=\"nofollow\">linked 4x DGX Spark\ncluster</a> for a total of 512GB VRAM\nand use that as the slow, big brain to drive Qwen3.7-27b to do the rote tasks quickly.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Hardware</h2></div>\n<p dir=\"auto\">Here's the hardware I wound up purchasing for the 4x RTX 6000 pro machine.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/enclosure.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/enclosure.png\" alt=\"enclousure\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Base system</h3></div>\n<p dir=\"auto\">A modest, last-gen EPYC system purchased in parts almost entirely from eBay.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Component</th>\n<th>Spec</th>\n<th>Price</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Motherboard</td>\n<td>ASRock Rack ROMED8-2T (SP3, 7× PCIe 4.0 x16, dual 10GbE)</td>\n<td>$715</td>\n</tr>\n<tr>\n<td>CPU</td>\n<td>AMD EPYC Milan 7313P (16-core 3.0GHz)</td>\n<td>$504</td>\n</tr>\n<tr>\n<td>RAM</td>\n<td>8× 16GB Crucial CT16G4RFD4213 DDR4 ECC RDIMM (128GB total, eBay)</td>\n<td>$642</td>\n</tr>\n<tr>\n<td>CPU Cooler</td>\n<td>Noctua NH-U14s</td>\n<td>$140</td>\n</tr>\n<tr>\n<td>Case</td>\n<td>AAAWave Sluice V2 open frame</td>\n<td>$100</td>\n</tr>\n<tr>\n<td>PSUs</td>\n<td>2× Super Flower 1700W</td>\n<td>$750</td>\n</tr>\n<tr>\n<td>PCIe Switch</td>\n<td>c-payne Microchip Switchtec PM40100 Gen4 (see sub-BOM below)</td>\n<td>~$1,330</td>\n</tr>\n<tr>\n<td>Boot NVMe</td>\n<td>4TB M.2</td>\n<td>$291</td>\n</tr>\n<tr>\n<td>Storage NVMe</td>\n<td>(2x) 8TB M.2 (model weights)</td>\n<td>$1,200</td>\n</tr>\n<tr>\n<td>Fans</td>\n<td>3× 120mm PWM</td>\n<td>$15</td>\n</tr>\n<tr>\n<td><strong>Total</strong></td>\n<td></td>\n<td><strong>$5,687</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">GPUs</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Component</th>\n<th>Spec</th>\n<th>Price</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>GPUs</td>\n<td>4× NVIDIA RTX PRO 6000 Blackwell Workstation (96GB each, <strong>384GB VRAM total</strong>)</td>\n<td><strong>~$46,000</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">c-payne PCIe Gen4 Switch Sub-BOM (c-payne.com)</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Part</th>\n<th>Qty</th>\n<th>Unit (€)</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>PCIe gen4 Switch 5× x16 — Microchip Switchtec PM40100</td>\n<td>1</td>\n<td>1.050</td>\n<td>2× SlimSAS 8i upstream, 5× x16 quad-width-spaced downstream, aux x4 SlimSAS, 3× 8-pin EPS power</td>\n</tr>\n<tr>\n<td>SlimSAS PCIe gen4 Host Adapter x16 — REDRIVER AIC (DS160PR810)</td>\n<td>1</td>\n<td>140</td>\n<td>Plugs into ROMED8-2T x16 slot, feeds switch upstream</td>\n</tr>\n<tr>\n<td>SlimSAS SFF-8654 8i cable — PCIe gen4</td>\n<td>2</td>\n<td>~30</td>\n<td>Each carries x8; pair = x16 upstream</td>\n</tr>\n<tr>\n<td><strong>Total</strong></td>\n<td></td>\n<td></td>\n<td><strong><del>€1,220 (</del>$1,330 USD)</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">GPU mount</h3></div>\n<p dir=\"auto\">I had to custom fabricate a wood enclosure for the PCI switch and GPUs, which took\nabout a day.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/carpentry.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/carpentry.png\" alt=\"carpentry\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">I found the PCI switch's builtin fan very loud and seemingly useless, so I simply\nunplugged that from the board.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Hoarding model weights</h3></div>\n<p dir=\"auto\">I save all model weights locally on a ZFS filesystem that's replicated across the two\n8TB drives, which is mounted at <code>~/storage</code>.</p>\n<p dir=\"auto\">For any model I want to run, I first download the model using</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"hf download &lt;model-name&gt; --local-dir ~/storage/&lt;model-name&gt;\"><pre class=\"notranslate\"><code>hf download &lt;model-name&gt; --local-dir ~/storage/&lt;model-name&gt;\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Running models</h3></div>\n<p dir=\"auto\">Once the model weights are cached locally, I have a specific directory for each model\nthat contains a <code>docker-compose.yml</code> file that cordones off the running of each model\nto its own Docker container.</p>\n<p dir=\"auto\">You can find these configurations in <a href=\"https://github.com/jamesob/local-llm/blob/master/runners\"><code>./runners/</code></a>.</p>\n<p dir=\"auto\">Each container mounts in <code>~/storage/models</code> in read-only mode to obtain the weights\nthat I've cached locally.</p>\n<p dir=\"auto\">I then use <code>opencode</code> hosted on a VM on another machine to access the models once\nthey're serving on <code>http://clank.j.co:5000</code>.</p>\n<p dir=\"auto\">I use a network-internal DNS server to point <code>clank.j.co</code> to the LLM machine, but you\ncould simply do <code>http://&lt;llm-machine-ip&gt;:5000</code> too.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">The harness itself</h3></div>\n<p dir=\"auto\">I created a VM and clanked up an application that basically just creates a tmux session\nfor each directory within the VM's <code>~/src</code> tree, which then runs an <code>opencode</code> instance\nthat backs up to the inference machine's HTTP API (<code>http://clank.j.co:5000</code>).</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/clankhouse.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/clankhouse.png\" alt=\"clankhouse\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">One key to making the opensource models good is tooling them properly; a summary of my\n<code>skills/</code> is:</p>\n<ul dir=\"auto\">\n<li>camofox, kagi.com API key, and searXNG for web browsing and search,</li>\n<li>Telegram bot for communication and alerting,</li>\n<li>a local private Gitea instance for collaborating on source code.</li>\n</ul>\n<p dir=\"auto\">The clanker will either work with me interactively in a session, or can be farmed off\nto work on Gitea issues and file PRs there.</p>\n<p dir=\"auto\">All this happens in a sandboxed VM where the only communication back to the host system\nhappens via a shared filesystem mount, so the thing can go ham and install whatever it\nwants.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Getting the PCI switches to work properly</h3></div>\n<p dir=\"auto\">There was a lot of fiddling with the BIOS in order to make sure the motherboard wasn't\ndownregulating the PCI switch speeds.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">BIOS Configuration (ROMED8-2T)</h4></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Setting</th>\n<th>Value</th>\n<th>Why</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>Chipset Configuration → AMD PCIE Link Width</code> (switch slot)</td>\n<td><strong>x16</strong> (was x8/x8)</td>\n<td>Bifurcation was splitting the slot; upstream link trained at Gen4 x8. Requires both SlimSAS 8i cables connected (each carries x8).</td>\n</tr>\n<tr>\n<td>PCIe Link Speed (switch slot)</td>\n<td><strong>Gen4</strong> (not Auto)</td>\n<td>Blackwell Gen5 devices auto-negotiating down through the Gen4 switch could fail training and fall to Gen1. Forcing Gen4 stabilizes it.</td>\n</tr>\n<tr>\n<td>ASPM</td>\n<td><strong>Disabled</strong></td>\n<td>ASPM L1 drops idle links to 2.5GT/s. This turned out to be the explanation for the \"Gen1 downgraded\" lspci readings — links were actually running Gen4 under load (verified via p2pBandwidthLatencyTest), but disabling ASPM removes the cosmetic scare and any re-train latency.</td>\n</tr>\n<tr>\n<td>Re-Size BAR</td>\n<td><strong>Enabled</strong></td>\n<td>Required for full 96GB VRAM BAR exposure and GPU P2P.</td>\n</tr>\n<tr>\n<td>SR-IOV</td>\n<td><strong>Disabled</strong></td>\n<td>Bare-metal inference; avoids IOMMU overhead and P2P interference.</td>\n</tr>\n<tr>\n<td>Preferred IO</td>\n<td><strong>Auto</strong></td>\n<td>Optionally set Manual → bus <code>81</code> (the c-payne switch) for marginal latency gains, but left at Auto — it's a squeeze-more optimization, not a fix, and bus numbers shift after BIOS changes.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Reducing gain on the redriver</h4></div>\n<p dir=\"auto\">Per c-payne's advice, I did reduce the gain to \"lvl 3\" using <a href=\"https://c-payne.com/c-payne-tool\" rel=\"nofollow\">his\ntool</a>, which was probably the most finicky part of\nthe process.</p>\n<p dir=\"auto\">The gain level is going to be a function of how long your SAS connector cables are.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Picking the right SAS cables</h4></div>\n<p dir=\"auto\">I screwed up and ordered too few of the cables from c-payne directly, so I bought what\nI thought was the same SAS cable off of Amazon. There was actually a slight difference\nthat was causing issues, and I had to reorder cables - so double-check that you're\ngetting the right stuff!</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Kernel / GRUB Parameters</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# /etc/default/grub\nGRUB_CMDLINE_LINUX=&quot;iommu=off amd_iommu=off nomodeset&quot;\nsudo update-grub\n\n# nvidia_uvm P2P fix\necho 'options nvidia_uvm uvm_disable_hmm=1' | sudo tee /etc/modprobe.d/uvm.conf\nsudo update-initramfs -u\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> /etc/default/grub</span>\nGRUB_CMDLINE_LINUX=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>iommu=off amd_iommu=off nomodeset<span class=\"pl-pds\">\"</span></span>\nsudo update-grub\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> nvidia_uvm P2P fix</span>\n<span class=\"pl-c1\">echo</span> <span class=\"pl-s\"><span class=\"pl-pds\">'</span>options nvidia_uvm uvm_disable_hmm=1<span class=\"pl-pds\">'</span></span> <span class=\"pl-k\">|</span> sudo tee /etc/modprobe.d/uvm.conf\nsudo update-initramfs -u</pre></div>\n<p dir=\"auto\">Without <code>iommu=off</code>, NCCL hangs on multi-GPU P2P.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">ACS Disable (critical for switch P2P)</h2></div>\n<p dir=\"auto\">With ACS enabled (default), P2P traffic gets bounced through the CPU root port\ninstead of staying inside the switch fabric, negating the switch entirely.\n<code>pcie_acs_override</code> requires a patched kernel, so we disable via setpci at runtime.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# /usr/local/bin/disable-acs.sh\n#!/bin/bash\nif [ &quot;$EUID&quot; -ne 0 ]; then\n  echo &quot;ERROR: must be run as root&quot;\n  exit 1\nfi\n\nfor BDF in $(lspci -d &quot;*:*:*&quot; | awk '{print $1}'); do\n  setpci -v -s ${BDF} ECAP_ACS+0x6.w &gt; /dev/null 2&gt;&amp;1\n  if [ $? -ne 0 ]; then\n    continue\n  fi\n  echo &quot;Disabling ACS on $(lspci -s ${BDF})&quot;\n  setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000\ndone\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> /usr/local/bin/disable-acs.sh</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#!</span>/bin/bash</span>\n<span class=\"pl-k\">if</span> [ <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$EUID</span><span class=\"pl-pds\">\"</span></span> <span class=\"pl-k\">-ne</span> 0 ]<span class=\"pl-k\">;</span> <span class=\"pl-k\">then</span>\n  <span class=\"pl-c1\">echo</span> <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ERROR: must be run as root<span class=\"pl-pds\">\"</span></span>\n  <span class=\"pl-c1\">exit</span> 1\n<span class=\"pl-k\">fi</span>\n\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">BDF</span> <span class=\"pl-k\">in</span> <span class=\"pl-s\"><span class=\"pl-pds\">$(</span>lspci -d <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>*:*:*<span class=\"pl-pds\">\"</span></span> <span class=\"pl-k\">|</span> awk <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{print $1}<span class=\"pl-pds\">'</span></span><span class=\"pl-pds\">)</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span>\n  setpci -v -s <span class=\"pl-smi\">${BDF}</span> ECAP_ACS+0x6.w <span class=\"pl-k\">&gt;</span> /dev/null <span class=\"pl-k\">2&gt;&amp;1</span>\n  <span class=\"pl-k\">if</span> [ <span class=\"pl-smi\">$?</span> <span class=\"pl-k\">-ne</span> 0 ]<span class=\"pl-k\">;</span> <span class=\"pl-k\">then</span>\n    <span class=\"pl-k\">continue</span>\n  <span class=\"pl-k\">fi</span>\n  <span class=\"pl-c1\">echo</span> <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Disabling ACS on <span class=\"pl-s\"><span class=\"pl-pds\">$(</span>lspci -s <span class=\"pl-smi\">${BDF}</span><span class=\"pl-pds\">)</span></span><span class=\"pl-pds\">\"</span></span>\n  setpci -v -s <span class=\"pl-smi\">${BDF}</span> ECAP_ACS+0x6.w=0000\n<span class=\"pl-k\">done</span></pre></div>\n<p dir=\"auto\">Run on every boot via systemd oneshot:</p>\n<div class=\"highlight highlight-source-ini notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# /etc/systemd/system/disable-acs.service\n[Unit]\nDescription=Disable PCIe ACS for GPU P2P\nAfter=multi-user.target\n\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/disable-acs.sh\n\n[Install]\nWantedBy=multi-user.target\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> /etc/systemd/system/disable-acs.service</span>\n<span class=\"pl-en\">[Unit]</span>\n<span class=\"pl-k\">Description</span>=Disable PCIe ACS for GPU P2P\n<span class=\"pl-k\">After</span>=multi-user.target\n\n<span class=\"pl-en\">[Service]</span>\n<span class=\"pl-k\">Type</span>=oneshot\n<span class=\"pl-k\">ExecStart</span>=/usr/local/bin/disable-acs.sh\n\n<span class=\"pl-en\">[Install]</span>\n<span class=\"pl-k\">WantedBy</span>=multi-user.target</pre></div>\n<p dir=\"auto\">Verify: <code>lspci -vvv | grep ACSCtl</code> should show all minus signs, and\n<code>nvidia-smi topo -m</code> should show <strong>PIX</strong> between all four GPUs (not PHB/NODE).</p>\n<p dir=\"auto\">Use <a href=\"https://github.com/jamesob/local-llm/blob/master/tools\"><code>./tools/measure-gpu-speed.sh</code></a> to measure this easily.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">GPU Power Limiting</h2></div>\n<p dir=\"auto\">In order to avoid installing a 220V circuit, I (probably unwisely) run this rig on a\nsingle 110V circuit, but I power regulate the cards.</p>\n<p dir=\"auto\">Persistence mode + power cap applied at boot via systemd\n(install-gpu-power-limit.sh):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sudo nvidia-smi -pm 1\nsudo nvidia-smi -pl 350    # 350W per GPU (default 600W)\"><pre>sudo nvidia-smi -pm 1\nsudo nvidia-smi -pl 350    <span class=\"pl-c\"><span class=\"pl-c\">#</span> 350W per GPU (default 600W)</span></pre></div>\n<p dir=\"auto\">350W/GPU = 1,400W GPU load, sized for the PSU budget. During the interim\nsingle-1700W-PSU phase (before the 240V circuit), cards ran at ~260W\n(4×260 = 1,040W GPUs + ~280W system ≈ 1,320W total).</p>\n<p dir=\"auto\">Verify: <code>nvidia-smi --query-gpu=index,power.limit,power.draw --format=csv</code></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Result</h2></div>\n<p dir=\"auto\">Upstream: Gen4 x16 (~30 GB/s to CPU). P2P through switch: <strong>27.5 GB/s\nunidirectional / 50.4 GB/s bidirectional, 0.37–0.45 µs latency</strong>, i.e. Gen4 line\nrate. Note: lspci may still show downstream GPU links as \"2.5GT/s (downgraded)\"\nat idle if ASPM is active anywhere; this is cosmetic. Links retrain to Gen4\nunder load.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/jamesob/local-llm/blob/master/images/monitor.png\"><img src=\"https://raw.githubusercontent.com/jamesob/local-llm/master/images/monitor.png\" alt=\"controlpanel\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Resources</h2></div>\n<ul dir=\"auto\">\n<li>A frequently updated repo on getting the most out of 4, 6, or 8 RTX 6000 Pro cards: <a href=\"https://github.com/local-inference-lab/rtx6kpro\">https://github.com/local-inference-lab/rtx6kpro</a></li>\n<li>Indie PCI switches that I use: <a href=\"https://c-payne.com\" rel=\"nofollow\">https://c-payne.com</a></li>\n<li>RTX6kPRO discord server; lotta guys benching and testing new models: <a href=\"https://discord.gg/QMNvFkuDN\" rel=\"nofollow\">https://discord.gg/QMNvFkuDN</a></li>\n</ul>\n</article></div>",
+  "recentIssues": [
+    {
+      "number": 2,
+      "title": "Discord link expired :-/",
+      "url": "https://github.com/jamesob/local-llm/issues/2",
+      "createdAt": "2026-07-05T05:06:40Z",
+      "comments": 0,
+      "labels": [],
+      "author": "vstath"
+    },
+    {
+      "number": 1,
+      "title": "there is no Qwen3.7-27b :P",
+      "url": "https://github.com/jamesob/local-llm/issues/1",
+      "createdAt": "2026-07-04T08:22:54Z",
+      "comments": 0,
+      "labels": [],
+      "author": "nicman23"
+    }
+  ],
+  "contributorCount": 1,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "firstCommitAt": "2026-07-03T13:06:04Z",
+  "participation": {
+    "all": 21,
+    "owner": 21,
+    "community": 0
+  },
+  "recentPulls": [],
+  "workflowRuns": [],
+  "fileTree": [
+    {
+      "name": "images",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/jamesob/local-llm/tree/master/images"
+    },
+    {
+      "name": "runners",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/jamesob/local-llm/tree/master/runners"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/jamesob/local-llm/tree/master/tools"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 13617,
+      "url": "https://github.com/jamesob/local-llm/blob/master/README.md"
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "4172e40",
+      "message": "glm-5.2: update hybrid runner",
+      "url": "https://github.com/jamesob/local-llm/commit/4172e40db404ecb6e3e97a0fae397364dfda9c6f",
+      "date": "2026-07-10T16:45:28Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "fe79de4",
+      "message": "add GLM-5.2-hybrid runner",
+      "url": "https://github.com/jamesob/local-llm/commit/fe79de462eff66b27780354ece9f267eb46f53de",
+      "date": "2026-07-09T15:23:05Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "595319e",
+      "message": "stt: update to cohere-transcribe",
+      "url": "https://github.com/jamesob/local-llm/commit/595319e8041e2dfc48a0f6a1ab3eeb0a73f3153f",
+      "date": "2026-07-08T10:07:21Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "6d97e75",
+      "message": "glm-5.2: more context",
+      "url": "https://github.com/jamesob/local-llm/commit/6d97e751cc0005f102ddfaa4ff847e4af881b61a",
+      "date": "2026-07-03T20:11:53Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "88e5056",
+      "message": "README",
+      "url": "https://github.com/jamesob/local-llm/commit/88e5056821b009be3824f1bdf60df15d0a87f0f8",
+      "date": "2026-07-03T18:20:55Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "a1a47e8",
+      "message": "README",
+      "url": "https://github.com/jamesob/local-llm/commit/a1a47e8a2d324bf6e30b288c7cd0e5adf94ba05e",
+      "date": "2026-07-03T18:02:53Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "f0845a7",
+      "message": "clankhouse and more images",
+      "url": "https://github.com/jamesob/local-llm/commit/f0845a748d62692b8cde5a99b7002e1b44c73e95",
+      "date": "2026-07-03T17:58:54Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "336604d",
+      "message": "formatting",
+      "url": "https://github.com/jamesob/local-llm/commit/336604dff4ce89ee014ff33d86a2f27d7e012f40",
+      "date": "2026-07-03T17:42:53Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "0c10fb1",
+      "message": "cleanup",
+      "url": "https://github.com/jamesob/local-llm/commit/0c10fb1964dc6dfc5a115c4d7b44038656ed9a8c",
+      "date": "2026-07-03T16:56:46Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    },
+    {
+      "sha": "9ee53e2",
+      "message": "typo",
+      "url": "https://github.com/jamesob/local-llm/commit/9ee53e2e0e7e5a4e42e2651c02da8504a5f9df78",
+      "date": "2026-07-03T16:32:14Z",
+      "author": "jamesob",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/73197?v=4"
+    }
+  ],
+  "community": {
+    "healthPercentage": 28,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "branchCount": 2,
+  "tagCount": 1,
+  "fundingLinks": [],
+  "openIssuesOnly": 2,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 0,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 18
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 3
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 18
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 1
+    },
+    {
+      "date": "2026-07-09",
+      "count": 1
+    },
+    {
+      "date": "2026-07-10",
+      "count": 1
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T09:11:02.033Z"
 }
