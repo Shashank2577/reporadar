@@ -1,6 +1,12 @@
 {
   "id": "microsoft/bf-tree",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 1056,
+      "forks": 42
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-01-29",
@@ -69,5 +75,2989 @@
     "sampledAt": "2026-07-28T09:22:08.977Z"
   },
   "owner": "microsoft",
-  "name": "bf-tree"
+  "name": "bf-tree",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/6154722?v=4",
+  "ownerType": "Organization",
+  "description": "Bf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MS Research.",
+  "url": "https://github.com/microsoft/bf-tree",
+  "homepage": null,
+  "license": "MIT",
+  "language": "Rust",
+  "topics": [],
+  "stars": 1056,
+  "forks": 42,
+  "watchers": 5,
+  "openIssues": 7,
+  "createdAt": "2025-12-19T22:43:40Z",
+  "pushedAt": "2026-07-29T00:12:54Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T13:57:09.497Z",
+  "languages": {
+    "Rust": 648802,
+    "Nix": 31382,
+    "Python": 6115,
+    "Shell": 1594,
+    "Dockerfile": 388
+  },
+  "readmeExcerpt": "# Bf-Tree\n\nBf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.\n\n## Design Details\n\nYou can find the Bf-Tree research paper [here](https://badrish.net/papers/bftree-vldb2024.pdf). You can find more design docs [here](/doc).\n## User Guide\n\n### Rust\n\nBf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your `Cargo.toml` like this:\n```bash\n$ cargo add bf_tree\n```\nWhich will add bf_tree as a dependency to your Cargo.toml\n```toml\n[dependencies]\nbf-tree = \"0.5.5\"\n```\n\nAn example use of Bf-Tree:\n\n```rust\nuse bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b\"key\", b\"value\");\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b\"key\", &mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&buffer[..5], b\"value\");\n```\n\n### Snapshots and Recovery\n\nBf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.\n\nTo enable snapshots, set `use_snapshot(true)` on the `Config` before creating\nthe tree. Once enabled, call [`BfTree::cpr_snapshot`] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.\n\nTo recover a tree from a snapshot file, use\n[`BfTree::new_from_cpr_snapshot`]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:\n\n- `recovery_snapshot_file_path`: path of the snapshot file to recover from.\n- `use_snapshot`: whether the recovered tree should itself support taking new\n  snapshots.\n- `buffer_ptr`: optional pointer to a pre-allocated cache buffer; pass `None`\n  to let Bf-Tree allocate one.\n- `buffer_size`: optional override of the cache size stored in the snapshot.\n  If smaller than the original, recovery may fail because cached pages from\n  the snapshot must fit in memory.\n- `wal`: optional write-ahead log configuration for the recovered tree.\n\n```rust\nuse bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b\"key\", b\"value\");\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(\"snapshot.bftree\");\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    \"snapshot.bftree\",\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(\"snapshot.bftree\");\n```\n\nYou can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:\n\n```rust,ignore\nlet ready = tree.are_all_threads_in_next_snapshot_version();\n```\n\nThis is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.\n\nNotes:\n- The snapshot file path passed to `cpr_snapshot` must be different from the\n  path used by any concurrent recovery.\n- For more on the snapshot/recovery design, see\n  [doc/snapshot-recovery.md](doc/snapshot-recovery.md).\n\nPRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.\n\n## Developer Guide\n\n### Building\n\n#### Prerequisite\n\nBf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install [here](https://rustup.rs).\n\nPlease install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.\n\n```bash\n# If on Ubuntu\nsudo apt update && sudo apt install pre-commit\npre-commit install\n```\n\n#### Build\n\n```bash\ncargo build --release\n```\n\n### Testing\n\n#### Unit Tests\n\n```bash\ncargo test\n```\n\n#### Shuttle Tests\n\nConcurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use [shuttle](https://github.com/awslabs/shuttle)\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.\n\n```bash\n# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features \"shuttle\" --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, < 1s)\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_cache_only\n```\n\nTo replay a specific failing schedule (generated automatically on failure into `target/schedule000.txt`):\n\n```bash\ncargo test --features \"shuttle\" --release shuttle_replay -- --nocapture\n```\n\n#### Fuzz Tests\n\nFuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the \n[fuzz](fuzz/README.md) folder for more details.\n\n\n### Benchmarking\n\nCheck the [benchmark](benchmark/README.md) folder for more details.\n\n```bash\ncd benchmark\nenv SHUMAI_FILTER=\"inmemory\" MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release\n```\n\nMore advanced benchmarking, with metrics collecting, numa-node binding, huge page, etc:\n```bash\nenv MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features \"metrics-rt\" micro\n```\n\n### Code of Conduct\n\nThis project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).\nFor more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)\nor contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.\n\n### Contributing\n\nPlease see [CONTRIBUTING.md](CONTRIBUTING.md).\n\n### Security\n\nSee [SECURITY.md](SECURITY.md) for security reporting details.\n\n\n### Trademarks\n\nThis project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks\nor logos is subject to and must follow [Microsoft’s Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in\nmodified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party \ntrademarks or logos are subject to those third-party’s policies.\n\n### Contact\n\n- bftree@microsoft.com\n",
+  "commitCount": 21,
+  "contributors": [
+    {
+      "login": "acmshanyi",
+      "url": "https://github.com/acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4",
+      "contributions": 9
+    },
+    {
+      "login": "backurs",
+      "url": "https://github.com/backurs",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/59131604?v=4",
+      "contributions": 3
+    },
+    {
+      "login": "badrishc",
+      "url": "https://github.com/badrishc",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/18355833?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "alexxroche",
+      "url": "https://github.com/alexxroche",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/130311?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "dtolnay",
+      "url": "https://github.com/dtolnay",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1940490?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Bf-Tree</h1></div>\n<p dir=\"auto\">Bf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design Details</h2></div>\n<p dir=\"auto\">You can find the Bf-Tree research paper <a href=\"https://badrish.net/papers/bftree-vldb2024.pdf\" rel=\"nofollow\">here</a>. You can find more design docs <a href=\"https://github.com/microsoft/bf-tree/blob/main/doc\">here</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">User Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<p dir=\"auto\">Bf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your <code>Cargo.toml</code> like this:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ cargo add bf_tree\"><pre>$ cargo add bf_tree</pre></div>\n<p dir=\"auto\">Which will add bf_tree as a dependency to your Cargo.toml</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"[dependencies]\nbf-tree = &quot;0.5.5&quot;\"><pre>[<span class=\"pl-en\">dependencies</span>]\n<span class=\"pl-smi\">bf-tree</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.5.5<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">An example use of Bf-Tree:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b&quot;key&quot;, &amp;mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&amp;buffer[..5], b&quot;value&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">cb_min_record_size</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> buffer = <span class=\"pl-kos\">[</span><span class=\"pl-c1\">0u8</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">1024</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> read_size = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">read</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buffer<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span>read_size<span class=\"pl-kos\">,</span> <span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Found</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">5</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>buffer<span class=\"pl-kos\">[</span>..<span class=\"pl-c1\">5</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Snapshots and Recovery</h3></div>\n<p dir=\"auto\">Bf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.</p>\n<p dir=\"auto\">To enable snapshots, set <code>use_snapshot(true)</code> on the <code>Config</code> before creating\nthe tree. Once enabled, call [<code>BfTree::cpr_snapshot</code>] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.</p>\n<p dir=\"auto\">To recover a tree from a snapshot file, use\n[<code>BfTree::new_from_cpr_snapshot</code>]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:</p>\n<ul dir=\"auto\">\n<li><code>recovery_snapshot_file_path</code>: path of the snapshot file to recover from.</li>\n<li><code>use_snapshot</code>: whether the recovered tree should itself support taking new\nsnapshots.</li>\n<li><code>buffer_ptr</code>: optional pointer to a pre-allocated cache buffer; pass <code>None</code>\nto let Bf-Tree allocate one.</li>\n<li><code>buffer_size</code>: optional override of the cache size stored in the snapshot.\nIf smaller than the original, recovery may fail because cached pages from\nthe snapshot must fit in memory.</li>\n<li><code>wal</code>: optional write-ahead log configuration for the recovered tree.</li>\n</ul>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(&quot;snapshot.bftree&quot;);\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    &quot;snapshot.bftree&quot;,\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(&quot;snapshot.bftree&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-kos\">{</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">Config</span><span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> std<span class=\"pl-kos\">::</span>path<span class=\"pl-kos\">::</span><span class=\"pl-v\">PathBuf</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = <span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">use_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Take a CPR snapshot of the current tree state.</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">cpr_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Recover a bf-tree from a CPR snapshot</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new_from_cpr_snapshot</span><span class=\"pl-kos\">(</span>\n    <span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* use_snapshot */</span> <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_ptr */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_size */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* wal */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nstd<span class=\"pl-kos\">::</span>fs<span class=\"pl-kos\">::</span><span class=\"pl-en\">remove_file</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">You can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let ready = tree.are_all_threads_in_next_snapshot_version();\"><pre><span class=\"pl-k\">let</span> ready = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">are_all_threads_in_next_snapshot_version</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">This is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.</p>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li>The snapshot file path passed to <code>cpr_snapshot</code> must be different from the\npath used by any concurrent recovery.</li>\n<li>For more on the snapshot/recovery design, see\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/doc/snapshot-recovery.md\">doc/snapshot-recovery.md</a>.</li>\n</ul>\n<p dir=\"auto\">PRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Developer Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Prerequisite</h4></div>\n<p dir=\"auto\">Bf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install <a href=\"https://rustup.rs\" rel=\"nofollow\">here</a>.</p>\n<p dir=\"auto\">Please install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If on Ubuntu\nsudo apt update &amp;&amp; sudo apt install pre-commit\npre-commit install\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If on Ubuntu</span>\nsudo apt update <span class=\"pl-k\">&amp;&amp;</span> sudo apt install pre-commit\npre-commit install</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Build</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Testing</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Unit Tests</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test\"><pre>cargo <span class=\"pl-c1\">test</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Shuttle Tests</h4></div>\n<p dir=\"auto\">Concurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use <a href=\"https://github.com/awslabs/shuttle\">shuttle</a>\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features &quot;shuttle&quot; --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, &lt; 1s)\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_cache_only\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Core Bf-tree concurrent operations (~5 minutes)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_bf_tree_concurrent_operations\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with disk-backed storage (fast, &lt; 1s)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_disk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with cache-only (in-memory) storage</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_cache_only</pre></div>\n<p dir=\"auto\">To replay a specific failing schedule (generated automatically on failure into <code>target/schedule000.txt</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --features &quot;shuttle&quot; --release shuttle_replay -- --nocapture\"><pre>cargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_replay -- --nocapture</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Fuzz Tests</h4></div>\n<p dir=\"auto\">Fuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/fuzz/README.md\">fuzz</a> folder for more details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Benchmarking</h3></div>\n<p dir=\"auto\">Check the <a href=\"https://github.com/microsoft/bf-tree/blob/main/benchmark/README.md\">benchmark</a> folder for more details.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd benchmark\nenv SHUMAI_FILTER=&quot;inmemory&quot; MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release\"><pre><span class=\"pl-c1\">cd</span> benchmark\nenv SHUMAI_FILTER=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>inmemory<span class=\"pl-pds\">\"</span></span> MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release</pre></div>\n<p dir=\"auto\">More advanced benchmarking, with metrics collecting, numa-node binding, huge page, etc:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features &quot;metrics-rt&quot; micro\"><pre>env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>metrics-rt<span class=\"pl-pds\">\"</span></span> micro</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Code of Conduct</h3></div>\n<p dir=\"auto\">This project has adopted the <a href=\"https://opensource.microsoft.com/codeofconduct/\" rel=\"nofollow\">Microsoft Open Source Code of Conduct</a>.\nFor more information see the <a href=\"https://opensource.microsoft.com/codeofconduct/faq/\" rel=\"nofollow\">Code of Conduct FAQ</a>\nor contact <a href=\"mailto:opencode@microsoft.com\">opencode@microsoft.com</a> with any additional questions or comments.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contributing</h3></div>\n<p dir=\"auto\">Please see <a href=\"https://github.com/microsoft/bf-tree/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Security</h3></div>\n<p dir=\"auto\">See <a href=\"https://github.com/microsoft/bf-tree/blob/main/SECURITY.md\">SECURITY.md</a> for security reporting details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Trademarks</h3></div>\n<p dir=\"auto\">This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks\nor logos is subject to and must follow <a href=\"https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general\" rel=\"nofollow\">Microsoft’s Trademark &amp; Brand Guidelines</a>. Use of Microsoft trademarks or logos in\nmodified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party\ntrademarks or logos are subject to those third-party’s policies.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contact</h3></div>\n<ul dir=\"auto\">\n<li><a href=\"mailto:bftree@microsoft.com\">bftree@microsoft.com</a></li>\n</ul>\n</article></div>",
+  "releases": [],
+  "firstCommitAt": "2025-12-19T22:54:56Z",
+  "contributorCount": 7,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 12,
+      "title": "Read counter not reported in PageCacheWrapper",
+      "url": "https://github.com/microsoft/bf-tree/issues/12",
+      "createdAt": "2026-02-18T19:20:05Z",
+      "comments": 0,
+      "labels": [],
+      "author": "evangelisilva"
+    },
+    {
+      "number": 8,
+      "title": "Add ci support",
+      "url": "https://github.com/microsoft/bf-tree/issues/8",
+      "createdAt": "2026-02-02T02:19:43Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ben1009"
+    },
+    {
+      "number": 7,
+      "title": "More Rigorous Testing on Windows",
+      "url": "https://github.com/microsoft/bf-tree/issues/7",
+      "createdAt": "2026-01-30T14:12:34Z",
+      "comments": 0,
+      "labels": [],
+      "author": "steskalja"
+    },
+    {
+      "number": 6,
+      "title": "Read me to further info on architecture, portability support",
+      "url": "https://github.com/microsoft/bf-tree/issues/6",
+      "createdAt": "2026-01-29T14:59:07Z",
+      "comments": 0,
+      "labels": [],
+      "author": "guycipher"
+    }
+  ],
+  "participation": {
+    "all": 20,
+    "owner": 0,
+    "community": 20
+  },
+  "recentCommits": [
+    {
+      "sha": "3998ce8",
+      "message": "CPR Memory Fence (#35)",
+      "url": "https://github.com/microsoft/bf-tree/commit/3998ce8643dec4e98b07f2d11cad67bf2c2d28d1",
+      "date": "2026-07-29T00:08:39Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "ad17a2e",
+      "message": "Allow building with newer version of cfg-if (#27)",
+      "url": "https://github.com/microsoft/bf-tree/commit/ad17a2e25d782296ec11bf241c2a5cd4390d4323",
+      "date": "2026-06-29T20:08:27Z",
+      "author": "dtolnay",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1940490?v=4"
+    },
+    {
+      "sha": "4c5e351",
+      "message": "Shayi/cpr snapshot event based state transition (#31)",
+      "url": "https://github.com/microsoft/bf-tree/commit/4c5e3510420435aad6a5b32e48876c54bce9df3f",
+      "date": "2026-06-23T07:01:58Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "68eec69",
+      "message": "Git actions for CI/CD (#29)",
+      "url": "https://github.com/microsoft/bf-tree/commit/68eec6958d44b9b3ad454b7cbf3e49e118ad1472",
+      "date": "2026-05-29T20:18:25Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "d9fbbdb",
+      "message": "Update README with SPDK enablement instructions (#18)",
+      "url": "https://github.com/microsoft/bf-tree/commit/d9fbbdbab6da40b7bf7023c7f8285850f5c7497f",
+      "date": "2026-05-28T22:12:27Z",
+      "author": "badrishc",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/18355833?v=4"
+    },
+    {
+      "sha": "79835a6",
+      "message": "Shayi/cpr snapshot concurrency fix (#26)",
+      "url": "https://github.com/microsoft/bf-tree/commit/79835a6a502ebcbdc9cfb0601360409b9823cfb6",
+      "date": "2026-05-28T21:56:30Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "eaf16ce",
+      "message": "Bump rand from 0.8.5 to 0.9.4 in /fuzz (#20)",
+      "url": "https://github.com/microsoft/bf-tree/commit/eaf16cea383f3089242c193152521b6010ea0e89",
+      "date": "2026-05-20T00:56:17Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    },
+    {
+      "sha": "616465b",
+      "message": "Shayi/cpr snapshot file optimization (#23)",
+      "url": "https://github.com/microsoft/bf-tree/commit/616465bb95e62b906b8b72f9b754ebc10bd94758",
+      "date": "2026-05-19T23:52:34Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "dd7708f",
+      "message": "Scan operator for cache-only mode (#22)",
+      "url": "https://github.com/microsoft/bf-tree/commit/dd7708ff618530a081d75102c36a47ce86fca4eb",
+      "date": "2026-05-19T23:48:55Z",
+      "author": "acmshanyi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
+    },
+    {
+      "sha": "7338b02",
+      "message": "Update rand to 0.9.4",
+      "url": "https://github.com/microsoft/bf-tree/commit/7338b020d3798dc873977b046ddcaceade455ec6",
+      "date": "2026-05-19T22:38:20Z",
+      "author": "Jack Moffitt",
+      "avatarUrl": null
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/.github"
+    },
+    {
+      "name": "benchmark",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/benchmark"
+    },
+    {
+      "name": "dev",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/dev"
+    },
+    {
+      "name": "doc",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/doc"
+    },
+    {
+      "name": "fuzz",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/fuzz"
+    },
+    {
+      "name": "nix",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/nix"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/src"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 86,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/.gitignore"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 2535,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/Cargo.toml"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 921,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "default.nix",
+      "type": "file",
+      "size": 305,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/default.nix"
+    },
+    {
+      "name": "LICENSE.txt",
+      "type": "file",
+      "size": 1074,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/LICENSE.txt"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 7122,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/README.md"
+    },
+    {
+      "name": "rust-toolchain.toml",
+      "type": "file",
+      "size": 31,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/rust-toolchain.toml"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 543,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/SECURITY.md"
+    },
+    {
+      "name": "shell.nix",
+      "type": "file",
+      "size": 2478,
+      "url": "https://github.com/microsoft/bf-tree/blob/main/shell.nix"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 35,
+      "title": "CPR Memory Fence",
+      "url": "https://github.com/microsoft/bf-tree/pull/35",
+      "state": "merged",
+      "updatedAt": "2026-07-29T00:08:42Z",
+      "author": "acmshanyi",
+      "draft": false
+    },
+    {
+      "number": 33,
+      "title": "CPR phase handshake is missing a StoreLoad barrier (x86-64)",
+      "url": "https://github.com/microsoft/bf-tree/pull/33",
+      "state": "closed",
+      "updatedAt": "2026-07-27T16:23:29Z",
+      "author": "tiagonapoli",
+      "draft": true
+    },
+    {
+      "number": 27,
+      "title": "Allow building with newer version of cfg-if",
+      "url": "https://github.com/microsoft/bf-tree/pull/27",
+      "state": "merged",
+      "updatedAt": "2026-07-01T18:31:47Z",
+      "author": "dtolnay",
+      "draft": false
+    },
+    {
+      "number": 32,
+      "title": "Relax hard bound on `cfg-if`.",
+      "url": "https://github.com/microsoft/bf-tree/pull/32",
+      "state": "closed",
+      "updatedAt": "2026-06-29T19:21:59Z",
+      "author": "hildebrandmw",
+      "draft": false
+    },
+    {
+      "number": 31,
+      "title": "Shayi/cpr snapshot event based state transition",
+      "url": "https://github.com/microsoft/bf-tree/pull/31",
+      "state": "merged",
+      "updatedAt": "2026-06-23T07:02:01Z",
+      "author": "acmshanyi",
+      "draft": false
+    },
+    {
+      "number": 30,
+      "title": "Use cqe result to derive error instead of errno",
+      "url": "https://github.com/microsoft/bf-tree/pull/30",
+      "state": "open",
+      "updatedAt": "2026-05-31T20:58:01Z",
+      "author": "Dantsz",
+      "draft": false
+    },
+    {
+      "number": 28,
+      "title": "Add link to GitHub repository",
+      "url": "https://github.com/microsoft/bf-tree/pull/28",
+      "state": "open",
+      "updatedAt": "2026-05-29T20:46:34Z",
+      "author": "dtolnay",
+      "draft": false
+    },
+    {
+      "number": 21,
+      "title": "Bump rand from 0.9.2 to 0.10.1 in /benchmark",
+      "url": "https://github.com/microsoft/bf-tree/pull/21",
+      "state": "closed",
+      "updatedAt": "2026-05-29T20:22:00Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    }
+  ],
+  "branchCount": 7,
+  "tagCount": 7,
+  "manifestDependencies": {
+    "manifest": "Cargo.toml",
+    "dependencies": [
+      {
+        "name": "rand",
+        "version": "{ version ="
+      },
+      {
+        "name": "tracing",
+        "version": "{ version ="
+      },
+      {
+        "name": "serde",
+        "version": "{ version ="
+      },
+      {
+        "name": "serde_json",
+        "version": "1.0.116"
+      },
+      {
+        "name": "auto_ops",
+        "version": "{ version ="
+      },
+      {
+        "name": "hdrhistogram",
+        "version": "{ version ="
+      },
+      {
+        "name": "chrono",
+        "version": "{ version ="
+      },
+      {
+        "name": "variant_count",
+        "version": "{ version ="
+      },
+      {
+        "name": "toml",
+        "version": "0.8.23"
+      },
+      {
+        "name": "thread_local",
+        "version": "1.1.9"
+      },
+      {
+        "name": "cfg-if",
+        "version": "1.0.0"
+      }
+    ],
+    "total": 11
+  },
+  "workflowRuns": [
+    {
+      "name": "cargo in /benchmark for rand - Update #1492042441",
+      "status": "failure",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/30410245550",
+      "branch": "main",
+      "updatedAt": "2026-07-29T00:09:31Z"
+    },
+    {
+      "name": "bftree",
+      "status": "success",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/30410240386",
+      "branch": "main",
+      "updatedAt": "2026-07-29T00:22:13Z"
+    },
+    {
+      "name": "cargo in /benchmark for rand - Update #1439940382",
+      "status": "failure",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/28399481284",
+      "branch": "main",
+      "updatedAt": "2026-06-29T20:09:10Z"
+    },
+    {
+      "name": "cargo in /benchmark for rand - Update #1431120094",
+      "status": "failure",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/28008457296",
+      "branch": "main",
+      "updatedAt": "2026-06-23T07:02:52Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 75,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 4,
+  "openPRs": 3,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 3,
+  "mergedPRs": 20,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/microsoft/bf-tree/security/policy",
+  "codeOfConduct": {
+    "name": "Other",
+    "url": "https://github.com/microsoft/.github/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 1
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 1
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 1
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 1
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 2
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 1
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 2
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 1
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 4
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 1
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 1
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 1
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 1
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 1
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 1
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 2
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 1
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 2
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 1
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 1
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 4
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 2
+    },
+    {
+      "date": "2026-05-29",
+      "count": 1
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 1
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 1
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 1
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T13:57:20.963Z"
 }
