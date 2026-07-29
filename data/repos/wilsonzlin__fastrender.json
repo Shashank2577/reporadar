@@ -1,6 +1,12 @@
 {
   "id": "wilsonzlin/fastrender",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 1563,
+      "forks": 105
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-01-15",
@@ -77,5 +83,3173 @@
     "sampledAt": "2026-07-28T09:22:09.969Z"
   },
   "owner": "wilsonzlin",
-  "name": "fastrender"
+  "name": "fastrender",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4",
+  "ownerType": "User",
+  "description": "Experimental new browser engine",
+  "url": "https://github.com/wilsonzlin/fastrender",
+  "homepage": "https://cursor.com/blog/scaling-agents",
+  "license": null,
+  "language": "HTML",
+  "topics": [],
+  "stars": 1563,
+  "forks": 105,
+  "watchers": 9,
+  "openIssues": 18,
+  "createdAt": "2025-11-16T06:38:08Z",
+  "pushedAt": "2026-01-18T22:34:51Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T21:55:39.724Z",
+  "languages": {
+    "HTML": 172716005,
+    "Rust": 66281019,
+    "C": 12364631,
+    "CSS": 4340934,
+    "C++": 1497320,
+    "JavaScript": 1016916,
+    "Assembly": 927432,
+    "Shell": 391141,
+    "Makefile": 208312,
+    "Perl": 157890,
+    "Python": 139073,
+    "Processing": 26539,
+    "SCSS": 10380,
+    "LLVM": 8536,
+    "CMake": 1588
+  },
+  "releases": [],
+  "commitCount": 29858,
+  "readmeExcerpt": "# FastRender\n\nA browser rendering engine in Rust. Parses HTML/CSS, computes styles, performs layout, and paints pixels. Includes a desktop browser shell and JavaScript execution via an embedded JS engine.\n\nUnder heavy development. APIs are unstable and change frequently. Not recommended for production use.\n\nDeveloped as part of [research into collaborative parallel AI coding agents](https://cursor.com/blog/scaling-agents).\n\n## Repository structure\n\n```\nsrc/\n├── api.rs                 # Public API (FastRender, RenderOptions)\n├── dom.rs                 # DOM tree, parsing, shadow DOM\n├── dom2/                  # Live DOM for JS mutation\n├── css/                   # CSS parsing, selectors, values\n├── style/                 # Cascade, computed styles, media queries\n│   ├── cascade.rs         # Cascade algorithm, layers, scope\n│   ├── properties.rs      # Property definitions\n│   └── values.rs          # Value types, calc(), colors\n├── tree/                  # Box tree generation\n│   ├── box_tree.rs        # Box nodes, formatting contexts\n│   ├── box_generation.rs  # Styled → box mapping\n│   └── table_fixup.rs     # Anonymous table wrapper insertion\n├── layout/                # Layout algorithms\n│   ├── contexts/\n│   │   ├── block/         # Block formatting context\n│   │   ├── inline/        # Inline formatting, line boxes\n│   │   ├── flex.rs        # Flexbox\n│   │   └── grid.rs        # CSS Grid\n│   ├── table.rs           # Table layout (auto + fixed)\n│   ├── fragmentation.rs   # Pagination, column breaks\n│   └── absolute_positioning.rs\n├── text/                  # Text processing\n│   ├── pipeline.rs        # Itemization, shaping, layout\n│   ├── bidi.rs            # Bidirectional algorithm\n│   ├── line_break.rs      # Line breaking, hyphenation\n│   └── color_fonts/       # COLR, sbix, SVG-in-OT\n├── paint/                 # Painting\n│   ├── display_list.rs    # Display list structure\n│   ├── stacking.rs        # Stacking contexts, z-order\n│   ├── painter.rs         # Rasterization\n│   └── svg_filter.rs      # CSS/SVG filter effects\n├── js/                    # JavaScript integration\n│   ├── event_loop.rs      # Task queues, microtasks\n│   ├── html_script_*.rs   # Script loading, execution\n│   ├── vmjs/              # vm-js bindings\n│   └── import_maps/       # ES module import maps\n├── ui/                    # Desktop browser UI\n│   ├── browser_app.rs     # Window, tabs, chrome\n│   ├── render_worker.rs   # Background rendering\n│   └── messages.rs        # UI ↔ worker protocol\n├── sandbox/               # OS sandboxing\n│   ├── linux_seccomp.rs   # seccomp-bpf filters\n│   ├── macos_seatbelt.rs  # Seatbelt profiles\n│   └── windows.rs         # AppContainer\n├── resource/              # Network, caching\n│   ├── disk_cache.rs      # On-disk asset cache\n│   └── web_fetch/         # Fetch API implementation\n└── bin/                   # CLI binaries\n\nvendor/\n├── ecma-rs/               # JavaScript engine (vm-js)\n└── taffy/                 # Flexbox/Grid layout\n\ntests/\n├── integration.rs         # Integration test harness\n├── pages/fixtures/        # Offline page captures\n└── wpt/                   # Web Platform Tests subset\n\ndocs/                      # Internal documentation\ninstructions/              # Workstream guides\nprogress/pages/            # Pageset accuracy tracking\n```\n\n---\n\n## Rendering pipeline\n\n```mermaid\nflowchart LR\n    subgraph Parse\n        HTML[HTML bytes] --> DOM[DOM tree]\n        CSS[CSS bytes] --> Sheets[Stylesheet collection]\n    end\n    \n    subgraph Style\n        DOM --> Styled[Styled tree]\n        Sheets --> Styled\n        Styled --> |cascade + inherit| Computed[Computed values]\n    end\n    \n    subgraph Layout\n        Computed --> BoxTree[Box tree]\n        BoxTree --> |anonymous wrappers| Fragments[Fragment tree]\n    end\n    \n    subgraph Paint\n        Fragments --> DisplayList[Display list]\n        DisplayList --> |stacking order| Raster[Pixmap]\n    end\n```\n\nEach stage produces an immutable tree consumed by the next. This separation enables caching: change only CSS and re-cascade without re-parsing HTML; scroll without re-laying-out.\n\n### Box generation\n\n```mermaid\nflowchart TD\n    Element[Styled element] --> Display{display value?}\n    Display --> |block| Block[Block box]\n    Display --> |inline| Inline[Inline box]\n    Display --> |flex| Flex[Flex container]\n    Display --> |grid| Grid[Grid container]\n    Display --> |table| Table[Table wrapper]\n    Display --> |none| Skip[Skip subtree]\n    Display --> |contents| Contents[Unwrap children]\n    \n    Block --> Anon{needs wrapper?}\n    Anon --> |mixed content| AnonBlock[Anonymous block]\n    Anon --> |table child| AnonTable[Anonymous table parts]\n    \n    Element --> Pseudo{pseudo-elements?}\n    Pseudo --> Before[::before]\n    Pseudo --> After[::after]\n    Pseudo --> Marker[::marker]\n```\n\nThe box tree is not 1:1 with the DOM. `display: contents` removes an element's box while keeping its children. Tables generate anonymous row/cell wrappers per CSS 2.1 §17.2. Mixed block/inline children trigger anonymous block box creation.\n\n### Layout contexts\n\n```mermaid\nflowchart TD\n    Box[Box node] --> FC{formatting context}\n    \n    FC --> BFC[Block formatting context]\n    BFC --> |floats, margins| BFCLayout[Block layout]\n    BFCLayout --> Clear[Float clearing]\n    BFCLayout --> Collapse[Margin collapsing]\n    \n    FC --> IFC[Inline formatting context]\n    IFC --> |line boxes| IFCLayout[Inline layout]\n    IFCLayout --> Bidi[Bidi reordering]\n    IFCLayout --> Shaping[Text shaping]\n    IFCLayout --> Wrap[Line breaking]\n    \n    FC --> FlexFC[Flex formatting context]\n    FlexFC --> |main/cross axis| FlexLayout[Flex layout]\n    FlexLayout --> FlexGrow[flex-grow/shrink]\n    FlexLayout --> FlexAlign[Alignment]\n    \n    FC --> GridFC[Grid formatting context]\n    GridFC --> |tracks, areas| GridLayout[Grid layout]\n    GridLayout --> AutoPlace[Auto-placement]\n    GridLayout --> TrackSize[Track sizing]\n    \n    FC --> TableFC[Table formatting context]\n    TableFC --> |rows, columns| TableLayout[Table layout]\n    TableLayout --> ColWidth[Column distribution]\n    TableLayout --> BorderCollapse[Border collapse]\n    \n    FC --> MultiCol[Multi-column context]\n    MultiCol --> |fragmentainers| ColLayout[Column layout]\n    ColLayout --> ColBreak[Column breaks]\n    ColLayout --> ColBalance[Balancing]\n```\n\nLayout is recursive: a flex container lays out its items, each of which may establish its own formatting context. Block and inline contexts are implemented natively. Flexbox and grid delegate to a vendored layout library (Taffy). Tables use a native implementation with bidirectional constraint solving for auto layout.\n\n**Block formatting context**: Floats, margin collapsing, `clear`. Floats interact with line boxes — text wraps around floated elements. Margin collapsing follows CSS 2.1 rules including the many edge cases (empty blocks, clearance, negative margins).\n\n**Inline formatting context**: Line box construction, baseline alignment, bidirectional text. Text is shaped into glyph runs, then broken into lines respecting `word-break`, `overflow-wrap`, `hyphens`. Bidi reordering happens after line breaking.\n\n**Table layout**: Column width distribution with `table-layout: auto` requires measuring content, distributing excess space proportionally, and respecting min/max constraints. Border collapsing follows CSS 2.1 §17.6 conflict resolution.\n\n**Multi-column**: Content flows through column fragmentainers. Column breaks respect `break-before`/`break-after`/`break-inside`. Balancing attempts to equalize column heights.\n\n### Paint order\n\n```mermaid\nflowchart TD\n    Fragments[Fragment tree] --> DL[Display list builder]\n    \n    DL --> Stack{stacking context?}\n    Stack --> |z-index, opacity, transform| NewCtx[New stacking context]\n    Stack --> |normal flow| Parent[Parent context]\n    \n    NewCtx --> Order[Paint order]\n    Order --> BG[1. Background/borders]\n    Order --> Neg[2. Negative z-index]\n    Order --> BlockBG[3. Block backgrounds]\n    Order --> Float[4. Floats]\n    Order --> InlineContent[5. Inline content]\n    Order --> Pos[6. Positioned z-index 0]\n    Order --> PosZ[7. Positive z-index]\n    \n    DL --> Effects{effects?}\n    Effects --> Filter[CSS filters]\n    Effects --> Blend[mix-blend-mode]\n    Effects --> Backdrop[backdrop-filter]\n    Effects --> Clip[clip-path]\n    Effects --> Mask[mask layers]\n    \n    DL --> Transform{transforms?}\n    Transform --> T2D[2D transforms]\n    Transform --> T3D[3D + perspective]\n    Transform --> Flatten[Flatten to 2D for raster]\n```\n\nStacking contexts isolate z-ordering. Elements with `opacity < 1`, `transform`, `filter`, or explicit `z-index` on positioned elements create new stacking contexts. Paint order within a context follows CSS 2.1 Appendix E.\n\n3D transforms with `perspective` are supported but flattened to 2D for the software rasterizer. `transform-style: preserve-3d` is partially supported.\n\n---\n\n## Text pipeline\n\n```mermaid\nflowchart LR\n    Text[Text content] --> Segment[Segmentation]\n    Segment --> |UAX #29| Grapheme[Grapheme clusters]\n    Segment --> |UAX #14| LineBreak[Line break opportunities]\n    \n    Segment --> Bidi[Bidi algorithm]\n    Bidi --> |UAX #9| Levels[Embedding levels]\n    Levels --> Reorder[Visual reordering]\n    \n    Reorder --> Itemize[Script itemization]\n    Itemize --> Runs[Shaped runs]\n    \n    Runs --> Shape[OpenType shaping]\n    Shape --> |features| GSUB[GSUB substitution]\n    Shape --> |positioning| GPOS[GPOS positioning]\n    \n    Shape --> Glyphs[Glyph buffer]\n    Glyphs --> Raster{glyph type?}\n    Raster --> |outline| Outline[Outline rasterization]\n    Raster --> |COLR| COLR[Color layers]\n    Raster --> |sbix/CBDT| Bitmap[Embedded bitmap]\n    Raster --> |SVG| SVGGlyph[SVG rendering]\n```\n\nText rendering involves:\n\n1. **Segmentation**: Split text at script boundaries, identify grapheme clusters (UAX #29) and line break opportunities (UAX #14).\n\n2. **Bidi**: Run the Unicode Bidirectional Algorithm (UAX #9) to determine embedding levels. Mixed LTR/RTL text gets reordered for visual display.\n\n3. **Shaping**: OpenType shaping via RustyBuzz applies GSUB substitutions (ligatures, contextual alternates) and GPOS positioning (kerning, mark placement). Complex scripts like Arabic and Devanagari require shaping for correct rendering.\n\n4. **Line breaking**: Break shaped runs into lines respecting available width, `word-break`, `overflow-wrap`, and soft hyphens. `hyphens: auto` uses language-specific hyphenation dictionaries.\n\n5. **Color fonts**: Glyphs may be outlines (rasterized normally), COLR layers (multiple colored paths), sbix/CBDT bitmaps (embedded PNGs), or SVG (rendered via resvg). COLR v1 supports gradients and blend modes.\n\n---\n\n## JavaScript integration\n\n```mermaid\nflowchart TD\n    subgraph \"HTML parsing\"\n        Parser[HTML parser] --> Script{script tag?}\n        Script --> |inline| Inline[Queue inline script]\n        Script --> |src| Fetch[Fetch external]\n        Script --> |defer| Defer[Defer queue]\n        Script --> |async| Async[Async queue]\n        Script --> |module| Module[Module graph]\n    end\n    \n    subgraph \"Event loop\"\n        TaskQ[Task queue] --> Pick[Pick oldest task]\n        Pick --> Run[Run to completion]\n        Run --> Micro[Microtask checkpoint]\n        Micro --> |drain all| Micro\n        Micro --> RAF{rAF callbacks?}\n        RAF --> Frame[Run frame callbacks]\n        Frame --> Render[Render]\n        Render --> Idle{idle time?}\n        Idle --> RIC[requestIdleCallback]\n    end\n    \n    subgraph \"VM execution\"\n        Run --> VM[vm-js bytecode]\n        VM --> |fuel budget| Budget[Interrupt check]\n        Budget --> |exceeded| Pause[Yield to host]\n        VM --> |DOM call| Binding[WebIDL binding]\n        Binding --> Mutation[DOM mutation]\n        Mutation --> Invalidate[Invalidate style/layout]\n    end\n```\n\nJavaScript execution follows the HTML spec's processing model:\n\n**Script loading**: Parser-inserted scripts block parsing until execu",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">FastRender</h1></div>\n<p dir=\"auto\">A browser rendering engine in Rust. Parses HTML/CSS, computes styles, performs layout, and paints pixels. Includes a desktop browser shell and JavaScript execution via an embedded JS engine.</p>\n<p dir=\"auto\">Under heavy development. APIs are unstable and change frequently. Not recommended for production use.</p>\n<p dir=\"auto\">Developed as part of <a href=\"https://cursor.com/blog/scaling-agents\" rel=\"nofollow\">research into collaborative parallel AI coding agents</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository structure</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"src/\n├── api.rs                 # Public API (FastRender, RenderOptions)\n├── dom.rs                 # DOM tree, parsing, shadow DOM\n├── dom2/                  # Live DOM for JS mutation\n├── css/                   # CSS parsing, selectors, values\n├── style/                 # Cascade, computed styles, media queries\n│   ├── cascade.rs         # Cascade algorithm, layers, scope\n│   ├── properties.rs      # Property definitions\n│   └── values.rs          # Value types, calc(), colors\n├── tree/                  # Box tree generation\n│   ├── box_tree.rs        # Box nodes, formatting contexts\n│   ├── box_generation.rs  # Styled → box mapping\n│   └── table_fixup.rs     # Anonymous table wrapper insertion\n├── layout/                # Layout algorithms\n│   ├── contexts/\n│   │   ├── block/         # Block formatting context\n│   │   ├── inline/        # Inline formatting, line boxes\n│   │   ├── flex.rs        # Flexbox\n│   │   └── grid.rs        # CSS Grid\n│   ├── table.rs           # Table layout (auto + fixed)\n│   ├── fragmentation.rs   # Pagination, column breaks\n│   └── absolute_positioning.rs\n├── text/                  # Text processing\n│   ├── pipeline.rs        # Itemization, shaping, layout\n│   ├── bidi.rs            # Bidirectional algorithm\n│   ├── line_break.rs      # Line breaking, hyphenation\n│   └── color_fonts/       # COLR, sbix, SVG-in-OT\n├── paint/                 # Painting\n│   ├── display_list.rs    # Display list structure\n│   ├── stacking.rs        # Stacking contexts, z-order\n│   ├── painter.rs         # Rasterization\n│   └── svg_filter.rs      # CSS/SVG filter effects\n├── js/                    # JavaScript integration\n│   ├── event_loop.rs      # Task queues, microtasks\n│   ├── html_script_*.rs   # Script loading, execution\n│   ├── vmjs/              # vm-js bindings\n│   └── import_maps/       # ES module import maps\n├── ui/                    # Desktop browser UI\n│   ├── browser_app.rs     # Window, tabs, chrome\n│   ├── render_worker.rs   # Background rendering\n│   └── messages.rs        # UI ↔ worker protocol\n├── sandbox/               # OS sandboxing\n│   ├── linux_seccomp.rs   # seccomp-bpf filters\n│   ├── macos_seatbelt.rs  # Seatbelt profiles\n│   └── windows.rs         # AppContainer\n├── resource/              # Network, caching\n│   ├── disk_cache.rs      # On-disk asset cache\n│   └── web_fetch/         # Fetch API implementation\n└── bin/                   # CLI binaries\n\nvendor/\n├── ecma-rs/               # JavaScript engine (vm-js)\n└── taffy/                 # Flexbox/Grid layout\n\ntests/\n├── integration.rs         # Integration test harness\n├── pages/fixtures/        # Offline page captures\n└── wpt/                   # Web Platform Tests subset\n\ndocs/                      # Internal documentation\ninstructions/              # Workstream guides\nprogress/pages/            # Pageset accuracy tracking\"><pre class=\"notranslate\"><code>src/\n├── api.rs                 # Public API (FastRender, RenderOptions)\n├── dom.rs                 # DOM tree, parsing, shadow DOM\n├── dom2/                  # Live DOM for JS mutation\n├── css/                   # CSS parsing, selectors, values\n├── style/                 # Cascade, computed styles, media queries\n│   ├── cascade.rs         # Cascade algorithm, layers, scope\n│   ├── properties.rs      # Property definitions\n│   └── values.rs          # Value types, calc(), colors\n├── tree/                  # Box tree generation\n│   ├── box_tree.rs        # Box nodes, formatting contexts\n│   ├── box_generation.rs  # Styled → box mapping\n│   └── table_fixup.rs     # Anonymous table wrapper insertion\n├── layout/                # Layout algorithms\n│   ├── contexts/\n│   │   ├── block/         # Block formatting context\n│   │   ├── inline/        # Inline formatting, line boxes\n│   │   ├── flex.rs        # Flexbox\n│   │   └── grid.rs        # CSS Grid\n│   ├── table.rs           # Table layout (auto + fixed)\n│   ├── fragmentation.rs   # Pagination, column breaks\n│   └── absolute_positioning.rs\n├── text/                  # Text processing\n│   ├── pipeline.rs        # Itemization, shaping, layout\n│   ├── bidi.rs            # Bidirectional algorithm\n│   ├── line_break.rs      # Line breaking, hyphenation\n│   └── color_fonts/       # COLR, sbix, SVG-in-OT\n├── paint/                 # Painting\n│   ├── display_list.rs    # Display list structure\n│   ├── stacking.rs        # Stacking contexts, z-order\n│   ├── painter.rs         # Rasterization\n│   └── svg_filter.rs      # CSS/SVG filter effects\n├── js/                    # JavaScript integration\n│   ├── event_loop.rs      # Task queues, microtasks\n│   ├── html_script_*.rs   # Script loading, execution\n│   ├── vmjs/              # vm-js bindings\n│   └── import_maps/       # ES module import maps\n├── ui/                    # Desktop browser UI\n│   ├── browser_app.rs     # Window, tabs, chrome\n│   ├── render_worker.rs   # Background rendering\n│   └── messages.rs        # UI ↔ worker protocol\n├── sandbox/               # OS sandboxing\n│   ├── linux_seccomp.rs   # seccomp-bpf filters\n│   ├── macos_seatbelt.rs  # Seatbelt profiles\n│   └── windows.rs         # AppContainer\n├── resource/              # Network, caching\n│   ├── disk_cache.rs      # On-disk asset cache\n│   └── web_fetch/         # Fetch API implementation\n└── bin/                   # CLI binaries\n\nvendor/\n├── ecma-rs/               # JavaScript engine (vm-js)\n└── taffy/                 # Flexbox/Grid layout\n\ntests/\n├── integration.rs         # Integration test harness\n├── pages/fixtures/        # Offline page captures\n└── wpt/                   # Web Platform Tests subset\n\ndocs/                      # Internal documentation\ninstructions/              # Workstream guides\nprogress/pages/            # Pageset accuracy tracking\n</code></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rendering pipeline</h2></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"d33e94ab-59d6-4b95-8f88-aff4a432a122\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart LR\\n    subgraph Parse\\n        HTML[HTML bytes] --&amp;gt; DOM[DOM tree]\\n        CSS[CSS bytes] --&amp;gt; Sheets[Stylesheet collection]\\n    end\\n    \\n    subgraph Style\\n        DOM --&amp;gt; Styled[Styled tree]\\n        Sheets --&amp;gt; Styled\\n        Styled --&amp;gt; |cascade + inherit| Computed[Computed values]\\n    end\\n    \\n    subgraph Layout\\n        Computed --&amp;gt; BoxTree[Box tree]\\n        BoxTree --&amp;gt; |anonymous wrappers| Fragments[Fragment tree]\\n    end\\n    \\n    subgraph Paint\\n        Fragments --&amp;gt; DisplayList[Display list]\\n        DisplayList --&amp;gt; |stacking order| Raster[Pixmap]\\n    end\\n&quot;}\" data-plain=\"flowchart LR\n    subgraph Parse\n        HTML[HTML bytes] --&gt; DOM[DOM tree]\n        CSS[CSS bytes] --&gt; Sheets[Stylesheet collection]\n    end\n    \n    subgraph Style\n        DOM --&gt; Styled[Styled tree]\n        Sheets --&gt; Styled\n        Styled --&gt; |cascade + inherit| Computed[Computed values]\n    end\n    \n    subgraph Layout\n        Computed --&gt; BoxTree[Box tree]\n        BoxTree --&gt; |anonymous wrappers| Fragments[Fragment tree]\n    end\n    \n    subgraph Paint\n        Fragments --&gt; DisplayList[Display list]\n        DisplayList --&gt; |stacking order| Raster[Pixmap]\n    end\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart LR\n    subgraph Parse\n        HTML[HTML bytes] --&gt; DOM[DOM tree]\n        CSS[CSS bytes] --&gt; Sheets[Stylesheet collection]\n    end\n    \n    subgraph Style\n        DOM --&gt; Styled[Styled tree]\n        Sheets --&gt; Styled\n        Styled --&gt; |cascade + inherit| Computed[Computed values]\n    end\n    \n    subgraph Layout\n        Computed --&gt; BoxTree[Box tree]\n        BoxTree --&gt; |anonymous wrappers| Fragments[Fragment tree]\n    end\n    \n    subgraph Paint\n        Fragments --&gt; DisplayList[Display list]\n        DisplayList --&gt; |stacking order| Raster[Pixmap]\n    end\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Each stage produces an immutable tree consumed by the next. This separation enables caching: change only CSS and re-cascade without re-parsing HTML; scroll without re-laying-out.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Box generation</h3></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"fa38d147-b853-4544-9c05-e15783b527e9\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    Element[Styled element] --&amp;gt; Display{display value?}\\n    Display --&amp;gt; |block| Block[Block box]\\n    Display --&amp;gt; |inline| Inline[Inline box]\\n    Display --&amp;gt; |flex| Flex[Flex container]\\n    Display --&amp;gt; |grid| Grid[Grid container]\\n    Display --&amp;gt; |table| Table[Table wrapper]\\n    Display --&amp;gt; |none| Skip[Skip subtree]\\n    Display --&amp;gt; |contents| Contents[Unwrap children]\\n    \\n    Block --&amp;gt; Anon{needs wrapper?}\\n    Anon --&amp;gt; |mixed content| AnonBlock[Anonymous block]\\n    Anon --&amp;gt; |table child| AnonTable[Anonymous table parts]\\n    \\n    Element --&amp;gt; Pseudo{pseudo-elements?}\\n    Pseudo --&amp;gt; Before[::before]\\n    Pseudo --&amp;gt; After[::after]\\n    Pseudo --&amp;gt; Marker[::marker]\\n&quot;}\" data-plain=\"flowchart TD\n    Element[Styled element] --&gt; Display{display value?}\n    Display --&gt; |block| Block[Block box]\n    Display --&gt; |inline| Inline[Inline box]\n    Display --&gt; |flex| Flex[Flex container]\n    Display --&gt; |grid| Grid[Grid container]\n    Display --&gt; |table| Table[Table wrapper]\n    Display --&gt; |none| Skip[Skip subtree]\n    Display --&gt; |contents| Contents[Unwrap children]\n    \n    Block --&gt; Anon{needs wrapper?}\n    Anon --&gt; |mixed content| AnonBlock[Anonymous block]\n    Anon --&gt; |table child| AnonTable[Anonymous table parts]\n    \n    Element --&gt; Pseudo{pseudo-elements?}\n    Pseudo --&gt; Before[::before]\n    Pseudo --&gt; After[::after]\n    Pseudo --&gt; Marker[::marker]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    Element[Styled element] --&gt; Display{display value?}\n    Display --&gt; |block| Block[Block box]\n    Display --&gt; |inline| Inline[Inline box]\n    Display --&gt; |flex| Flex[Flex container]\n    Display --&gt; |grid| Grid[Grid container]\n    Display --&gt; |table| Table[Table wrapper]\n    Display --&gt; |none| Skip[Skip subtree]\n    Display --&gt; |contents| Contents[Unwrap children]\n    \n    Block --&gt; Anon{needs wrapper?}\n    Anon --&gt; |mixed content| AnonBlock[Anonymous block]\n    Anon --&gt; |table child| AnonTable[Anonymous table parts]\n    \n    Element --&gt; Pseudo{pseudo-elements?}\n    Pseudo --&gt; Before[::before]\n    Pseudo --&gt; After[::after]\n    Pseudo --&gt; Marker[::marker]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">The box tree is not 1:1 with the DOM. <code>display: contents</code> removes an element's box while keeping its children. Tables generate anonymous row/cell wrappers per CSS 2.1 §17.2. Mixed block/inline children trigger anonymous block box creation.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Layout contexts</h3></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"80c408b1-b13b-48b5-8efa-ebdeecec8f5b\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    Box[Box node] --&amp;gt; FC{formatting context}\\n    \\n    FC --&amp;gt; BFC[Block formatting context]\\n    BFC --&amp;gt; |floats, margins| BFCLayout[Block layout]\\n    BFCLayout --&amp;gt; Clear[Float clearing]\\n    BFCLayout --&amp;gt; Collapse[Margin collapsing]\\n    \\n    FC --&amp;gt; IFC[Inline formatting context]\\n    IFC --&amp;gt; |line boxes| IFCLayout[Inline layout]\\n    IFCLayout --&amp;gt; Bidi[Bidi reordering]\\n    IFCLayout --&amp;gt; Shaping[Text shaping]\\n    IFCLayout --&amp;gt; Wrap[Line breaking]\\n    \\n    FC --&amp;gt; FlexFC[Flex formatting context]\\n    FlexFC --&amp;gt; |main/cross axis| FlexLayout[Flex layout]\\n    FlexLayout --&amp;gt; FlexGrow[flex-grow/shrink]\\n    FlexLayout --&amp;gt; FlexAlign[Alignment]\\n    \\n    FC --&amp;gt; GridFC[Grid formatting context]\\n    GridFC --&amp;gt; |tracks, areas| GridLayout[Grid layout]\\n    GridLayout --&amp;gt; AutoPlace[Auto-placement]\\n    GridLayout --&amp;gt; TrackSize[Track sizing]\\n    \\n    FC --&amp;gt; TableFC[Table formatting context]\\n    TableFC --&amp;gt; |rows, columns| TableLayout[Table layout]\\n    TableLayout --&amp;gt; ColWidth[Column distribution]\\n    TableLayout --&amp;gt; BorderCollapse[Border collapse]\\n    \\n    FC --&amp;gt; MultiCol[Multi-column context]\\n    MultiCol --&amp;gt; |fragmentainers| ColLayout[Column layout]\\n    ColLayout --&amp;gt; ColBreak[Column breaks]\\n    ColLayout --&amp;gt; ColBalance[Balancing]\\n&quot;}\" data-plain=\"flowchart TD\n    Box[Box node] --&gt; FC{formatting context}\n    \n    FC --&gt; BFC[Block formatting context]\n    BFC --&gt; |floats, margins| BFCLayout[Block layout]\n    BFCLayout --&gt; Clear[Float clearing]\n    BFCLayout --&gt; Collapse[Margin collapsing]\n    \n    FC --&gt; IFC[Inline formatting context]\n    IFC --&gt; |line boxes| IFCLayout[Inline layout]\n    IFCLayout --&gt; Bidi[Bidi reordering]\n    IFCLayout --&gt; Shaping[Text shaping]\n    IFCLayout --&gt; Wrap[Line breaking]\n    \n    FC --&gt; FlexFC[Flex formatting context]\n    FlexFC --&gt; |main/cross axis| FlexLayout[Flex layout]\n    FlexLayout --&gt; FlexGrow[flex-grow/shrink]\n    FlexLayout --&gt; FlexAlign[Alignment]\n    \n    FC --&gt; GridFC[Grid formatting context]\n    GridFC --&gt; |tracks, areas| GridLayout[Grid layout]\n    GridLayout --&gt; AutoPlace[Auto-placement]\n    GridLayout --&gt; TrackSize[Track sizing]\n    \n    FC --&gt; TableFC[Table formatting context]\n    TableFC --&gt; |rows, columns| TableLayout[Table layout]\n    TableLayout --&gt; ColWidth[Column distribution]\n    TableLayout --&gt; BorderCollapse[Border collapse]\n    \n    FC --&gt; MultiCol[Multi-column context]\n    MultiCol --&gt; |fragmentainers| ColLayout[Column layout]\n    ColLayout --&gt; ColBreak[Column breaks]\n    ColLayout --&gt; ColBalance[Balancing]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    Box[Box node] --&gt; FC{formatting context}\n    \n    FC --&gt; BFC[Block formatting context]\n    BFC --&gt; |floats, margins| BFCLayout[Block layout]\n    BFCLayout --&gt; Clear[Float clearing]\n    BFCLayout --&gt; Collapse[Margin collapsing]\n    \n    FC --&gt; IFC[Inline formatting context]\n    IFC --&gt; |line boxes| IFCLayout[Inline layout]\n    IFCLayout --&gt; Bidi[Bidi reordering]\n    IFCLayout --&gt; Shaping[Text shaping]\n    IFCLayout --&gt; Wrap[Line breaking]\n    \n    FC --&gt; FlexFC[Flex formatting context]\n    FlexFC --&gt; |main/cross axis| FlexLayout[Flex layout]\n    FlexLayout --&gt; FlexGrow[flex-grow/shrink]\n    FlexLayout --&gt; FlexAlign[Alignment]\n    \n    FC --&gt; GridFC[Grid formatting context]\n    GridFC --&gt; |tracks, areas| GridLayout[Grid layout]\n    GridLayout --&gt; AutoPlace[Auto-placement]\n    GridLayout --&gt; TrackSize[Track sizing]\n    \n    FC --&gt; TableFC[Table formatting context]\n    TableFC --&gt; |rows, columns| TableLayout[Table layout]\n    TableLayout --&gt; ColWidth[Column distribution]\n    TableLayout --&gt; BorderCollapse[Border collapse]\n    \n    FC --&gt; MultiCol[Multi-column context]\n    MultiCol --&gt; |fragmentainers| ColLayout[Column layout]\n    ColLayout --&gt; ColBreak[Column breaks]\n    ColLayout --&gt; ColBalance[Balancing]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Layout is recursive: a flex container lays out its items, each of which may establish its own formatting context. Block and inline contexts are implemented natively. Flexbox and grid delegate to a vendored layout library (Taffy). Tables use a native implementation with bidirectional constraint solving for auto layout.</p>\n<p dir=\"auto\"><strong>Block formatting context</strong>: Floats, margin collapsing, <code>clear</code>. Floats interact with line boxes — text wraps around floated elements. Margin collapsing follows CSS 2.1 rules including the many edge cases (empty blocks, clearance, negative margins).</p>\n<p dir=\"auto\"><strong>Inline formatting context</strong>: Line box construction, baseline alignment, bidirectional text. Text is shaped into glyph runs, then broken into lines respecting <code>word-break</code>, <code>overflow-wrap</code>, <code>hyphens</code>. Bidi reordering happens after line breaking.</p>\n<p dir=\"auto\"><strong>Table layout</strong>: Column width distribution with <code>table-layout: auto</code> requires measuring content, distributing excess space proportionally, and respecting min/max constraints. Border collapsing follows CSS 2.1 §17.6 conflict resolution.</p>\n<p dir=\"auto\"><strong>Multi-column</strong>: Content flows through column fragmentainers. Column breaks respect <code>break-before</code>/<code>break-after</code>/<code>break-inside</code>. Balancing attempts to equalize column heights.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Paint order</h3></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"6a298a7c-a632-4296-be8d-6cec9c2ad820\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    Fragments[Fragment tree] --&amp;gt; DL[Display list builder]\\n    \\n    DL --&amp;gt; Stack{stacking context?}\\n    Stack --&amp;gt; |z-index, opacity, transform| NewCtx[New stacking context]\\n    Stack --&amp;gt; |normal flow| Parent[Parent context]\\n    \\n    NewCtx --&amp;gt; Order[Paint order]\\n    Order --&amp;gt; BG[1. Background/borders]\\n    Order --&amp;gt; Neg[2. Negative z-index]\\n    Order --&amp;gt; BlockBG[3. Block backgrounds]\\n    Order --&amp;gt; Float[4. Floats]\\n    Order --&amp;gt; InlineContent[5. Inline content]\\n    Order --&amp;gt; Pos[6. Positioned z-index 0]\\n    Order --&amp;gt; PosZ[7. Positive z-index]\\n    \\n    DL --&amp;gt; Effects{effects?}\\n    Effects --&amp;gt; Filter[CSS filters]\\n    Effects --&amp;gt; Blend[mix-blend-mode]\\n    Effects --&amp;gt; Backdrop[backdrop-filter]\\n    Effects --&amp;gt; Clip[clip-path]\\n    Effects --&amp;gt; Mask[mask layers]\\n    \\n    DL --&amp;gt; Transform{transforms?}\\n    Transform --&amp;gt; T2D[2D transforms]\\n    Transform --&amp;gt; T3D[3D + perspective]\\n    Transform --&amp;gt; Flatten[Flatten to 2D for raster]\\n&quot;}\" data-plain=\"flowchart TD\n    Fragments[Fragment tree] --&gt; DL[Display list builder]\n    \n    DL --&gt; Stack{stacking context?}\n    Stack --&gt; |z-index, opacity, transform| NewCtx[New stacking context]\n    Stack --&gt; |normal flow| Parent[Parent context]\n    \n    NewCtx --&gt; Order[Paint order]\n    Order --&gt; BG[1. Background/borders]\n    Order --&gt; Neg[2. Negative z-index]\n    Order --&gt; BlockBG[3. Block backgrounds]\n    Order --&gt; Float[4. Floats]\n    Order --&gt; InlineContent[5. Inline content]\n    Order --&gt; Pos[6. Positioned z-index 0]\n    Order --&gt; PosZ[7. Positive z-index]\n    \n    DL --&gt; Effects{effects?}\n    Effects --&gt; Filter[CSS filters]\n    Effects --&gt; Blend[mix-blend-mode]\n    Effects --&gt; Backdrop[backdrop-filter]\n    Effects --&gt; Clip[clip-path]\n    Effects --&gt; Mask[mask layers]\n    \n    DL --&gt; Transform{transforms?}\n    Transform --&gt; T2D[2D transforms]\n    Transform --&gt; T3D[3D + perspective]\n    Transform --&gt; Flatten[Flatten to 2D for raster]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    Fragments[Fragment tree] --&gt; DL[Display list builder]\n    \n    DL --&gt; Stack{stacking context?}\n    Stack --&gt; |z-index, opacity, transform| NewCtx[New stacking context]\n    Stack --&gt; |normal flow| Parent[Parent context]\n    \n    NewCtx --&gt; Order[Paint order]\n    Order --&gt; BG[1. Background/borders]\n    Order --&gt; Neg[2. Negative z-index]\n    Order --&gt; BlockBG[3. Block backgrounds]\n    Order --&gt; Float[4. Floats]\n    Order --&gt; InlineContent[5. Inline content]\n    Order --&gt; Pos[6. Positioned z-index 0]\n    Order --&gt; PosZ[7. Positive z-index]\n    \n    DL --&gt; Effects{effects?}\n    Effects --&gt; Filter[CSS filters]\n    Effects --&gt; Blend[mix-blend-mode]\n    Effects --&gt; Backdrop[backdrop-filter]\n    Effects --&gt; Clip[clip-path]\n    Effects --&gt; Mask[mask layers]\n    \n    DL --&gt; Transform{transforms?}\n    Transform --&gt; T2D[2D transforms]\n    Transform --&gt; T3D[3D + perspective]\n    Transform --&gt; Flatten[Flatten to 2D for raster]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Stacking contexts isolate z-ordering. Elements with <code>opacity &lt; 1</code>, <code>transform</code>, <code>filter</code>, or explicit <code>z-index</code> on positioned elements create new stacking contexts. Paint order within a context follows CSS 2.1 Appendix E.</p>\n<p dir=\"auto\">3D transforms with <code>perspective</code> are supported but flattened to 2D for the software rasterizer. <code>transform-style: preserve-3d</code> is partially supported.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Text pipeline</h2></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"920b5e79-66ca-4c8a-8ea4-6ce17d58eceb\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart LR\\n    Text[Text content] --&amp;gt; Segment[Segmentation]\\n    Segment --&amp;gt; |UAX #29| Grapheme[Grapheme clusters]\\n    Segment --&amp;gt; |UAX #14| LineBreak[Line break opportunities]\\n    \\n    Segment --&amp;gt; Bidi[Bidi algorithm]\\n    Bidi --&amp;gt; |UAX #9| Levels[Embedding levels]\\n    Levels --&amp;gt; Reorder[Visual reordering]\\n    \\n    Reorder --&amp;gt; Itemize[Script itemization]\\n    Itemize --&amp;gt; Runs[Shaped runs]\\n    \\n    Runs --&amp;gt; Shape[OpenType shaping]\\n    Shape --&amp;gt; |features| GSUB[GSUB substitution]\\n    Shape --&amp;gt; |positioning| GPOS[GPOS positioning]\\n    \\n    Shape --&amp;gt; Glyphs[Glyph buffer]\\n    Glyphs --&amp;gt; Raster{glyph type?}\\n    Raster --&amp;gt; |outline| Outline[Outline rasterization]\\n    Raster --&amp;gt; |COLR| COLR[Color layers]\\n    Raster --&amp;gt; |sbix/CBDT| Bitmap[Embedded bitmap]\\n    Raster --&amp;gt; |SVG| SVGGlyph[SVG rendering]\\n&quot;}\" data-plain=\"flowchart LR\n    Text[Text content] --&gt; Segment[Segmentation]\n    Segment --&gt; |UAX #29| Grapheme[Grapheme clusters]\n    Segment --&gt; |UAX #14| LineBreak[Line break opportunities]\n    \n    Segment --&gt; Bidi[Bidi algorithm]\n    Bidi --&gt; |UAX #9| Levels[Embedding levels]\n    Levels --&gt; Reorder[Visual reordering]\n    \n    Reorder --&gt; Itemize[Script itemization]\n    Itemize --&gt; Runs[Shaped runs]\n    \n    Runs --&gt; Shape[OpenType shaping]\n    Shape --&gt; |features| GSUB[GSUB substitution]\n    Shape --&gt; |positioning| GPOS[GPOS positioning]\n    \n    Shape --&gt; Glyphs[Glyph buffer]\n    Glyphs --&gt; Raster{glyph type?}\n    Raster --&gt; |outline| Outline[Outline rasterization]\n    Raster --&gt; |COLR| COLR[Color layers]\n    Raster --&gt; |sbix/CBDT| Bitmap[Embedded bitmap]\n    Raster --&gt; |SVG| SVGGlyph[SVG rendering]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart LR\n    Text[Text content] --&gt; Segment[Segmentation]\n    Segment --&gt; |UAX #29| Grapheme[Grapheme clusters]\n    Segment --&gt; |UAX #14| LineBreak[Line break opportunities]\n    \n    Segment --&gt; Bidi[Bidi algorithm]\n    Bidi --&gt; |UAX #9| Levels[Embedding levels]\n    Levels --&gt; Reorder[Visual reordering]\n    \n    Reorder --&gt; Itemize[Script itemization]\n    Itemize --&gt; Runs[Shaped runs]\n    \n    Runs --&gt; Shape[OpenType shaping]\n    Shape --&gt; |features| GSUB[GSUB substitution]\n    Shape --&gt; |positioning| GPOS[GPOS positioning]\n    \n    Shape --&gt; Glyphs[Glyph buffer]\n    Glyphs --&gt; Raster{glyph type?}\n    Raster --&gt; |outline| Outline[Outline rasterization]\n    Raster --&gt; |COLR| COLR[Color layers]\n    Raster --&gt; |sbix/CBDT| Bitmap[Embedded bitmap]\n    Raster --&gt; |SVG| SVGGlyph[SVG rendering]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Text rendering involves:</p>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Segmentation</strong>: Split text at script boundaries, identify grapheme clusters (UAX #29) and line break opportunities (UAX #14).</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Bidi</strong>: Run the Unicode Bidirectional Algorithm (UAX #9) to determine embedding levels. Mixed LTR/RTL text gets reordered for visual display.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Shaping</strong>: OpenType shaping via RustyBuzz applies GSUB substitutions (ligatures, contextual alternates) and GPOS positioning (kerning, mark placement). Complex scripts like Arabic and Devanagari require shaping for correct rendering.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Line breaking</strong>: Break shaped runs into lines respecting available width, <code>word-break</code>, <code>overflow-wrap</code>, and soft hyphens. <code>hyphens: auto</code> uses language-specific hyphenation dictionaries.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Color fonts</strong>: Glyphs may be outlines (rasterized normally), COLR layers (multiple colored paths), sbix/CBDT bitmaps (embedded PNGs), or SVG (rendered via resvg). COLR v1 supports gradients and blend modes.</p>\n</li>\n</ol>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">JavaScript integration</h2></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"0c152db2-e1bc-457d-b11f-2fe8fd8e539c\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    subgraph \\&quot;HTML parsing\\&quot;\\n        Parser[HTML parser] --&amp;gt; Script{script tag?}\\n        Script --&amp;gt; |inline| Inline[Queue inline script]\\n        Script --&amp;gt; |src| Fetch[Fetch external]\\n        Script --&amp;gt; |defer| Defer[Defer queue]\\n        Script --&amp;gt; |async| Async[Async queue]\\n        Script --&amp;gt; |module| Module[Module graph]\\n    end\\n    \\n    subgraph \\&quot;Event loop\\&quot;\\n        TaskQ[Task queue] --&amp;gt; Pick[Pick oldest task]\\n        Pick --&amp;gt; Run[Run to completion]\\n        Run --&amp;gt; Micro[Microtask checkpoint]\\n        Micro --&amp;gt; |drain all| Micro\\n        Micro --&amp;gt; RAF{rAF callbacks?}\\n        RAF --&amp;gt; Frame[Run frame callbacks]\\n        Frame --&amp;gt; Render[Render]\\n        Render --&amp;gt; Idle{idle time?}\\n        Idle --&amp;gt; RIC[requestIdleCallback]\\n    end\\n    \\n    subgraph \\&quot;VM execution\\&quot;\\n        Run --&amp;gt; VM[vm-js bytecode]\\n        VM --&amp;gt; |fuel budget| Budget[Interrupt check]\\n        Budget --&amp;gt; |exceeded| Pause[Yield to host]\\n        VM --&amp;gt; |DOM call| Binding[WebIDL binding]\\n        Binding --&amp;gt; Mutation[DOM mutation]\\n        Mutation --&amp;gt; Invalidate[Invalidate style/layout]\\n    end\\n&quot;}\" data-plain=\"flowchart TD\n    subgraph &quot;HTML parsing&quot;\n        Parser[HTML parser] --&gt; Script{script tag?}\n        Script --&gt; |inline| Inline[Queue inline script]\n        Script --&gt; |src| Fetch[Fetch external]\n        Script --&gt; |defer| Defer[Defer queue]\n        Script --&gt; |async| Async[Async queue]\n        Script --&gt; |module| Module[Module graph]\n    end\n    \n    subgraph &quot;Event loop&quot;\n        TaskQ[Task queue] --&gt; Pick[Pick oldest task]\n        Pick --&gt; Run[Run to completion]\n        Run --&gt; Micro[Microtask checkpoint]\n        Micro --&gt; |drain all| Micro\n        Micro --&gt; RAF{rAF callbacks?}\n        RAF --&gt; Frame[Run frame callbacks]\n        Frame --&gt; Render[Render]\n        Render --&gt; Idle{idle time?}\n        Idle --&gt; RIC[requestIdleCallback]\n    end\n    \n    subgraph &quot;VM execution&quot;\n        Run --&gt; VM[vm-js bytecode]\n        VM --&gt; |fuel budget| Budget[Interrupt check]\n        Budget --&gt; |exceeded| Pause[Yield to host]\n        VM --&gt; |DOM call| Binding[WebIDL binding]\n        Binding --&gt; Mutation[DOM mutation]\n        Mutation --&gt; Invalidate[Invalidate style/layout]\n    end\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    subgraph \"HTML parsing\"\n        Parser[HTML parser] --&gt; Script{script tag?}\n        Script --&gt; |inline| Inline[Queue inline script]\n        Script --&gt; |src| Fetch[Fetch external]\n        Script --&gt; |defer| Defer[Defer queue]\n        Script --&gt; |async| Async[Async queue]\n        Script --&gt; |module| Module[Module graph]\n    end\n    \n    subgraph \"Event loop\"\n        TaskQ[Task queue] --&gt; Pick[Pick oldest task]\n        Pick --&gt; Run[Run to completion]\n        Run --&gt; Micro[Microtask checkpoint]\n        Micro --&gt; |drain all| Micro\n        Micro --&gt; RAF{rAF callbacks?}\n        RAF --&gt; Frame[Run frame callbacks]\n        Frame --&gt; Render[Render]\n        Render --&gt; Idle{idle time?}\n        Idle --&gt; RIC[requestIdleCallback]\n    end\n    \n    subgraph \"VM execution\"\n        Run --&gt; VM[vm-js bytecode]\n        VM --&gt; |fuel budget| Budget[Interrupt check]\n        Budget --&gt; |exceeded| Pause[Yield to host]\n        VM --&gt; |DOM call| Binding[WebIDL binding]\n        Binding --&gt; Mutation[DOM mutation]\n        Mutation --&gt; Invalidate[Invalidate style/layout]\n    end\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">JavaScript execution follows the HTML spec's processing model:</p>\n<p dir=\"auto\"><strong>Script loading</strong>: Parser-inserted scripts block parsing until executed. <code>defer</code> scripts run after parsing in document order. <code>async</code> scripts run when ready. Module scripts build a dependency graph and execute after all imports resolve.</p>\n<p dir=\"auto\"><strong>Event loop</strong>: Tasks (timers, network callbacks, user events) are queued and executed one at a time. After each task, the microtask queue drains completely (Promise reactions, <code>queueMicrotask</code>). Frame callbacks (<code>requestAnimationFrame</code>) run before rendering. Idle callbacks (<code>requestIdleCallback</code>) run when the event loop has spare time.</p>\n<p dir=\"auto\"><strong>Budgeting</strong>: The VM (vm-js) uses fuel-based budgeting. Each operation consumes fuel; when fuel exhausts, execution yields to the host. This prevents infinite loops from hanging the browser. Wall-time limits provide a secondary bound.</p>\n<p dir=\"auto\"><strong>DOM bindings</strong>: Web IDL bindings expose DOM APIs to JavaScript. DOM mutations trigger style/layout invalidation. The binding layer is incomplete — many methods are stubbed and throw. Coverage is growing.</p>\n<p dir=\"auto\"><strong>Import maps</strong>: <code>&lt;script type=\"importmap\"&gt;</code> is supported. Module specifier resolution goes through the import map before URL resolution.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CSS cascade</h2></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"d030de78-df49-467e-a279-8043af47244c\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    Rules[All matching rules] --&amp;gt; Origin{origin?}\\n    \\n    Origin --&amp;gt; UA[User-agent]\\n    Origin --&amp;gt; Author[Author]\\n    \\n    Author --&amp;gt; Layer{layer?}\\n    Layer --&amp;gt; Unlayered[Unlayered rules]\\n    Layer --&amp;gt; Named[Named layers]\\n    Named --&amp;gt; LayerOrder[Layer order]\\n    \\n    Author --&amp;gt; Scope{scope?}\\n    Scope --&amp;gt; Scoped[Scoped rules]\\n    Scoped --&amp;gt; Proximity[Scope proximity]\\n    \\n    Rules --&amp;gt; Important{important?}\\n    Important --&amp;gt; |yes| Reverse[Reverse origin order]\\n    Important --&amp;gt; |no| Normal[Normal order]\\n    \\n    Normal --&amp;gt; Specificity[Sort by specificity]\\n    Specificity --&amp;gt; |id, class, type| Spec[Specificity tuple]\\n    \\n    Spec --&amp;gt; Order[Source order]\\n    Order --&amp;gt; Winner[Winning declaration]\\n    \\n    Winner --&amp;gt; Inherit{inherited?}\\n    Inherit --&amp;gt; |yes| Parent[From parent]\\n    Inherit --&amp;gt; |no| Initial[Initial value]\\n    \\n    Winner --&amp;gt; Compute[Computed value]\\n    Compute --&amp;gt; Resolve[Resolve relative units]\\n    Resolve --&amp;gt; Final[Used value]\\n&quot;}\" data-plain=\"flowchart TD\n    Rules[All matching rules] --&gt; Origin{origin?}\n    \n    Origin --&gt; UA[User-agent]\n    Origin --&gt; Author[Author]\n    \n    Author --&gt; Layer{layer?}\n    Layer --&gt; Unlayered[Unlayered rules]\n    Layer --&gt; Named[Named layers]\n    Named --&gt; LayerOrder[Layer order]\n    \n    Author --&gt; Scope{scope?}\n    Scope --&gt; Scoped[Scoped rules]\n    Scoped --&gt; Proximity[Scope proximity]\n    \n    Rules --&gt; Important{important?}\n    Important --&gt; |yes| Reverse[Reverse origin order]\n    Important --&gt; |no| Normal[Normal order]\n    \n    Normal --&gt; Specificity[Sort by specificity]\n    Specificity --&gt; |id, class, type| Spec[Specificity tuple]\n    \n    Spec --&gt; Order[Source order]\n    Order --&gt; Winner[Winning declaration]\n    \n    Winner --&gt; Inherit{inherited?}\n    Inherit --&gt; |yes| Parent[From parent]\n    Inherit --&gt; |no| Initial[Initial value]\n    \n    Winner --&gt; Compute[Computed value]\n    Compute --&gt; Resolve[Resolve relative units]\n    Resolve --&gt; Final[Used value]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    Rules[All matching rules] --&gt; Origin{origin?}\n    \n    Origin --&gt; UA[User-agent]\n    Origin --&gt; Author[Author]\n    \n    Author --&gt; Layer{layer?}\n    Layer --&gt; Unlayered[Unlayered rules]\n    Layer --&gt; Named[Named layers]\n    Named --&gt; LayerOrder[Layer order]\n    \n    Author --&gt; Scope{scope?}\n    Scope --&gt; Scoped[Scoped rules]\n    Scoped --&gt; Proximity[Scope proximity]\n    \n    Rules --&gt; Important{important?}\n    Important --&gt; |yes| Reverse[Reverse origin order]\n    Important --&gt; |no| Normal[Normal order]\n    \n    Normal --&gt; Specificity[Sort by specificity]\n    Specificity --&gt; |id, class, type| Spec[Specificity tuple]\n    \n    Spec --&gt; Order[Source order]\n    Order --&gt; Winner[Winning declaration]\n    \n    Winner --&gt; Inherit{inherited?}\n    Inherit --&gt; |yes| Parent[From parent]\n    Inherit --&gt; |no| Initial[Initial value]\n    \n    Winner --&gt; Compute[Computed value]\n    Compute --&gt; Resolve[Resolve relative units]\n    Resolve --&gt; Final[Used value]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">The cascade implements CSS Cascade Level 4:</p>\n<p dir=\"auto\"><strong>Origins</strong>: User-agent styles (browser defaults) &lt; author styles. <code>!important</code> reverses the order.</p>\n<p dir=\"auto\"><strong>Layers</strong>: <code>@layer</code> groups rules into named layers. Layer order is determined by first appearance. Unlayered rules beat layered rules (within the same origin).</p>\n<p dir=\"auto\"><strong>Scope</strong>: <code>@scope</code> limits rule applicability to a subtree. Scope proximity breaks ties when multiple scoped rules match.</p>\n<p dir=\"auto\"><strong>Specificity</strong>: (id count, class/attribute/pseudo-class count, type/pseudo-element count). Higher specificity wins.</p>\n<p dir=\"auto\"><strong>Custom properties</strong>: <code>--custom</code> properties participate in the cascade and inherit by default. <code>var(--x, fallback)</code> substitution happens at computed-value time.</p>\n<p dir=\"auto\"><strong>Container queries</strong>: <code>@container</code> rules match based on ancestor container size or style. Style queries can test custom property values.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Multiprocess architecture (target)</h2></div>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"8ed43d18-32a9-4f5a-b3d7-8c5e00d9bd50\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TD\\n    subgraph \\&quot;Browser process\\&quot;\\n        UI[Browser UI] --&amp;gt; Chrome[Chrome/tabs]\\n        Chrome --&amp;gt; Nav[Navigation]\\n        Nav --&amp;gt; IPC1[IPC channel]\\n    end\\n    \\n    subgraph \\&quot;Network process\\&quot;\\n        IPC1 --&amp;gt; NetMgr[Network manager]\\n        NetMgr --&amp;gt; HTTP[HTTP stack]\\n        NetMgr --&amp;gt; Cache[Disk cache]\\n        NetMgr --&amp;gt; Cookie[Cookie jar]\\n    end\\n    \\n    subgraph \\&quot;Renderer process (sandboxed)\\&quot;\\n        IPC1 --&amp;gt; Renderer[Renderer]\\n        Renderer --&amp;gt; Pipeline[Render pipeline]\\n        Renderer --&amp;gt; JS[JS execution]\\n        \\n        Sandbox[OS sandbox]\\n        Sandbox --&amp;gt; |Linux| Seccomp[seccomp-bpf]\\n        Sandbox --&amp;gt; |macOS| Seatbelt[Seatbelt profile]\\n        Sandbox --&amp;gt; |Windows| AppContainer[AppContainer]\\n    end\\n    \\n    Renderer --&amp;gt; |shared memory| Compositor[Compositor]\\n    Compositor --&amp;gt; GPU[GPU process]\\n&quot;}\" data-plain=\"flowchart TD\n    subgraph &quot;Browser process&quot;\n        UI[Browser UI] --&gt; Chrome[Chrome/tabs]\n        Chrome --&gt; Nav[Navigation]\n        Nav --&gt; IPC1[IPC channel]\n    end\n    \n    subgraph &quot;Network process&quot;\n        IPC1 --&gt; NetMgr[Network manager]\n        NetMgr --&gt; HTTP[HTTP stack]\n        NetMgr --&gt; Cache[Disk cache]\n        NetMgr --&gt; Cookie[Cookie jar]\n    end\n    \n    subgraph &quot;Renderer process (sandboxed)&quot;\n        IPC1 --&gt; Renderer[Renderer]\n        Renderer --&gt; Pipeline[Render pipeline]\n        Renderer --&gt; JS[JS execution]\n        \n        Sandbox[OS sandbox]\n        Sandbox --&gt; |Linux| Seccomp[seccomp-bpf]\n        Sandbox --&gt; |macOS| Seatbelt[Seatbelt profile]\n        Sandbox --&gt; |Windows| AppContainer[AppContainer]\n    end\n    \n    Renderer --&gt; |shared memory| Compositor[Compositor]\n    Compositor --&gt; GPU[GPU process]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TD\n    subgraph \"Browser process\"\n        UI[Browser UI] --&gt; Chrome[Chrome/tabs]\n        Chrome --&gt; Nav[Navigation]\n        Nav --&gt; IPC1[IPC channel]\n    end\n    \n    subgraph \"Network process\"\n        IPC1 --&gt; NetMgr[Network manager]\n        NetMgr --&gt; HTTP[HTTP stack]\n        NetMgr --&gt; Cache[Disk cache]\n        NetMgr --&gt; Cookie[Cookie jar]\n    end\n    \n    subgraph \"Renderer process (sandboxed)\"\n        IPC1 --&gt; Renderer[Renderer]\n        Renderer --&gt; Pipeline[Render pipeline]\n        Renderer --&gt; JS[JS execution]\n        \n        Sandbox[OS sandbox]\n        Sandbox --&gt; |Linux| Seccomp[seccomp-bpf]\n        Sandbox --&gt; |macOS| Seatbelt[Seatbelt profile]\n        Sandbox --&gt; |Windows| AppContainer[AppContainer]\n    end\n    \n    Renderer --&gt; |shared memory| Compositor[Compositor]\n    Compositor --&gt; GPU[GPU process]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">This is the target architecture. Currently the browser runs the renderer on a worker thread within the same process.</p>\n<p dir=\"auto\">Sandbox helpers exist and are tested:</p>\n<ul dir=\"auto\">\n<li><strong>Linux</strong>: seccomp-bpf denies filesystem opens, network socket creation, and exec. Landlock provides optional filesystem restriction.</li>\n<li><strong>macOS</strong>: Seatbelt profiles restrict filesystem and network access.</li>\n<li><strong>Windows</strong>: AppContainer with zero capabilities; Job Objects enforce process limits.</li>\n</ul>\n<p dir=\"auto\">The IPC layer (<code>src/ipc/</code>, <code>crates/fastrender-ipc/</code>) defines message protocols for navigation, resource loading, and frame transport. Shared memory frame buffers avoid copying pixel data.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build requirements</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">All platforms</h3></div>\n<ul dir=\"auto\">\n<li>Rust 1.70+ (stable)</li>\n<li>Git (submodules)</li>\n<li>CMake</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">macOS</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"xcode-select --install\nbrew install cmake make\"><pre>xcode-select --install\nbrew install cmake make</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Linux (Ubuntu/Debian)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sudo apt-get update\nsudo apt-get install -y \\\n  build-essential pkg-config cmake clang lld \\\n  libasound2-dev libwayland-dev libxkbcommon-dev \\\n  libvulkan-dev libegl1-mesa-dev libx11-dev\"><pre>sudo apt-get update\nsudo apt-get install -y \\\n  build-essential pkg-config cmake clang lld \\\n  libasound2-dev libwayland-dev libxkbcommon-dev \\\n  libvulkan-dev libegl1-mesa-dev libx11-dev</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<p dir=\"auto\">Initialize submodules:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git submodule update --init vendor/ecma-rs\"><pre>git submodule update --init vendor/ecma-rs</pre></div>\n<p dir=\"auto\">Build and run the browser:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo run --release --features browser_ui --bin browser\"><pre>cargo run --release --features browser_ui --bin browser</pre></div>\n<p dir=\"auto\">The <code>browser_ui</code> feature enables the desktop shell. Core renderer builds can omit this.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Binaries</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Binary</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>browser</code></td>\n<td>Desktop browser with tabs, navigation, bookmarks</td>\n</tr>\n<tr>\n<td><code>fetch_and_render</code></td>\n<td>Fetch URL, render to PNG</td>\n</tr>\n<tr>\n<td><code>fetch_pages</code></td>\n<td>Cache pageset HTML</td>\n</tr>\n<tr>\n<td><code>prefetch_assets</code></td>\n<td>Warm subresource cache</td>\n</tr>\n<tr>\n<td><code>pageset_progress</code></td>\n<td>Render pageset, update accuracy scoreboard</td>\n</tr>\n<tr>\n<td><code>render_fixtures</code></td>\n<td>Render offline test fixtures</td>\n</tr>\n<tr>\n<td><code>bundle_page</code></td>\n<td>Capture page + subresources for offline replay</td>\n</tr>\n<tr>\n<td><code>inspect_frag</code></td>\n<td>Dump fragment tree, pipeline state</td>\n</tr>\n<tr>\n<td><code>dump_a11y</code></td>\n<td>Export accessibility tree as JSON</td>\n</tr>\n<tr>\n<td><code>diff_renders</code></td>\n<td>Pixel-diff two render outputs</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Library API</h2></div>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use fastrender::FastRender;\n\nlet mut renderer = FastRender::new()?;\nlet pixmap = renderer.render_html(&quot;&lt;h1&gt;Hello&lt;/h1&gt;&quot;, 800, 600)?;\npixmap.save_png(&quot;out.png&quot;)?;\"><pre><span class=\"pl-k\">use</span> fastrender<span class=\"pl-kos\">::</span><span class=\"pl-v\">FastRender</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> renderer = <span class=\"pl-smi\">FastRender</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> pixmap = renderer<span class=\"pl-kos\">.</span><span class=\"pl-en\">render_html</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"&lt;h1&gt;Hello&lt;/h1&gt;\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">800</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">600</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\npixmap<span class=\"pl-kos\">.</span><span class=\"pl-en\">save_png</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"out.png\"</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">For URL rendering with diagnostics:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use fastrender::{FastRender, RenderOptions, DiagnosticsLevel};\n\nlet mut renderer = FastRender::new()?;\nlet result = renderer.render_url_with_options(\n    &quot;https://example.com&quot;,\n    RenderOptions::new()\n        .with_diagnostics_level(DiagnosticsLevel::Basic)\n        .allow_partial(true),\n)?;\n\nfor error in &amp;result.diagnostics.fetch_errors {\n    eprintln!(&quot;{}: {}&quot;, error.url, error.message);\n}\nresult.pixmap.save_png(&quot;example.png&quot;)?;\"><pre><span class=\"pl-k\">use</span> fastrender<span class=\"pl-kos\">::</span><span class=\"pl-kos\">{</span><span class=\"pl-v\">FastRender</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">RenderOptions</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">DiagnosticsLevel</span><span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> renderer = <span class=\"pl-smi\">FastRender</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> result = renderer<span class=\"pl-kos\">.</span><span class=\"pl-en\">render_url_with_options</span><span class=\"pl-kos\">(</span>\n    <span class=\"pl-s\">\"https://example.com\"</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-smi\">RenderOptions</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>\n        <span class=\"pl-kos\">.</span><span class=\"pl-en\">with_diagnostics_level</span><span class=\"pl-kos\">(</span><span class=\"pl-smi\">DiagnosticsLevel</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Basic</span><span class=\"pl-kos\">)</span>\n        <span class=\"pl-kos\">.</span><span class=\"pl-en\">allow_partial</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">for</span> error <span class=\"pl-k\">in</span> <span class=\"pl-c1\">&amp;</span>result<span class=\"pl-kos\">.</span><span class=\"pl-c1\">diagnostics</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">fetch_errors</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-en\">eprintln</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"{}: {}\"</span><span class=\"pl-kos\">,</span> error<span class=\"pl-kos\">.</span>url<span class=\"pl-kos\">,</span> error<span class=\"pl-kos\">.</span>message<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span>\nresult<span class=\"pl-kos\">.</span><span class=\"pl-c1\">pixmap</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">save_png</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"example.png\"</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">For live documents with JavaScript, use <code>BrowserTab</code> which provides an event loop, script execution, and incremental rendering. See <code>docs/runtime_stacks.md</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Conformance</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Spec</th>\n<th>Status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>HTML5 parsing</td>\n<td>Complete</td>\n</tr>\n<tr>\n<td>CSS Selectors 4</td>\n<td>Complete</td>\n</tr>\n<tr>\n<td>CSS Cascade 4</td>\n<td>Complete (layers, scope, custom properties)</td>\n</tr>\n<tr>\n<td>CSS Grid 1</td>\n<td>Supported (subgrid maturing)</td>\n</tr>\n<tr>\n<td>CSS Flexbox 1</td>\n<td>Complete</td>\n</tr>\n<tr>\n<td>CSS Multi-column 1</td>\n<td>Complete</td>\n</tr>\n<tr>\n<td>CSS Tables</td>\n<td>Complete (auto + fixed layout)</td>\n</tr>\n<tr>\n<td>CSS Transforms</td>\n<td>2D complete, 3D flattened to 2D</td>\n</tr>\n<tr>\n<td>CSS Filters</td>\n<td>Supported (subset of SVG filter graph)</td>\n</tr>\n<tr>\n<td>CSS Animations</td>\n<td>Supported (keyframes, transitions, scroll/view timelines)</td>\n</tr>\n<tr>\n<td>CSS Container Queries</td>\n<td>Supported (size + style queries)</td>\n</tr>\n<tr>\n<td>CSS Fonts 4</td>\n<td>Supported (variations, features, color fonts)</td>\n</tr>\n<tr>\n<td>CSS Text 3/4</td>\n<td>Supported (bidi, hyphenation, justification)</td>\n</tr>\n<tr>\n<td>JavaScript</td>\n<td>Partial (event loop, DOM subset, growing Web API surface)</td>\n</tr>\n<tr>\n<td>ARIA / ACCNAME 1.2</td>\n<td>Supported (role mapping, name computation)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">See <code>docs/conformance.md</code> for the detailed matrix with implementation links.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --lib                        # unit tests in src/\ncargo test --test integration           # integration tests\ncargo test --lib css::parser            # specific module\"><pre>cargo <span class=\"pl-c1\">test</span> --lib                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> unit tests in src/</span>\ncargo <span class=\"pl-c1\">test</span> --test integration           <span class=\"pl-c\"><span class=\"pl-c\">#</span> integration tests</span>\ncargo <span class=\"pl-c1\">test</span> --lib css::parser            <span class=\"pl-c\"><span class=\"pl-c\">#</span> specific module</span></pre></div>\n<p dir=\"auto\">Unit tests live alongside code in <code>src/</code>. Integration tests are in <code>tests/integration.rs</code>. Paint regressions are in <code>src/paint/tests/</code>. WPT coverage is in <code>tests/wpt/</code>.</p>\n<p dir=\"auto\">Test fixtures in <code>tests/pages/fixtures/</code> are self-contained page captures with all subresources inlined. Chrome-vs-FastRender diffs validate pixel accuracy against a reference browser.</p>\n</article></div>",
+  "recentIssues": [
+    {
+      "number": 125,
+      "title": "Security: Bundle loader allows symlink escape leading to out-of-root file reads",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/125",
+      "createdAt": "2026-03-12T18:16:32Z",
+      "comments": 0,
+      "labels": [],
+      "author": "abdussatter401"
+    },
+    {
+      "number": 123,
+      "title": ".",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/123",
+      "createdAt": "2026-02-18T19:05:14Z",
+      "comments": 1,
+      "labels": [],
+      "author": "Zyphorah"
+    },
+    {
+      "number": 122,
+      "title": "Code Generation Prompts",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/122",
+      "createdAt": "2026-02-18T09:13:25Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ChaosCom"
+    },
+    {
+      "number": 121,
+      "title": "how to use this repo?",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/121",
+      "createdAt": "2026-02-17T06:57:41Z",
+      "comments": 0,
+      "labels": [],
+      "author": "manfye"
+    },
+    {
+      "number": 116,
+      "title": "not able to compile",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/116",
+      "createdAt": "2026-02-09T09:50:07Z",
+      "comments": 2,
+      "labels": [],
+      "author": "RahimMirani"
+    },
+    {
+      "number": 115,
+      "title": "AI slop lol",
+      "url": "https://github.com/wilsonzlin/fastrender/issues/115",
+      "createdAt": "2026-01-28T11:47:14Z",
+      "comments": 2,
+      "labels": [],
+      "author": "ToustCZ"
+    }
+  ],
+  "firstCommitAt": "2025-11-16T06:39:41Z",
+  "contributors": [
+    {
+      "login": "wilsonzlin",
+      "url": "https://github.com/wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4",
+      "contributions": 25924
+    },
+    {
+      "login": "wilson-anysphere",
+      "url": "https://github.com/wilson-anysphere",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/236845017?v=4",
+      "contributions": 28
+    },
+    {
+      "login": "google-labs-jules[bot]",
+      "url": "https://github.com/apps/google-labs-jules",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/842251?v=4",
+      "contributions": 2
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 42
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 44
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 4
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 1
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 1921
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 879
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 1725
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 7499
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 13341
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 48
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 1
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 14
+    },
+    {
+      "date": "2025-11-21",
+      "count": 1
+    },
+    {
+      "date": "2025-11-22",
+      "count": 26
+    },
+    {
+      "date": "2025-11-23",
+      "count": 7
+    },
+    {
+      "date": "2025-11-24",
+      "count": 3
+    },
+    {
+      "date": "2025-11-25",
+      "count": 1
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 1
+    },
+    {
+      "date": "2025-11-28",
+      "count": 17
+    },
+    {
+      "date": "2025-11-29",
+      "count": 15
+    },
+    {
+      "date": "2025-11-30",
+      "count": 2
+    },
+    {
+      "date": "2025-12-01",
+      "count": 1
+    },
+    {
+      "date": "2025-12-02",
+      "count": 1
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 1
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 31
+    },
+    {
+      "date": "2025-12-17",
+      "count": 780
+    },
+    {
+      "date": "2025-12-18",
+      "count": 488
+    },
+    {
+      "date": "2025-12-19",
+      "count": 396
+    },
+    {
+      "date": "2025-12-20",
+      "count": 226
+    },
+    {
+      "date": "2025-12-21",
+      "count": 28
+    },
+    {
+      "date": "2025-12-22",
+      "count": 264
+    },
+    {
+      "date": "2025-12-23",
+      "count": 5
+    },
+    {
+      "date": "2025-12-24",
+      "count": 322
+    },
+    {
+      "date": "2025-12-25",
+      "count": 42
+    },
+    {
+      "date": "2025-12-26",
+      "count": 66
+    },
+    {
+      "date": "2025-12-27",
+      "count": 152
+    },
+    {
+      "date": "2025-12-28",
+      "count": 111
+    },
+    {
+      "date": "2025-12-29",
+      "count": 44
+    },
+    {
+      "date": "2025-12-30",
+      "count": 12
+    },
+    {
+      "date": "2025-12-31",
+      "count": 575
+    },
+    {
+      "date": "2026-01-01",
+      "count": 655
+    },
+    {
+      "date": "2026-01-02",
+      "count": 280
+    },
+    {
+      "date": "2026-01-03",
+      "count": 48
+    },
+    {
+      "date": "2026-01-04",
+      "count": 862
+    },
+    {
+      "date": "2026-01-05",
+      "count": 524
+    },
+    {
+      "date": "2026-01-06",
+      "count": 226
+    },
+    {
+      "date": "2026-01-07",
+      "count": 961
+    },
+    {
+      "date": "2026-01-08",
+      "count": 888
+    },
+    {
+      "date": "2026-01-09",
+      "count": 2440
+    },
+    {
+      "date": "2026-01-10",
+      "count": 1598
+    },
+    {
+      "date": "2026-01-11",
+      "count": 2202
+    },
+    {
+      "date": "2026-01-12",
+      "count": 3696
+    },
+    {
+      "date": "2026-01-13",
+      "count": 6031
+    },
+    {
+      "date": "2026-01-14",
+      "count": 1388
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 23
+    },
+    {
+      "date": "2026-01-17",
+      "count": 1
+    },
+    {
+      "date": "2026-01-18",
+      "count": 48
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "contributorCount": 8,
+  "recentCommits": [
+    {
+      "sha": "19bf103",
+      "message": "chore: regenerate emoji tables",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/19bf1036105d4eeb8bf3330678b7cb11c1490bdc",
+      "date": "2026-01-18T22:22:56Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "470e705",
+      "message": "fix: preserve unpaired JS surrogate escapes in meta refresh decoding",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/470e705d9569fb2f668e2d9db1e193323b72b8e3",
+      "date": "2026-01-18T22:21:48Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "356172e",
+      "message": "fix(layout): use physical width base for calc(%) padding in vertical writing modes",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/356172e051c687643b3fd78266184de7d893669e",
+      "date": "2026-01-18T21:58:30Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "d32b33f",
+      "message": "fix: tighten strict CSS value parsing and @supports display",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/d32b33f49766a3f5834639ab928223d6fd22ece4",
+      "date": "2026-01-18T22:19:10Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "13fdd94",
+      "message": "test: fix guard suite and locked builds",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/13fdd940855446f6eac853073ce6ca9e82202e82",
+      "date": "2026-01-18T22:10:07Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "5d568f3",
+      "message": "fix(layout): prevent stretching percentage-sized grid items",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/5d568f3c5a32aa4265349f1bddd3bd74162479bf",
+      "date": "2026-01-18T22:16:59Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "8ac7b48",
+      "message": "fix(grid): attach style overrides to child fragments",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/8ac7b482fa08a6fdec91937636c2bf1dddbfa080",
+      "date": "2026-01-18T22:15:30Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "e7c5d7a",
+      "message": "test: validate invalid CSS values after var() resolution",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/e7c5d7a316d7433ccbd5a438686f1f527b46704a",
+      "date": "2026-01-18T22:10:22Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "95ba537",
+      "message": "fix: treat about:blank/depth-exhausted iframes as transparent",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/95ba53766690600d460a53c1ef989634b97ccee9",
+      "date": "2026-01-18T22:08:55Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    },
+    {
+      "sha": "c7e3ac0",
+      "message": "fix: make renderer_minimal lib tests compile without vmjs",
+      "url": "https://github.com/wilsonzlin/fastrender/commit/c7e3ac02bbbfbdaebccac5acaaf072a58fa20069",
+      "date": "2026-01-18T22:06:47Z",
+      "author": "wilsonzlin",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19868532?v=4"
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 163
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 246
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 124
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 317
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 257
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 392
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 374
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 277
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 254
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 223
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 198
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 221
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 222
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 249
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 247
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 171
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 153
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 135
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 106
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 258
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 382
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 362
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 349
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 262
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 266
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 204
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 182
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 155
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 213
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 129
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 118
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 100
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 124
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 82
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 114
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 122
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 100
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 67
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 26
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 302
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 467
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 418
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 337
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 251
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 72
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 336
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 367
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 343
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 335
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 424
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 364
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 363
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 387
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 321
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 254
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 211
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 186
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 141
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 214
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 238
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 287
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 318
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 248
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 246
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 194
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 204
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 155
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 139
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 156
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 162
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 138
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 135
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 86
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 81
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 87
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 98
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 89
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 92
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 74
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 70
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 63
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 55
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 26
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 129
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 86
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 61
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 70
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 82
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 108
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 70
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 83
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 133
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 188
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 167
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 121
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 118
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 93
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 104
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 79
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 54
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 51
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 70
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 77
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 72
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 53
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 60
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 42
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 38
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 40
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 31
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 27
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 27
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 22
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 21
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 25
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 44
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 97,
+      "title": "Align with spec",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/97",
+      "state": "merged",
+      "updatedAt": "2025-12-16T11:27:27Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 96,
+      "title": "Pixel perfect news.ycombinator.com rendering",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/96",
+      "state": "merged",
+      "updatedAt": "2025-12-08T18:34:50Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 95,
+      "title": "Review codebase for production readiness",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/95",
+      "state": "merged",
+      "updatedAt": "2025-12-03T04:18:44Z",
+      "author": "wilson-anysphere",
+      "draft": false
+    },
+    {
+      "number": 94,
+      "title": "Refactor codebase for better architecture and quality",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/94",
+      "state": "merged",
+      "updatedAt": "2025-12-02T03:42:08Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 93,
+      "title": "Review project completion and overall status",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/93",
+      "state": "merged",
+      "updatedAt": "2025-11-30T22:17:30Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 92,
+      "title": "Verify W6 task implementations against instructions",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/92",
+      "state": "merged",
+      "updatedAt": "2025-11-30T18:34:04Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 89,
+      "title": "Create test fixtures for Wave 6 Task 8",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/89",
+      "state": "merged",
+      "updatedAt": "2025-11-30T04:53:49Z",
+      "author": "wilsonzlin",
+      "draft": false
+    },
+    {
+      "number": 88,
+      "title": "Set up CI/CD pipeline for fastrender",
+      "url": "https://github.com/wilsonzlin/fastrender/pull/88",
+      "state": "merged",
+      "updatedAt": "2025-11-30T04:53:07Z",
+      "author": "wilsonzlin",
+      "draft": false
+    }
+  ],
+  "participation": {
+    "all": 29858,
+    "owner": 25924,
+    "community": 3934
+  },
+  "fileTree": [
+    {
+      "name": ".cargo",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/.cargo"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/.github"
+    },
+    {
+      "name": "assets",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/assets"
+    },
+    {
+      "name": "benches",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/benches"
+    },
+    {
+      "name": "crates",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/crates"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/docs"
+    },
+    {
+      "name": "fuzz",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/fuzz"
+    },
+    {
+      "name": "instructions",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/instructions"
+    },
+    {
+      "name": "investigation",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/investigation"
+    },
+    {
+      "name": "progress",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/progress"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/scripts"
+    },
+    {
+      "name": "specs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/specs"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/src"
+    },
+    {
+      "name": "tests",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/tests"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/tools"
+    },
+    {
+      "name": "vendor",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/vendor"
+    },
+    {
+      "name": "xtask",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/wilsonzlin/fastrender/tree/main/xtask"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 631,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/.gitignore"
+    },
+    {
+      "name": ".gitmodules",
+      "type": "file",
+      "size": 1038,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/.gitmodules"
+    },
+    {
+      "name": ".rustfmt.toml",
+      "type": "file",
+      "size": 186,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/.rustfmt.toml"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 13222,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/AGENTS.md"
+    },
+    {
+      "name": "Cargo.lock",
+      "type": "file",
+      "size": 188793,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/Cargo.lock"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 19755,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/Cargo.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 20500,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/README.md"
+    },
+    {
+      "name": "vitest.config.cjs",
+      "type": "file",
+      "size": 638,
+      "url": "https://github.com/wilsonzlin/fastrender/blob/main/vitest.config.cjs"
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "manifestDependencies": {
+    "manifest": "Cargo.toml",
+    "dependencies": [
+      {
+        "name": "fastrender-ipc",
+        "version": "{ path ="
+      },
+      {
+        "name": "fastrender-yuv",
+        "version": "{ path ="
+      },
+      {
+        "name": "base64",
+        "version": "0.22"
+      },
+      {
+        "name": "aes-gcm",
+        "version": "{ version ="
+      },
+      {
+        "name": "aes",
+        "version": "{ version ="
+      },
+      {
+        "name": "getrandom",
+        "version": "0.2"
+      },
+      {
+        "name": "fastrender-shmem",
+        "version": "{ path ="
+      },
+      {
+        "name": "avif-decode",
+        "version": "{ version ="
+      },
+      {
+        "name": "avif-parse",
+        "version": "{ version ="
+      },
+      {
+        "name": "arboard",
+        "version": "{ version ="
+      },
+      {
+        "name": "cpal",
+        "version": "{ version ="
+      },
+      {
+        "name": "accesskit",
+        "version": "{ version ="
+      },
+      {
+        "name": "accesskit_winit",
+        "version": "{ version ="
+      },
+      {
+        "name": "brotli",
+        "version": "6"
+      },
+      {
+        "name": "clap",
+        "version": "{ version ="
+      },
+      {
+        "name": "chrono",
+        "version": "0.4.42"
+      },
+      {
+        "name": "csscolorparser",
+        "version": "0.6"
+      },
+      {
+        "name": "cssparser",
+        "version": "0.35"
+      },
+      {
+        "name": "flate2",
+        "version": "1"
+      },
+      {
+        "name": "encoding_rs",
+        "version": "0.8"
+      },
+      {
+        "name": "fs2",
+        "version": "{ version ="
+      },
+      {
+        "name": "fontdb",
+        "version": "0.23"
+      },
+      {
+        "name": "html5ever",
+        "version": "0.35"
+      },
+      {
+        "name": "hyphenation",
+        "version": "{ version ="
+      },
+      {
+        "name": "image",
+        "version": "{ version ="
+      },
+      {
+        "name": "jpeg-decoder",
+        "version": "0.3"
+      },
+      {
+        "name": "libwebp-sys",
+        "version": "0.9.6"
+      },
+      {
+        "name": "lru",
+        "version": "0.12"
+      },
+      {
+        "name": "kamadak-exif",
+        "version": "0.6"
+      },
+      {
+        "name": "markup5ever",
+        "version": "0.35"
+      },
+      {
+        "name": "markup5ever_rcdom",
+        "version": "0.35"
+      },
+      {
+        "name": "matroska-demuxer",
+        "version": "{ version ="
+      },
+      {
+        "name": "memchr",
+        "version": "2.7"
+      },
+      {
+        "name": "memmap2",
+        "version": "0.9"
+      },
+      {
+        "name": "mp4",
+        "version": "{ version ="
+      },
+      {
+        "name": "mp4parse",
+        "version": "{ version ="
+      },
+      {
+        "name": "png",
+        "version": "0.18"
+      },
+      {
+        "name": "smallvec",
+        "version": "1.15"
+      },
+      {
+        "name": "parking_lot",
+        "version": "0.12"
+      },
+      {
+        "name": "precomputed-hash",
+        "version": "0.1"
+      }
+    ],
+    "total": 40
+  },
+  "workflowRuns": [
+    {
+      "name": "ecma-rs native groundwork",
+      "status": "failure",
+      "url": "https://github.com/wilsonzlin/fastrender/actions/runs/30437745409",
+      "branch": "main",
+      "updatedAt": "2026-07-29T09:02:39Z"
+    },
+    {
+      "name": "UI perf smoke regression",
+      "status": "failure",
+      "url": "https://github.com/wilsonzlin/fastrender/actions/runs/30433545247",
+      "branch": "main",
+      "updatedAt": "2026-07-29T07:58:27Z"
+    },
+    {
+      "name": "test262 parser report (artifact)",
+      "status": "failure",
+      "url": "https://github.com/wilsonzlin/fastrender/actions/runs/30433455839",
+      "branch": "main",
+      "updatedAt": "2026-07-29T07:56:19Z"
+    },
+    {
+      "name": "Performance regression",
+      "status": "failure",
+      "url": "https://github.com/wilsonzlin/fastrender/actions/runs/30430184945",
+      "branch": "main",
+      "updatedAt": "2026-07-29T07:18:15Z"
+    },
+    {
+      "name": "typecheck-ts upstream conformance",
+      "status": "failure",
+      "url": "https://github.com/wilsonzlin/fastrender/actions/runs/30429728323",
+      "branch": "main",
+      "updatedAt": "2026-07-29T06:57:10Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 28,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 18,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 9,
+  "mergedPRs": 93,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T21:55:45.081Z"
 }

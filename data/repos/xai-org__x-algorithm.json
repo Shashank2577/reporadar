@@ -1,6 +1,12 @@
 {
   "id": "xai-org/x-algorithm",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 26872,
+      "forks": 4581
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-01-20",
@@ -163,5 +169,2810 @@
     "sampledAt": "2026-07-28T09:22:09.969Z"
   },
   "owner": "xai-org",
-  "name": "x-algorithm"
+  "name": "x-algorithm",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/130314967?v=4",
+  "ownerType": "Organization",
+  "description": "Algorithm powering the For You feed on X",
+  "url": "https://github.com/xai-org/x-algorithm",
+  "homepage": null,
+  "license": "Apache-2.0",
+  "language": "Rust",
+  "topics": [],
+  "stars": 26872,
+  "forks": 4581,
+  "watchers": 307,
+  "openIssues": 0,
+  "createdAt": "2026-01-19T23:12:35Z",
+  "pushedAt": "2026-05-15T21:55:27Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T21:55:52.114Z",
+  "languages": {
+    "Rust": 513511,
+    "Python": 380391
+  },
+  "commitCount": 3,
+  "contributors": [],
+  "readmeExcerpt": "# X For You Feed Algorithm\n\nThis repository contains the core recommendation system powering the \"For You\" feed on X. It combines in-network content (from accounts you follow) with out-of-network content (discovered through ML-based retrieval) and ranks everything using a Grok-based transformer model.\n\n> **Note:** The transformer implementation is ported from the [Grok-1 open source release](https://github.com/xai-org/grok-1) by xAI, adapted for recommendation system use cases.\n\n## Table of Contents\n\n- [Updates — May 15th, 2026](#updates--may-15th-2026)\n- [Overview](#overview)\n- [System Architecture](#system-architecture)\n- [Components](#components)\n  - [Home Mixer](#home-mixer)\n  - [Thunder](#thunder)\n  - [Phoenix](#phoenix)\n  - [Candidate Pipeline](#candidate-pipeline)\n- [How It Works](#how-it-works)\n  - [Pipeline Stages](#pipeline-stages)\n  - [Scoring and Ranking](#scoring-and-ranking)\n  - [Filtering](#filtering)\n- [Key Design Decisions](#key-design-decisions)\n- [License](#license)\n\n---\n\n## Updates — May 15th, 2026\n\nThis release updates the For You algorithm code, including a runnable end-to-end inference pipeline alongside new components for content understanding, ads, and candidate sourcing.\n\n1. **End-to-end inference pipeline:** A new [`phoenix/run_pipeline.py`](phoenix/run_pipeline.py) replaces the separate `run_ranker.py` and `run_retrieval.py` scripts with a single entry point that runs **retrieval → ranking** from exported checkpoints, mirroring how the two stages are composed in production.\n\n2. **Pre-trained model artifacts:** A pre-trained mini Phoenix model (256-dim embeddings, 4 attention heads, 2 transformer layers) is now packaged as a ~3 GB archive distributed via Git LFS, enabling out-of-the-box inference without training your own model first.\n\n3. **Grox content-understanding pipeline:** A new [`grox/`](grox/) service is included, providing classifiers, embedders, and a task-execution engine for content understanding workloads such as spam detection, post-category classification, and PTOS policy enforcement.\n\n4. **Ads blending system:** Includes a new [`home-mixer/ads/`](home-mixer/ads/) module that handles ad injection and positioning within the feed, including brand-safety tracking that respects sensitive content boundaries.\n\n5. **Query hydrators:** Home mixer now hydrates user context including followed topics, starter packs, impression bloom filters, IP, mutual follow graphs, and served history.\n\n6. **Candidate hydrators:** Additional hydrators for engagement counts, brand safety signals, language codes, media detection, quote post expansion, mutual follow scores, and more.\n\n7. **Candidate sources:** Adds sources for ads, who to follow, Phoenix MoE, Phoenix topics, prompts, and updates Thunder/Phoenix ones.\n\n---\n\n## Overview\n\nThe For You feed algorithm retrieves, ranks, and filters posts from two sources:\n\n1. **In-Network (Thunder)**: Posts from accounts you follow\n2. **Out-of-Network (Phoenix Retrieval)**: Posts discovered from a global corpus\n\nBoth sources are combined and ranked together using **Phoenix**, a Grok-based transformer model that predicts engagement probabilities for each post. The final score is a weighted combination of these predicted engagements.\n\nWe have eliminated every single hand-engineered feature and most heuristics from the system. The Grok-based transformer does all the heavy lifting by understanding your engagement history (what you liked, replied to, shared, etc.) and using that to determine what content is relevant to you.\n\n---\n\n## System Architecture\n\n```\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                    FOR YOU FEED REQUEST                                     │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                         HOME MIXER                                          │\n│                                    (Orchestration Layer)                                    │\n├─────────────────────────────────────────────────────────────────────────────────────────────┤\n│                                                                                             │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                   QUERY HYDRATION                                   │   │\n│   │  ┌──────────────────────────┐    ┌──────────────────────────────────────────────┐   │   │\n│   │  │ User Action Sequence     │    │ User Features                                │   │   │\n│   │  │ (engagement history)     │    │ (following list, preferences, etc.)          │   │   │\n│   │  └──────────────────────────┘    └──────────────────────────────────────────────┘   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                  CANDIDATE SOURCES                                  │   │\n│   │         ┌─────────────────────────────┐    ┌────────────────────────────────┐       │   │\n│   │         │        THUNDER              │    │     PHOENIX RETRIEVAL          │       │   │\n│   │         │    (In-Network Posts)       │    │   (Out-of-Network Posts)       │       │   │\n│   │         │                             │    │                                │       │   │\n│   │         │  Posts from accounts        │    │  ML-based similarity search    │       │   │\n│   │         │  you follow                 │    │  across global corpus          │       │   │\n│   │         └─────────────────────────────┘    └────────────────────────────────┘       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      HYDRATION                                      │   │\n│   │  Fetch additional data: core post metadata, author info, media entities, etc.       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      FILTERING                                      │   │\n│   │  Remove: duplicates, old posts, self-posts, blocked authors, muted keywords, etc.   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                       SCORING                                       │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Phoenix Scorer          │    Grok-based Transformer predicts:                   │   │\n│   │  │  (ML Predictions)        │    P(like), P(reply), P(repost), P(click)...          │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Weighted Scorer         │    Weighted Score = Σ (weight × P(action))            │   │\n│   │  │  (Combine predictions)   │                                                       │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Author Diversity        │    Attenuate repeated author scores                   │   │\n│   │  │  Scorer                  │    to ensure feed diversity                           │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      SELECTION                                      │   │\n│   │                    Sort by final score, select top K candidates                     │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                              FILTERING (Post-Selection)                             │   │\n│   │                 Visibility filtering (deleted/spam/violence/gore etc)               │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                                                                             │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                     RANKED FEED RESPONSE                                    │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n```\n\n---\n\n## Components\n\n### Home Mixer\n\n**Location:** [`home-mixer/`](home-mixer/)\n\nThe orchestration layer that assembles the For You feed. It leverages the `CandidatePipeline` framework with the following stages:\n\n| Stage | Description |\n|-------|-------------|\n| Query Hydrators | Fetch user context (engagement history, following list) |\n| Sources | Retrieve candidates from Thunder and Phoenix |\n| Hydrators | Enrich candidates with additional data |\n| Filters | Remove ineligible candidates |\n| Scorers | Predict engagement and compute final scores |\n| Selector | Sort by score and select top K |\n| Post-Selection Filters | Final visibility and dedup checks |\n| Side Effects | Cache request info for future use |\n\nThe server exposes a gRPC endpoint (`ScoredPostsService`) that returns ranked posts for a given user.\n\n---\n\n### Thunde",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">X For You Feed Algorithm</h1></div>\n<p dir=\"auto\">This repository contains the core recommendation system powering the \"For You\" feed on X. It combines in-network content (from accounts you follow) with out-of-network content (discovered through ML-based retrieval) and ranks everything using a Grok-based transformer model.</p>\n<blockquote>\n<p dir=\"auto\"><strong>Note:</strong> The transformer implementation is ported from the <a href=\"https://github.com/xai-org/grok-1\">Grok-1 open source release</a> by xAI, adapted for recommendation system use cases.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Table of Contents</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"#updates--may-15th-2026\">Updates — May 15th, 2026</a></li>\n<li><a href=\"#overview\">Overview</a></li>\n<li><a href=\"#system-architecture\">System Architecture</a></li>\n<li><a href=\"#components\">Components</a>\n<ul dir=\"auto\">\n<li><a href=\"#home-mixer\">Home Mixer</a></li>\n<li><a href=\"#thunder\">Thunder</a></li>\n<li><a href=\"#phoenix\">Phoenix</a></li>\n<li><a href=\"#candidate-pipeline\">Candidate Pipeline</a></li>\n</ul>\n</li>\n<li><a href=\"#how-it-works\">How It Works</a>\n<ul dir=\"auto\">\n<li><a href=\"#pipeline-stages\">Pipeline Stages</a></li>\n<li><a href=\"#scoring-and-ranking\">Scoring and Ranking</a></li>\n<li><a href=\"#filtering\">Filtering</a></li>\n</ul>\n</li>\n<li><a href=\"#key-design-decisions\">Key Design Decisions</a></li>\n<li><a href=\"#license\">License</a></li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Updates — May 15th, 2026</h2></div>\n<p dir=\"auto\">This release updates the For You algorithm code, including a runnable end-to-end inference pipeline alongside new components for content understanding, ads, and candidate sourcing.</p>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>End-to-end inference pipeline:</strong> A new <a href=\"https://github.com/xai-org/x-algorithm/blob/main/phoenix/run_pipeline.py\"><code>phoenix/run_pipeline.py</code></a> replaces the separate <code>run_ranker.py</code> and <code>run_retrieval.py</code> scripts with a single entry point that runs <strong>retrieval → ranking</strong> from exported checkpoints, mirroring how the two stages are composed in production.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Pre-trained model artifacts:</strong> A pre-trained mini Phoenix model (256-dim embeddings, 4 attention heads, 2 transformer layers) is now packaged as a ~3 GB archive distributed via Git LFS, enabling out-of-the-box inference without training your own model first.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Grox content-understanding pipeline:</strong> A new <a href=\"https://github.com/xai-org/x-algorithm/blob/main/grox/\"><code>grox/</code></a> service is included, providing classifiers, embedders, and a task-execution engine for content understanding workloads such as spam detection, post-category classification, and PTOS policy enforcement.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Ads blending system:</strong> Includes a new <a href=\"https://github.com/xai-org/x-algorithm/blob/main/home-mixer/ads/\"><code>home-mixer/ads/</code></a> module that handles ad injection and positioning within the feed, including brand-safety tracking that respects sensitive content boundaries.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Query hydrators:</strong> Home mixer now hydrates user context including followed topics, starter packs, impression bloom filters, IP, mutual follow graphs, and served history.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Candidate hydrators:</strong> Additional hydrators for engagement counts, brand safety signals, language codes, media detection, quote post expansion, mutual follow scores, and more.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Candidate sources:</strong> Adds sources for ads, who to follow, Phoenix MoE, Phoenix topics, prompts, and updates Thunder/Phoenix ones.</p>\n</li>\n</ol>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Overview</h2></div>\n<p dir=\"auto\">The For You feed algorithm retrieves, ranks, and filters posts from two sources:</p>\n<ol dir=\"auto\">\n<li><strong>In-Network (Thunder)</strong>: Posts from accounts you follow</li>\n<li><strong>Out-of-Network (Phoenix Retrieval)</strong>: Posts discovered from a global corpus</li>\n</ol>\n<p dir=\"auto\">Both sources are combined and ranked together using <strong>Phoenix</strong>, a Grok-based transformer model that predicts engagement probabilities for each post. The final score is a weighted combination of these predicted engagements.</p>\n<p dir=\"auto\">We have eliminated every single hand-engineered feature and most heuristics from the system. The Grok-based transformer does all the heavy lifting by understanding your engagement history (what you liked, replied to, shared, etc.) and using that to determine what content is relevant to you.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">System Architecture</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                    FOR YOU FEED REQUEST                                     │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                         HOME MIXER                                          │\n│                                    (Orchestration Layer)                                    │\n├─────────────────────────────────────────────────────────────────────────────────────────────┤\n│                                                                                             │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                   QUERY HYDRATION                                   │   │\n│   │  ┌──────────────────────────┐    ┌──────────────────────────────────────────────┐   │   │\n│   │  │ User Action Sequence     │    │ User Features                                │   │   │\n│   │  │ (engagement history)     │    │ (following list, preferences, etc.)          │   │   │\n│   │  └──────────────────────────┘    └──────────────────────────────────────────────┘   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                  CANDIDATE SOURCES                                  │   │\n│   │         ┌─────────────────────────────┐    ┌────────────────────────────────┐       │   │\n│   │         │        THUNDER              │    │     PHOENIX RETRIEVAL          │       │   │\n│   │         │    (In-Network Posts)       │    │   (Out-of-Network Posts)       │       │   │\n│   │         │                             │    │                                │       │   │\n│   │         │  Posts from accounts        │    │  ML-based similarity search    │       │   │\n│   │         │  you follow                 │    │  across global corpus          │       │   │\n│   │         └─────────────────────────────┘    └────────────────────────────────┘       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      HYDRATION                                      │   │\n│   │  Fetch additional data: core post metadata, author info, media entities, etc.       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      FILTERING                                      │   │\n│   │  Remove: duplicates, old posts, self-posts, blocked authors, muted keywords, etc.   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                       SCORING                                       │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Phoenix Scorer          │    Grok-based Transformer predicts:                   │   │\n│   │  │  (ML Predictions)        │    P(like), P(reply), P(repost), P(click)...          │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Weighted Scorer         │    Weighted Score = Σ (weight × P(action))            │   │\n│   │  │  (Combine predictions)   │                                                       │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Author Diversity        │    Attenuate repeated author scores                   │   │\n│   │  │  Scorer                  │    to ensure feed diversity                           │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      SELECTION                                      │   │\n│   │                    Sort by final score, select top K candidates                     │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                              FILTERING (Post-Selection)                             │   │\n│   │                 Visibility filtering (deleted/spam/violence/gore etc)               │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                                                                             │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                     RANKED FEED RESPONSE                                    │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\"><pre class=\"notranslate\"><code>┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                    FOR YOU FEED REQUEST                                     │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                         HOME MIXER                                          │\n│                                    (Orchestration Layer)                                    │\n├─────────────────────────────────────────────────────────────────────────────────────────────┤\n│                                                                                             │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                   QUERY HYDRATION                                   │   │\n│   │  ┌──────────────────────────┐    ┌──────────────────────────────────────────────┐   │   │\n│   │  │ User Action Sequence     │    │ User Features                                │   │   │\n│   │  │ (engagement history)     │    │ (following list, preferences, etc.)          │   │   │\n│   │  └──────────────────────────┘    └──────────────────────────────────────────────┘   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                  CANDIDATE SOURCES                                  │   │\n│   │         ┌─────────────────────────────┐    ┌────────────────────────────────┐       │   │\n│   │         │        THUNDER              │    │     PHOENIX RETRIEVAL          │       │   │\n│   │         │    (In-Network Posts)       │    │   (Out-of-Network Posts)       │       │   │\n│   │         │                             │    │                                │       │   │\n│   │         │  Posts from accounts        │    │  ML-based similarity search    │       │   │\n│   │         │  you follow                 │    │  across global corpus          │       │   │\n│   │         └─────────────────────────────┘    └────────────────────────────────┘       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      HYDRATION                                      │   │\n│   │  Fetch additional data: core post metadata, author info, media entities, etc.       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      FILTERING                                      │   │\n│   │  Remove: duplicates, old posts, self-posts, blocked authors, muted keywords, etc.   │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                       SCORING                                       │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Phoenix Scorer          │    Grok-based Transformer predicts:                   │   │\n│   │  │  (ML Predictions)        │    P(like), P(reply), P(repost), P(click)...          │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Weighted Scorer         │    Weighted Score = Σ (weight × P(action))            │   │\n│   │  │  (Combine predictions)   │                                                       │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   │               │                                                                     │   │\n│   │               ▼                                                                     │   │\n│   │  ┌──────────────────────────┐                                                       │   │\n│   │  │  Author Diversity        │    Attenuate repeated author scores                   │   │\n│   │  │  Scorer                  │    to ensure feed diversity                           │   │\n│   │  └──────────────────────────┘                                                       │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                                      SELECTION                                      │   │\n│   │                    Sort by final score, select top K candidates                     │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                              │                                              │\n│                                              ▼                                              │\n│   ┌─────────────────────────────────────────────────────────────────────────────────────┐   │\n│   │                              FILTERING (Post-Selection)                             │   │\n│   │                 Visibility filtering (deleted/spam/violence/gore etc)               │   │\n│   └─────────────────────────────────────────────────────────────────────────────────────┘   │\n│                                                                                             │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n                                               │\n                                               ▼\n┌─────────────────────────────────────────────────────────────────────────────────────────────┐\n│                                     RANKED FEED RESPONSE                                    │\n└─────────────────────────────────────────────────────────────────────────────────────────────┘\n</code></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Components</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Home Mixer</h3></div>\n<p dir=\"auto\"><strong>Location:</strong> <a href=\"https://github.com/xai-org/x-algorithm/blob/main/home-mixer/\"><code>home-mixer/</code></a></p>\n<p dir=\"auto\">The orchestration layer that assembles the For You feed. It leverages the <code>CandidatePipeline</code> framework with the following stages:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Stage</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Query Hydrators</td>\n<td>Fetch user context (engagement history, following list)</td>\n</tr>\n<tr>\n<td>Sources</td>\n<td>Retrieve candidates from Thunder and Phoenix</td>\n</tr>\n<tr>\n<td>Hydrators</td>\n<td>Enrich candidates with additional data</td>\n</tr>\n<tr>\n<td>Filters</td>\n<td>Remove ineligible candidates</td>\n</tr>\n<tr>\n<td>Scorers</td>\n<td>Predict engagement and compute final scores</td>\n</tr>\n<tr>\n<td>Selector</td>\n<td>Sort by score and select top K</td>\n</tr>\n<tr>\n<td>Post-Selection Filters</td>\n<td>Final visibility and dedup checks</td>\n</tr>\n<tr>\n<td>Side Effects</td>\n<td>Cache request info for future use</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The server exposes a gRPC endpoint (<code>ScoredPostsService</code>) that returns ranked posts for a given user.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Thunder</h3></div>\n<p dir=\"auto\"><strong>Location:</strong> <a href=\"https://github.com/xai-org/x-algorithm/blob/main/thunder/\"><code>thunder/</code></a></p>\n<p dir=\"auto\">An in-memory post store and realtime ingestion pipeline that tracks recent posts from all users. It:</p>\n<ul dir=\"auto\">\n<li>Consumes post create/delete events from Kafka</li>\n<li>Maintains per-user stores for original posts, replies/reposts, and video posts</li>\n<li>Serves \"in-network\" post candidates from accounts the requesting user follows</li>\n<li>Automatically trims posts older than the retention period</li>\n</ul>\n<p dir=\"auto\">Thunder enables sub-millisecond lookups for in-network content without hitting an external database.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Phoenix</h3></div>\n<p dir=\"auto\"><strong>Location:</strong> <a href=\"https://github.com/xai-org/x-algorithm/blob/main/phoenix/\"><code>phoenix/</code></a></p>\n<p dir=\"auto\">The ML component with two main functions:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">1. Retrieval (Two-Tower Model)</h4></div>\n<p dir=\"auto\">Finds relevant out-of-network posts:</p>\n<ul dir=\"auto\">\n<li><strong>User Tower</strong>: Encodes user features and engagement history into an embedding</li>\n<li><strong>Candidate Tower</strong>: Encodes all posts into embeddings</li>\n<li><strong>Similarity Search</strong>: Retrieves top-K posts via dot product similarity</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">2. Ranking (Transformer with Candidate Isolation)</h4></div>\n<p dir=\"auto\">Predicts engagement probabilities for each candidate:</p>\n<ul dir=\"auto\">\n<li>Takes user context (engagement history) and candidate posts as input</li>\n<li>Uses special attention masking so candidates cannot attend to each other</li>\n<li>Outputs probabilities for each action type (like, reply, repost, click, etc.)</li>\n</ul>\n<p dir=\"auto\">See <a href=\"https://github.com/xai-org/x-algorithm/blob/main/phoenix/README.md\"><code>phoenix/README.md</code></a> for detailed architecture documentation.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Candidate Pipeline</h3></div>\n<p dir=\"auto\"><strong>Location:</strong> <a href=\"https://github.com/xai-org/x-algorithm/blob/main/candidate-pipeline/\"><code>candidate-pipeline/</code></a></p>\n<p dir=\"auto\">A reusable framework for building recommendation pipelines. Defines traits for:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Trait</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>Source</code></td>\n<td>Fetch candidates from a data source</td>\n</tr>\n<tr>\n<td><code>Hydrator</code></td>\n<td>Enrich candidates with additional features</td>\n</tr>\n<tr>\n<td><code>Filter</code></td>\n<td>Remove candidates that shouldn't be shown</td>\n</tr>\n<tr>\n<td><code>Scorer</code></td>\n<td>Compute scores for ranking</td>\n</tr>\n<tr>\n<td><code>Selector</code></td>\n<td>Sort and select top candidates</td>\n</tr>\n<tr>\n<td><code>SideEffect</code></td>\n<td>Run async side effects (caching, logging)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The framework runs sources and hydrators in parallel where possible, with configurable error handling and logging.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How It Works</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Pipeline Stages</h3></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Query Hydration</strong>: Fetch the user's recent engagements history and metadata (eg. following list)</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Candidate Sourcing</strong>: Retrieve candidates from:</p>\n<ul dir=\"auto\">\n<li><strong>Thunder</strong>: Recent posts from followed accounts (in-network)</li>\n<li><strong>Phoenix Retrieval</strong>: ML-discovered posts from the global corpus (out-of-network)</li>\n</ul>\n</li>\n<li>\n<p dir=\"auto\"><strong>Candidate Hydration</strong>: Enrich candidates with:</p>\n<ul dir=\"auto\">\n<li>Core post data (text, media, etc.)</li>\n<li>Author information (username, verification status)</li>\n<li>Video duration (for video posts)</li>\n<li>Subscription status</li>\n</ul>\n</li>\n<li>\n<p dir=\"auto\"><strong>Pre-Scoring Filters</strong>: Remove posts that are:</p>\n<ul dir=\"auto\">\n<li>Duplicates</li>\n<li>Too old</li>\n<li>From the viewer themselves</li>\n<li>From blocked/muted accounts</li>\n<li>Containing muted keywords</li>\n<li>Previously seen or recently served</li>\n<li>Ineligible subscription content</li>\n</ul>\n</li>\n<li>\n<p dir=\"auto\"><strong>Scoring</strong>: Apply multiple scorers sequentially:</p>\n<ul dir=\"auto\">\n<li><strong>Phoenix Scorer</strong>: Get ML predictions from the Phoenix transformer model</li>\n<li><strong>Weighted Scorer</strong>: Combine predictions into a final relevance score</li>\n<li><strong>Author Diversity Scorer</strong>: Attenuate repeated author scores for diversity</li>\n<li><strong>OON Scorer</strong>: Adjust scores for out-of-network content</li>\n</ul>\n</li>\n<li>\n<p dir=\"auto\"><strong>Selection</strong>: Sort by score and select the top K candidates</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Post-Selection Processing</strong>: Final validation of post candidates to be served</p>\n</li>\n</ol>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scoring and Ranking</h3></div>\n<p dir=\"auto\">The Phoenix Grok-based transformer model predicts probabilities for multiple engagement types:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Predictions:\n├── P(favorite)\n├── P(reply)\n├── P(repost)\n├── P(quote)\n├── P(click)\n├── P(profile_click)\n├── P(video_view)\n├── P(photo_expand)\n├── P(share)\n├── P(dwell)\n├── P(follow_author)\n├── P(not_interested)\n├── P(block_author)\n├── P(mute_author)\n└── P(report)\"><pre class=\"notranslate\"><code>Predictions:\n├── P(favorite)\n├── P(reply)\n├── P(repost)\n├── P(quote)\n├── P(click)\n├── P(profile_click)\n├── P(video_view)\n├── P(photo_expand)\n├── P(share)\n├── P(dwell)\n├── P(follow_author)\n├── P(not_interested)\n├── P(block_author)\n├── P(mute_author)\n└── P(report)\n</code></pre></div>\n<p dir=\"auto\">The <strong>Weighted Scorer</strong> combines these into a final score:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Final Score = Σ (weight_i × P(action_i))\"><pre class=\"notranslate\"><code>Final Score = Σ (weight_i × P(action_i))\n</code></pre></div>\n<p dir=\"auto\">Positive actions (like, repost, share) have positive weights. Negative actions (block, mute, report) have negative weights, pushing down content the user would likely dislike.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Filtering</h3></div>\n<p dir=\"auto\">Filters run at two stages:</p>\n<p dir=\"auto\"><strong>Pre-Scoring Filters:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Filter</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>DropDuplicatesFilter</code></td>\n<td>Remove duplicate post IDs</td>\n</tr>\n<tr>\n<td><code>CoreDataHydrationFilter</code></td>\n<td>Remove posts that failed to hydrate core metadata</td>\n</tr>\n<tr>\n<td><code>AgeFilter</code></td>\n<td>Remove posts older than threshold</td>\n</tr>\n<tr>\n<td><code>SelfpostFilter</code></td>\n<td>Remove user's own posts</td>\n</tr>\n<tr>\n<td><code>RepostDeduplicationFilter</code></td>\n<td>Dedupe reposts of same content</td>\n</tr>\n<tr>\n<td><code>IneligibleSubscriptionFilter</code></td>\n<td>Remove paywalled content user can't access</td>\n</tr>\n<tr>\n<td><code>PreviouslySeenPostsFilter</code></td>\n<td>Remove posts user has already seen</td>\n</tr>\n<tr>\n<td><code>PreviouslyServedPostsFilter</code></td>\n<td>Remove posts already served in session</td>\n</tr>\n<tr>\n<td><code>MutedKeywordFilter</code></td>\n<td>Remove posts with user's muted keywords</td>\n</tr>\n<tr>\n<td><code>AuthorSocialgraphFilter</code></td>\n<td>Remove posts from blocked/muted authors</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Post-Selection Filters:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Filter</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>VFFilter</code></td>\n<td>Remove posts that are deleted/spam/violence/gore etc.</td>\n</tr>\n<tr>\n<td><code>DedupConversationFilter</code></td>\n<td>Deduplicate multiple branches of the same conversation thread</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Design Decisions</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. No Hand-Engineered Features</h3></div>\n<p dir=\"auto\">The system relies entirely on the Grok-based transformer to learn relevance from user engagement sequences. No manual feature engineering for content relevance. This significantly reduces the complexity in our data pipelines and serving infrastructure.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Candidate Isolation in Ranking</h3></div>\n<p dir=\"auto\">During transformer inference, candidates cannot attend to each other—only to the user context. This ensures the score for a post doesn't depend on which other posts are in the batch, making scores consistent and cacheable.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3. Hash-Based Embeddings</h3></div>\n<p dir=\"auto\">Both retrieval and ranking use multiple hash functions for embedding lookup</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">4. Multi-Action Prediction</h3></div>\n<p dir=\"auto\">Rather than predicting a single \"relevance\" score, the model predicts probabilities for many actions.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">5. Composable Pipeline Architecture</h3></div>\n<p dir=\"auto\">The <code>candidate-pipeline</code> crate provides a flexible framework for building recommendation pipelines with:</p>\n<ul dir=\"auto\">\n<li>Separation of pipeline execution and monitoring from business logic</li>\n<li>Parallel execution of independent stages and graceful error handling</li>\n<li>Easy addition of new sources, hydrations, filters, and scorers</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">This project is licensed under the Apache License 2.0. See <a href=\"https://github.com/xai-org/x-algorithm/blob/main/LICENSE\">LICENSE</a> for details.</p>\n</article></div>",
+  "recentIssues": [],
+  "releases": [],
+  "contributorCount": 1,
+  "firstCommitAt": "2026-01-20T02:31:49Z",
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 1
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 2
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 1
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 2
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "participation": {
+    "all": 3,
+    "owner": 0,
+    "community": 3
+  },
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentPulls": [],
+  "recentCommits": [
+    {
+      "sha": "0bfc279",
+      "message": "Open-source X Recommendation Algorithm",
+      "url": "https://github.com/xai-org/x-algorithm/commit/0bfc2795d308f90032544322747caacd535f75ae",
+      "date": "2026-05-15T21:54:59Z",
+      "author": "CI agent",
+      "avatarUrl": null
+    },
+    {
+      "sha": "e414c17",
+      "message": "Open-source X Recommendation Algorithm",
+      "url": "https://github.com/xai-org/x-algorithm/commit/e414c171ed68266341193330bc4864bf3f3534e3",
+      "date": "2026-05-15T07:28:04Z",
+      "author": "CI agent",
+      "avatarUrl": null
+    },
+    {
+      "sha": "aaa167b",
+      "message": "Open-source X Recommendation Algorithm",
+      "url": "https://github.com/xai-org/x-algorithm/commit/aaa167b3de8a674587c53545a43c90eaad360010",
+      "date": "2026-01-20T02:31:49Z",
+      "author": "CI agent",
+      "avatarUrl": null
+    }
+  ],
+  "workflowRuns": [],
+  "fileTree": [
+    {
+      "name": "candidate-pipeline",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/xai-org/x-algorithm/tree/main/candidate-pipeline"
+    },
+    {
+      "name": "grox",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/xai-org/x-algorithm/tree/main/grox"
+    },
+    {
+      "name": "home-mixer",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/xai-org/x-algorithm/tree/main/home-mixer"
+    },
+    {
+      "name": "phoenix",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/xai-org/x-algorithm/tree/main/phoenix"
+    },
+    {
+      "name": "thunder",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/xai-org/x-algorithm/tree/main/thunder"
+    },
+    {
+      "name": ".gitattributes",
+      "type": "file",
+      "size": 84,
+      "url": "https://github.com/xai-org/x-algorithm/blob/main/.gitattributes"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 13,
+      "url": "https://github.com/xai-org/x-algorithm/blob/main/.gitignore"
+    },
+    {
+      "name": "CODE_OF_CONDUCT.md",
+      "type": "file",
+      "size": 28,
+      "url": "https://github.com/xai-org/x-algorithm/blob/main/CODE_OF_CONDUCT.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 11357,
+      "url": "https://github.com/xai-org/x-algorithm/blob/main/LICENSE"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 23592,
+      "url": "https://github.com/xai-org/x-algorithm/blob/main/README.md"
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 50,
+    "hasCodeOfConduct": true,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 0,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 0,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": {
+    "name": "Other",
+    "url": "https://github.com/xai-org/x-algorithm/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-01-18",
+      "additions": 8816,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 18265,
+      "deletions": 928
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T21:55:58.239Z"
 }
