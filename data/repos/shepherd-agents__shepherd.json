@@ -1,6 +1,12 @@
 {
   "id": "shepherd-agents/shepherd",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 1594,
+      "forks": 124
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-07-06",
@@ -21,5 +27,3174 @@
     "sampledAt": "2026-07-28T09:22:09.378Z"
   },
   "owner": "shepherd-agents",
-  "name": "shepherd"
+  "name": "shepherd",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/296595227?v=4",
+  "ownerType": "Organization",
+  "description": "A runtime substrate that turns an agent's execution into a reversible, Git-like trace, so meta-agents can observe, fork, replay, and revert any run. Couples agent and environments in a copy-on-write fork ~5x faster than docker commit, with ~95% KV-cache reuse on replay. Framework built for meta-agents to supervise, optimize, and train other agents",
+  "url": "https://github.com/shepherd-agents/shepherd",
+  "homepage": "https://shepherd-agents.ai/",
+  "license": "MIT",
+  "language": "Python",
+  "topics": [
+    "mcts-rl",
+    "meta-agents",
+    "meta-optimization",
+    "runtime-supervision",
+    "tree-rl",
+    "workflow-automation"
+  ],
+  "stars": 1594,
+  "forks": 124,
+  "watchers": 8,
+  "openIssues": 8,
+  "createdAt": "2026-06-24T17:26:46Z",
+  "pushedAt": "2026-07-21T19:11:16Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T19:06:13.378Z",
+  "languages": {
+    "Python": 16985021,
+    "JavaScript": 43291,
+    "C": 39225,
+    "Makefile": 28988,
+    "Shell": 28687,
+    "CSS": 20115,
+    "Dockerfile": 5523,
+    "Jupyter Notebook": 3209,
+    "HTML": 2492
+  },
+  "contributors": [
+    {
+      "login": "dcx",
+      "url": "https://github.com/dcx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/502666?v=4",
+      "contributions": 100
+    },
+    {
+      "login": "simonucl",
+      "url": "https://github.com/simonucl",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/55485491?v=4",
+      "contributions": 11
+    },
+    {
+      "login": "ananjan-nandi-9",
+      "url": "https://github.com/ananjan-nandi-9",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/78369711?v=4",
+      "contributions": 6
+    },
+    {
+      "login": "IvanLim",
+      "url": "https://github.com/IvanLim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/395033?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "wyshi",
+      "url": "https://github.com/wyshi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/13882237?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeExcerpt": "<div align=\"center\">\n<img src=\"https://shepherd-agents.ai/assets/logo-shepherd.png\" alt=\"Shepherd\" width=\"140\">\n<h1>Shepherd: Programmable Meta-Agents via Reversible Execution Traces</h1>\n\n      \n\n</div>\n\n---\n\n> [!IMPORTANT]\n> **Shepherd is in early alpha** and under active development.\n> APIs may still change between releases. Feedback and issues are very welcome!\n\n<p align=\"center\">\n  <a href=\"#installation\">Install</a> |\n  <a href=\"#quickstart\">Quickstart</a> |\n  <a href=\"#permissions-the-signature-is-the-permission-surface\">Permissions</a> |\n  <a href=\"#examples\">Examples</a> |\n  <a href=\"https://docs.shepherd-agents.ai/\">Docs</a> |\n  <a href=\"#citation\">Citation</a>\n</p>\n\n**Shepherd** is a runtime substrate for agent work that needs inspection,\nreversibility, and supervision. It records agent runs as durable, inspectable\nexecution traces, with retained workspace outputs that can be reviewed before\nthey are selected, applied, released, or discarded.\n\n> **Platforms.** Shepherd requires **Python 3.11+**. OS-level grant enforcement\n> is executed on **both macOS** (Seatbelt) and **Linux** (Landlock, in a privileged\n> container). **Windows is unsupported** (enforcement would be\n> advisory-only at best) — use **WSL**.\n\n## Installation\n\n```bash\npip install shepherd-ai\n```\n\nWorking on Shepherd itself? Install the local editable closure instead:\n`python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt`\n(see [CONTRIBUTING.md](https://github.com/shepherd-agents/shepherd/blob/main/CONTRIBUTING.md)).\n\n## Quickstart\n\nShepherd is an agent framework: a task's implementation can be a sandboxed\nagent, and its work comes back as a **reviewable proposal** — nothing touches\nyour files until you accept it. Here the whole body of a task *is* a Claude\nagent.\n\n> Needs the `claude` CLI — signed in (a Claude subscription works) or with an\n> `ANTHROPIC_API_KEY`. Neither? Jump to the\n> [Offline Quickstart](#offline-quickstart) — it runs anywhere, keyless.\n>\n> On a subscription, a sandboxed run is most reliable with a long-lived token:\n> `export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)`. A short-lived signed-in\n> session can't be refreshed from inside the sandbox, so it may work\n> interactively yet fail here — `shepherd doctor claude` (add `--probe` for a real\n> auth round-trip under Shepherd's config, in the parent — not a jailed run) tells\n> you which credential you have before you run. If Claude returns an org-policy\n> error (HTTP 403), that's an account/organization limit, not a login problem — a\n> different key or your org admin is the fix. And an outright `claude` CLI hang\n> (e.g. a stale version) surfaces as a budget timeout, not an auth error.\n\nA task is a plain Python function with **no body**; the signature and docstring\nare the contract the agent fulfils at runtime — including its permissions:\n`repo: sp.GitRepo` is the explicit writable workspace-handle grant that lets the\nagent write the repository (see\n[Permissions](#permissions-the-signature-is-the-permission-surface)):\n\n```python\ndef write_program(\n    repo: sp.GitRepo,\n    prompt: str,\n    output_path: str = \"program.py\",\n) -> None:\n    \"\"\"Write a small, self-contained Python program that does what `prompt` asks.\n\n    Save it to output_path. It must run with plain `python3`, read no input,\n    and finish on its own within about ten seconds.\n    \"\"\"\n```\n\nSet up a scratch workspace and check the agent lane is ready:\n\n```bash\nmkdir /tmp/agent-task && cd /tmp/agent-task\nshepherd init             # turn this directory into a Shepherd workspace\nshepherd doctor claude    # confirm claude CLI, sign-in/key, and sandbox are ready\n```\n\nFetch the demo and let the agent work (about a minute):\n\n```bash\nshepherd demo write agent-task > agent_task.py\npython agent_task.py\n```\n\nThe agent writes `donut.py` — but not into your directory. It lands as a\n**retained output**: a proposal held safely to one side, which you can run\nwithout applying anything:\n\n```bash\nshepherd run changeset --latest --read donut.py | python3 -\n```\n\nTen seconds of spinning ASCII donut, straight out of the retained output. If\nyou like it, keep it; if not, throw it away — the trace remembers either way\n(the demo prints both commands with the real run id):\n\n```bash\nshepherd run select <run-ref>     # keep it\nshepherd run apply  <run-ref>     # ...or merge it onto a workspace that moved on\nshepherd run discard <run-ref>    # ...or not\n```\n\nEdit `PROMPT` in `agent_task.py` and re-run to ask for anything else — the\ncontract stays the same. For an agent that edits existing files, see\n`shepherd demo write claude-readme`.\n\n## Offline Quickstart\n\nNo API key required. This runs the same retained-output machinery through\nShepherd's deterministic provider — the agent lane above, minus the agent:\n\n```bash\nmkdir /tmp/shepherd-quickstart && cd /tmp/shepherd-quickstart\n\nshepherd init                                  # turn this directory into a workspace\nshepherd demo write quickstart > quickstart_demo.py\npython quickstart_demo.py                      # register + run a task, retaining its result\n\nshepherd run list                              # the run and its status\nshepherd run changeset --latest                # what it wrote, kept as a retained output\n```\n\nInspect the full record with `shepherd run show --latest` (add `--json` to any\nread command for the durable machine payload); see the\n[docs](https://docs.shepherd-agents.ai/) for backend selection and the complete\n`run` surface.\n\n## Permissions: the signature is the permission surface\n\nFor the common single-workspace writer, `repo: sp.GitRepo` is the clean spelling:\nan explicit read-write handle grant. Use `May[GitRepo, ReadOnly]` when a task\nmust inspect without mutating; an unannotated `repo` parameter is just an\nordinary value parameter, not a handle.\n\nA task can also declare a read-only or read-write grant **per bound repository**,\nin its signature:\n\n```python\nfrom shepherd import task, May, GitRepo, ReadOnly, ReadWrite\n\n@task\ndef apply_documented_fix(\n    docs:    May[GitRepo, ReadOnly],   # read-only: writes refused at the OS\n    backend: May[GitRepo, ReadWrite],  # writable root\n    issue:   str,\n) -> None: ...\n```\n\nOn a jailed device the grant is compiled to that run's writable roots and\n**enforced at the native syscall jail** (macOS Seatbelt; Linux Landlock): a\nwrite to a `ReadOnly`-granted repository, or to any managed path not covered by\na `ReadWrite` grant, is refused at the syscall — before the last undo point, not\nadvised and not caught only at a merge gate. Reading the signature *is* reading\nthe permission surface, and `shepherd task show` renders it expanded. Grants are\nwhole-profile per binding (a bound repository is entirely writable or entirely\nread-only). Bindings are named with `ws.bind(root=\"backend/\", name=\"backend\")`\nand passed to a run with `workspace.run(task, bindings={...})`; each run's world\noutput is inspected per binding with `run.changeset(name=\"backend\")` and settled\nonce with `select` / `apply` / `release` / `discard` (`apply` three-way-merges a\ncandidate onto a workspace that already moved on, when their changes are\npath-disjoint).\n\n> **Scope (P-030 v0.2).** Per-binding whole-profile `ReadOnly`/`ReadWrite` over\n> disjoint named bindings, on a jailed device, filesystem / Git substrate,\n> same-process value-children. Enforcement is executed on both macOS Seatbelt and\n> Linux Landlock (the latter in a privileged container). Sub-root / `where(path=…)`\n> grants are not part of this cut.\n\n## Examples\n\nThe demo scripts above are the Python surface in miniature — checked-in copies\nlive in [`examples/quickstart/`](https://github.com/shepherd-agents/shepherd/tree/main/examples/quickstart).\nThe visual-artifact notebooks live in\n[`examples/notebooks/visual_artifact/notebooks/`](https://github.com/shepherd-agents/shepherd/tree/main/examples/notebooks/visual_artifact/notebooks)\n— launch them with `make notebooks`.\n\n## Development\n\nUseful local gates:\n\n```bash\nmake dev-install\nuv run pytest integration-tests/test_quickstart_core.py -q\nmake baseline\n```\n\n## Documentation\n\nFull documentation lives at **[docs.shepherd-agents.ai](https://docs.shepherd-agents.ai/)**. In this repository the docs are authored under [`docs/shepherd/`](https://github.com/shepherd-agents/shepherd/tree/main/docs/shepherd), starting with the\n[Quickstart guide](https://github.com/shepherd-agents/shepherd/blob/main/docs/shepherd/start/quickstart.md) and\n[Concepts](https://github.com/shepherd-agents/shepherd/blob/main/docs/shepherd/concepts/index.md) — tasks, effects, scopes, permissions, and the trace.\n\n## Reproducing Paper Results\n\nThe full experiment code — the meta-agent applications and the framework-performance microbenchmarks — lives in a companion repository: **[shepherd-agents/shepherd-experiments](https://github.com/shepherd-agents/shepherd-experiments)**. It bundles the frozen substrate snapshot used for the paper, so the numbers stay reproducible against the exact version that produced them.\n\n## Acknowledgments\n\nWe thank [E2B](https://e2b.dev/), [Tinker](https://thinkingmachines.ai/tinker/), and [Modal](https://modal.com/) for their generous compute support during this project.\n\n\n## Citation\n\n```bibtex\n@misc{yu2026shepherdenablingprogrammablemetaagents,\n      title={Shepherd: Enabling Programmable Meta-Agents via Reversible Agentic Execution Traces},\n      author={Simon Yu and Derek Chong and Ananjan Nandi and Dilara Soylu and Jiuding Sun and Christopher D Manning and Weiyan Shi},\n      year={2026},\n      eprint={2605.10913},\n      archivePrefix={arXiv},\n      primaryClass={cs.AI},\n      url={https://arxiv.org/abs/2605.10913},\n}\n```\n\n## License\n\nThis project is licensed under the MIT License — see the [LICENSE](https://github.com/shepherd-agents/shepherd/blob/main/LICENSE) file for details.\n",
+  "commitCount": 120,
+  "releases": [
+    {
+      "name": "v0.3.0 — settlement vocabulary complete",
+      "tag": "v0.3.0",
+      "url": "https://github.com/shepherd-agents/shepherd/releases/tag/v0.3.0",
+      "publishedAt": "2026-07-08T16:18:03Z",
+      "prerelease": false,
+      "body": "Shepherd 0.3.0 completes the retained-output settlement vocabulary: **`apply`** joins `select` / `release` / `discard` as the fourth verb. Where `select` is fast-forward-only, **`apply` three-way-merges a run's whole delta onto a workspace that has moved on** when the two change sets are path-disjoint, and fails closed on any overlap — no content synthesis at the settlement boundary. N candidates, reviewed as changesets, settled explicitly — now including `apply` onto a workspace that moved on.\n\n### Also in this release\n- **Cleaner task syntax** — `@sp.task` with `ws.tasks.register(fn)` and `ws.run(fn, ...)`, task arguments passed as keywords; `repo: GitRepo` as the writable workspace-handle grant; `with sp.open(\".\") as ws:`.\n- **Grant enforcement executed on both macOS (Seatbelt) and Linux (Landlock)** — the 0.2.0 container-gated caveat is retired.\n- **Beat-0 safety bar** — the fabrication fence and the ambient-world-access refusal.\n\nSee the CHANGELOG for the full list, including the 0.2.x migration notes.\n\n```\npip install shepherd-ai==0.3.0\n```",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.1",
+      "tag": "v0.2.1",
+      "url": "https://github.com/shepherd-agents/shepherd/releases/tag/v0.2.1",
+      "publishedAt": "2026-07-06T22:59:28Z",
+      "prerelease": false,
+      "body": "Shepherd 0.2.1 — Claude CLI lane diagnostics, interrupted-run recovery, and hardening.\r\n\r\nThis release packages PRs #24–#29. Highlights:\r\n\r\n## Fixed — the Claude CLI agent lane (#23)\r\n\r\nThe `claude` CLI (headless) lane is the supported public agent provider, and this release makes\r\nits failures diagnosable and its preflight honest (PRs #27, #28):\r\n\r\n- **Actionable failures.** A nonzero `claude` exit now surfaces the CLI's own reason plus a\r\n  remedy — not a blind 300-char tail-slice. Not-logged-in, org-policy `access_denied` (HTTP 403),\r\n  and rootful `root_permission` are classified, with the safe envelope scalars kept in the trace.\r\n  A `budget_seconds` alarm kill (`rc=-14`) maps to a trace-preserving `BudgetExhausted`, with a\r\n  hung-body hint when the CLI produced no output at all (e.g. a stale `claude` version).\r\n- **Fail-fast preflight.** A jailed run with no usable credential (or an expired seeded\r\n  subscription login) is refused **before** launch (`auth_missing` / `auth_expired`,\r\n  `launch_attempted: false`) instead of spending a confined launch that fails not-logged-in.\r\n  Wrappers that authenticate out-of-band can opt back in with `SHEPHERD_ALLOW_KEYLESS_CLAUDE=1`.\r\n- *",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.0",
+      "tag": "v0.2.0",
+      "url": "https://github.com/shepherd-agents/shepherd/releases/tag/v0.2.0",
+      "publishedAt": "2026-07-05T17:44:17Z",
+      "prerelease": false,
+      "body": "## What's Changed\r\n* Fix CI lint: burn down ruff debt, correct stale excludes by @ananjan-nandi-9 in https://github.com/shepherd-agents/shepherd/pull/8\r\n* Fix docs drift gate: regenerate public-symbols.json after #8 by @ananjan-nandi-9 in https://github.com/shepherd-agents/shepherd/pull/9\r\n* chore: ruff format under the shared config by @dcx in https://github.com/shepherd-agents/shepherd/pull/10\r\n* fix: upstream repairs + minimal CI gates by @dcx in https://github.com/shepherd-agents/shepherd/pull/12\r\n* release: Shepherd 0.2.0 — per-binding signature grants at the syscall jail by @dcx in https://github.com/shepherd-agents/shepherd/pull/14\r\n\r\n## New Contributors\r\n* @ananjan-nandi-9 made their first contribution in https://github.com/shepherd-agents/shepherd/pull/8\r\n\r\n**Full Changelog**: https://github.com/shepherd-agents/shepherd/compare/v0.1.3...v0.2.0",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.1.3",
+      "tag": "v0.1.3",
+      "url": "https://github.com/shepherd-agents/shepherd/releases/tag/v0.1.3",
+      "publishedAt": "2026-07-01T21:45:37Z",
+      "prerelease": false,
+      "body": "## What's Changed\n* docs: early-alpha notice + \"a Shepherd\" grammar fixes by @dcx in https://github.com/shepherd-agents/shepherd/pull/2\n* Add shepherd-ai PyPI packaging tooling by @dcx in https://github.com/shepherd-agents/shepherd/pull/1\n* ci: add release + CI workflows and a RELEASING guide by @dcx in https://github.com/shepherd-agents/shepherd/pull/3\n* feat(carrier): portable copy carrier + cross-platform auto backend by @dcx in https://github.com/shepherd-agents/shepherd/pull/4\n* Fix Claude turn-exhaustion detection; default the headless lane uncapped by @dcx in https://github.com/shepherd-agents/shepherd/pull/5\n* Lead the quickstart with a real agent task (donut demo) + offline fallback by @dcx in https://github.com/shepherd-agents/shepherd/pull/6\n* Support signed-in claude CLI (subscription) auth; simplify README; prep 0.1.3 by @dcx in https://github.com/shepherd-agents/shepherd/pull/7\n\n## New Contributors\n* @dcx made their first contribution in https://github.com/shepherd-agents/shepherd/pull/2\n\n**Full Changelog**: https://github.com/shepherd-agents/shepherd/commits/v0.1.3",
+      "downloads": 0,
+      "reactions": 0
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div align=\"center\" dir=\"auto\">\n<a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/1ffbff2b519e99adfbca5060071045505957de984d353987e514ae0751ce8d50/68747470733a2f2f73686570686572642d6167656e74732e61692f6173736574732f6c6f676f2d73686570686572642e706e67\"><img src=\"https://camo.githubusercontent.com/1ffbff2b519e99adfbca5060071045505957de984d353987e514ae0751ce8d50/68747470733a2f2f73686570686572642d6167656e74732e61692f6173736574732f6c6f676f2d73686570686572642e706e67\" alt=\"Shepherd\" width=\"140\" data-canonical-src=\"https://shepherd-agents.ai/assets/logo-shepherd.png\" style=\"max-width: 100%;\"></a>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Shepherd: Programmable Meta-Agents via Reversible Execution Traces</h1></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/87a99f05d5032cdeeb4bd5577d9683d70486e17921e7bbd50175689cbae566d5/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f7374617475732d616c7068612d6f72616e67653f7374796c653d666f722d7468652d6261646765\"><img src=\"https://camo.githubusercontent.com/87a99f05d5032cdeeb4bd5577d9683d70486e17921e7bbd50175689cbae566d5/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f7374617475732d616c7068612d6f72616e67653f7374796c653d666f722d7468652d6261646765\" alt=\"Status: Alpha\" data-canonical-src=\"https://img.shields.io/badge/status-alpha-orange?style=for-the-badge\" style=\"max-width: 100%;\"></a> <a href=\"https://pypi.org/project/shepherd-ai/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/94aa8fd685ffb7d2f9f2527df643379f2bd291c90d5172e70b2d6deb2f3c08f7/68747470733a2f2f696d672e736869656c64732e696f2f707970692f762f73686570686572642d61693f7374796c653d666f722d7468652d6261646765266c6f676f3d70797069266c6f676f436f6c6f723d7768697465\" alt=\"PyPI\" data-canonical-src=\"https://img.shields.io/pypi/v/shepherd-ai?style=for-the-badge&amp;logo=pypi&amp;logoColor=white\" style=\"max-width: 100%;\"></a> <a href=\"https://pypi.org/project/shepherd-ai/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/14c9703cac24508766bb5cfa68d4cbf60288a72265bc124e5eafa78ec294eac8/68747470733a2f2f696d672e736869656c64732e696f2f707970692f707976657273696f6e732f73686570686572642d61693f7374796c653d666f722d7468652d6261646765266c6f676f3d707974686f6e266c6f676f436f6c6f723d7768697465266c6162656c3d\" alt=\"Python\" data-canonical-src=\"https://img.shields.io/pypi/pyversions/shepherd-ai?style=for-the-badge&amp;logo=python&amp;logoColor=white&amp;label=\" style=\"max-width: 100%;\"></a> <a href=\"https://shepherd-agents.ai/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/11fd44699c54eed02e61ad6665e6b366ef93f5f02dc3a7ffe4406092dca49154/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f486f6d65706167652d3464386364383f7374796c653d666f722d7468652d6261646765266c6f676f3d676f6f676c652d6368726f6d65266c6f676f436f6c6f723d7768697465\" alt=\"Homepage\" data-canonical-src=\"https://img.shields.io/badge/Homepage-4d8cd8?style=for-the-badge&amp;logo=google-chrome&amp;logoColor=white\" style=\"max-width: 100%;\"></a> <a href=\"https://docs.shepherd-agents.ai/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/4bacb80ed2aa1d83b91d8d36718e17392edd3275d69d2788436607c37f3ff5a3/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446f63732d3464386364383f7374796c653d666f722d7468652d6261646765266c6f676f3d6d6174657269616c666f726d6b646f6373266c6f676f436f6c6f723d7768697465\" alt=\"Docs\" data-canonical-src=\"https://img.shields.io/badge/Docs-4d8cd8?style=for-the-badge&amp;logo=materialformkdocs&amp;logoColor=white\" style=\"max-width: 100%;\"></a> <a href=\"https://arxiv.org/abs/2605.10913\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/b0a720c6fdea3da08b459e50db0c2bc1750c394d32ea2c6da6205ec0d8dfe8ca/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f50617065722d323630352e31303931332d7265643f7374796c653d666f722d7468652d6261646765\" alt=\"Paper\" data-canonical-src=\"https://img.shields.io/badge/Paper-2605.10913-red?style=for-the-badge\" style=\"max-width: 100%;\"></a> <a href=\"https://shepherd-agents.ai/blog\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/4b11148339f6ffda4501ad8377ad739d34bb9f1a2f80b13f0787c3b1e5da8d8d/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f426c6f672d3464386364383f7374796c653d666f722d7468652d6261646765\" alt=\"Blog\" data-canonical-src=\"https://img.shields.io/badge/Blog-4d8cd8?style=for-the-badge\" style=\"max-width: 100%;\"></a></p>\n</div>\n<hr>\n<div class=\"markdown-alert markdown-alert-important\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-report mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Important</p><p dir=\"auto\"><strong>Shepherd is in early alpha</strong> and under active development.\nAPIs may still change between releases. Feedback and issues are very welcome!</p>\n</div>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"#installation\">Install</a> |\n  <a href=\"#quickstart\">Quickstart</a> |\n  <a href=\"#permissions-the-signature-is-the-permission-surface\">Permissions</a> |\n  <a href=\"#examples\">Examples</a> |\n  <a href=\"https://docs.shepherd-agents.ai/\" rel=\"nofollow\">Docs</a> |\n  <a href=\"#citation\">Citation</a>\n</p>\n<p dir=\"auto\"><strong>Shepherd</strong> is a runtime substrate for agent work that needs inspection,\nreversibility, and supervision. It records agent runs as durable, inspectable\nexecution traces, with retained workspace outputs that can be reviewed before\nthey are selected, applied, released, or discarded.</p>\n<blockquote>\n<p dir=\"auto\"><strong>Platforms.</strong> Shepherd requires <strong>Python 3.11+</strong>. OS-level grant enforcement\nis executed on <strong>both macOS</strong> (Seatbelt) and <strong>Linux</strong> (Landlock, in a privileged\ncontainer). <strong>Windows is unsupported</strong> (enforcement would be\nadvisory-only at best) — use <strong>WSL</strong>.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install shepherd-ai\"><pre>pip install shepherd-ai</pre></div>\n<p dir=\"auto\">Working on Shepherd itself? Install the local editable closure instead:\n<code>python -m venv .venv &amp;&amp; . .venv/bin/activate &amp;&amp; pip install -r requirements-dev.txt</code>\n(see <a href=\"https://github.com/shepherd-agents/shepherd/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quickstart</h2></div>\n<p dir=\"auto\">Shepherd is an agent framework: a task's implementation can be a sandboxed\nagent, and its work comes back as a <strong>reviewable proposal</strong> — nothing touches\nyour files until you accept it. Here the whole body of a task <em>is</em> a Claude\nagent.</p>\n<blockquote>\n<p dir=\"auto\">Needs the <code>claude</code> CLI — signed in (a Claude subscription works) or with an\n<code>ANTHROPIC_API_KEY</code>. Neither? Jump to the\n<a href=\"#offline-quickstart\">Offline Quickstart</a> — it runs anywhere, keyless.</p>\n<p dir=\"auto\">On a subscription, a sandboxed run is most reliable with a long-lived token:\n<code>export CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token)</code>. A short-lived signed-in\nsession can't be refreshed from inside the sandbox, so it may work\ninteractively yet fail here — <code>shepherd doctor claude</code> (add <code>--probe</code> for a real\nauth round-trip under Shepherd's config, in the parent — not a jailed run) tells\nyou which credential you have before you run. If Claude returns an org-policy\nerror (HTTP 403), that's an account/organization limit, not a login problem — a\ndifferent key or your org admin is the fix. And an outright <code>claude</code> CLI hang\n(e.g. a stale version) surfaces as a budget timeout, not an auth error.</p>\n</blockquote>\n<p dir=\"auto\">A task is a plain Python function with <strong>no body</strong>; the signature and docstring\nare the contract the agent fulfils at runtime — including its permissions:\n<code>repo: sp.GitRepo</code> is the explicit writable workspace-handle grant that lets the\nagent write the repository (see\n<a href=\"#permissions-the-signature-is-the-permission-surface\">Permissions</a>):</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"def write_program(\n    repo: sp.GitRepo,\n    prompt: str,\n    output_path: str = &quot;program.py&quot;,\n) -&gt; None:\n    &quot;&quot;&quot;Write a small, self-contained Python program that does what `prompt` asks.\n\n    Save it to output_path. It must run with plain `python3`, read no input,\n    and finish on its own within about ten seconds.\n    &quot;&quot;&quot;\"><pre><span class=\"pl-k\">def</span> <span class=\"pl-en\">write_program</span>(\n    <span class=\"pl-s1\">repo</span>: <span class=\"pl-s1\">sp</span>.<span class=\"pl-c1\">GitRepo</span>,\n    <span class=\"pl-s1\">prompt</span>: <span class=\"pl-smi\">str</span>,\n    <span class=\"pl-s1\">output_path</span>: <span class=\"pl-smi\">str</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s\">\"program.py\"</span>,\n) <span class=\"pl-c1\">-&gt;</span> <span class=\"pl-c1\">None</span>:\n    <span class=\"pl-s\">\"\"\"Write a small, self-contained Python program that does what `prompt` asks.</span>\n<span class=\"pl-s\"></span>\n<span class=\"pl-s\">    Save it to output_path. It must run with plain `python3`, read no input,</span>\n<span class=\"pl-s\">    and finish on its own within about ten seconds.</span>\n<span class=\"pl-s\">    \"\"\"</span></pre></div>\n<p dir=\"auto\">Set up a scratch workspace and check the agent lane is ready:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"mkdir /tmp/agent-task &amp;&amp; cd /tmp/agent-task\nshepherd init             # turn this directory into a Shepherd workspace\nshepherd doctor claude    # confirm claude CLI, sign-in/key, and sandbox are ready\"><pre>mkdir /tmp/agent-task <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> /tmp/agent-task\nshepherd init             <span class=\"pl-c\"><span class=\"pl-c\">#</span> turn this directory into a Shepherd workspace</span>\nshepherd doctor claude    <span class=\"pl-c\"><span class=\"pl-c\">#</span> confirm claude CLI, sign-in/key, and sandbox are ready</span></pre></div>\n<p dir=\"auto\">Fetch the demo and let the agent work (about a minute):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"shepherd demo write agent-task &gt; agent_task.py\npython agent_task.py\"><pre>shepherd demo write agent-task <span class=\"pl-k\">&gt;</span> agent_task.py\npython agent_task.py</pre></div>\n<p dir=\"auto\">The agent writes <code>donut.py</code> — but not into your directory. It lands as a\n<strong>retained output</strong>: a proposal held safely to one side, which you can run\nwithout applying anything:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"shepherd run changeset --latest --read donut.py | python3 -\"><pre>shepherd run changeset --latest --read donut.py <span class=\"pl-k\">|</span> python3 -</pre></div>\n<p dir=\"auto\">Ten seconds of spinning ASCII donut, straight out of the retained output. If\nyou like it, keep it; if not, throw it away — the trace remembers either way\n(the demo prints both commands with the real run id):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"shepherd run select &lt;run-ref&gt;     # keep it\nshepherd run apply  &lt;run-ref&gt;     # ...or merge it onto a workspace that moved on\nshepherd run discard &lt;run-ref&gt;    # ...or not\"><pre>shepherd run <span class=\"pl-k\">select</span> <span class=\"pl-smi\">&lt;run-ref&gt;</span>     <span class=\"pl-c\"><span class=\"pl-c\">#</span> keep it</span>\nshepherd run apply  <span class=\"pl-k\">&lt;</span>run-ref<span class=\"pl-k\">&gt;</span>     <span class=\"pl-c\"><span class=\"pl-c\">#</span> ...or merge it onto a workspace that moved on</span>\nshepherd run discard <span class=\"pl-k\">&lt;</span>run-ref<span class=\"pl-k\">&gt;</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> ...or not</span></pre></div>\n<p dir=\"auto\">Edit <code>PROMPT</code> in <code>agent_task.py</code> and re-run to ask for anything else — the\ncontract stays the same. For an agent that edits existing files, see\n<code>shepherd demo write claude-readme</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Offline Quickstart</h2></div>\n<p dir=\"auto\">No API key required. This runs the same retained-output machinery through\nShepherd's deterministic provider — the agent lane above, minus the agent:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"mkdir /tmp/shepherd-quickstart &amp;&amp; cd /tmp/shepherd-quickstart\n\nshepherd init                                  # turn this directory into a workspace\nshepherd demo write quickstart &gt; quickstart_demo.py\npython quickstart_demo.py                      # register + run a task, retaining its result\n\nshepherd run list                              # the run and its status\nshepherd run changeset --latest                # what it wrote, kept as a retained output\"><pre>mkdir /tmp/shepherd-quickstart <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> /tmp/shepherd-quickstart\n\nshepherd init                                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> turn this directory into a workspace</span>\nshepherd demo write quickstart <span class=\"pl-k\">&gt;</span> quickstart_demo.py\npython quickstart_demo.py                      <span class=\"pl-c\"><span class=\"pl-c\">#</span> register + run a task, retaining its result</span>\n\nshepherd run list                              <span class=\"pl-c\"><span class=\"pl-c\">#</span> the run and its status</span>\nshepherd run changeset --latest                <span class=\"pl-c\"><span class=\"pl-c\">#</span> what it wrote, kept as a retained output</span></pre></div>\n<p dir=\"auto\">Inspect the full record with <code>shepherd run show --latest</code> (add <code>--json</code> to any\nread command for the durable machine payload); see the\n<a href=\"https://docs.shepherd-agents.ai/\" rel=\"nofollow\">docs</a> for backend selection and the complete\n<code>run</code> surface.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Permissions: the signature is the permission surface</h2></div>\n<p dir=\"auto\">For the common single-workspace writer, <code>repo: sp.GitRepo</code> is the clean spelling:\nan explicit read-write handle grant. Use <code>May[GitRepo, ReadOnly]</code> when a task\nmust inspect without mutating; an unannotated <code>repo</code> parameter is just an\nordinary value parameter, not a handle.</p>\n<p dir=\"auto\">A task can also declare a read-only or read-write grant <strong>per bound repository</strong>,\nin its signature:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from shepherd import task, May, GitRepo, ReadOnly, ReadWrite\n\n@task\ndef apply_documented_fix(\n    docs:    May[GitRepo, ReadOnly],   # read-only: writes refused at the OS\n    backend: May[GitRepo, ReadWrite],  # writable root\n    issue:   str,\n) -&gt; None: ...\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">shepherd</span> <span class=\"pl-k\">import</span> <span class=\"pl-s1\">task</span>, <span class=\"pl-v\">May</span>, <span class=\"pl-v\">GitRepo</span>, <span class=\"pl-v\">ReadOnly</span>, <span class=\"pl-v\">ReadWrite</span>\n\n<span class=\"pl-en\">@<span class=\"pl-s1\">task</span></span>\n<span class=\"pl-k\">def</span> <span class=\"pl-en\">apply_documented_fix</span>(\n    <span class=\"pl-s1\">docs</span>:    <span class=\"pl-v\">May</span>[<span class=\"pl-smi\">GitRepo</span>, <span class=\"pl-smi\">ReadOnly</span>],   <span class=\"pl-c\"># read-only: writes refused at the OS</span>\n    <span class=\"pl-s1\">backend</span>: <span class=\"pl-v\">May</span>[<span class=\"pl-smi\">GitRepo</span>, <span class=\"pl-smi\">ReadWrite</span>],  <span class=\"pl-c\"># writable root</span>\n    <span class=\"pl-s1\">issue</span>:   <span class=\"pl-smi\">str</span>,\n) <span class=\"pl-c1\">-&gt;</span> <span class=\"pl-c1\">None</span>: ...</pre></div>\n<p dir=\"auto\">On a jailed device the grant is compiled to that run's writable roots and\n<strong>enforced at the native syscall jail</strong> (macOS Seatbelt; Linux Landlock): a\nwrite to a <code>ReadOnly</code>-granted repository, or to any managed path not covered by\na <code>ReadWrite</code> grant, is refused at the syscall — before the last undo point, not\nadvised and not caught only at a merge gate. Reading the signature <em>is</em> reading\nthe permission surface, and <code>shepherd task show</code> renders it expanded. Grants are\nwhole-profile per binding (a bound repository is entirely writable or entirely\nread-only). Bindings are named with <code>ws.bind(root=\"backend/\", name=\"backend\")</code>\nand passed to a run with <code>workspace.run(task, bindings={...})</code>; each run's world\noutput is inspected per binding with <code>run.changeset(name=\"backend\")</code> and settled\nonce with <code>select</code> / <code>apply</code> / <code>release</code> / <code>discard</code> (<code>apply</code> three-way-merges a\ncandidate onto a workspace that already moved on, when their changes are\npath-disjoint).</p>\n<blockquote>\n<p dir=\"auto\"><strong>Scope (P-030 v0.2).</strong> Per-binding whole-profile <code>ReadOnly</code>/<code>ReadWrite</code> over\ndisjoint named bindings, on a jailed device, filesystem / Git substrate,\nsame-process value-children. Enforcement is executed on both macOS Seatbelt and\nLinux Landlock (the latter in a privileged container). Sub-root / <code>where(path=…)</code>\ngrants are not part of this cut.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Examples</h2></div>\n<p dir=\"auto\">The demo scripts above are the Python surface in miniature — checked-in copies\nlive in <a href=\"https://github.com/shepherd-agents/shepherd/tree/main/examples/quickstart\"><code>examples/quickstart/</code></a>.\nThe visual-artifact notebooks live in\n<a href=\"https://github.com/shepherd-agents/shepherd/tree/main/examples/notebooks/visual_artifact/notebooks\"><code>examples/notebooks/visual_artifact/notebooks/</code></a>\n— launch them with <code>make notebooks</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<p dir=\"auto\">Useful local gates:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make dev-install\nuv run pytest integration-tests/test_quickstart_core.py -q\nmake baseline\"><pre>make dev-install\nuv run pytest integration-tests/test_quickstart_core.py -q\nmake baseline</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<p dir=\"auto\">Full documentation lives at <strong><a href=\"https://docs.shepherd-agents.ai/\" rel=\"nofollow\">docs.shepherd-agents.ai</a></strong>. In this repository the docs are authored under <a href=\"https://github.com/shepherd-agents/shepherd/tree/main/docs/shepherd\"><code>docs/shepherd/</code></a>, starting with the\n<a href=\"https://github.com/shepherd-agents/shepherd/blob/main/docs/shepherd/start/quickstart.md\">Quickstart guide</a> and\n<a href=\"https://github.com/shepherd-agents/shepherd/blob/main/docs/shepherd/concepts/index.md\">Concepts</a> — tasks, effects, scopes, permissions, and the trace.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Reproducing Paper Results</h2></div>\n<p dir=\"auto\">The full experiment code — the meta-agent applications and the framework-performance microbenchmarks — lives in a companion repository: <strong><a href=\"https://github.com/shepherd-agents/shepherd-experiments\">shepherd-agents/shepherd-experiments</a></strong>. It bundles the frozen substrate snapshot used for the paper, so the numbers stay reproducible against the exact version that produced them.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Acknowledgments</h2></div>\n<p dir=\"auto\">We thank <a href=\"https://e2b.dev/\" rel=\"nofollow\">E2B</a>, <a href=\"https://thinkingmachines.ai/tinker/\" rel=\"nofollow\">Tinker</a>, and <a href=\"https://modal.com/\" rel=\"nofollow\">Modal</a> for their generous compute support during this project.</p>\n<p dir=\"auto\"><a href=\"https://e2b.dev/research\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/f2fe8d34d11d2a7a4caf03287ab05fe7c06d69c5a430baa2e77a36168865d98e/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f53504f4e534f52454425323042592d453242253230464f5225323052455345415243482d6666383830303f7374796c653d666f722d7468652d6261646765\" alt=\"SPONSORED BY E2B FOR RESEARCH\" data-canonical-src=\"https://img.shields.io/badge/SPONSORED%20BY-E2B%20FOR%20RESEARCH-ff8800?style=for-the-badge\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Citation</h2></div>\n<div class=\"highlight highlight-text-bibtex notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"@misc{yu2026shepherdenablingprogrammablemetaagents,\n      title={Shepherd: Enabling Programmable Meta-Agents via Reversible Agentic Execution Traces},\n      author={Simon Yu and Derek Chong and Ananjan Nandi and Dilara Soylu and Jiuding Sun and Christopher D Manning and Weiyan Shi},\n      year={2026},\n      eprint={2605.10913},\n      archivePrefix={arXiv},\n      primaryClass={cs.AI},\n      url={https://arxiv.org/abs/2605.10913},\n}\"><pre><span class=\"pl-k\">@misc</span>{<span class=\"pl-en\">yu2026shepherdenablingprogrammablemetaagents</span>,\n      <span class=\"pl-s\">title</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>Shepherd: Enabling Programmable Meta-Agents via Reversible Agentic Execution Traces<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">author</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>Simon Yu and Derek Chong and Ananjan Nandi and Dilara Soylu and Jiuding Sun and Christopher D Manning and Weiyan Shi<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">year</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>2026<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">eprint</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>2605.10913<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">archivePrefix</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>arXiv<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">primaryClass</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>cs.AI<span class=\"pl-pds\">}</span></span>,\n      <span class=\"pl-s\">url</span>=<span class=\"pl-s\"><span class=\"pl-pds\">{</span>https://arxiv.org/abs/2605.10913<span class=\"pl-pds\">}</span></span>,\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">This project is licensed under the MIT License — see the <a href=\"https://github.com/shepherd-agents/shepherd/blob/main/LICENSE\">LICENSE</a> file for details.</p>\n</article></div>",
+  "contributorCount": 5,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 2
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 28
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 55
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 5
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 2
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 1
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 16
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 11
+    },
+    {
+      "date": "2026-07-05",
+      "count": 17
+    },
+    {
+      "date": "2026-07-06",
+      "count": 27
+    },
+    {
+      "date": "2026-07-07",
+      "count": 6
+    },
+    {
+      "date": "2026-07-08",
+      "count": 4
+    },
+    {
+      "date": "2026-07-09",
+      "count": 1
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 2
+    },
+    {
+      "date": "2026-07-21",
+      "count": 3
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 44,
+      "title": "Your project is on StackMap — a curated map of the AI stack",
+      "url": "https://github.com/shepherd-agents/shepherd/issues/44",
+      "createdAt": "2026-07-22T16:36:44Z",
+      "comments": 0,
+      "labels": [],
+      "author": "hoghweed"
+    },
+    {
+      "number": 38,
+      "title": "Integration with the pi coding agent?",
+      "url": "https://github.com/shepherd-agents/shepherd/issues/38",
+      "createdAt": "2026-07-08T10:07:21Z",
+      "comments": 3,
+      "labels": [
+        "enhancement"
+      ],
+      "author": "66-firebat"
+    },
+    {
+      "number": 15,
+      "title": "Proposal: Mitos device backend + collaboration on full-state fork semantics",
+      "url": "https://github.com/shepherd-agents/shepherd/issues/15",
+      "createdAt": "2026-07-05T17:49:04Z",
+      "comments": 3,
+      "labels": [
+        "enhancement"
+      ],
+      "author": "stubbi"
+    },
+    {
+      "number": 13,
+      "title": "Add support for Hermes Agent",
+      "url": "https://github.com/shepherd-agents/shepherd/issues/13",
+      "createdAt": "2026-07-05T17:24:24Z",
+      "comments": 2,
+      "labels": [
+        "enhancement"
+      ],
+      "author": "dcx"
+    },
+    {
+      "number": 11,
+      "title": "VcsCore.exec re-resolves the binding contract on every exec under the always-on carrier (caching regression since #4)",
+      "url": "https://github.com/shepherd-agents/shepherd/issues/11",
+      "createdAt": "2026-07-05T16:35:33Z",
+      "comments": 0,
+      "labels": [
+        "bug"
+      ],
+      "author": "dcx"
+    }
+  ],
+  "firstCommitAt": "2026-06-25T13:52:27Z",
+  "participation": {
+    "all": 120,
+    "owner": 0,
+    "community": 120
+  },
+  "fileTree": [
+    {
+      "name": ".devcontainer",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/.devcontainer"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/.github"
+    },
+    {
+      "name": "commons-vcs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/commons-vcs"
+    },
+    {
+      "name": "containers",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/containers"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/docs"
+    },
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/examples"
+    },
+    {
+      "name": "experiments",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/experiments"
+    },
+    {
+      "name": "integration-tests",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/integration-tests"
+    },
+    {
+      "name": "packaging",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/packaging"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/scripts"
+    },
+    {
+      "name": "shepherd",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/shepherd"
+    },
+    {
+      "name": "shepherd2",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/shepherd2"
+    },
+    {
+      "name": "vcs-core",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shepherd-agents/shepherd/tree/main/vcs-core"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 493,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 1244,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/.gitignore"
+    },
+    {
+      "name": ".pre-commit-config.yaml",
+      "type": "file",
+      "size": 407,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/.pre-commit-config.yaml"
+    },
+    {
+      "name": "CODE_OF_CONDUCT.md",
+      "type": "file",
+      "size": 5490,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/CODE_OF_CONDUCT.md"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 4882,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1073,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/LICENSE"
+    },
+    {
+      "name": "Makefile",
+      "type": "file",
+      "size": 13059,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/Makefile"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 4026,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 10926,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/README.md"
+    },
+    {
+      "name": "requirements-dev.txt",
+      "type": "file",
+      "size": 481,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/requirements-dev.txt"
+    },
+    {
+      "name": "ruff.toml",
+      "type": "file",
+      "size": 9120,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/ruff.toml"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 1246,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/SECURITY.md"
+    },
+    {
+      "name": "uv.lock",
+      "type": "file",
+      "size": 743025,
+      "url": "https://github.com/shepherd-agents/shepherd/blob/main/uv.lock"
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "d45074e",
+      "message": "Revert \"docs: remove Modal acknowledgement\"",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/d45074e0099d9ccafeed4a233702ad68ff8a2fa6",
+      "date": "2026-07-21T19:11:07Z",
+      "author": "simonucl",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/55485491?v=4"
+    },
+    {
+      "sha": "ec2a69d",
+      "message": "docs: remove Modal acknowledgement",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/ec2a69db853358a098f6b9f7be74d1c853ecf465",
+      "date": "2026-07-21T19:09:07Z",
+      "author": "simonucl",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/55485491?v=4"
+    },
+    {
+      "sha": "5da2b3d",
+      "message": "Add E2B sponsorship badge to README",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/5da2b3d101662cf6122347e58401ba8fa2fb6687",
+      "date": "2026-07-21T18:28:08Z",
+      "author": "wyshi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/13882237?v=4"
+    },
+    {
+      "sha": "a9fc1e9",
+      "message": "docs: add E2B research badge",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/a9fc1e9bf266d3d0f7ef326ae8deaf9476e6683e",
+      "date": "2026-07-20T23:49:05Z",
+      "author": "simonucl",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/55485491?v=4"
+    },
+    {
+      "sha": "698be2c",
+      "message": "docs: acknowledge compute support",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/698be2c709df7eaa0dba46a6ffc908a5bb3ec5a8",
+      "date": "2026-07-20T19:21:52Z",
+      "author": "simonucl",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/55485491?v=4"
+    },
+    {
+      "sha": "2d86248",
+      "message": "docs(readme): point header logo at the clean PNG asset (#18)",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/2d86248884b8a4ec10f7283681cbcb8f0773af8e",
+      "date": "2026-07-09T02:11:18Z",
+      "author": "IvanLim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/395033?v=4"
+    },
+    {
+      "sha": "254c994",
+      "message": "docs: 0.3.0 site sweep — new task syntax hero, apply verb, executed Landlock claim (#42)",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/254c99452ff8769fd5381c2b9486f58e28a6a6f3",
+      "date": "2026-07-08T17:35:06Z",
+      "author": "dcx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/502666?v=4"
+    },
+    {
+      "sha": "a8196d4",
+      "message": "Finalize 0.3.0 release metadata: changelog, platform claim, grant-spelling provenance (#41)",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/a8196d4c453514836d06bd2fece91a03cdc37107",
+      "date": "2026-07-08T15:43:56Z",
+      "author": "dcx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/502666?v=4"
+    },
+    {
+      "sha": "f1e5a5a",
+      "message": "fix(packaging): advertise Python 3.14 support in shepherd-ai classifiers (#17)",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/f1e5a5af5efac8a846fe8a7b7632327f8ba6f2c7",
+      "date": "2026-07-08T14:58:53Z",
+      "author": "IvanLim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/395033?v=4"
+    },
+    {
+      "sha": "cb4ace1",
+      "message": "Finalize 0.3.0 task syntax and GitRepo workspace handles (#40)",
+      "url": "https://github.com/shepherd-agents/shepherd/commit/cb4ace1bb2d53fbe64611e43113494414b305039",
+      "date": "2026-07-08T14:41:15Z",
+      "author": "dcx",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/502666?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 43,
+      "title": "Fix: Add support for Hermes Agent",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/43",
+      "state": "open",
+      "updatedAt": "2026-07-12T01:21:46Z",
+      "author": "MayVerse4",
+      "draft": false
+    },
+    {
+      "number": 39,
+      "title": "fix(vcs-core): reuse resolved driver schema during exec",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/39",
+      "state": "open",
+      "updatedAt": "2026-07-09T22:42:19Z",
+      "author": "mturac",
+      "draft": false
+    },
+    {
+      "number": 32,
+      "title": "feat(contexts): add advisory memory context with logged recall effect",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/32",
+      "state": "open",
+      "updatedAt": "2026-07-09T11:55:15Z",
+      "author": "sorcerai",
+      "draft": false
+    },
+    {
+      "number": 18,
+      "title": "docs(readme): point header logo at the clean PNG asset",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/18",
+      "state": "merged",
+      "updatedAt": "2026-07-09T02:11:19Z",
+      "author": "IvanLim",
+      "draft": false
+    },
+    {
+      "number": 42,
+      "title": "docs: 0.3.0 site sweep — new task syntax hero, apply verb, executed Landlock claim",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/42",
+      "state": "merged",
+      "updatedAt": "2026-07-08T17:35:35Z",
+      "author": "dcx",
+      "draft": false
+    },
+    {
+      "number": 41,
+      "title": "Finalize 0.3.0 release metadata: changelog, platform claim, grant-spelling provenance",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/41",
+      "state": "merged",
+      "updatedAt": "2026-07-08T15:44:03Z",
+      "author": "dcx",
+      "draft": false
+    },
+    {
+      "number": 17,
+      "title": "fix(packaging): advertise Python 3.14 support in shepherd-ai classifiers",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/17",
+      "state": "merged",
+      "updatedAt": "2026-07-08T14:58:54Z",
+      "author": "IvanLim",
+      "draft": false
+    },
+    {
+      "number": 40,
+      "title": "Finalize 0.3.0 task syntax and GitRepo workspace handles",
+      "url": "https://github.com/shepherd-agents/shepherd/pull/40",
+      "state": "merged",
+      "updatedAt": "2026-07-08T14:41:26Z",
+      "author": "dcx",
+      "draft": false
+    }
+  ],
+  "branchCount": 4,
+  "tagCount": 4,
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "shepherd",
+        "version": null
+      },
+      {
+        "name": "shepherd-export",
+        "version": null
+      },
+      {
+        "name": "shepherd-runtime",
+        "version": null
+      },
+      {
+        "name": "shepherd-transform",
+        "version": null
+      },
+      {
+        "name": "shepherd-sandboxes",
+        "version": null
+      },
+      {
+        "name": "shepherd-core",
+        "version": null
+      },
+      {
+        "name": "shepherd-providers",
+        "version": null
+      },
+      {
+        "name": "shepherd-contexts",
+        "version": null
+      },
+      {
+        "name": "shepherd-authoring",
+        "version": null
+      },
+      {
+        "name": "shepherd-banking",
+        "version": null
+      },
+      {
+        "name": "shepherd-coding",
+        "version": null
+      },
+      {
+        "name": "shepherd-tests",
+        "version": null
+      },
+      {
+        "name": "shepherd-kernel-v3-reference",
+        "version": null
+      },
+      {
+        "name": "vcs-core",
+        "version": null
+      },
+      {
+        "name": "commons-vcs",
+        "version": null
+      },
+      {
+        "name": "pytest",
+        "version": "8.0.0"
+      },
+      {
+        "name": "pytest-xdist",
+        "version": "3.6.0"
+      },
+      {
+        "name": "pytest-asyncio",
+        "version": "0.23.0"
+      },
+      {
+        "name": "pyyaml",
+        "version": "6.0"
+      },
+      {
+        "name": "hypothesis",
+        "version": "6.100.0"
+      },
+      {
+        "name": "ruff",
+        "version": "0.15.0"
+      },
+      {
+        "name": "RestrictedPython",
+        "version": "7.0"
+      },
+      {
+        "name": "filelock",
+        "version": "3.0"
+      }
+    ],
+    "total": 23
+  },
+  "workflowRuns": [
+    {
+      "name": "CI",
+      "status": "success",
+      "url": "https://github.com/shepherd-agents/shepherd/actions/runs/29860441938",
+      "branch": "main",
+      "updatedAt": "2026-07-21T19:27:38Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 87,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": true
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 5,
+  "openPRs": 3,
+  "releaseCount": 4,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 1,
+  "mergedPRs": 34,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/shepherd-agents/shepherd/security/policy",
+  "codeOfConduct": {
+    "name": "Contributor Covenant",
+    "url": "https://github.com/shepherd-agents/shepherd/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": {
+    "tag": "v0.3.0",
+    "publishedAt": "2026-07-08T16:18:03Z"
+  },
+  "codeFrequency": [
+    {
+      "week": "2026-06-21",
+      "additions": 67,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 546076,
+      "deletions": 7108
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 24068,
+      "deletions": 10544
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 9,
+      "deletions": 3
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T19:06:16.542Z"
 }

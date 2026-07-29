@@ -1,6 +1,12 @@
 {
-  "id": "shipany-ai/open-agent-sdk",
-  "snapshots": [],
+  "id": "codeany-ai/open-agent-sdk-typescript",
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 2737,
+      "forks": 948
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-04-01",
@@ -20,6 +26,2860 @@
     "scale": null,
     "sampledAt": "2026-07-28T09:22:09.378Z"
   },
-  "owner": "shipany-ai",
-  "name": "open-agent-sdk"
+  "owner": "codeany-ai",
+  "name": "open-agent-sdk-typescript",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/272702216?v=4",
+  "ownerType": "Organization",
+  "description": "Agent-SDK without CLI dependencies, as an alternative to claude-agent-sdk, completely open source",
+  "url": "https://github.com/codeany-ai/open-agent-sdk-typescript",
+  "homepage": null,
+  "license": "MIT",
+  "language": "TypeScript",
+  "topics": [
+    "agent-sdk",
+    "claude-agent-sdk",
+    "claude-code",
+    "open-agent-sdk"
+  ],
+  "stars": 2737,
+  "forks": 948,
+  "watchers": 12,
+  "openIssues": 10,
+  "createdAt": "2026-03-31T14:16:24Z",
+  "pushedAt": "2026-07-26T03:22:14Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T19:06:15.492Z",
+  "readmeExcerpt": "# Open Agent SDK (TypeScript)\n\n\n\n\n\nOpen-source Agent SDK that runs the full agent loop **in-process** — no subprocess or CLI required. Supports both **Anthropic** and **OpenAI-compatible** APIs. Deploy anywhere: cloud, serverless, Docker, CI/CD.\n\nAlso available in **Go**: [open-agent-sdk-go](https://github.com/codeany-ai/open-agent-sdk-go)\n\n## Get started\n\n```bash\nnpm install @codeany/open-agent-sdk\n```\n\nSet your API key:\n\n```bash\nexport CODEANY_API_KEY=your-api-key\n```\n\n### OpenAI-compatible models\n\nWorks with OpenAI, DeepSeek, Qwen, Mistral, or any OpenAI-compatible endpoint:\n\n```bash\nexport CODEANY_API_TYPE=openai-completions\nexport CODEANY_API_KEY=sk-...\nexport CODEANY_BASE_URL=https://api.openai.com/v1\nexport CODEANY_MODEL=gpt-4o\n```\n\n### Third-party Anthropic-compatible providers\n\n```bash\nexport CODEANY_BASE_URL=https://openrouter.ai/api\nexport CODEANY_API_KEY=sk-or-...\nexport CODEANY_MODEL=anthropic/claude-sonnet-4\n```\n\n## Quick start\n\n### One-shot query (streaming)\n\n```typescript\nimport { query } from \"@codeany/open-agent-sdk\";\n\nfor await (const message of query({\n  prompt: \"Read package.json and tell me the project name.\",\n  options: {\n    allowedTools: [\"Read\", \"Glob\"],\n    permissionMode: \"bypassPermissions\",\n  },\n})) {\n  if (message.type === \"assistant\") {\n    for (const block of message.message.content) {\n      if (\"text\" in block) console.log(block.text);\n    }\n  }\n}\n```\n\n### Simple blocking prompt\n\n```typescript\nimport { createAgent } from \"@codeany/open-agent-sdk\";\n\nconst agent = createAgent({ model: \"claude-sonnet-4-6\" });\nconst result = await agent.prompt(\"What files are in this project?\");\n\nconsole.log(result.text);\nconsole.log(\n  `Turns: ${result.num_turns}, Tokens: ${result.usage.input_tokens + result.usage.output_tokens}`,\n);\n```\n\n### OpenAI / GPT models\n\n```typescript\nimport { createAgent } from \"@codeany/open-agent-sdk\";\n\nconst agent = createAgent({\n  apiType: \"openai-completions\",\n  model: \"gpt-4o\",\n  apiKey: \"sk-...\",\n  baseURL: \"https://api.openai.com/v1\",\n});\n\nconst result = await agent.prompt(\"What files are in this project?\");\nconsole.log(result.text);\n```\n\nThe `apiType` is auto-detected from model name — models containing `gpt-`, `o1`, `o3`, `deepseek`, `qwen`, `mistral`, etc. automatically use `openai-completions`.\n\n### Multi-turn conversation\n\n```typescript\nimport { createAgent } from \"@codeany/open-agent-sdk\";\n\nconst agent = createAgent({ maxTurns: 5 });\n\nconst r1 = await agent.prompt(\n  'Create a file /tmp/hello.txt with \"Hello World\"',\n);\nconsole.log(r1.text);\n\nconst r2 = await agent.prompt(\"Read back the file you just created\");\nconsole.log(r2.text);\n\nconsole.log(`Session messages: ${agent.getMessages().length}`);\n```\n\n### Custom tools (Zod schema)\n\n```typescript\nimport { z } from \"zod\";\nimport { query, tool, createSdkMcpServer } from \"@codeany/open-agent-sdk\";\n\nconst getWeather = tool(\n  \"get_weather\",\n  \"Get the temperature for a city\",\n  { city: z.string().describe(\"City name\") },\n  async ({ city }) => ({\n    content: [{ type: \"text\", text: `${city}: 22°C, sunny` }],\n  }),\n);\n\nconst server = createSdkMcpServer({ name: \"weather\", tools: [getWeather] });\n\nfor await (const msg of query({\n  prompt: \"What is the weather in Tokyo?\",\n  options: { mcpServers: { weather: server } },\n})) {\n  if (msg.type === \"result\")\n    console.log(`Done: $${msg.total_cost_usd?.toFixed(4)}`);\n}\n```\n\n### Custom tools (low-level)\n\n```typescript\nimport {\n  createAgent,\n  getAllBaseTools,\n  defineTool,\n} from \"@codeany/open-agent-sdk\";\n\nconst calculator = defineTool({\n  name: \"Calculator\",\n  description: \"Evaluate a math expression\",\n  inputSchema: {\n    type: \"object\",\n    properties: { expression: { type: \"string\" } },\n    required: [\"expression\"],\n  },\n  isReadOnly: true,\n  async call(input) {\n    const result = Function(`'use strict'; return (${input.expression})`)();\n    return `${input.expression} = ${result}`;\n  },\n});\n\nconst agent = createAgent({ tools: [...getAllBaseTools(), calculator] });\nconst r = await agent.prompt(\"Calculate 2**10 * 3\");\nconsole.log(r.text);\n```\n\n### Skills\n\nSkills are reusable prompt templates that extend agent capabilities. Five bundled skills are included: `simplify`, `commit`, `review`, `debug`, `test`.\n\n```typescript\nimport {\n  createAgent,\n  registerSkill,\n  getAllSkills,\n} from \"@codeany/open-agent-sdk\";\n\n// Register a custom skill\nregisterSkill({\n  name: \"explain\",\n  description: \"Explain a concept in simple terms\",\n  userInvocable: true,\n  async getPrompt(args) {\n    return [\n      {\n        type: \"text\",\n        text: `Explain in simple terms: ${args || \"Ask what to explain.\"}`,\n      },\n    ];\n  },\n});\n\nconsole.log(`${getAllSkills().length} skills registered`);\n\n// The model can invoke skills via the Skill tool\nconst agent = createAgent();\nconst result = await agent.prompt('Use the \"explain\" skill to explain git rebase');\nconsole.log(result.text);\n```\n\n### Hooks (lifecycle events)\n\n```typescript\nimport { createAgent, createHookRegistry } from \"@codeany/open-agent-sdk\";\n\nconst hooks = createHookRegistry({\n  PreToolUse: [\n    {\n      handler: async (input) => {\n        console.log(`About to use: ${input.toolName}`);\n        // Return { block: true } to prevent tool execution\n      },\n    },\n  ],\n  PostToolUse: [\n    {\n      handler: async (input) => {\n        console.log(`Tool ${input.toolName} completed`);\n      },\n    },\n  ],\n});\n```\n\n20 lifecycle events: `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStart`, `SubagentStop`, `UserPromptSubmit`, `PermissionRequest`, `PermissionDenied`, `TaskCreated`, `TaskCompleted`, `ConfigChange`, `CwdChanged`, `FileChanged`, `Notification`, `PreCompact`, `PostCompact`, `TeammateIdle`.\n\n### MCP server integration\n\n```typescript\nimport { createAgent } from \"@codeany/open-agent-sdk\";\n\nconst agent = createAgent({\n  mcpServers: {\n    filesystem: {\n      command: \"npx\",\n      args: [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/tmp\"],\n    },\n  },\n});\n\nconst result = await agent.prompt(\"List files in /tmp\");\nconsole.log(result.text);\nawait agent.close();\n```\n\n### Subagents\n\n```typescript\nimport { query } from \"@codeany/open-agent-sdk\";\n\nfor await (const msg of query({\n  prompt: \"Use the code-reviewer agent to review src/index.ts\",\n  options: {\n    agents: {\n      \"code-reviewer\": {\n        description: \"Expert code reviewer\",\n        prompt: \"Analyze code quality. Focus on security and performance.\",\n        tools: [\"Read\", \"Glob\", \"Grep\"],\n      },\n    },\n  },\n})) {\n  if (msg.type === \"result\") console.log(\"Done\");\n}\n```\n\n### Permissions\n\n```typescript\nimport { query } from \"@codeany/open-agent-sdk\";\n\n// Read-only agent — can only analyze, not modify\nfor await (const msg of query({\n  prompt: \"Review the code in src/ for best practices.\",\n  options: {\n    allowedTools: [\"Read\", \"Glob\", \"Grep\"],\n    permissionMode: \"dontAsk\",\n  },\n})) {\n  // ...\n}\n```\n\n### Web UI\n\nA built-in web chat interface is included for testing:\n\n```bash\nnpx tsx examples/web/server.ts\n# Open http://localhost:8081\n```\n\n## API reference\n\n### Top-level functions\n\n| Function                              | Description                                                    |\n| ------------------------------------- | -------------------------------------------------------------- |\n| `query({ prompt, options })`          | One-shot streaming query, returns `AsyncGenerator<SDKMessage>` |\n| `createAgent(options)`                | Create a reusable agent with session persistence               |\n| `tool(name, desc, schema, handler)`   | Create a tool with Zod schema validation                       |\n| `createSdkMcpServer({ name, tools })` | Bundle tools into an in-process MCP server                     |\n| `defineTool(config)`                  | Low-level tool definition helper                               |\n| `getAllBaseTools()`                   | Get all 35+ built-in tools                                     |\n| `registerSkill(definition)`           | Register a custom skill                                        |\n| `getAllSkills()`                       | Get all registered skills                                      |\n| `createProvider(apiType, opts)`        | Create an LLM provider directly                                |\n| `createHookRegistry(config)`          | Create a hook registry for lifecycle events                    |\n| `listSessions()`                      | List persisted sessions                                        |\n| `forkSession(id)`                     | Fork a session for branching                                   |\n\n### Agent methods\n\n| Method                          | Description                                           |\n| ------------------------------- | ----------------------------------------------------- |\n| `agent.query(prompt)`           | Streaming query, returns `AsyncGenerator<SDKMessage>` |\n| `agent.prompt(text)`            | Blocking query, returns `Promise<QueryResult>`        |\n| `agent.getMessages()`           | Get conversation history                              |\n| `agent.clear()`                 | Reset session                                         |\n| `agent.interrupt()`             | Abort current query                                   |\n| `agent.setModel(model)`         | Change model mid-session                              |\n| `agent.setPermissionMode(mode)` | Change permission mode                                |\n| `agent.getApiType()`            | Get current API type                                  |\n| `agent.close()`                 | Close MCP connections, persist session                |\n\n### Options\n\n| Option               | Type                                    | Default                | Description                                                          |\n| -------------------- | --------------------------------------- | ---------------------- | -------------------------------------------------------------------- |\n| `apiType`            | `string`                                | auto-detected          | `'anthropic-messages'` or `'openai-completions'`                     |\n| `model`              | `string`                                | `claude-sonnet-4-6`    | LLM model ID                                                         |\n| `apiKey`             | `string`                                | `CODEANY_API_KEY`      | API key                                                              |\n| `baseURL`            | `string`                                | —                      | Custom API endpoint                                                  |\n| `cwd`                | `string`                                | `process.cwd()`        | Working directory                                                    |\n| `systemPrompt`       | `string`                                | —                      | System prompt override                                               |\n| `appendSystemPrompt` | `string`                                | —                      | Append to default system prompt                                      |\n| `tools`              | `ToolDefinition[]`                      | All built-in           | Available tools                                                      |\n| `allowedTools`       | `string[]`                              | —                      | Tool allow-list                                                      |\n| `disallowedTools`    | `string[]`                              | —                      | Tool deny-list                                                       |\n| `permissionMode`     | `string`                                | `bypassPermissions`    | `default` / `acceptEdits` / `dontAsk` / `bypassPermissions` / `plan` |\n| `canUseTool`         | `function`                              | —                      | Custom permission callback                                           |\n| `maxTurns`           | `number`                                | `10",
+  "languages": {
+    "TypeScript": 221139
+  },
+  "releases": [],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Open Agent SDK (TypeScript)</h1></div>\n<p dir=\"auto\"><a href=\"https://www.npmjs.com/package/@codeany/open-agent-sdk\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/2e74fe93f06df9bee5ff72ed0f8de5bb1c5d46569d0d9a6cfd62c52fa72e01c6/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f40636f6465616e792f6f70656e2d6167656e742d73646b\" alt=\"npm version\" data-canonical-src=\"https://img.shields.io/npm/v/@codeany/open-agent-sdk\" style=\"max-width: 100%;\"></a>\n<a href=\"https://nodejs.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/a10dccd4c7701a4b9cc611567d49569029c5d8a338b11fe73b660061a7785324/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6e6f64652d25334525334431382d627269676874677265656e\" alt=\"Node.js\" data-canonical-src=\"https://img.shields.io/badge/node-%3E%3D18-brightgreen\" style=\"max-width: 100%;\"></a>\n<a href=\"https://github.com/shipany-ai/open-agent-sdk/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/b8cadaa967891081f8f165695470689986c028821dd8a040132f6e661795dc0d/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c7565\" alt=\"License: MIT\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Open-source Agent SDK that runs the full agent loop <strong>in-process</strong> — no subprocess or CLI required. Supports both <strong>Anthropic</strong> and <strong>OpenAI-compatible</strong> APIs. Deploy anywhere: cloud, serverless, Docker, CI/CD.</p>\n<p dir=\"auto\">Also available in <strong>Go</strong>: <a href=\"https://github.com/codeany-ai/open-agent-sdk-go\">open-agent-sdk-go</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Get started</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @codeany/open-agent-sdk\"><pre>npm install @codeany/open-agent-sdk</pre></div>\n<p dir=\"auto\">Set your API key:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export CODEANY_API_KEY=your-api-key\"><pre><span class=\"pl-k\">export</span> CODEANY_API_KEY=your-api-key</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">OpenAI-compatible models</h3></div>\n<p dir=\"auto\">Works with OpenAI, DeepSeek, Qwen, Mistral, or any OpenAI-compatible endpoint:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export CODEANY_API_TYPE=openai-completions\nexport CODEANY_API_KEY=sk-...\nexport CODEANY_BASE_URL=https://api.openai.com/v1\nexport CODEANY_MODEL=gpt-4o\"><pre><span class=\"pl-k\">export</span> CODEANY_API_TYPE=openai-completions\n<span class=\"pl-k\">export</span> CODEANY_API_KEY=sk-...\n<span class=\"pl-k\">export</span> CODEANY_BASE_URL=https://api.openai.com/v1\n<span class=\"pl-k\">export</span> CODEANY_MODEL=gpt-4o</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Third-party Anthropic-compatible providers</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export CODEANY_BASE_URL=https://openrouter.ai/api\nexport CODEANY_API_KEY=sk-or-...\nexport CODEANY_MODEL=anthropic/claude-sonnet-4\"><pre><span class=\"pl-k\">export</span> CODEANY_BASE_URL=https://openrouter.ai/api\n<span class=\"pl-k\">export</span> CODEANY_API_KEY=sk-or-...\n<span class=\"pl-k\">export</span> CODEANY_MODEL=anthropic/claude-sonnet-4</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">One-shot query (streaming)</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { query } from &quot;@codeany/open-agent-sdk&quot;;\n\nfor await (const message of query({\n  prompt: &quot;Read package.json and tell me the project name.&quot;,\n  options: {\n    allowedTools: [&quot;Read&quot;, &quot;Glob&quot;],\n    permissionMode: &quot;bypassPermissions&quot;,\n  },\n})) {\n  if (message.type === &quot;assistant&quot;) {\n    for (const block of message.message.content) {\n      if (&quot;text&quot; in block) console.log(block.text);\n    }\n  }\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">query</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">for</span> <span class=\"pl-k\">await</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">message</span> <span class=\"pl-k\">of</span> <span class=\"pl-en\">query</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">prompt</span>: <span class=\"pl-s\">\"Read package.json and tell me the project name.\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">options</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">allowedTools</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s\">\"Read\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"Glob\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">permissionMode</span>: <span class=\"pl-s\">\"bypassPermissions\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">message</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">type</span> <span class=\"pl-c1\">===</span> <span class=\"pl-s\">\"assistant\"</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">block</span> <span class=\"pl-k\">of</span> <span class=\"pl-s1\">message</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">message</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">content</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n      <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s\">\"text\"</span> <span class=\"pl-k\">in</span> <span class=\"pl-s1\">block</span><span class=\"pl-kos\">)</span> <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">block</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-kos\">}</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Simple blocking prompt</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createAgent } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst agent = createAgent({ model: &quot;claude-sonnet-4-6&quot; });\nconst result = await agent.prompt(&quot;What files are in this project?&quot;);\n\nconsole.log(result.text);\nconsole.log(\n  `Turns: ${result.num_turns}, Tokens: ${result.usage.input_tokens + result.usage.output_tokens}`,\n);\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createAgent</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">model</span>: <span class=\"pl-s\">\"claude-sonnet-4-6\"</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"What files are in this project?\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span>\n  <span class=\"pl-s\">`Turns: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">num_turns</span><span class=\"pl-kos\">}</span></span>, Tokens: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">usage</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">input_tokens</span> <span class=\"pl-c1\">+</span> <span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">usage</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">output_tokens</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">OpenAI / GPT models</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createAgent } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst agent = createAgent({\n  apiType: &quot;openai-completions&quot;,\n  model: &quot;gpt-4o&quot;,\n  apiKey: &quot;sk-...&quot;,\n  baseURL: &quot;https://api.openai.com/v1&quot;,\n});\n\nconst result = await agent.prompt(&quot;What files are in this project?&quot;);\nconsole.log(result.text);\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createAgent</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">apiType</span>: <span class=\"pl-s\">\"openai-completions\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">model</span>: <span class=\"pl-s\">\"gpt-4o\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">apiKey</span>: <span class=\"pl-s\">\"sk-...\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">baseURL</span>: <span class=\"pl-s\">\"https://api.openai.com/v1\"</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"What files are in this project?\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">The <code>apiType</code> is auto-detected from model name — models containing <code>gpt-</code>, <code>o1</code>, <code>o3</code>, <code>deepseek</code>, <code>qwen</code>, <code>mistral</code>, etc. automatically use <code>openai-completions</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Multi-turn conversation</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createAgent } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst agent = createAgent({ maxTurns: 5 });\n\nconst r1 = await agent.prompt(\n  'Create a file /tmp/hello.txt with &quot;Hello World&quot;',\n);\nconsole.log(r1.text);\n\nconst r2 = await agent.prompt(&quot;Read back the file you just created&quot;);\nconsole.log(r2.text);\n\nconsole.log(`Session messages: ${agent.getMessages().length}`);\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createAgent</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">maxTurns</span>: <span class=\"pl-c1\">5</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">r1</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span>\n  <span class=\"pl-s\">'Create a file /tmp/hello.txt with \"Hello World\"'</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">r1</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">r2</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"Read back the file you just created\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">r2</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`Session messages: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getMessages</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">length</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Custom tools (Zod schema)</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { z } from &quot;zod&quot;;\nimport { query, tool, createSdkMcpServer } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst getWeather = tool(\n  &quot;get_weather&quot;,\n  &quot;Get the temperature for a city&quot;,\n  { city: z.string().describe(&quot;City name&quot;) },\n  async ({ city }) =&gt; ({\n    content: [{ type: &quot;text&quot;, text: `${city}: 22°C, sunny` }],\n  }),\n);\n\nconst server = createSdkMcpServer({ name: &quot;weather&quot;, tools: [getWeather] });\n\nfor await (const msg of query({\n  prompt: &quot;What is the weather in Tokyo?&quot;,\n  options: { mcpServers: { weather: server } },\n})) {\n  if (msg.type === &quot;result&quot;)\n    console.log(`Done: $${msg.total_cost_usd?.toFixed(4)}`);\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">z</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"zod\"</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">query</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">tool</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">createSdkMcpServer</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">getWeather</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">tool</span><span class=\"pl-kos\">(</span>\n  <span class=\"pl-s\">\"get_weather\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-s\">\"Get the temperature for a city\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">city</span>: <span class=\"pl-s1\">z</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">string</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">describe</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"City name\"</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-k\">async</span> <span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> city <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">content</span>: <span class=\"pl-kos\">[</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">type</span>: <span class=\"pl-s\">\"text\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">`<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">city</span><span class=\"pl-kos\">}</span></span>: 22°C, sunny`</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">server</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createSdkMcpServer</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">name</span>: <span class=\"pl-s\">\"weather\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">tools</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">getWeather</span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">for</span> <span class=\"pl-k\">await</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">msg</span> <span class=\"pl-k\">of</span> <span class=\"pl-en\">query</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">prompt</span>: <span class=\"pl-s\">\"What is the weather in Tokyo?\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">options</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">mcpServers</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">weather</span>: <span class=\"pl-s1\">server</span> <span class=\"pl-kos\">}</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">msg</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">type</span> <span class=\"pl-c1\">===</span> <span class=\"pl-s\">\"result\"</span><span class=\"pl-kos\">)</span>\n    <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`Done: $<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">msg</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">total_cost_usd</span><span class=\"pl-kos\">?.</span><span class=\"pl-en\">toFixed</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Custom tools (low-level)</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import {\n  createAgent,\n  getAllBaseTools,\n  defineTool,\n} from &quot;@codeany/open-agent-sdk&quot;;\n\nconst calculator = defineTool({\n  name: &quot;Calculator&quot;,\n  description: &quot;Evaluate a math expression&quot;,\n  inputSchema: {\n    type: &quot;object&quot;,\n    properties: { expression: { type: &quot;string&quot; } },\n    required: [&quot;expression&quot;],\n  },\n  isReadOnly: true,\n  async call(input) {\n    const result = Function(`'use strict'; return (${input.expression})`)();\n    return `${input.expression} = ${result}`;\n  },\n});\n\nconst agent = createAgent({ tools: [...getAllBaseTools(), calculator] });\nconst r = await agent.prompt(&quot;Calculate 2**10 * 3&quot;);\nconsole.log(r.text);\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">createAgent</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-s1\">getAllBaseTools</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-s1\">defineTool</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">calculator</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">defineTool</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">name</span>: <span class=\"pl-s\">\"Calculator\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">description</span>: <span class=\"pl-s\">\"Evaluate a math expression\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">inputSchema</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">type</span>: <span class=\"pl-s\">\"object\"</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">properties</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">expression</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">type</span>: <span class=\"pl-s\">\"string\"</span> <span class=\"pl-kos\">}</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">required</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s\">\"expression\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">isReadOnly</span>: <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-k\">async</span> <span class=\"pl-en\">call</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">Function</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`'use strict'; return (<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">expression</span><span class=\"pl-kos\">}</span></span>)`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-k\">return</span> <span class=\"pl-s\">`<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">expression</span><span class=\"pl-kos\">}</span></span> = <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">tools</span>: <span class=\"pl-kos\">[</span>...<span class=\"pl-en\">getAllBaseTools</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">calculator</span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">r</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"Calculate 2**10 * 3\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">r</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Skills</h3></div>\n<p dir=\"auto\">Skills are reusable prompt templates that extend agent capabilities. Five bundled skills are included: <code>simplify</code>, <code>commit</code>, <code>review</code>, <code>debug</code>, <code>test</code>.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import {\n  createAgent,\n  registerSkill,\n  getAllSkills,\n} from &quot;@codeany/open-agent-sdk&quot;;\n\n// Register a custom skill\nregisterSkill({\n  name: &quot;explain&quot;,\n  description: &quot;Explain a concept in simple terms&quot;,\n  userInvocable: true,\n  async getPrompt(args) {\n    return [\n      {\n        type: &quot;text&quot;,\n        text: `Explain in simple terms: ${args || &quot;Ask what to explain.&quot;}`,\n      },\n    ];\n  },\n});\n\nconsole.log(`${getAllSkills().length} skills registered`);\n\n// The model can invoke skills via the Skill tool\nconst agent = createAgent();\nconst result = await agent.prompt('Use the &quot;explain&quot; skill to explain git rebase');\nconsole.log(result.text);\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">createAgent</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-s1\">registerSkill</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-s1\">getAllSkills</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Register a custom skill</span>\n<span class=\"pl-en\">registerSkill</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">name</span>: <span class=\"pl-s\">\"explain\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">description</span>: <span class=\"pl-s\">\"Explain a concept in simple terms\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">userInvocable</span>: <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-k\">async</span> <span class=\"pl-en\">getPrompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">args</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">return</span> <span class=\"pl-kos\">[</span>\n      <span class=\"pl-kos\">{</span>\n        <span class=\"pl-c1\">type</span>: <span class=\"pl-s\">\"text\"</span><span class=\"pl-kos\">,</span>\n        <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">`Explain in simple terms: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">args</span> <span class=\"pl-c1\">||</span> <span class=\"pl-s\">\"Ask what to explain.\"</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">,</span>\n      <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-en\">getAllSkills</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">length</span><span class=\"pl-kos\">}</span></span> skills registered`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// The model can invoke skills via the Skill tool</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Use the \"explain\" skill to explain git rebase'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Hooks (lifecycle events)</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createAgent, createHookRegistry } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst hooks = createHookRegistry({\n  PreToolUse: [\n    {\n      handler: async (input) =&gt; {\n        console.log(`About to use: ${input.toolName}`);\n        // Return { block: true } to prevent tool execution\n      },\n    },\n  ],\n  PostToolUse: [\n    {\n      handler: async (input) =&gt; {\n        console.log(`Tool ${input.toolName} completed`);\n      },\n    },\n  ],\n});\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createAgent</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">createHookRegistry</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">hooks</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createHookRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">PreToolUse</span>: <span class=\"pl-kos\">[</span>\n    <span class=\"pl-kos\">{</span>\n      <span class=\"pl-en\">handler</span>: <span class=\"pl-k\">async</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`About to use: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">toolName</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-c\">// Return { block: true } to prevent tool execution</span>\n      <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">PostToolUse</span>: <span class=\"pl-kos\">[</span>\n    <span class=\"pl-kos\">{</span>\n      <span class=\"pl-en\">handler</span>: <span class=\"pl-k\">async</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`Tool <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">input</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">toolName</span><span class=\"pl-kos\">}</span></span> completed`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n      <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">20 lifecycle events: <code>PreToolUse</code>, <code>PostToolUse</code>, <code>PostToolUseFailure</code>, <code>SessionStart</code>, <code>SessionEnd</code>, <code>Stop</code>, <code>SubagentStart</code>, <code>SubagentStop</code>, <code>UserPromptSubmit</code>, <code>PermissionRequest</code>, <code>PermissionDenied</code>, <code>TaskCreated</code>, <code>TaskCompleted</code>, <code>ConfigChange</code>, <code>CwdChanged</code>, <code>FileChanged</code>, <code>Notification</code>, <code>PreCompact</code>, <code>PostCompact</code>, <code>TeammateIdle</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">MCP server integration</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createAgent } from &quot;@codeany/open-agent-sdk&quot;;\n\nconst agent = createAgent({\n  mcpServers: {\n    filesystem: {\n      command: &quot;npx&quot;,\n      args: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/tmp&quot;],\n    },\n  },\n});\n\nconst result = await agent.prompt(&quot;List files in /tmp&quot;);\nconsole.log(result.text);\nawait agent.close();\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createAgent</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createAgent</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">mcpServers</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">filesystem</span>: <span class=\"pl-kos\">{</span>\n      <span class=\"pl-c1\">command</span>: <span class=\"pl-s\">\"npx\"</span><span class=\"pl-kos\">,</span>\n      <span class=\"pl-c1\">args</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s\">\"-y\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"@modelcontextprotocol/server-filesystem\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"/tmp\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">prompt</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"List files in /tmp\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-s1\">agent</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">close</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Subagents</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { query } from &quot;@codeany/open-agent-sdk&quot;;\n\nfor await (const msg of query({\n  prompt: &quot;Use the code-reviewer agent to review src/index.ts&quot;,\n  options: {\n    agents: {\n      &quot;code-reviewer&quot;: {\n        description: &quot;Expert code reviewer&quot;,\n        prompt: &quot;Analyze code quality. Focus on security and performance.&quot;,\n        tools: [&quot;Read&quot;, &quot;Glob&quot;, &quot;Grep&quot;],\n      },\n    },\n  },\n})) {\n  if (msg.type === &quot;result&quot;) console.log(&quot;Done&quot;);\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">query</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">for</span> <span class=\"pl-k\">await</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">msg</span> <span class=\"pl-k\">of</span> <span class=\"pl-en\">query</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">prompt</span>: <span class=\"pl-s\">\"Use the code-reviewer agent to review src/index.ts\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">options</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">agents</span>: <span class=\"pl-kos\">{</span>\n      <span class=\"pl-s\">\"code-reviewer\"</span>: <span class=\"pl-kos\">{</span>\n        <span class=\"pl-c1\">description</span>: <span class=\"pl-s\">\"Expert code reviewer\"</span><span class=\"pl-kos\">,</span>\n        <span class=\"pl-c1\">prompt</span>: <span class=\"pl-s\">\"Analyze code quality. Focus on security and performance.\"</span><span class=\"pl-kos\">,</span>\n        <span class=\"pl-c1\">tools</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s\">\"Read\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"Glob\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"Grep\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n      <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">msg</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">type</span> <span class=\"pl-c1\">===</span> <span class=\"pl-s\">\"result\"</span><span class=\"pl-kos\">)</span> <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"Done\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Permissions</h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { query } from &quot;@codeany/open-agent-sdk&quot;;\n\n// Read-only agent — can only analyze, not modify\nfor await (const msg of query({\n  prompt: &quot;Review the code in src/ for best practices.&quot;,\n  options: {\n    allowedTools: [&quot;Read&quot;, &quot;Glob&quot;, &quot;Grep&quot;],\n    permissionMode: &quot;dontAsk&quot;,\n  },\n})) {\n  // ...\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">query</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@codeany/open-agent-sdk\"</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Read-only agent — can only analyze, not modify</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-k\">await</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">msg</span> <span class=\"pl-k\">of</span> <span class=\"pl-en\">query</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">prompt</span>: <span class=\"pl-s\">\"Review the code in src/ for best practices.\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">options</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">allowedTools</span>: <span class=\"pl-kos\">[</span><span class=\"pl-s\">\"Read\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"Glob\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">\"Grep\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">permissionMode</span>: <span class=\"pl-s\">\"dontAsk\"</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c\">// ...</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Web UI</h3></div>\n<p dir=\"auto\">A built-in web chat interface is included for testing:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx tsx examples/web/server.ts\n# Open http://localhost:8081\"><pre>npx tsx examples/web/server.ts\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Open http://localhost:8081</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">API reference</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Top-level functions</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Function</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>query({ prompt, options })</code></td>\n<td>One-shot streaming query, returns <code>AsyncGenerator&lt;SDKMessage&gt;</code></td>\n</tr>\n<tr>\n<td><code>createAgent(options)</code></td>\n<td>Create a reusable agent with session persistence</td>\n</tr>\n<tr>\n<td><code>tool(name, desc, schema, handler)</code></td>\n<td>Create a tool with Zod schema validation</td>\n</tr>\n<tr>\n<td><code>createSdkMcpServer({ name, tools })</code></td>\n<td>Bundle tools into an in-process MCP server</td>\n</tr>\n<tr>\n<td><code>defineTool(config)</code></td>\n<td>Low-level tool definition helper</td>\n</tr>\n<tr>\n<td><code>getAllBaseTools()</code></td>\n<td>Get all 35+ built-in tools</td>\n</tr>\n<tr>\n<td><code>registerSkill(definition)</code></td>\n<td>Register a custom skill</td>\n</tr>\n<tr>\n<td><code>getAllSkills()</code></td>\n<td>Get all registered skills</td>\n</tr>\n<tr>\n<td><code>createProvider(apiType, opts)</code></td>\n<td>Create an LLM provider directly</td>\n</tr>\n<tr>\n<td><code>createHookRegistry(config)</code></td>\n<td>Create a hook registry for lifecycle events</td>\n</tr>\n<tr>\n<td><code>listSessions()</code></td>\n<td>List persisted sessions</td>\n</tr>\n<tr>\n<td><code>forkSession(id)</code></td>\n<td>Fork a session for branching</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Agent methods</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Method</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>agent.query(prompt)</code></td>\n<td>Streaming query, returns <code>AsyncGenerator&lt;SDKMessage&gt;</code></td>\n</tr>\n<tr>\n<td><code>agent.prompt(text)</code></td>\n<td>Blocking query, returns <code>Promise&lt;QueryResult&gt;</code></td>\n</tr>\n<tr>\n<td><code>agent.getMessages()</code></td>\n<td>Get conversation history</td>\n</tr>\n<tr>\n<td><code>agent.clear()</code></td>\n<td>Reset session</td>\n</tr>\n<tr>\n<td><code>agent.interrupt()</code></td>\n<td>Abort current query</td>\n</tr>\n<tr>\n<td><code>agent.setModel(model)</code></td>\n<td>Change model mid-session</td>\n</tr>\n<tr>\n<td><code>agent.setPermissionMode(mode)</code></td>\n<td>Change permission mode</td>\n</tr>\n<tr>\n<td><code>agent.getApiType()</code></td>\n<td>Get current API type</td>\n</tr>\n<tr>\n<td><code>agent.close()</code></td>\n<td>Close MCP connections, persist session</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Options</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Option</th>\n<th>Type</th>\n<th>Default</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>apiType</code></td>\n<td><code>string</code></td>\n<td>auto-detected</td>\n<td><code>'anthropic-messages'</code> or <code>'openai-completions'</code></td>\n</tr>\n<tr>\n<td><code>model</code></td>\n<td><code>string</code></td>\n<td><code>claude-sonnet-4-6</code></td>\n<td>LLM model ID</td>\n</tr>\n<tr>\n<td><code>apiKey</code></td>\n<td><code>string</code></td>\n<td><code>CODEANY_API_KEY</code></td>\n<td>API key</td>\n</tr>\n<tr>\n<td><code>baseURL</code></td>\n<td><code>string</code></td>\n<td>—</td>\n<td>Custom API endpoint</td>\n</tr>\n<tr>\n<td><code>cwd</code></td>\n<td><code>string</code></td>\n<td><code>process.cwd()</code></td>\n<td>Working directory</td>\n</tr>\n<tr>\n<td><code>systemPrompt</code></td>\n<td><code>string</code></td>\n<td>—</td>\n<td>System prompt override</td>\n</tr>\n<tr>\n<td><code>appendSystemPrompt</code></td>\n<td><code>string</code></td>\n<td>—</td>\n<td>Append to default system prompt</td>\n</tr>\n<tr>\n<td><code>tools</code></td>\n<td><code>ToolDefinition[]</code></td>\n<td>All built-in</td>\n<td>Available tools</td>\n</tr>\n<tr>\n<td><code>allowedTools</code></td>\n<td><code>string[]</code></td>\n<td>—</td>\n<td>Tool allow-list</td>\n</tr>\n<tr>\n<td><code>disallowedTools</code></td>\n<td><code>string[]</code></td>\n<td>—</td>\n<td>Tool deny-list</td>\n</tr>\n<tr>\n<td><code>permissionMode</code></td>\n<td><code>string</code></td>\n<td><code>bypassPermissions</code></td>\n<td><code>default</code> / <code>acceptEdits</code> / <code>dontAsk</code> / <code>bypassPermissions</code> / <code>plan</code></td>\n</tr>\n<tr>\n<td><code>canUseTool</code></td>\n<td><code>function</code></td>\n<td>—</td>\n<td>Custom permission callback</td>\n</tr>\n<tr>\n<td><code>maxTurns</code></td>\n<td><code>number</code></td>\n<td><code>10</code></td>\n<td>Max agentic turns</td>\n</tr>\n<tr>\n<td><code>maxBudgetUsd</code></td>\n<td><code>number</code></td>\n<td>—</td>\n<td>Spending cap</td>\n</tr>\n<tr>\n<td><code>thinking</code></td>\n<td><code>ThinkingConfig</code></td>\n<td><code>{ type: 'adaptive' }</code></td>\n<td>Extended thinking</td>\n</tr>\n<tr>\n<td><code>effort</code></td>\n<td><code>string</code></td>\n<td><code>high</code></td>\n<td>Reasoning effort: <code>low</code> / <code>medium</code> / <code>high</code> / <code>max</code></td>\n</tr>\n<tr>\n<td><code>mcpServers</code></td>\n<td><code>Record&lt;string, McpServerConfig&gt;</code></td>\n<td>—</td>\n<td>MCP server connections</td>\n</tr>\n<tr>\n<td><code>agents</code></td>\n<td><code>Record&lt;string, AgentDefinition&gt;</code></td>\n<td>—</td>\n<td>Subagent definitions</td>\n</tr>\n<tr>\n<td><code>hooks</code></td>\n<td><code>Record&lt;string, HookCallbackMatcher[]&gt;</code></td>\n<td>—</td>\n<td>Lifecycle hooks</td>\n</tr>\n<tr>\n<td><code>resume</code></td>\n<td><code>string</code></td>\n<td>—</td>\n<td>Resume session by ID</td>\n</tr>\n<tr>\n<td><code>continue</code></td>\n<td><code>boolean</code></td>\n<td><code>false</code></td>\n<td>Continue most recent session</td>\n</tr>\n<tr>\n<td><code>persistSession</code></td>\n<td><code>boolean</code></td>\n<td><code>true</code></td>\n<td>Persist session to disk</td>\n</tr>\n<tr>\n<td><code>sessionId</code></td>\n<td><code>string</code></td>\n<td>auto</td>\n<td>Explicit session ID</td>\n</tr>\n<tr>\n<td><code>outputFormat</code></td>\n<td><code>{ type: 'json_schema', schema }</code></td>\n<td>—</td>\n<td>Structured output</td>\n</tr>\n<tr>\n<td><code>sandbox</code></td>\n<td><code>SandboxSettings</code></td>\n<td>—</td>\n<td>Filesystem/network sandbox</td>\n</tr>\n<tr>\n<td><code>settingSources</code></td>\n<td><code>SettingSource[]</code></td>\n<td>—</td>\n<td>Load AGENT.md, project settings</td>\n</tr>\n<tr>\n<td><code>env</code></td>\n<td><code>Record&lt;string, string&gt;</code></td>\n<td>—</td>\n<td>Environment variables</td>\n</tr>\n<tr>\n<td><code>abortController</code></td>\n<td><code>AbortController</code></td>\n<td>—</td>\n<td>Cancellation controller</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Environment variables</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Variable</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>CODEANY_API_KEY</code></td>\n<td>API key (required)</td>\n</tr>\n<tr>\n<td><code>CODEANY_API_TYPE</code></td>\n<td><code>anthropic-messages</code> (default) or <code>openai-completions</code></td>\n</tr>\n<tr>\n<td><code>CODEANY_MODEL</code></td>\n<td>Default model override</td>\n</tr>\n<tr>\n<td><code>CODEANY_BASE_URL</code></td>\n<td>Custom API endpoint</td>\n</tr>\n<tr>\n<td><code>CODEANY_AUTH_TOKEN</code></td>\n<td>Alternative auth token</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Built-in tools</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tool</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Bash</strong></td>\n<td>Execute shell commands</td>\n</tr>\n<tr>\n<td><strong>Read</strong></td>\n<td>Read files with line numbers</td>\n</tr>\n<tr>\n<td><strong>Write</strong></td>\n<td>Create / overwrite files</td>\n</tr>\n<tr>\n<td><strong>Edit</strong></td>\n<td>Precise string replacement in files</td>\n</tr>\n<tr>\n<td><strong>Glob</strong></td>\n<td>Find files by pattern</td>\n</tr>\n<tr>\n<td><strong>Grep</strong></td>\n<td>Search file contents with regex</td>\n</tr>\n<tr>\n<td><strong>WebFetch</strong></td>\n<td>Fetch and parse web content</td>\n</tr>\n<tr>\n<td><strong>WebSearch</strong></td>\n<td>Search the web</td>\n</tr>\n<tr>\n<td><strong>NotebookEdit</strong></td>\n<td>Edit Jupyter notebook cells</td>\n</tr>\n<tr>\n<td><strong>Agent</strong></td>\n<td>Spawn subagents for parallel work</td>\n</tr>\n<tr>\n<td><strong>Skill</strong></td>\n<td>Invoke registered skills</td>\n</tr>\n<tr>\n<td><strong>TaskCreate/List/Update/Get/Stop/Output</strong></td>\n<td>Task management system</td>\n</tr>\n<tr>\n<td><strong>TeamCreate/Delete</strong></td>\n<td>Multi-agent team coordination</td>\n</tr>\n<tr>\n<td><strong>SendMessage</strong></td>\n<td>Inter-agent messaging</td>\n</tr>\n<tr>\n<td><strong>EnterWorktree/ExitWorktree</strong></td>\n<td>Git worktree isolation</td>\n</tr>\n<tr>\n<td><strong>EnterPlanMode/ExitPlanMode</strong></td>\n<td>Structured planning workflow</td>\n</tr>\n<tr>\n<td><strong>AskUserQuestion</strong></td>\n<td>Ask the user for input</td>\n</tr>\n<tr>\n<td><strong>ToolSearch</strong></td>\n<td>Discover lazy-loaded tools</td>\n</tr>\n<tr>\n<td><strong>ListMcpResources/ReadMcpResource</strong></td>\n<td>MCP resource access</td>\n</tr>\n<tr>\n<td><strong>CronCreate/Delete/List</strong></td>\n<td>Scheduled task management</td>\n</tr>\n<tr>\n<td><strong>RemoteTrigger</strong></td>\n<td>Remote agent triggers</td>\n</tr>\n<tr>\n<td><strong>LSP</strong></td>\n<td>Language Server Protocol (code intelligence)</td>\n</tr>\n<tr>\n<td><strong>Config</strong></td>\n<td>Dynamic configuration</td>\n</tr>\n<tr>\n<td><strong>TodoWrite</strong></td>\n<td>Session todo list</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Bundled skills</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Skill</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>simplify</code></td>\n<td>Review changed code for reuse, quality, and efficiency</td>\n</tr>\n<tr>\n<td><code>commit</code></td>\n<td>Create a git commit with a well-crafted message</td>\n</tr>\n<tr>\n<td><code>review</code></td>\n<td>Review code changes for correctness, security, and performance</td>\n</tr>\n<tr>\n<td><code>debug</code></td>\n<td>Systematic debugging using structured investigation</td>\n</tr>\n<tr>\n<td><code>test</code></td>\n<td>Run tests and analyze failures</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Register custom skills with <code>registerSkill()</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"┌──────────────────────────────────────────────────────┐\n│                   Your Application                    │\n│                                                       │\n│   import { createAgent } from '@codeany/open-agent-sdk' │\n└────────────────────────┬─────────────────────────────┘\n                         │\n              ┌──────────▼──────────┐\n              │       Agent         │  Session state, tool pool,\n              │  query() / prompt() │  MCP connections, hooks\n              └──────────┬──────────┘\n                         │\n              ┌──────────▼──────────┐\n              │    QueryEngine      │  Agentic loop:\n              │   submitMessage()   │  API call → tools → repeat\n              └──────────┬──────────┘\n                         │\n         ┌───────────────┼───────────────┐\n         │               │               │\n   ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐\n   │  Provider  │  │  35 Tools │  │    MCP     │\n   │ Anthropic  │  │ Bash,Read │  │  Servers   │\n   │  OpenAI    │  │ Edit,...  │  │ stdio/SSE/ │\n   │ DeepSeek   │  │ + Skills  │  │ HTTP/SDK   │\n   └───────────┘  └───────────┘  └───────────┘\"><pre class=\"notranslate\"><code>┌──────────────────────────────────────────────────────┐\n│                   Your Application                    │\n│                                                       │\n│   import { createAgent } from '@codeany/open-agent-sdk' │\n└────────────────────────┬─────────────────────────────┘\n                         │\n              ┌──────────▼──────────┐\n              │       Agent         │  Session state, tool pool,\n              │  query() / prompt() │  MCP connections, hooks\n              └──────────┬──────────┘\n                         │\n              ┌──────────▼──────────┐\n              │    QueryEngine      │  Agentic loop:\n              │   submitMessage()   │  API call → tools → repeat\n              └──────────┬──────────┘\n                         │\n         ┌───────────────┼───────────────┐\n         │               │               │\n   ┌─────▼─────┐  ┌─────▼─────┐  ┌─────▼─────┐\n   │  Provider  │  │  35 Tools │  │    MCP     │\n   │ Anthropic  │  │ Bash,Read │  │  Servers   │\n   │  OpenAI    │  │ Edit,...  │  │ stdio/SSE/ │\n   │ DeepSeek   │  │ + Skills  │  │ HTTP/SDK   │\n   └───────────┘  └───────────┘  └───────────┘\n</code></pre></div>\n<p dir=\"auto\"><strong>Key internals:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Component</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Provider layer</strong></td>\n<td>Abstracts Anthropic / OpenAI API differences</td>\n</tr>\n<tr>\n<td><strong>QueryEngine</strong></td>\n<td>Core agentic loop with auto-compact, retry, tool orchestration</td>\n</tr>\n<tr>\n<td><strong>Skill system</strong></td>\n<td>Reusable prompt templates with 5 bundled skills</td>\n</tr>\n<tr>\n<td><strong>Hook system</strong></td>\n<td>20 lifecycle events integrated into the engine</td>\n</tr>\n<tr>\n<td><strong>Auto-compact</strong></td>\n<td>Summarizes conversation when context window fills up</td>\n</tr>\n<tr>\n<td><strong>Micro-compact</strong></td>\n<td>Truncates oversized tool results</td>\n</tr>\n<tr>\n<td><strong>Retry</strong></td>\n<td>Exponential backoff for rate limits and transient errors</td>\n</tr>\n<tr>\n<td><strong>Token estimation</strong></td>\n<td>Rough token counting with pricing for Claude, GPT, DeepSeek models</td>\n</tr>\n<tr>\n<td><strong>File cache</strong></td>\n<td>LRU cache (100 entries, 25 MB) for file reads</td>\n</tr>\n<tr>\n<td><strong>Session storage</strong></td>\n<td>Persist / resume / fork sessions on disk</td>\n</tr>\n<tr>\n<td><strong>Context injection</strong></td>\n<td>Git status + AGENT.md automatically injected into system prompt</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Examples</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>#</th>\n<th>File</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>01</td>\n<td><code>examples/01-simple-query.ts</code></td>\n<td>Streaming query with event handling</td>\n</tr>\n<tr>\n<td>02</td>\n<td><code>examples/02-multi-tool.ts</code></td>\n<td>Multi-tool orchestration (Glob + Bash)</td>\n</tr>\n<tr>\n<td>03</td>\n<td><code>examples/03-multi-turn.ts</code></td>\n<td>Multi-turn session persistence</td>\n</tr>\n<tr>\n<td>04</td>\n<td><code>examples/04-prompt-api.ts</code></td>\n<td>Blocking <code>prompt()</code> API</td>\n</tr>\n<tr>\n<td>05</td>\n<td><code>examples/05-custom-system-prompt.ts</code></td>\n<td>Custom system prompt</td>\n</tr>\n<tr>\n<td>06</td>\n<td><code>examples/06-mcp-server.ts</code></td>\n<td>MCP server integration</td>\n</tr>\n<tr>\n<td>07</td>\n<td><code>examples/07-custom-tools.ts</code></td>\n<td>Custom tools with <code>defineTool()</code></td>\n</tr>\n<tr>\n<td>08</td>\n<td><code>examples/08-official-api-compat.ts</code></td>\n<td><code>query()</code> API pattern</td>\n</tr>\n<tr>\n<td>09</td>\n<td><code>examples/09-subagents.ts</code></td>\n<td>Subagent delegation</td>\n</tr>\n<tr>\n<td>10</td>\n<td><code>examples/10-permissions.ts</code></td>\n<td>Read-only agent with tool restrictions</td>\n</tr>\n<tr>\n<td>11</td>\n<td><code>examples/11-custom-mcp-tools.ts</code></td>\n<td><code>tool()</code> + <code>createSdkMcpServer()</code></td>\n</tr>\n<tr>\n<td>12</td>\n<td><code>examples/12-skills.ts</code></td>\n<td>Skill system usage</td>\n</tr>\n<tr>\n<td>13</td>\n<td><code>examples/13-hooks.ts</code></td>\n<td>Lifecycle hooks</td>\n</tr>\n<tr>\n<td>14</td>\n<td><code>examples/14-openai-compat.ts</code></td>\n<td>OpenAI / DeepSeek models</td>\n</tr>\n<tr>\n<td>web</td>\n<td><code>examples/web/</code></td>\n<td>Web chat UI for testing</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Run any example:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx tsx examples/01-simple-query.ts\"><pre>npx tsx examples/01-simple-query.ts</pre></div>\n<p dir=\"auto\">Start the web UI:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx tsx examples/web/server.ts\"><pre>npx tsx examples/web/server.ts</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Star History</h2></div>\n<a href=\"https://www.star-history.com/?repos=codeany-ai%2Fopen-agent-sdk-typescript&amp;type=timeline&amp;legend=top-left\" rel=\"nofollow\">\n <themed-picture data-catalyst-inline=\"true\"><picture>\n   <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://camo.githubusercontent.com/24b9f4ee6071d08d3da4e6e1df7dac404b74a36fa99d3c89d8f0865a13907db9/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f696d6167653f7265706f733d636f6465616e792d61692f6f70656e2d6167656e742d73646b2d7479706573637269707426747970653d74696d656c696e65267468656d653d6461726b266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/image?repos=codeany-ai/open-agent-sdk-typescript&amp;type=timeline&amp;theme=dark&amp;legend=top-left\">\n   <source media=\"(prefers-color-scheme: light)\" srcset=\"https://camo.githubusercontent.com/7847207abca5de7e8168d9da91ed099b4cf34240e683652e1a47147aa336f622/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f696d6167653f7265706f733d636f6465616e792d61692f6f70656e2d6167656e742d73646b2d7479706573637269707426747970653d74696d656c696e65266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/image?repos=codeany-ai/open-agent-sdk-typescript&amp;type=timeline&amp;legend=top-left\">\n   <img alt=\"Star History Chart\" src=\"https://camo.githubusercontent.com/7847207abca5de7e8168d9da91ed099b4cf34240e683652e1a47147aa336f622/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f696d6167653f7265706f733d636f6465616e792d61692f6f70656e2d6167656e742d73646b2d7479706573637269707426747970653d74696d656c696e65266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/image?repos=codeany-ai/open-agent-sdk-typescript&amp;type=timeline&amp;legend=top-left\">\n </picture></themed-picture>\n</a>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT</p>\n</article></div>",
+  "contributors": [
+    {
+      "login": "idoubi",
+      "url": "https://github.com/idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4",
+      "contributions": 9
+    }
+  ],
+  "commitCount": 9,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "contributorCount": 1,
+  "recentIssues": [
+    {
+      "number": 17,
+      "title": "不如用 openai-agents-python，更成熟",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/issues/17",
+      "createdAt": "2026-05-27T09:39:38Z",
+      "comments": 0,
+      "labels": [],
+      "author": "anterotervonen245-debug"
+    },
+    {
+      "number": 12,
+      "title": "session interrupt failed",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/issues/12",
+      "createdAt": "2026-04-14T06:28:53Z",
+      "comments": 0,
+      "labels": [],
+      "author": "yongyong123"
+    },
+    {
+      "number": 10,
+      "title": "不支持流式输出",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/issues/10",
+      "createdAt": "2026-04-09T08:18:54Z",
+      "comments": 0,
+      "labels": [],
+      "author": "zerone-agent"
+    },
+    {
+      "number": 9,
+      "title": "## Bug: `useEffectEvent is not a function` error when running CLI",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/issues/9",
+      "createdAt": "2026-04-09T07:01:03Z",
+      "comments": 0,
+      "labels": [],
+      "author": "jacklinna"
+    },
+    {
+      "number": 7,
+      "title": "移除了很多模块啊！缺了不少功能。。。。",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/issues/7",
+      "createdAt": "2026-04-02T04:37:52Z",
+      "comments": 5,
+      "labels": [],
+      "author": "kayingai"
+    }
+  ],
+  "firstCommitAt": "2026-04-01T09:51:53Z",
+  "participation": {
+    "all": 9,
+    "owner": 0,
+    "community": 9
+  },
+  "workflowRuns": [],
+  "recentCommits": [
+    {
+      "sha": "a9ade5f",
+      "message": "chore: release 0.2.4",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/a9ade5fdaefb0fb5cffdddeed93b3bc81feb7734",
+      "date": "2026-07-26T03:21:50Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "65844c3",
+      "message": "feat: accept externally supplied conversation history",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/65844c354f01c11111900a8ad0fc44f4f274c8e1",
+      "date": "2026-07-26T03:21:41Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "512fcc9",
+      "message": "chore: release 0.2.3",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/512fcc9f497c4f226b36618bc9b1ed78c66eaa08",
+      "date": "2026-07-25T16:09:19Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "25b6e0d",
+      "message": "fix: ship dist in the published package",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/25b6e0d97ac43b73feeb64a8b80c556394ba5573",
+      "date": "2026-07-25T16:09:19Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "d67c9ab",
+      "message": "chore: release 0.2.2",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/d67c9abc485776b04bb3cf41fac2fdb1ad85b5d9",
+      "date": "2026-07-25T16:01:52Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "fdff6b6",
+      "message": "feat: surface the error message in the result event",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/fdff6b6f5fa93880d9b0dfb4cd1f3950649b0def",
+      "date": "2026-07-25T16:01:34Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "366438d",
+      "message": "fix: subagent inherits parent agent's provider, model, and apiType",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/366438d2ef94775a4515301bcf8a58ab866c1731",
+      "date": "2026-04-03T16:25:08Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "85dff47",
+      "message": "feat: add skills system, hooks integration, and OpenAI-compatible provider",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/85dff47d744ed16fe76ed68f3fbdf3f9e6b7f5cd",
+      "date": "2026-04-03T15:29:29Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    },
+    {
+      "sha": "67e120b",
+      "message": "Initial commit: Open Agent SDK (TypeScript)",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/commit/67e120b2ed686378d2ea049c3161296ea3abb599",
+      "date": "2026-04-01T09:51:53Z",
+      "author": "idoubi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9711570?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/tree/main/examples"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/tree/main/src"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 228,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 76,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/.gitignore"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1085,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/LICENSE"
+    },
+    {
+      "name": "package-lock.json",
+      "type": "file",
+      "size": 58201,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/package-lock.json"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 1576,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/package.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 24067,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/README.md"
+    },
+    {
+      "name": "tsconfig.json",
+      "type": "file",
+      "size": 470,
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/blob/main/tsconfig.json"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 16,
+      "title": "Fix the problem that outputFormat does not take effect",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/16",
+      "state": "open",
+      "updatedAt": "2026-07-01T05:39:13Z",
+      "author": "alexxling",
+      "draft": false
+    },
+    {
+      "number": 18,
+      "title": "fix(retry): make retry delay responsive to abort signal",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/18",
+      "state": "open",
+      "updatedAt": "2026-06-20T05:59:47Z",
+      "author": "itxaiohanglover",
+      "draft": false
+    },
+    {
+      "number": 15,
+      "title": "Add MseeP.ai badge",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/15",
+      "state": "open",
+      "updatedAt": "2026-04-28T16:41:52Z",
+      "author": "mseep-ai",
+      "draft": false
+    },
+    {
+      "number": 11,
+      "title": "feat: 添加流式输出支持、添加 user 级和 project 级的 SKILLs 加载",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/11",
+      "state": "closed",
+      "updatedAt": "2026-04-20T06:50:20Z",
+      "author": "zerone-agent",
+      "draft": false
+    },
+    {
+      "number": 14,
+      "title": "fix: support multimodal image content in OpenAI provider",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/14",
+      "state": "open",
+      "updatedAt": "2026-04-17T01:19:05Z",
+      "author": "buuzzy",
+      "draft": false
+    },
+    {
+      "number": 13,
+      "title": "fix: support multimodal image content in OpenAI provider",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/13",
+      "state": "closed",
+      "updatedAt": "2026-04-17T01:17:48Z",
+      "author": "buuzzy",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "feat: support runtime contextWindowSize and pricingPerMillion via AgentOptions",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/8",
+      "state": "open",
+      "updatedAt": "2026-04-07T03:32:22Z",
+      "author": "YangLuYang",
+      "draft": false
+    },
+    {
+      "number": 4,
+      "title": "docs: 添加中文版 README",
+      "url": "https://github.com/codeany-ai/open-agent-sdk-typescript/pull/4",
+      "state": "closed",
+      "updatedAt": "2026-04-01T09:52:19Z",
+      "author": "srxly888-creator",
+      "draft": false
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "package.json",
+    "dependencies": [
+      {
+        "name": "@anthropic-ai/sdk",
+        "version": "^0.52.0"
+      },
+      {
+        "name": "@modelcontextprotocol/sdk",
+        "version": "^1.12.1"
+      },
+      {
+        "name": "zod",
+        "version": "^3.23.0"
+      },
+      {
+        "name": "zod-to-json-schema",
+        "version": "^3.24.0"
+      }
+    ],
+    "total": 4
+  },
+  "branchCount": 1,
+  "tagCount": 2,
+  "community": {
+    "healthPercentage": 37,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 5,
+  "openPRs": 5,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 2,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 6
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 1
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 1
+    },
+    {
+      "date": "2026-04-04",
+      "count": 1
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 6
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T19:06:27.487Z"
 }
