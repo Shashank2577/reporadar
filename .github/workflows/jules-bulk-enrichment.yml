@@ -1,0 +1,63 @@
+name: Jules bulk enrichment (manual)
+
+# Fires N parallel Jules sessions in one go, each assigned a distinct,
+# non-overlapping shard of data/repos/*.json (round-robin over the
+# alphabetically sorted file list) so parallel sessions never pick the same
+# repos and never collide on the same file in their PRs. Complements
+# jules-deep-enrichment.yml (which fires one session every 2 hours on
+# schedule) for a one-off burst through the backlog.
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        # Empirically observed (2026-07-29): this account's concurrent-session
+        # cap is ~10-11 -- requests beyond that fail with HTTP 400
+        # FAILED_PRECONDITION, not a request-shape error (the first 11
+        # identical requests succeeded). Not documented anywhere; if you
+        # raise this, expect the tail to fail once existing sessions are
+        # still active, which is harmless (they just don't start).
+        description: "Number of parallel sessions to start (~10-11 max concurrent; excess will fail harmlessly)"
+        required: true
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start N sharded Jules sessions
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          COUNT: ${{ inputs.count }}
+        run: |
+          if [ -z "$JULES_API_KEY" ]; then
+            echo "::error::JULES_API_KEY secret is not set"
+            exit 1
+          fi
+          ok=0
+          fail=0
+          for i in $(seq 0 $((COUNT - 1))); do
+            prompt="Do the deep repo enrichment pass described in task 2 of AGENTS.md. IMPORTANT: ${COUNT} parallel sessions are running this same task right now, each assigned a distinct shard so no two sessions touch the same file or duplicate work. Your shard is ${i} of ${COUNT}. First run this exact command to get your candidate file list: ls data/repos/*.json | sort | awk 'NR % ${COUNT} == ${i}' -- only consider repos from that output, further filtered by the normal eligibility criteria in task 2 (readmeExcerpt present, summary missing/template/thin). Do not open or edit any repo file outside your shard's list. Pick up to 15 eligible repos from your shard (fewer is fine if your shard doesn't have that many eligible ones)."
+            body=$(jq -n \
+              --arg prompt "$prompt" \
+              --arg title "Deep enrichment shard $i/$COUNT" \
+              '{prompt: $prompt, sourceContext: {source: "sources/github/Shashank2577/reporadar", githubRepoContext: {startingBranch: "main"}}, automationMode: "AUTO_CREATE_PR", title: $title}')
+            status=$(curl -s -o /tmp/resp_$i.json -w "%{http_code}" -X POST \
+              "https://jules.googleapis.com/v1alpha/sessions" \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: $JULES_API_KEY" \
+              -d "$body")
+            if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+              name=$(jq -r '.name // "?"' /tmp/resp_$i.json)
+              echo "shard $i/$COUNT: OK ($name)"
+              ok=$((ok + 1))
+            else
+              echo "shard $i/$COUNT: FAILED (HTTP $status) -- $(cat /tmp/resp_$i.json)"
+              fail=$((fail + 1))
+            fi
+            sleep 1
+          done
+          echo "Done: $ok succeeded, $fail failed"
+          [ "$fail" -eq 0 ]
