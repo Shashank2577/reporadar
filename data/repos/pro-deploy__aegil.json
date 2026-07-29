@@ -1,6 +1,12 @@
 {
   "id": "pro-deploy/aegil",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 108,
+      "forks": 0
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-07-15",
@@ -21,5 +27,2726 @@
     "sampledAt": "2026-07-28T09:22:09.174Z"
   },
   "owner": "pro-deploy",
-  "name": "aegil"
+  "name": "aegil",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/96801142?v=4",
+  "ownerType": "User",
+  "description": "",
+  "url": "https://github.com/pro-deploy/aegil",
+  "homepage": null,
+  "license": null,
+  "language": "Python",
+  "topics": [],
+  "stars": 108,
+  "forks": 0,
+  "watchers": 0,
+  "openIssues": 0,
+  "createdAt": "2026-07-13T00:11:56Z",
+  "pushedAt": "2026-07-13T22:26:01Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T17:10:12.740Z",
+  "languages": {
+    "Python": 816663,
+    "HTML": 40942,
+    "Dockerfile": 6390,
+    "Shell": 5911,
+    "JavaScript": 3111,
+    "Go Template": 2839
+  },
+  "readmeExcerpt": "# Aegil\n\n> **English** | [Русский](README.ru.md)\n\nAn autonomous Site Reliability Engineering (SRE) and DevOps agent for Kubernetes with\ndeterministic log analysis. The product connects to any cluster and to logging and monitoring\nsystems, observes state on its own, diagnoses problems from facts and remediates infrastructure\nissues, while the operator talks to it through an ordinary natural-language chat. The language\nmodel acts through real tools (cluster commands and node commands), but operates within\ndeterministic bounds: a command-danger classifier, guards against looping, confirmation for\nirreversible actions, and a full audit trail.\n\nThe product was carved out as a standalone offering from an audio-processing platform where it\ngrew (decisions ADR-0032 logging and RCA, ADR-0033 the panel, ADR-0037/0038 the autonomous agent,\nADR-0041 the command executor and node-agent, see docs/adr). The extraction boundary is described\nin docs/BOUNDARY.md.\n\n## What it does\n\nIt observes the cluster (pods, nodes, events), the nodes (disks, processor, memory, processes via\nthe privileged node-agent), the logs (Loki) and the traces (Tempo, optional). The deterministic\nRoot Cause Analysis (RCA) pipeline normalizes logs, aggregates facts in a single pass, runs a\ncatalog of detectors, computes confidence and assembles a verdict with an evidence registry in\nwhich every assertion rests on a verbatim quote from a log line. A lightweight trained SetFit\nclassifier routes requests and is further trained on the hard cases escalated to the large model\n(active learning). Incidents are stored permanently with an explicit lifecycle. The chat agent\nunderstands an arbitrary request, inspects and repairs on its own, and explains every step.\n\n## Components\n\nThe product is four images plus an optional observability stack.\n\n`services/node-agent` is a privileged DaemonSet that executes commands on node hosts through\nnsenter strictly as an argument list without a shell, is closed off by a token, and is not\npublished externally. It gives the agent root on the nodes for disk cleanup, process inspection\nand memory inspection.\n\n`services/agent-panel` is a FastAPI panel: the chat interface, the agentic tool-use loop\n(agent_exec), the deterministic policy classifier (policy), the anti-looping guards (guards), the\nincident center (incidents), the cluster client (k8s), the status summaries (status), and the\nalert catalog and autopilot (alerts, autopilot). Clients of external systems are separated into\nllm.py and rca_client.py, and the application actions of the target application into the optional\napp_adapter.py.\n\n`services/rca` is the deterministic log-analysis service: normalization, aggregator, detectors,\nscoring, verdict, and the routing cascade with active learning.\n\n`services/rca-trainer` is a CronJob that further trains the SetFit classifier on accumulated\nexamples and uploads the model to object storage.\n\nThe observability stack (Loki, Alloy, Tempo, OpenTelemetry Collector, Grafana) in deploy/k8s is\noptional: if you already have Loki and Grafana, connect the product to them rather than deploying\nyour own.\n\n## What it connects to\n\nKubernetes (in-cluster service account or kubeconfig), a Loki log store (query_range), a language\nmodel over a compatible protocol (vLLM, Ollama or another proxy that returns text on\nPOST /completion), optionally Tempo and OpenTelemetry for traces, and object storage for the\ntrained model. Everything is set through environment variables, see .env.example.\n\n## Autonomy model and safety\n\nBy default the agent runs in a dry run: it observes and escalates but does not act until\nAGENT_AUTONOMOUS is enabled. In autonomous mode, reads and safe repairs (restarting services from\nthe allowlist, cleaning up a node, returning tasks to the queue) run immediately, while finance\nand destructive actions (deleting data, dropping tables, tearing down volumes) always require\noperator confirmation. The class of every command is decided by the deterministic classifier in\npolicy.py outside the model, so the model cannot bypass confirmation, and an unknown mutating\ncommand is treated as dangerous. Guards limit the rate of actions, impose cooldowns, trip a\ncircuit breaker after a streak of failures, and an oscillation detector blocks cross pairs. Every\nexecution is written to the audit trail. There is a manual mode in which the agent gathers facts\nand proposes options, and the operator picks one or supplies their own command.\n\n## Deployment\n\nBuild and publish the images (set REGISTRY):\n\n```bash\nREGISTRY=registry.example.com:5000 deploy/build.sh\n```\n\nIn deploy/k8s/*.yaml replace the REGISTRY_PLACEHOLDER placeholder with your registry, and check\nthe namespace, the storage class and the node-role label against your cluster (the manifests were\ncarried over from the original platform and need review). Create the panel and node-agent secrets:\n\n```bash\nkubectl -n aegil create secret generic panel-secrets \\\n  --from-literal=PANEL_OPERATORS=\"admin:$(openssl rand -hex 24)\"\nTOK=$(openssl rand -hex 24)\nkubectl -n aegil create secret generic nodeagent-secrets --from-literal=NODEAGENT_TOKEN=\"$TOK\"\nkubectl -n aegil patch secret panel-secrets --type merge \\\n  -p \"{\\\"stringData\\\":{\\\"NODEAGENT_TOKEN\\\":\\\"$TOK\\\"}}\"\nkubectl apply -f deploy/k8s/\n```\n\nThe panel is not exposed externally. Access it through a tunnel:\n\n```bash\nkubectl -n aegil port-forward svc/agent-panel 9109:9109\n```\n\nand open http://127.0.0.1:9109 in a browser, logging in with an operator token.\n\n## Tests\n\nAll components are covered by tests that need no network and no external dependencies:\n\n```bash\ncd services/agent-panel && for t in test_*.py; do python3 \"$t\"; done\ncd ../rca && for t in test_*.py; do python3 \"$t\"; done\ncd ../node-agent && python3 test_node_agent.py\ncd ../rca-trainer && for t in test_*.py; do python3 \"$t\"; done\n```\n\n## Status\n\nVersion 0.1.0, extraction from the original platform. The core (observation, RCA, agent,\nnode-agent) works and is covered by tests. Still to be finished for a clean product: full\nparameterization of detectors and alert thresholds, review of the carried-over manifests against a\nspecific cluster, a Helm chart, and documentation of the application-adapter contract.\n",
+  "contributors": [
+    {
+      "login": "birkinmax",
+      "url": "https://github.com/birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4",
+      "contributions": 15
+    }
+  ],
+  "releases": [],
+  "commitCount": 15,
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Aegil</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>English</strong> | <a href=\"https://github.com/pro-deploy/aegil/blob/main/README.ru.md\">Русский</a></p>\n</blockquote>\n<p dir=\"auto\">An autonomous Site Reliability Engineering (SRE) and DevOps agent for Kubernetes with\ndeterministic log analysis. The product connects to any cluster and to logging and monitoring\nsystems, observes state on its own, diagnoses problems from facts and remediates infrastructure\nissues, while the operator talks to it through an ordinary natural-language chat. The language\nmodel acts through real tools (cluster commands and node commands), but operates within\ndeterministic bounds: a command-danger classifier, guards against looping, confirmation for\nirreversible actions, and a full audit trail.</p>\n<p dir=\"auto\">The product was carved out as a standalone offering from an audio-processing platform where it\ngrew (decisions ADR-0032 logging and RCA, ADR-0033 the panel, ADR-0037/0038 the autonomous agent,\nADR-0041 the command executor and node-agent, see docs/adr). The extraction boundary is described\nin docs/BOUNDARY.md.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What it does</h2></div>\n<p dir=\"auto\">It observes the cluster (pods, nodes, events), the nodes (disks, processor, memory, processes via\nthe privileged node-agent), the logs (Loki) and the traces (Tempo, optional). The deterministic\nRoot Cause Analysis (RCA) pipeline normalizes logs, aggregates facts in a single pass, runs a\ncatalog of detectors, computes confidence and assembles a verdict with an evidence registry in\nwhich every assertion rests on a verbatim quote from a log line. A lightweight trained SetFit\nclassifier routes requests and is further trained on the hard cases escalated to the large model\n(active learning). Incidents are stored permanently with an explicit lifecycle. The chat agent\nunderstands an arbitrary request, inspects and repairs on its own, and explains every step.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Components</h2></div>\n<p dir=\"auto\">The product is four images plus an optional observability stack.</p>\n<p dir=\"auto\"><code>services/node-agent</code> is a privileged DaemonSet that executes commands on node hosts through\nnsenter strictly as an argument list without a shell, is closed off by a token, and is not\npublished externally. It gives the agent root on the nodes for disk cleanup, process inspection\nand memory inspection.</p>\n<p dir=\"auto\"><code>services/agent-panel</code> is a FastAPI panel: the chat interface, the agentic tool-use loop\n(agent_exec), the deterministic policy classifier (policy), the anti-looping guards (guards), the\nincident center (incidents), the cluster client (k8s), the status summaries (status), and the\nalert catalog and autopilot (alerts, autopilot). Clients of external systems are separated into\nllm.py and rca_client.py, and the application actions of the target application into the optional\napp_adapter.py.</p>\n<p dir=\"auto\"><code>services/rca</code> is the deterministic log-analysis service: normalization, aggregator, detectors,\nscoring, verdict, and the routing cascade with active learning.</p>\n<p dir=\"auto\"><code>services/rca-trainer</code> is a CronJob that further trains the SetFit classifier on accumulated\nexamples and uploads the model to object storage.</p>\n<p dir=\"auto\">The observability stack (Loki, Alloy, Tempo, OpenTelemetry Collector, Grafana) in deploy/k8s is\noptional: if you already have Loki and Grafana, connect the product to them rather than deploying\nyour own.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What it connects to</h2></div>\n<p dir=\"auto\">Kubernetes (in-cluster service account or kubeconfig), a Loki log store (query_range), a language\nmodel over a compatible protocol (vLLM, Ollama or another proxy that returns text on\nPOST /completion), optionally Tempo and OpenTelemetry for traces, and object storage for the\ntrained model. Everything is set through environment variables, see .env.example.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Autonomy model and safety</h2></div>\n<p dir=\"auto\">By default the agent runs in a dry run: it observes and escalates but does not act until\nAGENT_AUTONOMOUS is enabled. In autonomous mode, reads and safe repairs (restarting services from\nthe allowlist, cleaning up a node, returning tasks to the queue) run immediately, while finance\nand destructive actions (deleting data, dropping tables, tearing down volumes) always require\noperator confirmation. The class of every command is decided by the deterministic classifier in\npolicy.py outside the model, so the model cannot bypass confirmation, and an unknown mutating\ncommand is treated as dangerous. Guards limit the rate of actions, impose cooldowns, trip a\ncircuit breaker after a streak of failures, and an oscillation detector blocks cross pairs. Every\nexecution is written to the audit trail. There is a manual mode in which the agent gathers facts\nand proposes options, and the operator picks one or supplies their own command.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Deployment</h2></div>\n<p dir=\"auto\">Build and publish the images (set REGISTRY):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"REGISTRY=registry.example.com:5000 deploy/build.sh\"><pre>REGISTRY=registry.example.com:5000 deploy/build.sh</pre></div>\n<p dir=\"auto\">In deploy/k8s/*.yaml replace the REGISTRY_PLACEHOLDER placeholder with your registry, and check\nthe namespace, the storage class and the node-role label against your cluster (the manifests were\ncarried over from the original platform and need review). Create the panel and node-agent secrets:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"kubectl -n aegil create secret generic panel-secrets \\\n  --from-literal=PANEL_OPERATORS=&quot;admin:$(openssl rand -hex 24)&quot;\nTOK=$(openssl rand -hex 24)\nkubectl -n aegil create secret generic nodeagent-secrets --from-literal=NODEAGENT_TOKEN=&quot;$TOK&quot;\nkubectl -n aegil patch secret panel-secrets --type merge \\\n  -p &quot;{\\&quot;stringData\\&quot;:{\\&quot;NODEAGENT_TOKEN\\&quot;:\\&quot;$TOK\\&quot;}}&quot;\nkubectl apply -f deploy/k8s/\"><pre>kubectl -n aegil create secret generic panel-secrets \\\n  --from-literal=PANEL_OPERATORS=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>admin:<span class=\"pl-s\"><span class=\"pl-pds\">$(</span>openssl rand -hex 24<span class=\"pl-pds\">)</span></span><span class=\"pl-pds\">\"</span></span>\nTOK=<span class=\"pl-s\"><span class=\"pl-pds\">$(</span>openssl rand -hex 24<span class=\"pl-pds\">)</span></span>\nkubectl -n aegil create secret generic nodeagent-secrets --from-literal=NODEAGENT_TOKEN=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$TOK</span><span class=\"pl-pds\">\"</span></span>\nkubectl -n aegil patch secret panel-secrets --type merge \\\n  -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>{<span class=\"pl-cce\">\\\"</span>stringData<span class=\"pl-cce\">\\\"</span>:{<span class=\"pl-cce\">\\\"</span>NODEAGENT_TOKEN<span class=\"pl-cce\">\\\"</span>:<span class=\"pl-cce\">\\\"</span><span class=\"pl-smi\">$TOK</span><span class=\"pl-cce\">\\\"</span>}}<span class=\"pl-pds\">\"</span></span>\nkubectl apply -f deploy/k8s/</pre></div>\n<p dir=\"auto\">The panel is not exposed externally. Access it through a tunnel:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"kubectl -n aegil port-forward svc/agent-panel 9109:9109\"><pre>kubectl -n aegil port-forward svc/agent-panel 9109:9109</pre></div>\n<p dir=\"auto\">and open <a href=\"http://127.0.0.1:9109\" rel=\"nofollow\">http://127.0.0.1:9109</a> in a browser, logging in with an operator token.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Tests</h2></div>\n<p dir=\"auto\">All components are covered by tests that need no network and no external dependencies:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd services/agent-panel &amp;&amp; for t in test_*.py; do python3 &quot;$t&quot;; done\ncd ../rca &amp;&amp; for t in test_*.py; do python3 &quot;$t&quot;; done\ncd ../node-agent &amp;&amp; python3 test_node_agent.py\ncd ../rca-trainer &amp;&amp; for t in test_*.py; do python3 &quot;$t&quot;; done\"><pre><span class=\"pl-c1\">cd</span> services/agent-panel <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-k\">for</span> <span class=\"pl-smi\">t</span> <span class=\"pl-k\">in</span> test_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$t</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>\n<span class=\"pl-c1\">cd</span> ../rca <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-k\">for</span> <span class=\"pl-smi\">t</span> <span class=\"pl-k\">in</span> test_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$t</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>\n<span class=\"pl-c1\">cd</span> ../node-agent <span class=\"pl-k\">&amp;&amp;</span> python3 test_node_agent.py\n<span class=\"pl-c1\">cd</span> ../rca-trainer <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-k\">for</span> <span class=\"pl-smi\">t</span> <span class=\"pl-k\">in</span> test_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$t</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Status</h2></div>\n<p dir=\"auto\">Version 0.1.0, extraction from the original platform. The core (observation, RCA, agent,\nnode-agent) works and is covered by tests. Still to be finished for a clean product: full\nparameterization of detectors and alert thresholds, review of the carried-over manifests against a\nspecific cluster, a Helm chart, and documentation of the application-adapter contract.</p>\n</article></div>",
+  "recentIssues": [],
+  "contributorCount": 1,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "firstCommitAt": "2026-07-02T15:45:30Z",
+  "participation": {
+    "all": 15,
+    "owner": 0,
+    "community": 15
+  },
+  "recentPulls": [],
+  "recentCommits": [
+    {
+      "sha": "244a7a9",
+      "message": "docs: английский по умолчанию, русский как дополнение",
+      "url": "https://github.com/pro-deploy/aegil/commit/244a7a9f3ac4c99ed73e0403d1a9728cd99ae5e1",
+      "date": "2026-07-13T20:20:43Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "43d10af",
+      "message": "agent-panel: рендер Markdown в ответах модели вместо сырого текста",
+      "url": "https://github.com/pro-deploy/aegil/commit/43d10af0348d5696206227fc9831dbe57504ab92",
+      "date": "2026-07-13T01:08:37Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "b5ea213",
+      "message": "docs: пометить REVISION.md историческим документом выполненного аудита",
+      "url": "https://github.com/pro-deploy/aegil/commit/b5ea2132f25872375e5b6218088295733f30d2aa",
+      "date": "2026-07-13T00:22:55Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "bc8e909",
+      "message": "docs: актуализировать README сервисов agent-panel и rca под Aegil",
+      "url": "https://github.com/pro-deploy/aegil/commit/bc8e90954a7c519b606adfaae7efc1425ca60ac1",
+      "date": "2026-07-13T00:19:10Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "40e96d0",
+      "message": "agent-panel: иконки Lucide вместо эмодзи, двуязычный интерфейс EN/RU",
+      "url": "https://github.com/pro-deploy/aegil/commit/40e96d0e10251d649debfd64a8f7cf3c5ed4c90b",
+      "date": "2026-07-13T00:14:23Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "0622968",
+      "message": "Переименование продукта kube-sentinel в Aegil",
+      "url": "https://github.com/pro-deploy/aegil/commit/0622968fd9faf831e957b3741d8d7fee1df5654a",
+      "date": "2026-07-12T23:38:36Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "be6326a",
+      "message": "RCA: автоматически тянуть метрики из Prometheus, когда задан его адрес",
+      "url": "https://github.com/pro-deploy/aegil/commit/be6326af4d57d4d482ec1c4a0158e44524a20261",
+      "date": "2026-07-12T21:06:52Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "02cb174",
+      "message": "agent-panel: детерминированный автономный ремонт без вызова инструментов моделью",
+      "url": "https://github.com/pro-deploy/aegil/commit/02cb174f518c0e89c54dc52193fce0521ac293f9",
+      "date": "2026-07-12T20:54:14Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "e9a5eb9",
+      "message": "RCA: вердикт формулирует инфраструктурный инцидент по метрикам",
+      "url": "https://github.com/pro-deploy/aegil/commit/e9a5eb9ce83f1aea6bd38ace6c5fae3298c24d4d",
+      "date": "2026-07-12T20:54:14Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    },
+    {
+      "sha": "a1c70c3",
+      "message": "agent-panel: мобильное PWA-приложение вместо десктопной консоли",
+      "url": "https://github.com/pro-deploy/aegil/commit/a1c70c3764588530b4430778e0f49dd4d98c188f",
+      "date": "2026-07-12T20:39:26Z",
+      "author": "birkinmax",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6169130?v=4"
+    }
+  ],
+  "workflowRuns": [],
+  "fileTree": [
+    {
+      "name": ".ailc",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pro-deploy/aegil/tree/main/.ailc"
+    },
+    {
+      "name": "deploy",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pro-deploy/aegil/tree/main/deploy"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pro-deploy/aegil/tree/main/docs"
+    },
+    {
+      "name": "services",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pro-deploy/aegil/tree/main/services"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 9702,
+      "url": "https://github.com/pro-deploy/aegil/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 576,
+      "url": "https://github.com/pro-deploy/aegil/blob/main/.gitignore"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 961,
+      "url": "https://github.com/pro-deploy/aegil/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 6237,
+      "url": "https://github.com/pro-deploy/aegil/blob/main/README.md"
+    },
+    {
+      "name": "README.ru.md",
+      "type": "file",
+      "size": 9126,
+      "url": "https://github.com/pro-deploy/aegil/blob/main/README.ru.md"
+    }
+  ],
+  "community": {
+    "healthPercentage": 14,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "branchCount": 1,
+  "tagCount": 1,
+  "fundingLinks": [],
+  "openIssuesOnly": 0,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 0,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 1
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 14
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 1
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 7
+    },
+    {
+      "date": "2026-07-13",
+      "count": 7
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T17:10:24.562Z"
 }
