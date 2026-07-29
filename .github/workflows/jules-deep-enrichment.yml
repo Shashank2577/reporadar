@@ -1,0 +1,59 @@
+name: Jules deep enrichment
+
+# Calls the Jules API (jules.google/docs/api/reference) every 2 hours to kick
+# off one deep repo-enrichment session, per task 2 in AGENTS.md. Jules reads
+# AGENTS.md itself once connected as a source -- this workflow only has to
+# start the session and point it at the right task; the actual instructions
+# live in one place (AGENTS.md), not duplicated here.
+#
+# Requires a one-time manual step only the account owner can do: connect this
+# repository as a source in the Jules web app (jules.google.com) before this
+# workflow's API calls will succeed. Until then, runs will fail with a clear
+# "source not found" style error in the Actions log -- that failure is the
+# signal that step still needs doing.
+#
+# Jules opens its own PR (automationMode: AUTO_CREATE_PR); the existing
+# auto-merge-jules.yml workflow already merges content/data-only PRs after
+# CI passes, so no further action is needed once a session completes.
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start a Jules deep-enrichment session
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: |
+          if [ -z "$JULES_API_KEY" ]; then
+            echo "::error::JULES_API_KEY secret is not set"
+            exit 1
+          fi
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://jules.googleapis.com/v1alpha/sessions" \
+            -H "Content-Type: application/json" \
+            -H "x-goog-api-key: $JULES_API_KEY" \
+            -d '{
+              "prompt": "Do the deep repo enrichment pass described in task 2 of AGENTS.md.",
+              "sourceContext": {
+                "source": "sources/github/Shashank2577/reporadar",
+                "githubRepoContext": { "startingBranch": "main" }
+              },
+              "automationMode": "AUTO_CREATE_PR",
+              "title": "Deep repo enrichment"
+            }')
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "$body"
+          if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+            echo "Session created successfully (HTTP $status)"
+          else
+            echo "::error::Jules API returned HTTP $status -- if this says the source was not found, connect this repo as a source at jules.google.com first."
+            exit 1
+          fi
