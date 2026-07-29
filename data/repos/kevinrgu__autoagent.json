@@ -1,6 +1,12 @@
 {
   "id": "kevinrgu/autoagent",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 4556,
+      "forks": 502
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-04-04",
@@ -75,5 +81,2807 @@
     "sampledAt": "2026-07-28T09:22:08.780Z"
   },
   "owner": "kevinrgu",
-  "name": "autoagent"
+  "name": "autoagent",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/91836685?v=4",
+  "ownerType": "User",
+  "description": "autonomous harness engineering",
+  "url": "https://github.com/kevinrgu/autoagent",
+  "homepage": null,
+  "license": null,
+  "language": "Python",
+  "topics": [],
+  "stars": 4556,
+  "forks": 502,
+  "watchers": 29,
+  "openIssues": 8,
+  "createdAt": "2026-04-02T20:44:58Z",
+  "pushedAt": "2026-04-03T21:11:51Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T11:20:07.727Z",
+  "languages": {
+    "Python": 18300
+  },
+  "contributors": [
+    {
+      "login": "kevinrgu",
+      "url": "https://github.com/kevinrgu",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/91836685?v=4",
+      "contributions": 2
+    }
+  ],
+  "commitCount": 2,
+  "readmeExcerpt": "<p align=\"center\">\n  <a href=\"https://www.thirdlayer.inc\">\n    <img src=\"https://www.thirdlayer.inc/thirdlayer-logo.svg\" alt=\"thirdlayer\" width=\"200\">\n  </a>\n</p>\n\n<blockquote>\n<p>We're launching a product around self-configuring agents soon. <a href=\"https://form.typeform.com/to/ZQbnbO09\">Sign up here.</a><br>We're hiring engineers. If this work interests you, reach out to <a href=\"mailto:hello@thirdlayer.inc\">hello@thirdlayer.inc</a> with your Github link.</p>\n</blockquote>\n\n# AutoAgent\n\n> Like autoresearch but for agent engineering. Give an AI agent a task, let it build and iterate on an agent harness autonomously overnight. It modifies the system prompt, tools, agent configuration, and orchestration, runs the benchmark, checks the score, keeps or discards the change, and repeats.\n\n\n\nThe core idea is the same: you're not touching the harness Python files like you normally would as an engineer. Instead, you program `program.md`, the Markdown file that provides context to the meta-agent and defines the agent-engineering loop.\n\n## How it works\n\nThe repo has a few files and directories that matter:\n\n- **`agent.py`** -- the entire harness under test in a single file. It contains\n  config, tool definitions, agent registry, routing/orchestration, and the\n  Harbor adapter boundary. The adapter section is explicitly marked as fixed;\n  the rest is the primary edit surface for the meta-agent.\n- **`program.md`** -- instructions for the meta-agent + the directive (what\n  kind of agent to build). **This file is edited by the human**.\n- **`tasks/`** -- evaluation tasks in\n  [harbor](https://github.com/laude-institute/harbor) format. In a clean\n  baseline branch, benchmark payloads may be omitted and added in\n  benchmark-specific branches.\n- **`.agent/`** -- optional workspace artifacts for reusable instructions,\n  notes, prompts, or skills.\n\nThe metric is total **score** produced by the benchmark's task test suites. The\nmeta-agent hill-climbs on this score.\n\n## Quick start\n\n**Requirements:** Docker, Python 3.10+, [uv](https://docs.astral.sh/uv/), and\nwhatever model-provider credentials your current `agent.py` harness requires.\n\n```bash\n# 1. Install uv (if you don't have it)\ncurl -LsSf https://astral.sh/uv/install.sh | sh\n\n# 2. Install dependencies\nuv sync\n\n# 3. Set up the environment variables required by your current agent/runtime\n# Example:\ncat > .env << 'EOF'\nOPENAI_API_KEY=...\nEOF\n\n# 4. Build base image\ndocker build -f Dockerfile.base -t autoagent-base .\n\n# 5. Add tasks to tasks/ (see Task format section below)\n\n# 6. Run a single benchmark task\nrm -rf jobs; mkdir -p jobs && uv run harbor run -p tasks/ --task-name \"<task-name>\" -l 1 -n 1 --agent-import-path agent:AutoAgent -o jobs --job-name latest > run.log 2>&1\n\n# 7. Run all tasks in parallel (-n = concurrency, default 4)\nrm -rf jobs; mkdir -p jobs && uv run harbor run -p tasks/ -n 100 --agent-import-path agent:AutoAgent -o jobs --job-name latest > run.log 2>&1\n```\n\n## Running the meta-agent\n\nPoint your coding agent at the repo and prompt:\n\n```\nRead program.md and let's kick off a new experiment!\n```\n\nThe meta-agent will read the directive, inspect the current harness, run the\nbenchmark, diagnose failures, modify `agent.py`, and iterate.\n\n## Project structure\n\n```text\nagent.py                       -- single-file harness under test\n  editable harness section     -- prompt, registries, tools, routing\n  fixed adapter section        -- Harbor integration + trajectory serialization\nprogram.md                     -- meta-agent instructions + directive\nDockerfile.base                -- base image\n.agent/                        -- optional agent workspace artifacts\ntasks/                         -- benchmark tasks, typically added in benchmark-specific branches\njobs/                          -- Harbor job outputs\nresults.tsv                    -- experiment log (created by meta-agent, gitignored)\nrun.log                        -- latest run output\n```\n\n## Task format\n\nThe repo ships without tasks. Add your own to `tasks/` following [Harbor's task format](https://harborframework.com/docs/tasks):\n\n```text\ntasks/my-task/\n  task.toml           -- config (timeouts, metadata)\n  instruction.md      -- prompt sent to the agent\n  tests/\n    test.sh           -- entry point, writes /logs/reward.txt\n    test.py           -- verification (deterministic or LLM-as-judge)\n  environment/\n    Dockerfile        -- task container (FROM autoagent-base)\n  files/              -- reference files mounted into container\n```\n\nTests write a score (0.0-1.0) to the verifier logs. The meta-agent hill-climbs\non this. See the [Harbor docs](https://harborframework.com/docs) for full details on writing and porting tasks.\n\n## Design choices\n\n- **Program the meta-agent, not the harness directly.** The human steers the\n  loop through `program.md`, while the meta-agent edits `agent.py`.\n- **Single-file, registry-driven harness.** The implementation lives in one\n  file for simplicity, but agent and tool registration stay structured so the\n  harness can still evolve cleanly.\n- **Docker isolation.** The agent runs in a container. It can't damage the host.\n- **Score-driven.** Every experiment produces a numeric score. Keep if better,\n  discard if not. Same loop as autoresearch.\n- **Harbor-compatible tasks.** Tasks use the same format as harbor benchmarks,\n  so the same harness can be evaluated on different datasets.\n\n## Cleanup\n\nDocker images and containers accumulate across runs. Clean up regularly:\n\n```bash\n# Harbor's cached task images + task cache\nuv run harbor cache clean -f\n\n# Full Docker nuke (all unused images, build cache, etc.)\ndocker system prune -a -f\n\n# Lighter: just dead containers\ndocker container prune -f\n```\n\nIf Docker becomes unresponsive (for example after many concurrent runs), restart\nDocker Desktop:\n\n```bash\nkillall Docker && open -a Docker\n```\n\n## Improving performance with skills\n\nYou can equip the agent with [Agent Skills for Context Engineering](https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering) and [context7](https://github.com/upstash/context7) skills to improve performance.\n\n## License\n\nMIT\n\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a href=\"https://www.thirdlayer.inc\" rel=\"nofollow\">\n    <img src=\"https://camo.githubusercontent.com/3967630a4d1fa9677faf114c6227442544677d0dfa77de2584461b4f8571284a/68747470733a2f2f7777772e74686972646c617965722e696e632f74686972646c617965722d6c6f676f2e737667\" alt=\"thirdlayer\" width=\"200\" data-canonical-src=\"https://www.thirdlayer.inc/thirdlayer-logo.svg\" style=\"max-width: 100%;\">\n  </a>\n</p>\n<blockquote>\n<p dir=\"auto\">We're launching a product around self-configuring agents soon. <a href=\"https://form.typeform.com/to/ZQbnbO09\" rel=\"nofollow\">Sign up here.</a><br>We're hiring engineers. If this work interests you, reach out to <a href=\"mailto:hello@thirdlayer.inc\">hello@thirdlayer.inc</a> with your Github link.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">AutoAgent</h1></div>\n<blockquote>\n<p dir=\"auto\">Like autoresearch but for agent engineering. Give an AI agent a task, let it build and iterate on an agent harness autonomously overnight. It modifies the system prompt, tools, agent configuration, and orchestration, runs the benchmark, checks the score, keeps or discards the change, and repeats.</p>\n</blockquote>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/kevinrgu/autoagent/blob/main/progress.png\"><img src=\"https://raw.githubusercontent.com/kevinrgu/autoagent/main/progress.png\" alt=\"teaser\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">The core idea is the same: you're not touching the harness Python files like you normally would as an engineer. Instead, you program <code>program.md</code>, the Markdown file that provides context to the meta-agent and defines the agent-engineering loop.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">The repo has a few files and directories that matter:</p>\n<ul dir=\"auto\">\n<li><strong><code>agent.py</code></strong> -- the entire harness under test in a single file. It contains\nconfig, tool definitions, agent registry, routing/orchestration, and the\nHarbor adapter boundary. The adapter section is explicitly marked as fixed;\nthe rest is the primary edit surface for the meta-agent.</li>\n<li><strong><code>program.md</code></strong> -- instructions for the meta-agent + the directive (what\nkind of agent to build). <strong>This file is edited by the human</strong>.</li>\n<li><strong><code>tasks/</code></strong> -- evaluation tasks in\n<a href=\"https://github.com/laude-institute/harbor\">harbor</a> format. In a clean\nbaseline branch, benchmark payloads may be omitted and added in\nbenchmark-specific branches.</li>\n<li><strong><code>.agent/</code></strong> -- optional workspace artifacts for reusable instructions,\nnotes, prompts, or skills.</li>\n</ul>\n<p dir=\"auto\">The metric is total <strong>score</strong> produced by the benchmark's task test suites. The\nmeta-agent hill-climbs on this score.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<p dir=\"auto\"><strong>Requirements:</strong> Docker, Python 3.10+, <a href=\"https://docs.astral.sh/uv/\" rel=\"nofollow\">uv</a>, and\nwhatever model-provider credentials your current <code>agent.py</code> harness requires.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Install uv (if you don't have it)\ncurl -LsSf https://astral.sh/uv/install.sh | sh\n\n# 2. Install dependencies\nuv sync\n\n# 3. Set up the environment variables required by your current agent/runtime\n# Example:\ncat &gt; .env &lt;&lt; 'EOF'\nOPENAI_API_KEY=...\nEOF\n\n# 4. Build base image\ndocker build -f Dockerfile.base -t autoagent-base .\n\n# 5. Add tasks to tasks/ (see Task format section below)\n\n# 6. Run a single benchmark task\nrm -rf jobs; mkdir -p jobs &amp;&amp; uv run harbor run -p tasks/ --task-name &quot;&lt;task-name&gt;&quot; -l 1 -n 1 --agent-import-path agent:AutoAgent -o jobs --job-name latest &gt; run.log 2&gt;&amp;1\n\n# 7. Run all tasks in parallel (-n = concurrency, default 4)\nrm -rf jobs; mkdir -p jobs &amp;&amp; uv run harbor run -p tasks/ -n 100 --agent-import-path agent:AutoAgent -o jobs --job-name latest &gt; run.log 2&gt;&amp;1\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Install uv (if you don't have it)</span>\ncurl -LsSf https://astral.sh/uv/install.sh <span class=\"pl-k\">|</span> sh\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Install dependencies</span>\nuv sync\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Set up the environment variables required by your current agent/runtime</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Example:</span>\ncat <span class=\"pl-k\">&gt;</span> .env <span class=\"pl-s\"><span class=\"pl-k\">&lt;&lt;</span> '<span class=\"pl-k\">EOF</span>'</span>\n<span class=\"pl-s\">OPENAI_API_KEY=...</span>\n<span class=\"pl-s\"><span class=\"pl-k\">EOF</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 4. Build base image</span>\ndocker build -f Dockerfile.base -t autoagent-base <span class=\"pl-c1\">.</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 5. Add tasks to tasks/ (see Task format section below)</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 6. Run a single benchmark task</span>\nrm -rf <span class=\"pl-c1\">jobs</span><span class=\"pl-k\">;</span> mkdir -p <span class=\"pl-c1\">jobs</span> <span class=\"pl-k\">&amp;&amp;</span> uv run harbor run -p tasks/ --task-name <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;task-name&gt;<span class=\"pl-pds\">\"</span></span> -l 1 -n 1 --agent-import-path agent:AutoAgent -o <span class=\"pl-c1\">jobs</span> --job-name latest <span class=\"pl-k\">&gt;</span> run.log <span class=\"pl-k\">2&gt;&amp;1</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 7. Run all tasks in parallel (-n = concurrency, default 4)</span>\nrm -rf <span class=\"pl-c1\">jobs</span><span class=\"pl-k\">;</span> mkdir -p <span class=\"pl-c1\">jobs</span> <span class=\"pl-k\">&amp;&amp;</span> uv run harbor run -p tasks/ -n 100 --agent-import-path agent:AutoAgent -o <span class=\"pl-c1\">jobs</span> --job-name latest <span class=\"pl-k\">&gt;</span> run.log <span class=\"pl-k\">2&gt;&amp;1</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running the meta-agent</h2></div>\n<p dir=\"auto\">Point your coding agent at the repo and prompt:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Read program.md and let's kick off a new experiment!\"><pre class=\"notranslate\"><code>Read program.md and let's kick off a new experiment!\n</code></pre></div>\n<p dir=\"auto\">The meta-agent will read the directive, inspect the current harness, run the\nbenchmark, diagnose failures, modify <code>agent.py</code>, and iterate.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Project structure</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"agent.py                       -- single-file harness under test\n  editable harness section     -- prompt, registries, tools, routing\n  fixed adapter section        -- Harbor integration + trajectory serialization\nprogram.md                     -- meta-agent instructions + directive\nDockerfile.base                -- base image\n.agent/                        -- optional agent workspace artifacts\ntasks/                         -- benchmark tasks, typically added in benchmark-specific branches\njobs/                          -- Harbor job outputs\nresults.tsv                    -- experiment log (created by meta-agent, gitignored)\nrun.log                        -- latest run output\"><pre lang=\"text\" class=\"notranslate\"><code>agent.py                       -- single-file harness under test\n  editable harness section     -- prompt, registries, tools, routing\n  fixed adapter section        -- Harbor integration + trajectory serialization\nprogram.md                     -- meta-agent instructions + directive\nDockerfile.base                -- base image\n.agent/                        -- optional agent workspace artifacts\ntasks/                         -- benchmark tasks, typically added in benchmark-specific branches\njobs/                          -- Harbor job outputs\nresults.tsv                    -- experiment log (created by meta-agent, gitignored)\nrun.log                        -- latest run output\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Task format</h2></div>\n<p dir=\"auto\">The repo ships without tasks. Add your own to <code>tasks/</code> following <a href=\"https://harborframework.com/docs/tasks\" rel=\"nofollow\">Harbor's task format</a>:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"tasks/my-task/\n  task.toml           -- config (timeouts, metadata)\n  instruction.md      -- prompt sent to the agent\n  tests/\n    test.sh           -- entry point, writes /logs/reward.txt\n    test.py           -- verification (deterministic or LLM-as-judge)\n  environment/\n    Dockerfile        -- task container (FROM autoagent-base)\n  files/              -- reference files mounted into container\"><pre lang=\"text\" class=\"notranslate\"><code>tasks/my-task/\n  task.toml           -- config (timeouts, metadata)\n  instruction.md      -- prompt sent to the agent\n  tests/\n    test.sh           -- entry point, writes /logs/reward.txt\n    test.py           -- verification (deterministic or LLM-as-judge)\n  environment/\n    Dockerfile        -- task container (FROM autoagent-base)\n  files/              -- reference files mounted into container\n</code></pre></div>\n<p dir=\"auto\">Tests write a score (0.0-1.0) to the verifier logs. The meta-agent hill-climbs\non this. See the <a href=\"https://harborframework.com/docs\" rel=\"nofollow\">Harbor docs</a> for full details on writing and porting tasks.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design choices</h2></div>\n<ul dir=\"auto\">\n<li><strong>Program the meta-agent, not the harness directly.</strong> The human steers the\nloop through <code>program.md</code>, while the meta-agent edits <code>agent.py</code>.</li>\n<li><strong>Single-file, registry-driven harness.</strong> The implementation lives in one\nfile for simplicity, but agent and tool registration stay structured so the\nharness can still evolve cleanly.</li>\n<li><strong>Docker isolation.</strong> The agent runs in a container. It can't damage the host.</li>\n<li><strong>Score-driven.</strong> Every experiment produces a numeric score. Keep if better,\ndiscard if not. Same loop as autoresearch.</li>\n<li><strong>Harbor-compatible tasks.</strong> Tasks use the same format as harbor benchmarks,\nso the same harness can be evaluated on different datasets.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Cleanup</h2></div>\n<p dir=\"auto\">Docker images and containers accumulate across runs. Clean up regularly:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Harbor's cached task images + task cache\nuv run harbor cache clean -f\n\n# Full Docker nuke (all unused images, build cache, etc.)\ndocker system prune -a -f\n\n# Lighter: just dead containers\ndocker container prune -f\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Harbor's cached task images + task cache</span>\nuv run harbor cache clean -f\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Full Docker nuke (all unused images, build cache, etc.)</span>\ndocker system prune -a -f\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Lighter: just dead containers</span>\ndocker container prune -f</pre></div>\n<p dir=\"auto\">If Docker becomes unresponsive (for example after many concurrent runs), restart\nDocker Desktop:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"killall Docker &amp;&amp; open -a Docker\"><pre>killall Docker <span class=\"pl-k\">&amp;&amp;</span> open -a Docker</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Improving performance with skills</h2></div>\n<p dir=\"auto\">You can equip the agent with <a href=\"https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering\">Agent Skills for Context Engineering</a> and <a href=\"https://github.com/upstash/context7\">context7</a> skills to improve performance.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT</p>\n</article></div>",
+  "releases": [],
+  "contributorCount": 1,
+  "firstCommitAt": "2026-04-02T21:04:18Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 13,
+      "title": "README says Python 3.10+, but pyproject.toml requires >=3.12 (uv sync fails)",
+      "url": "https://github.com/kevinrgu/autoagent/issues/13",
+      "createdAt": "2026-07-04T06:04:36Z",
+      "comments": 0,
+      "labels": [],
+      "author": "chirag127"
+    },
+    {
+      "number": 11,
+      "title": "Is this the baseline it the optimized harness?",
+      "url": "https://github.com/kevinrgu/autoagent/issues/11",
+      "createdAt": "2026-05-05T21:05:32Z",
+      "comments": 0,
+      "labels": [],
+      "author": "fire17"
+    },
+    {
+      "number": 8,
+      "title": "Comparison with off the shelf harnesses",
+      "url": "https://github.com/kevinrgu/autoagent/issues/8",
+      "createdAt": "2026-04-08T16:58:08Z",
+      "comments": 0,
+      "labels": [],
+      "author": "alexkreidler"
+    },
+    {
+      "number": 6,
+      "title": "Actual models tested?",
+      "url": "https://github.com/kevinrgu/autoagent/issues/6",
+      "createdAt": "2026-04-05T15:47:24Z",
+      "comments": 0,
+      "labels": [],
+      "author": "boxwrench"
+    }
+  ],
+  "participation": {
+    "all": 2,
+    "owner": 2,
+    "community": 0
+  },
+  "recentCommits": [
+    {
+      "sha": "eb3f185",
+      "message": "update README with branding, structure, and Harbor docs",
+      "url": "https://github.com/kevinrgu/autoagent/commit/eb3f185dc9faac276955b4fe5feb93c8f836b644",
+      "date": "2026-04-03T21:11:50Z",
+      "author": "kevinrgu",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/91836685?v=4"
+    },
+    {
+      "sha": "5412ee9",
+      "message": "initial commit",
+      "url": "https://github.com/kevinrgu/autoagent/commit/5412ee960fdecebccd7356dbbaefad5f52264da7",
+      "date": "2026-04-02T21:04:18Z",
+      "author": "kevinrgu",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/91836685?v=4"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Copilot code review",
+      "status": "failure",
+      "url": "https://github.com/kevinrgu/autoagent/actions/runs/25285860226",
+      "branch": "refs/pull/10/head",
+      "updatedAt": "2026-05-03T17:30:10Z"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "size": 100,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/.dockerignore"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 241,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/.gitignore"
+    },
+    {
+      "name": ".python-version",
+      "type": "file",
+      "size": 5,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/.python-version"
+    },
+    {
+      "name": "agent-claude.py",
+      "type": "file",
+      "size": 9746,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/agent-claude.py"
+    },
+    {
+      "name": "agent.py",
+      "type": "file",
+      "size": 8554,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/agent.py"
+    },
+    {
+      "name": "Dockerfile.base",
+      "type": "file",
+      "size": 441,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/Dockerfile.base"
+    },
+    {
+      "name": "program.md",
+      "type": "file",
+      "size": 6993,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/program.md"
+    },
+    {
+      "name": "progress.png",
+      "type": "file",
+      "size": 1295364,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/progress.png"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 216,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 6175,
+      "url": "https://github.com/kevinrgu/autoagent/blob/main/README.md"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "openai-agents",
+        "version": null
+      },
+      {
+        "name": "pandas",
+        "version": null
+      },
+      {
+        "name": "openpyxl",
+        "version": null
+      },
+      {
+        "name": "numpy",
+        "version": null
+      },
+      {
+        "name": "harbor",
+        "version": null
+      }
+    ],
+    "total": 5
+  },
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 28,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "recentPulls": [
+    {
+      "number": 7,
+      "title": "feat: add MiniMax provider support",
+      "url": "https://github.com/kevinrgu/autoagent/pull/7",
+      "state": "closed",
+      "updatedAt": "2026-05-22T07:00:59Z",
+      "author": "octo-patch",
+      "draft": false
+    },
+    {
+      "number": 12,
+      "title": "fills_writer: recover client_order_id via posted_orders on Kalshi field drift",
+      "url": "https://github.com/kevinrgu/autoagent/pull/12",
+      "state": "closed",
+      "updatedAt": "2026-05-12T22:53:48Z",
+      "author": "ijlu",
+      "draft": false
+    },
+    {
+      "number": 10,
+      "title": "Add multi-LLM support and update dependencies in README and agent.py",
+      "url": "https://github.com/kevinrgu/autoagent/pull/10",
+      "state": "open",
+      "updatedAt": "2026-05-03T17:30:29Z",
+      "author": "Oncorporation",
+      "draft": false
+    },
+    {
+      "number": 9,
+      "title": "feat(suggest-only): overnight runs log to decisions.md, do not write to targets",
+      "url": "https://github.com/kevinrgu/autoagent/pull/9",
+      "state": "closed",
+      "updatedAt": "2026-04-24T22:05:40Z",
+      "author": "jhpritch-dev",
+      "draft": false
+    },
+    {
+      "number": 5,
+      "title": "feat: Relay Network plugin — on-chain identity, reputation & earnings for AutoAgent agents",
+      "url": "https://github.com/kevinrgu/autoagent/pull/5",
+      "state": "open",
+      "updatedAt": "2026-04-15T04:49:36Z",
+      "author": "CryptoSkeet",
+      "draft": false
+    },
+    {
+      "number": 4,
+      "title": "Add Codex OAuth auth and Codex CLI backend",
+      "url": "https://github.com/kevinrgu/autoagent/pull/4",
+      "state": "closed",
+      "updatedAt": "2026-04-04T05:56:35Z",
+      "author": "kimjohn12333",
+      "draft": false
+    },
+    {
+      "number": 3,
+      "title": "feat: safety boundary, experiment logging, and evaluation funnel (Phase 1)",
+      "url": "https://github.com/kevinrgu/autoagent/pull/3",
+      "state": "open",
+      "updatedAt": "2026-04-04T02:14:35Z",
+      "author": "physics91",
+      "draft": false
+    },
+    {
+      "number": 1,
+      "title": "feat: add Claude Code CLI adapter",
+      "url": "https://github.com/kevinrgu/autoagent/pull/1",
+      "state": "open",
+      "updatedAt": "2026-04-03T21:11:52Z",
+      "author": "hculap",
+      "draft": false
+    }
+  ],
+  "fundingLinks": [],
+  "openIssuesOnly": 4,
+  "openPRs": 4,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 1,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 2
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 1
+    },
+    {
+      "date": "2026-04-03",
+      "count": 1
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T11:20:18.947Z"
 }
