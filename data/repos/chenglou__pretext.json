@@ -1,6 +1,12 @@
 {
   "id": "chenglou/pretext",
-  "snapshots": [],
+  "snapshots": [
+    {
+      "date": "2026-07-29",
+      "stars": 49481,
+      "forks": 2725
+    }
+  ],
   "trendingHistory": [
     {
       "date": "2026-03-28",
@@ -139,5 +145,3126 @@
     "sampledAt": "2026-07-28T09:22:07.986Z"
   },
   "owner": "chenglou",
-  "name": "pretext"
+  "name": "pretext",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4",
+  "ownerType": "User",
+  "description": "Fast, accurate & comprehensive text measurement & layout",
+  "url": "https://github.com/chenglou/pretext",
+  "homepage": "http://chenglou.me/pretext/",
+  "license": "MIT",
+  "language": "TypeScript",
+  "topics": [],
+  "stars": 49481,
+  "forks": 2725,
+  "watchers": 148,
+  "openIssues": 90,
+  "createdAt": "2026-03-07T21:06:28Z",
+  "pushedAt": "2026-06-23T05:01:09Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-29T02:04:16.662Z",
+  "languages": {
+    "TypeScript": 730514,
+    "HTML": 70630
+  },
+  "commitCount": 410,
+  "readmeExcerpt": "# Pretext\n\nPure JavaScript/TypeScript library for multiline text measurement & layout. Fast, accurate & supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.\n\nPretext side-steps the need for DOM measurements (e.g. `getBoundingClientRect`, `offsetHeight`), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).\n\n## Installation\n\n```sh\nnpm install @chenglou/pretext\n```\n\n## Demos\n\nClone the repo, run `bun install`, then `bun start`, and open `/demos/index` in your browser. On Windows, use `bun run start:windows`.\nAlternatively, see them live at [chenglou.me/pretext](https://chenglou.me/pretext/). Some more at [somnai-dreams.github.io/pretext-demos](https://somnai-dreams.github.io/pretext-demos/)\n\n## API\n\nPretext serves 2 use cases:\n\n### 1. Measure a paragraph's height _without ever touching DOM_\n\n```ts\nimport { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout & reflow!\n```\n\n`prepare()` does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. `layout()` is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun `prepare()` for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun `layout()`.\n\nIf you want textarea-like text where ordinary spaces, `\\t` tabs, and `\\n` hard breaks stay visible, pass `{ whiteSpace: 'pre-wrap' }` to `prepare()`:\n\n```ts\nconst prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\n```\n\nOther `prepare()` options are `{ wordBreak: 'keep-all' }` for CSS-like `word-break: keep-all`, and `{ letterSpacing: n }` to match CSS `letter-spacing` (`n` is treated as a px value).\n\nThe returned height is the crucial last piece for unlocking web UIs:\n- proper virtualization/occlusion without guesstimates & caching\n- fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.\n- _development time_ verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free\n- prevent layout shift when new text loads and you wanna re-anchor the scroll position\n\n### 2. Lay out the paragraph lines manually yourself\n\nSwitch out `prepare` with `prepareWithSegments`, then:\n\n- `layoutWithLines()` gives you all the lines at a fixed width:\n\n```ts\nimport { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px \"Helvetica Neue\"')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i < lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\n```\n\n- `measureLineStats()` and `walkLineRanges()` give you line counts, widths and cursors without building the text strings:\n\n```ts\nimport { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line => { if (line.width > maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web\n```\n\n- `layoutNextLineRange()` lets you route text one row at a time when width changes as you go. If you want the actual string too, `materializeLineRange()` turns that one range back into a full line:\n\n```ts\nimport { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y < image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\n```\n\nThis usage allows rendering to canvas, SVG, WebGL and (eventually) server-side. See the `/demos/dynamic-layout` demo for a richer example.\n\nFor hyphenation in manual layout, insert soft hyphens before `prepare()` / `prepareWithSegments()`. Pretext treats them as optional break points: unchosen soft hyphens stay invisible, while chosen breaks materialize as a trailing `-`. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation. Automatic hyphenation is not built in today.\n\nIf your manual layout needs a small helper for rich-text inline flow, code spans, mentions, chips, and browser-like boundary whitespace collapse, there is a helper at `@chenglou/pretext/rich-inline`. It stays inline-only and `white-space: normal`-only on purpose:\n\n```ts\nimport { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: \"'s rich-note\", font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range => {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\n```\n\nIt is intentionally narrow:\n- raw inline text in, including boundary spaces\n- caller-owned `extraWidth` for pill chrome\n- `break: 'never'` for atomic items like chips and mentions\n- `white-space: normal` only\n- not a nested markup tree and not a general CSS inline formatting engine\n\n### API Glossary\n\nUse-case 1 APIs:\n```ts\nprepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\n```\n\nUse-case 2 APIs:\n```ts\nprepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) => void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // returns the widest forced line when width itself is not the thing causing wraps\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\n```\n\nHelper for rich-text inline flow:\n```ts\nprepareRichInline(items: RichInlineItem[]): PreparedRichInline // compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) => void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw author text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic, like a chip\n  extraWidth?: number // caller-owned horizontal chrome, e.g. padding + border width\n}\ntype RichInlineCursor = {\n  itemIndex: number // Which source RichInlineItem this cursor is currently in\n  segmentIndex: number // Segment index within",
+  "contributors": [
+    {
+      "login": "chenglou",
+      "url": "https://github.com/chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4",
+      "contributions": 403
+    },
+    {
+      "login": "bg-l2norm",
+      "url": "https://github.com/bg-l2norm",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/136485665?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "brandonmcconnell",
+      "url": "https://github.com/brandonmcconnell",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/5913254?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "cxa",
+      "url": "https://github.com/cxa",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/32127?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "threepointone",
+      "url": "https://github.com/threepointone",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/18808?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "bytaesu",
+      "url": "https://github.com/bytaesu",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/166604494?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "somnai-dreams",
+      "url": "https://github.com/somnai-dreams",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8848417?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pretext</h1></div>\n<p dir=\"auto\">Pure JavaScript/TypeScript library for multiline text measurement &amp; layout. Fast, accurate &amp; supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.</p>\n<p dir=\"auto\">Pretext side-steps the need for DOM measurements (e.g. <code>getBoundingClientRect</code>, <code>offsetHeight</code>), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @chenglou/pretext\"><pre>npm install @chenglou/pretext</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Demos</h2></div>\n<p dir=\"auto\">Clone the repo, run <code>bun install</code>, then <code>bun start</code>, and open <code>/demos/index</code> in your browser. On Windows, use <code>bun run start:windows</code>.\nAlternatively, see them live at <a href=\"https://chenglou.me/pretext/\" rel=\"nofollow\">chenglou.me/pretext</a>. Some more at <a href=\"https://somnai-dreams.github.io/pretext-demos/\" rel=\"nofollow\">somnai-dreams.github.io/pretext-demos</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">API</h2></div>\n<p dir=\"auto\">Pretext serves 2 use cases:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Measure a paragraph's height <em>without ever touching DOM</em></h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout &amp; reflow!\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepare</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layout</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀‎'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height<span class=\"pl-kos\">,</span> lineCount <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// pure arithmetic. No DOM layout &amp; reflow!</span></pre></div>\n<p dir=\"auto\"><code>prepare()</code> does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. <code>layout()</code> is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun <code>prepare()</code> for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun <code>layout()</code>.</p>\n<p dir=\"auto\">If you want textarea-like text where ordinary spaces, <code>\\t</code> tabs, and <code>\\n</code> hard breaks stay visible, pass <code>{ whiteSpace: 'pre-wrap' }</code> to <code>prepare()</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">textareaValue</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">whiteSpace</span>: <span class=\"pl-s\">'pre-wrap'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">textareaWidth</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Other <code>prepare()</code> options are <code>{ wordBreak: 'keep-all' }</code> for CSS-like <code>word-break: keep-all</code>, and <code>{ letterSpacing: n }</code> to match CSS <code>letter-spacing</code> (<code>n</code> is treated as a px value).</p>\n<p dir=\"auto\">The returned height is the crucial last piece for unlocking web UIs:</p>\n<ul dir=\"auto\">\n<li>proper virtualization/occlusion without guesstimates &amp; caching</li>\n<li>fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.</li>\n<li><em>development time</em> verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free</li>\n<li>prevent layout shift when new text loads and you wanna re-anchor the scroll position</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Lay out the paragraph lines manually yourself</h3></div>\n<p dir=\"auto\">Switch out <code>prepare</code> with <code>prepareWithSegments</code>, then:</p>\n<ul dir=\"auto\">\n<li><code>layoutWithLines()</code> gives you all the lines at a fixed width:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px &quot;Helvetica Neue&quot;')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i &lt; lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layoutWithLines</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'18px \"Helvetica Neue\"'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lines <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// 320px max width, 26px line height</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">let</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">lines</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">length</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span><span class=\"pl-c1\">++</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">lines</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">i</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">*</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span></pre></div>\n<ul dir=\"auto\">\n<li><code>measureLineStats()</code> and <code>walkLineRanges()</code> give you line counts, widths and cursors without building the text strings:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line =&gt; { if (line.width &gt; maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline &quot;shrink wrap&quot; has been missing from web\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">measureLineStats</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lineCount<span class=\"pl-kos\">,</span> maxLineWidth <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n<span class=\"pl-en\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-c1\">&gt;</span> <span class=\"pl-s1\">maxW</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web</span></pre></div>\n<ul dir=\"auto\">\n<li><code>layoutNextLineRange()</code> lets you route text one row at a time when width changes as you go. If you want the actual string too, <code>materializeLineRange()</code> turns that one range back into a full line:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y &lt; image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">layoutNextLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">materializeLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">article</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">BODY_FONT</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">cursor</span>: <span class=\"pl-smi\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">segmentIndex</span>: <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">graphemeIndex</span>: <span class=\"pl-c1\">0</span> <span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n\n<span class=\"pl-c\">// Flow text around a floated image: lines beside the image are narrower</span>\n<span class=\"pl-k\">while</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">width</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">bottom</span> ? <span class=\"pl-s1\">columnWidth</span> <span class=\"pl-c1\">-</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> : <span class=\"pl-s1\">columnWidth</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">cursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">width</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">range</span> <span class=\"pl-c1\">===</span> <span class=\"pl-c1\">null</span><span class=\"pl-kos\">)</span> <span class=\"pl-k\">break</span>\n\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">cursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">end</span>\n  <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">+=</span> <span class=\"pl-c1\">26</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">This usage allows rendering to canvas, SVG, WebGL and (eventually) server-side. See the <code>/demos/dynamic-layout</code> demo for a richer example.</p>\n<p dir=\"auto\">For hyphenation in manual layout, insert soft hyphens before <code>prepare()</code> / <code>prepareWithSegments()</code>. Pretext treats them as optional break points: unchosen soft hyphens stay invisible, while chosen breaks materialize as a trailing <code>-</code>. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation. Automatic hyphenation is not built in today.</p>\n<p dir=\"auto\">If your manual layout needs a small helper for rich-text inline flow, code spans, mentions, chips, and browser-like boundary whitespace collapse, there is a helper at <code>@chenglou/pretext/rich-inline</code>. It stays inline-only and <code>white-space: normal</code>-only on purpose:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: &quot;'s rich-note&quot;, font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range =&gt; {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">materializeRichInlineLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkRichInlineLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext/rich-inline'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">[</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'Ship '</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'@maya'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'700 12px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">break</span>: <span class=\"pl-s\">'never'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">extraWidth</span>: <span class=\"pl-c1\">22</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">\"'s rich-note\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-en\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-c\">// each fragment keeps its source item index, text slice, gapBefore, and cursors</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">It is intentionally narrow:</p>\n<ul dir=\"auto\">\n<li>raw inline text in, including boundary spaces</li>\n<li>caller-owned <code>extraWidth</code> for pill chrome</li>\n<li><code>break: 'never'</code> for atomic items like chips and mentions</li>\n<li><code>white-space: normal</code> only</li>\n<li>not a nested markup tree and not a general CSS inline formatting engine</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">API Glossary</h3></div>\n<p dir=\"auto\">Use-case 1 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\"><pre><span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedText</span> <span class=\"pl-c\">// one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.</span>\n<span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedText</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.</span></pre></div>\n<p dir=\"auto\">Use-case 2 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) =&gt; void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is &quot;nice&quot; too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // returns the widest forced line when width itself is not the thing causing wraps\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\"><pre><span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedTextWithSegments</span> <span class=\"pl-c\">// same as `prepare()`, but returns a richer structure for manual line layout needs</span>\n<span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lines</span>: <span class=\"pl-v\">LayoutLine</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info</span>\n<span class=\"pl-s1\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-c\">// low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.</span><span class=\"pl-kos\"></span>\n<span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">lineCount</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.</span>\n<span class=\"pl-en\">measureNaturalWidth</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// returns the widest forced line when width itself is not the thing causing wraps</span>\n<span class=\"pl-en\">layoutNextLine</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.</span>\n<span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.</span>\n<span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c\">// turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Full text content of this line, e.g. 'hello world'</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index in prepareWithSegments' prepared rich segment stream</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Helper for rich-text inline flow:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareRichInline(items: RichInlineItem[]): PreparedRichInline // compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) =&gt; void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw author text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic, like a chip\n  extraWidth?: number // caller-owned horizontal chrome, e.g. padding + border width\n}\ntype RichInlineCursor = {\n  itemIndex: number // Which source RichInlineItem this cursor is currently in\n  segmentIndex: number // Segment index within that item's prepared text\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\ntype RichInlineFragment = {\n  itemIndex: number // index back into the original RichInlineItem array\n  text: string // Text slice for this fragment\n  gapBefore: number // collapsed boundary gap paid before this fragment on this line\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLine = {\n  fragments: RichInlineFragment[] // Materialized fragments on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineFragmentRange = {\n  itemIndex: number // index back into the original RichInlineItem array\n  gapBefore: number // collapsed boundary gap paid before this fragment on this line\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLineRange = {\n  fragments: RichInlineFragmentRange[] // Non-materialized fragment ownership/ranges on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\"><pre><span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">items</span>: <span class=\"pl-v\">RichInlineItem</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedRichInline</span> <span class=\"pl-c\">// compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width</span>\n<span class=\"pl-en\">layoutNextRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>?: <span class=\"pl-v\">RichInlineCursor</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// stream one line of rich-text inline flow at a time without building fragment text strings</span>\n<span class=\"pl-s1\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// non-materializing line walker for rich-text inline flow shrinkwrap/stats work</span>\n<span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c\">// turns one previously computed rich-inline line range back into full fragment text</span>\n<span class=\"pl-s1\">measureRichInlineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">maxLineWidth</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineItem</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">text</span>: string <span class=\"pl-c\">// raw author text, including leading/trailing collapsible spaces</span>\n  <span class=\"pl-s1\">font</span>: string <span class=\"pl-c\">// canvas font shorthand for this item</span>\n  <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-c\">// extra horizontal spacing between graphemes, in CSS px</span>\n  <span class=\"pl-k\">break</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'never'</span> <span class=\"pl-c\">// `never` keeps the item atomic, like a chip</span>\n  <span class=\"pl-s1\">extraWidth</span>?: number <span class=\"pl-c\">// caller-owned horizontal chrome, e.g. padding + border width</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// Which source RichInlineItem this cursor is currently in</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index within that item's prepared text</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragment</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Text slice for this fragment</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed boundary gap paid before this fragment on this line</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragment</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Materialized fragments on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragmentRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed boundary gap paid before this fragment on this line</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragmentRange</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Non-materialized fragment ownership/ranges on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Other helpers:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"clearCache(): void // clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache\nsetLocale(locale?: string): void // optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)\"><pre><span class=\"pl-en\">clearCache</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache</span>\n<span class=\"pl-en\">setLocale</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">locale</span>?: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)</span></pre></div>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li><code>PreparedText</code> is the opaque fast-path handle. <code>PreparedTextWithSegments</code> is the richer manual-layout handle.</li>\n<li><code>LayoutCursor</code> is a segment/grapheme cursor, not a raw string offset.</li>\n<li><code>layout()</code> with an empty string returns <code>{ lineCount: 0, height: 0 }</code>. Browsers still size an empty block to one <code>line-height</code>, so clamp with <code>Math.max(1, lineCount) * lineHeight</code> if you need that behavior.</li>\n<li>The richer handle also includes <code>segLevels</code> for custom bidi-aware rendering. The line-breaking APIs do not read it.</li>\n<li>Segment widths are browser-canvas widths for line breaking, not exact glyph-position data for custom Arabic or mixed-direction x-coordinate reconstruction.</li>\n<li>If a soft hyphen wins the break, materialized line text includes the visible trailing <code>-</code>.</li>\n<li><code>measureNaturalWidth()</code> returns the widest forced line. Hard breaks still count.</li>\n<li><code>prepare()</code> and <code>prepareWithSegments()</code> do horizontal-only work. <code>lineHeight</code> stays a layout-time input.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Caveats</h2></div>\n<p dir=\"auto\">Pretext doesn't try to be a full font rendering engine (yet?). It currently targets the common text setup:</p>\n<ul dir=\"auto\">\n<li><code>white-space: normal</code> and <code>pre-wrap</code></li>\n<li><code>word-break: normal</code> and <code>keep-all</code></li>\n<li><code>overflow-wrap: break-word</code>. Very narrow widths can still break inside words, but only at grapheme boundaries.</li>\n<li><code>line-break: auto</code></li>\n<li><code>letter-spacing</code> as a numeric pixel value passed to <code>prepare()</code> / <code>prepareWithSegments()</code></li>\n<li>Tabs follow the default browser-style <code>tab-size: 8</code></li>\n<li><code>{ wordBreak: 'keep-all' }</code> is supported too. It behaves like you'd expect for CJK/Hangul and no-space mixed Latin/numeric/CJK text, while keeping the same <code>overflow-wrap: break-word</code> fallback for overlong runs.</li>\n<li><code>system-ui</code> is unsafe for <code>layout()</code> accuracy on macOS. Use a named font. See the <a href=\"https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md\">platform bug ledger</a> for the Chrome and Firefox issues.</li>\n<li>Runtime requires <code>Intl.Segmenter</code> and Canvas 2D text measurement. Browsers or runtimes without <code>Intl.Segmenter</code> are currently unsupported.</li>\n<li>CSS text features outside the canvas <code>font</code> shorthand, such as <code>font-optical-sizing</code>, <code>font-feature-settings</code>, and standalone <code>font-variation-settings</code>, are not modeled separately. Variable-font axes only help when the active axis is reflected in the canvas font string, for example via weight.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Develop</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/chenglou/pretext/blob/main/DEVELOPMENT.md\">DEVELOPMENT.md</a> for the dev setup and commands.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits</h2></div>\n<p dir=\"auto\">Sebastian Markbage first planted the seed with <a href=\"https://github.com/chenglou/text-layout\">text-layout</a> last decade. His design — canvas <code>measureText</code> for shaping, bidi from pdf.js, streaming line breaking — informed the architecture we kept pushing forward here.</p>\n</article></div>",
+  "releases": [],
+  "firstCommitAt": "2026-03-03T09:14:22Z",
+  "contributorCount": 7,
+  "recentIssues": [
+    {
+      "number": 214,
+      "title": "BUG: CJK text can wrap with an ASCII hyphen at the start of a line",
+      "url": "https://github.com/chenglou/pretext/issues/214",
+      "createdAt": "2026-07-22T07:54:47Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ChuanfengZhang"
+    },
+    {
+      "number": 212,
+      "title": "Bug: numeric minus sign is treated as a preferred break point (`-0.475`, `≥-100nA`)",
+      "url": "https://github.com/chenglou/pretext/issues/212",
+      "createdAt": "2026-07-21T09:40:34Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ChuanfengZhang"
+    },
+    {
+      "number": 210,
+      "title": "Bug: leading ZWSP (U+200B) is consumed at line start, one line undercounted vs. browsers",
+      "url": "https://github.com/chenglou/pretext/issues/210",
+      "createdAt": "2026-07-21T07:00:32Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ChuanfengZhang"
+    },
+    {
+      "number": 206,
+      "title": "\"overflow-wrap: break-word;\" not working as expected",
+      "url": "https://github.com/chenglou/pretext/issues/206",
+      "createdAt": "2026-07-02T15:20:05Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Stubenhocker1399"
+    },
+    {
+      "number": 203,
+      "title": "Chips not \"staying whole\" in Firefox",
+      "url": "https://github.com/chenglou/pretext/issues/203",
+      "createdAt": "2026-06-24T16:23:51Z",
+      "comments": 0,
+      "labels": [],
+      "author": "brandonzylstra"
+    },
+    {
+      "number": 202,
+      "title": "Markdown Chat example renders in Firefox with text overflowing speech bubbles",
+      "url": "https://github.com/chenglou/pretext/issues/202",
+      "createdAt": "2026-06-24T16:00:13Z",
+      "comments": 2,
+      "labels": [],
+      "author": "brandonzylstra"
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 9
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 13
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 11
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 8
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 2
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 58
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 108
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 6
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 67
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 54
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 54
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 13
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 10
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 14
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 2
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 12
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 25
+    },
+    {
+      "date": "2026-03-04",
+      "count": 14
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 5
+    },
+    {
+      "date": "2026-03-07",
+      "count": 14
+    },
+    {
+      "date": "2026-03-08",
+      "count": 15
+    },
+    {
+      "date": "2026-03-09",
+      "count": 14
+    },
+    {
+      "date": "2026-03-10",
+      "count": 38
+    },
+    {
+      "date": "2026-03-11",
+      "count": 21
+    },
+    {
+      "date": "2026-03-12",
+      "count": 20
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 4
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 2
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 3
+    },
+    {
+      "date": "2026-03-23",
+      "count": 6
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 9
+    },
+    {
+      "date": "2026-03-27",
+      "count": 27
+    },
+    {
+      "date": "2026-03-28",
+      "count": 22
+    },
+    {
+      "date": "2026-03-29",
+      "count": 21
+    },
+    {
+      "date": "2026-03-30",
+      "count": 5
+    },
+    {
+      "date": "2026-03-31",
+      "count": 8
+    },
+    {
+      "date": "2026-04-01",
+      "count": 2
+    },
+    {
+      "date": "2026-04-02",
+      "count": 8
+    },
+    {
+      "date": "2026-04-03",
+      "count": 1
+    },
+    {
+      "date": "2026-04-04",
+      "count": 9
+    },
+    {
+      "date": "2026-04-05",
+      "count": 19
+    },
+    {
+      "date": "2026-04-06",
+      "count": 19
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 11
+    },
+    {
+      "date": "2026-04-09",
+      "count": 5
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 1
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 12
+    },
+    {
+      "date": "2026-04-19",
+      "count": 1
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 4
+    },
+    {
+      "date": "2026-04-22",
+      "count": 5
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 8
+    },
+    {
+      "date": "2026-05-08",
+      "count": 3
+    },
+    {
+      "date": "2026-05-09",
+      "count": 3
+    },
+    {
+      "date": "2026-05-10",
+      "count": 3
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 1
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 2
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 12
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "participation": {
+    "all": 410,
+    "owner": 403,
+    "community": 7
+  },
+  "recentCommits": [
+    {
+      "sha": "ac49b09",
+      "message": "Simplify analysis policy passes",
+      "url": "https://github.com/chenglou/pretext/commit/ac49b09b7d83ede19581fa94a8b892b07d309baf",
+      "date": "2026-06-23T04:50:36Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "fff930d",
+      "message": "Simplify measurement chunk compilation",
+      "url": "https://github.com/chenglou/pretext/commit/fff930dc5c2551d2ce925f49d5c670d3141051df",
+      "date": "2026-06-23T04:06:02Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "0239590",
+      "message": "Link upstream Safari keep-all fix",
+      "url": "https://github.com/chenglou/pretext/commit/023959062d2e912a9de2c9bf73923cb98794e34c",
+      "date": "2026-06-23T02:50:45Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "e556d98",
+      "message": "docs: clarify internal engineering guidance",
+      "url": "https://github.com/chenglou/pretext/commit/e556d98f4065a5b68317db0c5360fdf8c23e9fec",
+      "date": "2026-06-23T02:14:41Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "7008890",
+      "message": "Recheck macOS browser measurement bugs",
+      "url": "https://github.com/chenglou/pretext/commit/7008890e98237e75c64cb9c7587c7a1a821d5678",
+      "date": "2026-06-23T02:10:23Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "61b18f5",
+      "message": "docs: remove stale internal guidance",
+      "url": "https://github.com/chenglou/pretext/commit/61b18f566349bea6fcf53d49bde8cb59749e2d5b",
+      "date": "2026-06-23T01:47:35Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "afdce86",
+      "message": "docs: remove redundant status pointers",
+      "url": "https://github.com/chenglou/pretext/commit/afdce86f1825e2e73d1bbfa84c21033ec1533e68",
+      "date": "2026-06-23T01:40:30Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "ea2de89",
+      "message": "Document platform bugs and tracker links",
+      "url": "https://github.com/chenglou/pretext/commit/ea2de89c901739d85d5e0beb266b0da2b83200b4",
+      "date": "2026-06-23T01:39:48Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "d41e871",
+      "message": "Audit Safari shims and retire redundant soft-hyphen branch",
+      "url": "https://github.com/chenglou/pretext/commit/d41e871511672c3a853bf9d852de5c516e36ef17",
+      "date": "2026-06-23T01:07:32Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    },
+    {
+      "sha": "7201ee8",
+      "message": "Simplify merged segmentation state",
+      "url": "https://github.com/chenglou/pretext/commit/7201ee837031c5f6ba4b04b4c6a11ebab53342a9",
+      "date": "2026-06-22T23:37:30Z",
+      "author": "chenglou",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 109,
+      "title": "feat: resolve rem/em font units to px before canvas measurement",
+      "url": "https://github.com/chenglou/pretext/pull/109",
+      "state": "open",
+      "updatedAt": "2026-07-26T13:21:47Z",
+      "author": "okaris",
+      "draft": false
+    },
+    {
+      "number": 215,
+      "title": "fix: align CJK ASCII hyphen wrapping with browsers",
+      "url": "https://github.com/chenglou/pretext/pull/215",
+      "state": "open",
+      "updatedAt": "2026-07-23T11:59:48Z",
+      "author": "ChuanfengZhang",
+      "draft": false
+    },
+    {
+      "number": 213,
+      "title": "fix: avoid breaking after a numeric minus sign",
+      "url": "https://github.com/chenglou/pretext/pull/213",
+      "state": "open",
+      "updatedAt": "2026-07-21T09:42:53Z",
+      "author": "ChuanfengZhang",
+      "draft": false
+    },
+    {
+      "number": 211,
+      "title": "fix: preserve leading ZWSP so zero-width-only lines are not dropped",
+      "url": "https://github.com/chenglou/pretext/pull/211",
+      "state": "open",
+      "updatedAt": "2026-07-21T07:55:26Z",
+      "author": "ChuanfengZhang",
+      "draft": false
+    },
+    {
+      "number": 193,
+      "title": "feat: support whiteSpace: 'pre-wrap' in prepareRichInline",
+      "url": "https://github.com/chenglou/pretext/pull/193",
+      "state": "open",
+      "updatedAt": "2026-07-02T13:08:11Z",
+      "author": "ChuanfengZhang",
+      "draft": false
+    },
+    {
+      "number": 31,
+      "title": "demo: virtual scroll with zero DOM measurement",
+      "url": "https://github.com/chenglou/pretext/pull/31",
+      "state": "closed",
+      "updatedAt": "2026-06-28T14:45:41Z",
+      "author": "barry166",
+      "draft": false
+    },
+    {
+      "number": 79,
+      "title": "feat: add CJK line-breaking demo",
+      "url": "https://github.com/chenglou/pretext/pull/79",
+      "state": "closed",
+      "updatedAt": "2026-06-23T08:31:58Z",
+      "author": "defpis",
+      "draft": false
+    },
+    {
+      "number": 200,
+      "title": "Add interactive performance benchmark demo",
+      "url": "https://github.com/chenglou/pretext/pull/200",
+      "state": "open",
+      "updatedAt": "2026-06-15T11:17:47Z",
+      "author": "nankai-mz",
+      "draft": false
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".cursor",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/.cursor"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/.github"
+    },
+    {
+      "name": "accuracy",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/accuracy"
+    },
+    {
+      "name": "benchmarks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/benchmarks"
+    },
+    {
+      "name": "corpora",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/corpora"
+    },
+    {
+      "name": "pages",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/pages"
+    },
+    {
+      "name": "research-data",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/research-data"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/scripts"
+    },
+    {
+      "name": "shared",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/shared"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/src"
+    },
+    {
+      "name": "status",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/chenglou/pretext/tree/main/status"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 400,
+      "url": "https://github.com/chenglou/pretext/blob/main/.gitignore"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 17662,
+      "url": "https://github.com/chenglou/pretext/blob/main/AGENTS.md"
+    },
+    {
+      "name": "bun.lock",
+      "type": "file",
+      "size": 25202,
+      "url": "https://github.com/chenglou/pretext/blob/main/bun.lock"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "size": 4821,
+      "url": "https://github.com/chenglou/pretext/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 9,
+      "url": "https://github.com/chenglou/pretext/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "DEVELOPMENT.md",
+      "type": "file",
+      "size": 4919,
+      "url": "https://github.com/chenglou/pretext/blob/main/DEVELOPMENT.md"
+    },
+    {
+      "name": "knip.config.ts",
+      "type": "file",
+      "size": 1294,
+      "url": "https://github.com/chenglou/pretext/blob/main/knip.config.ts"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1077,
+      "url": "https://github.com/chenglou/pretext/blob/main/LICENSE"
+    },
+    {
+      "name": "oxlintrc.json",
+      "type": "file",
+      "size": 863,
+      "url": "https://github.com/chenglou/pretext/blob/main/oxlintrc.json"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 4454,
+      "url": "https://github.com/chenglou/pretext/blob/main/package.json"
+    },
+    {
+      "name": "PLATFORM_BUGS.md",
+      "type": "file",
+      "size": 8598,
+      "url": "https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 16856,
+      "url": "https://github.com/chenglou/pretext/blob/main/README.md"
+    },
+    {
+      "name": "RESEARCH.md",
+      "type": "file",
+      "size": 9093,
+      "url": "https://github.com/chenglou/pretext/blob/main/RESEARCH.md"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 1146,
+      "url": "https://github.com/chenglou/pretext/blob/main/SECURITY.md"
+    },
+    {
+      "name": "thoughts.md",
+      "type": "file",
+      "size": 1757,
+      "url": "https://github.com/chenglou/pretext/blob/main/thoughts.md"
+    },
+    {
+      "name": "TODO.md",
+      "type": "file",
+      "size": 2288,
+      "url": "https://github.com/chenglou/pretext/blob/main/TODO.md"
+    },
+    {
+      "name": "tsconfig.build.json",
+      "type": "file",
+      "size": 329,
+      "url": "https://github.com/chenglou/pretext/blob/main/tsconfig.build.json"
+    },
+    {
+      "name": "tsconfig.json",
+      "type": "file",
+      "size": 693,
+      "url": "https://github.com/chenglou/pretext/blob/main/tsconfig.json"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Publish Demo Site",
+      "status": "success",
+      "url": "https://github.com/chenglou/pretext/actions/runs/28003396693",
+      "branch": "main",
+      "updatedAt": "2026-06-23T05:02:23Z"
+    }
+  ],
+  "branchCount": 7,
+  "tagCount": 5,
+  "community": {
+    "healthPercentage": 57,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 46,
+  "openPRs": 44,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 50,
+  "mergedPRs": 7,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": "https://github.com/chenglou/pretext/security/policy",
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-03-01",
+      "additions": 9148,
+      "deletions": 1151
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 26960,
+      "deletions": 10103
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 323,
+      "deletions": 202
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 243551,
+      "deletions": 7594
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 18414,
+      "deletions": 9909
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 12148,
+      "deletions": 8694
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 119,
+      "deletions": 55
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 3544,
+      "deletions": 1332
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 2655,
+      "deletions": 2401
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 1126,
+      "deletions": 645
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 168,
+      "deletions": 54
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 16,
+      "deletions": 5
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 1729,
+      "deletions": 2632
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-29T02:04:22.892Z"
 }
