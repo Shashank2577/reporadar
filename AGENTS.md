@@ -56,7 +56,12 @@ GitHub repositories. Data lives in the repo itself:
       - `whatItDoes` (4-6 sentences): the real problem it solves, the
         technical approach, what's actually distinctive — grounded in
         specifics from the README, not paraphrased boilerplate.
-      - `keyFeatures` (5-8 items, `"Feature: one concrete sentence"` each).
+      - `keyFeatures` (5-8 items): each a string in the form
+        `"<real feature name>: <one concrete sentence>"`, e.g.
+        `"Asynchronous logging: writes to a lock-free queue so hot-path
+        calls never block on I/O."` The part before the colon must be the
+        actual name of the feature, in your own words -- never the literal
+        word "Feature".
       - `useCases` (4-6 items, each `{title, description}`): concrete
         scenarios naming who does this and why this project over
         alternatives — not restated topics.
