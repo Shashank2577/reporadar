@@ -1,0 +1,3161 @@
+{
+  "id": "antirez/iris.c",
+  "snapshots": [
+    {
+      "date": "2026-07-30",
+      "stars": 1968,
+      "forks": 141
+    }
+  ],
+  "trendingHistory": [],
+  "owner": "antirez",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4",
+  "ownerType": "User",
+  "name": "iris.c",
+  "description": "Flux 2 image generation model pure C inference",
+  "url": "https://github.com/antirez/iris.c",
+  "homepage": null,
+  "license": "MIT",
+  "language": "C",
+  "topics": [],
+  "stars": 1968,
+  "forks": 141,
+  "watchers": 12,
+  "openIssues": 24,
+  "createdAt": "2026-01-18T17:55:48Z",
+  "pushedAt": "2026-02-13T15:22:48Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-30T13:46:11.882Z",
+  "commitCount": 230,
+  "languages": {
+    "C": 1004970,
+    "Objective-C": 295988,
+    "Metal": 73689,
+    "Python": 32583,
+    "Makefile": 8475,
+    "Shell": 6027
+  },
+  "readmeExcerpt": "# Iris - a C inference pipeline for image synthesis models\n\nIris is an inference pipeline that generates images from text prompts using open weights diffusion transformer models. It is implemented entirely in C, with zero external dependencies beyond the C standard library. MPS and BLAS acceleration are optional but recommended. Under macOS, a BLAS API is part of the system, so nothing is required.\n\nThe name comes from the Greek goddess Iris, messenger of the gods and personification of the rainbow.\n\nSupported model families:\n\n- **[FLUX.2 Klein](https://bfl.ai/models/flux-2-klein)** (by [Black Forest Labs](https://bfl.ai/)):\n  - **4B distilled** (4 steps, auto guidance set to 1, very fast).\n  - **4B base** (50 steps for max quality, or less. Classifier-Free Diffusion Guidance, much slower but more generation variety).\n  - **9B distilled** (4 steps, larger model, higher quality. Non-commercial license).\n  - **9B base** (50 steps, CFG, highest quality. Non-commercial license).\n- **[Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)** (by Tongyi-MAI):\n  - **6B** (8 NFE / 9 scheduler steps, no CFG, fast).\n\n## Quick Start\n\n```bash\n# Build (choose your backend)\nmake mps       # Apple Silicon (fastest)\n# or: make blas    # Intel Mac / Linux with OpenBLAS\n# or: make generic # Pure C, no dependencies\n\n# Download a model (~16GB) - pick one:\n./download_model.sh 4b                   # using curl\n# or: pip install huggingface_hub && python download_model.py 4b\n\n# Generate an image\n./iris -d flux-klein-4b -p \"A woman wearing sunglasses\" -o output.png\n```\n\nIf you want to try the base model, instead of the distilled one (much slower, higher quality), use the following instructions. Use 10 steps if your computer is quite slow, instead of the default of 50, it will still work well enough to test it (10 seconds to generate a 256x256 image on a MacBook M3 Max).\n```\n./download_model.sh 4b-base\n# or: pip install huggingface_hub && python download_model.py 4b-base\n./iris -d flux-klein-4b-base -p \"A woman wearing sunglasses\" -o output.png\n```\n\nIf you want to try the 9B model (higher quality, non-commercial license, ~30GB download):\n```bash\n# 9B is a gated model - you need a HuggingFace token\n# 1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.2-klein-9B\n# 2. Get your token from https://huggingface.co/settings/tokens\n./download_model.sh 9b --token YOUR_TOKEN\n# or: python download_model.py 9b --token YOUR_TOKEN\n# or: set HF_TOKEN env var\n./iris -d flux-klein-9b -p \"A woman wearing sunglasses\" -o output.png\n```\n\nFor Z-Image-Turbo:\n```bash\n# Download Z-Image-Turbo (~12GB)\npip install huggingface_hub && python download_model.py zimage-turbo\n./iris -d zimage-turbo -p \"a fish\" -o fish.png\n```\n\nThat's it. No Python runtime or CUDA toolkit required at inference time.\n\n## Example Output\n\n\n\n*Generated with: `./iris -d flux-klein-4b -p \"A picture of a woman in 1960 America. Sunglasses. ASA 400 film. Black and White.\" -W 512 -H 512 -o woman.png`*\n\n### Image-to-Image Example\n\n\n\n*Generated with: `./iris -i antirez.png -o antirez_to_drawing.png -p \"make it a drawing\" -d flux-klein-4b`*\n\n## Features\n\n- **Zero dependencies**: Pure C implementation, works standalone. BLAS optional for ~30x speedup (Apple Accelerate on macOS, OpenBLAS on Linux)\n- **Metal GPU acceleration**: Automatic on Apple Silicon Macs. Performance matches PyTorch's optimized MPS pipeline\n- **Runs where Python can't**: Memory-mapped weights (default) enable inference on 8GB RAM systems where the Python ML stack cannot run at all\n- **Text-to-image**: Generate images from text prompts\n- **Image-to-image**: Transform existing images guided by prompts (Flux models)\n- **Multi-reference**: Combine multiple reference images (e.g., `-i car.png -i beach.png` for \"car on beach\")\n- **Integrated text encoder**: Qwen3 encoder built-in (4B or 8B depending on model), no external embedding computation needed\n- **Memory efficient**: Automatic encoder release after encoding (up to ~16GB freed)\n- **Memory-mapped weights**: Enabled by default. Reduces peak memory from ~16GB to ~4-5GB. Fastest mode on MPS; BLAS users with plenty of RAM may prefer `--no-mmap` for faster inference\n- **Size-independent seeds**: Same seed produces similar compositions at different resolutions. Explore at 256x256, then render at 512x512 with the same seed\n- **Terminal image display**: watch the resulting image without leaving your terminal (Ghostty, Kitty, iTerm2, WezTerm, or Konsole).\n\n### Terminal Image Display\n\n\n\nDisplay generated images directly in your terminal with `--show`, or watch the denoising process step-by-step with `--show-steps`:\n\n```bash\n# Display final image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)\n./iris -d flux-klein-4b -p \"a cute robot\" -o robot.png --show\n\n# Display each denoising step (slower, but interesting to watch)\n./iris -d flux-klein-4b -p \"a cute robot\" -o robot.png --show-steps\n```\n\nRequires a terminal supporting the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) (such as [Kitty](https://sw.kovidgoyal.net/kitty/) or [Ghostty](https://ghostty.org/)), the iTerm2 inline image protocol ([iTerm2](https://iterm2.com/), [WezTerm](https://wezfurlong.org/wezterm/)), or [Konsole](https://konsole.kde.org/). Terminal type is auto-detected from environment variables.\n\nUse `--zoom N` to adjust the display size (default: 2 for Retina displays, use 1 for non-HiDPI screens).\n\n## Usage\n\n### Text-to-Image\n\n```bash\n./iris -d flux-klein-4b -p \"A fluffy orange cat sitting on a windowsill\" -o cat.png\n```\n\n### Image-to-Image\n\nTransform an existing image based on a prompt:\n\n```bash\n./iris -d flux-klein-4b -p \"oil painting style\" -i photo.png -o painting.png\n```\n\nFLUX.2 uses **in-context conditioning** for image-to-image generation. Unlike traditional approaches that add noise to the input image, FLUX.2 passes the reference image as additional tokens that the model can attend to during generation. This means:\n\n- The model \"sees\" your input image and uses it as a reference\n- The prompt describes what you want the output to look like\n- Results tend to preserve the composition while applying the described transformation\n\n**Tips for good results:**\n- Use descriptive prompts that describe the desired output, not instructions\n- Good: `\"oil painting of a woman with sunglasses, impressionist style\"`\n- Less good: `\"make it an oil painting\"` (instructional prompts may work less well)\n\n**Super Resolution:** Since the reference image can be a different size than the output, you can use img2img for upscaling:\n\n```bash\n./iris -d flux-klein-4b -i small.png -W 1024 -H 1024 -o big.png -p \"Create an exact copy of the input image.\"\n```\n\nThe model will generate a higher-resolution version while preserving the composition and details of the input.\n\n### Multi-Reference Generation\n\nCombine elements from multiple reference images:\n\n```bash\n./iris -d flux-klein-4b -i car.png -i beach.png -p \"a sports car on the beach\" -o result.png\n```\n\nEach reference image is encoded separately and passed to the transformer with different positional embeddings (T=10, T=20, T=30, ...). The model attends to all references during generation, allowing it to combine elements from each.\n\n**Example:**\n- Reference 1: A red sports car\n- Reference 2: A tropical beach with palm trees\n- Prompt: \"combine the two images\"\n- Result: A red sports car on a tropical beach\n\nYou can specify up to 16 reference images with multiple `-i` flags. The prompt guides how the references are combined.\n\n### Interactive CLI Mode\n\nStart without `-p` to enter interactive mode:\n\n```bash\n./iris -d flux-klein-4b\n```\n\nGenerate images by typing prompts. Each image gets a `$N` reference ID:\n\n```\niris> a red sports car\nDone -> /tmp/iris-.../image-0001.png (ref $0)\n\niris> a tropical beach\nDone -> /tmp/iris-.../image-0002.png (ref $1)\n\niris> $0 $1 combine them\nGenerating 256x256 (multi-ref, 2 images)...\nDone -> /tmp/iris-.../image-0003.png (ref $2)\n```\n\n**Prompt syntax:**\n- `prompt` - text-to-image\n- `512x512 prompt` - set size inline\n- `$ prompt` - img2img with last image\n- `$N prompt` - img2img with reference $N\n- `$0 $3 prompt` - multi-reference (combine images)\n\n**Commands:** `!help`, `!save`, `!load`, `!seed`, `!size`, `!steps`, `!guidance`, `!linear`, `!power`, `!explore`, `!show`, `!quit`\n\n### Command Line Options\n\n**Required:**\n```\n-d, --dir PATH        Path to model directory\n-p, --prompt TEXT     Text prompt for generation\n-o, --output PATH     Output image path (.png or .ppm)\n```\n\n**Generation options:**\n```\n-W, --width N         Output width in pixels (default: 256)\n-H, --height N        Output height in pixels (default: 256)\n-s, --steps N         Sampling steps (default: auto, 4 distilled / 50 base / 9 zimage)\n-S, --seed N          Random seed for reproducibility\n-g, --guidance N      CFG guidance scale (default: auto, 1.0 distilled / 4.0 base / 0.0 zimage)\n    --linear          Use linear timestep schedule (see below)\n    --power           Use power curve timestep schedule (see below)\n    --power-alpha N   Set power schedule exponent (default: 2.0)\n    --base            Force base model mode (undistilled, CFG enabled)\n```\n\n**Image-to-image options:**\n```\n-i, --input PATH      Reference image (can be specified multiple times)\n```\n\n**Output options:**\n```\n-q, --quiet           Silent mode, no output\n-v, --verbose         Show detailed config and timing info\n    --show            Display image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)\n    --show-steps      Display each denoising step (slower)\n    --zoom N          Terminal image zoom factor (default: 2 for Retina)\n```\n\n**Other options:**\n```\n-m, --mmap            Memory-mapped weights (default, fastest on MPS)\n    --no-mmap         Disable mmap, load all weights upfront\n    --no-license-info Suppress non-commercial license warning (9B model)\n-e, --embeddings PATH Load pre-computed text embeddings (advanced)\n-h, --help            Show help\n```\n\n## Reproducibility\n\nThe seed is always printed to stderr, even when random:\n```\n$ ./iris -d flux-klein-4b -p \"a landscape\" -o out.png\nSeed: 1705612345\n...\nSaving... out.png 256x256 (0.1s)\n```\n\nTo reproduce the same image, use the printed seed:\n```\n$ ./iris -d flux-klein-4b -p \"a landscape\" -o out.png -S 1705612345\n```\n\n## PNG Metadata\n\nGenerated PNG images include metadata with the seed and model information, so you can always recover the seed even if you didn't save the terminal output:\n\n```bash\n# Using exiftool\nexiftool image.png | grep iris\n\n# Using Python/PIL\npython3 -c \"from PIL import Image; print(Image.open('image.png').info)\"\n\n# Using ImageMagick\nidentify -verbose image.png | grep -A1 \"Properties:\"\n```\n\nThe following metadata fields are stored:\n- `iris:seed` - The random seed used for generation\n- `iris:model` - The model used\n- `Software` - Program identifier\n\n## Building\n\nChoose a backend when building:\n\n```bash\nmake            # Show available backends\nmake generic    # Pure C, no dependencies (slow)\nmake blas       # BLAS acceleration (~30x faster)\nmake mps        # Apple Silicon Metal GPU (fastest, macOS only)\n```\n\n**Recommended:**\n- macOS Apple Silicon: `make mps`\n- macOS Intel: `make blas`\n- Linux with OpenBLAS: `make blas`\n- Linux without OpenBLAS: `make generic`\n\nFor `make blas` on Linux, install OpenBLAS first:\n```bash\n# Ubuntu/Debian\nsudo apt install libopenblas-dev\n\n# Fedora\nsudo dnf install openblas-devel\n```\n\nOther targets:\n```bash\nmake clean      # Clean build artifacts\nmake info       # Show available backends for this platform\n```\n\n## Testing\n\nRun the test suite to verify your build produces correct output:\n\n```bash\nmake test        # Run all tests\nmake test-quick  # Run only the quick 64x64 test\n```\n\nThe tests compare generated images against reference images in `test_vectors/`. A test passes if the maximum pixel difference is within tolerance (to allow for minor floating-point variations across platforms).\n\n**Test cases:**\n| Test ",
+  "releases": [],
+  "contributors": [
+    {
+      "login": "antirez",
+      "url": "https://github.com/antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4",
+      "contributions": 221
+    },
+    {
+      "login": "dredozubov",
+      "url": "https://github.com/dredozubov",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/131368?v=4",
+      "contributions": 3
+    },
+    {
+      "login": "brendon9x",
+      "url": "https://github.com/brendon9x",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/491483?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "FHult",
+      "url": "https://github.com/FHult",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/48207954?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "S1M0N38",
+      "url": "https://github.com/S1M0N38",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/22257750?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "tampueroc",
+      "url": "https://github.com/tampueroc",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/46233260?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "l33tm4st3r",
+      "url": "https://github.com/l33tm4st3r",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/26746186?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "lczyk",
+      "url": "https://github.com/lczyk",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/24707398?v=4",
+      "contributions": 1
+    }
+  ],
+  "firstCommitAt": "2026-01-17T17:11:05Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 14
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 12
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 13
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 2
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Iris - a C inference pipeline for image synthesis models</h1></div>\n<p dir=\"auto\">Iris is an inference pipeline that generates images from text prompts using open weights diffusion transformer models. It is implemented entirely in C, with zero external dependencies beyond the C standard library. MPS and BLAS acceleration are optional but recommended. Under macOS, a BLAS API is part of the system, so nothing is required.</p>\n<p dir=\"auto\">The name comes from the Greek goddess Iris, messenger of the gods and personification of the rainbow.</p>\n<p dir=\"auto\">Supported model families:</p>\n<ul dir=\"auto\">\n<li><strong><a href=\"https://bfl.ai/models/flux-2-klein\" rel=\"nofollow\">FLUX.2 Klein</a></strong> (by <a href=\"https://bfl.ai/\" rel=\"nofollow\">Black Forest Labs</a>):\n<ul dir=\"auto\">\n<li><strong>4B distilled</strong> (4 steps, auto guidance set to 1, very fast).</li>\n<li><strong>4B base</strong> (50 steps for max quality, or less. Classifier-Free Diffusion Guidance, much slower but more generation variety).</li>\n<li><strong>9B distilled</strong> (4 steps, larger model, higher quality. Non-commercial license).</li>\n<li><strong>9B base</strong> (50 steps, CFG, highest quality. Non-commercial license).</li>\n</ul>\n</li>\n<li><strong><a href=\"https://huggingface.co/Tongyi-MAI/Z-Image-Turbo\" rel=\"nofollow\">Z-Image-Turbo</a></strong> (by Tongyi-MAI):\n<ul dir=\"auto\">\n<li><strong>6B</strong> (8 NFE / 9 scheduler steps, no CFG, fast).</li>\n</ul>\n</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build (choose your backend)\nmake mps       # Apple Silicon (fastest)\n# or: make blas    # Intel Mac / Linux with OpenBLAS\n# or: make generic # Pure C, no dependencies\n\n# Download a model (~16GB) - pick one:\n./download_model.sh 4b                   # using curl\n# or: pip install huggingface_hub &amp;&amp; python download_model.py 4b\n\n# Generate an image\n./iris -d flux-klein-4b -p &quot;A woman wearing sunglasses&quot; -o output.png\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build (choose your backend)</span>\nmake mps       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Apple Silicon (fastest)</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: make blas    # Intel Mac / Linux with OpenBLAS</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: make generic # Pure C, no dependencies</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Download a model (~16GB) - pick one:</span>\n./download_model.sh 4b                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> using curl</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: pip install huggingface_hub &amp;&amp; python download_model.py 4b</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Generate an image</span>\n./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>A woman wearing sunglasses<span class=\"pl-pds\">\"</span></span> -o output.png</pre></div>\n<p dir=\"auto\">If you want to try the base model, instead of the distilled one (much slower, higher quality), use the following instructions. Use 10 steps if your computer is quite slow, instead of the default of 50, it will still work well enough to test it (10 seconds to generate a 256x256 image on a MacBook M3 Max).</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"./download_model.sh 4b-base\n# or: pip install huggingface_hub &amp;&amp; python download_model.py 4b-base\n./iris -d flux-klein-4b-base -p &quot;A woman wearing sunglasses&quot; -o output.png\"><pre class=\"notranslate\"><code>./download_model.sh 4b-base\n# or: pip install huggingface_hub &amp;&amp; python download_model.py 4b-base\n./iris -d flux-klein-4b-base -p \"A woman wearing sunglasses\" -o output.png\n</code></pre></div>\n<p dir=\"auto\">If you want to try the 9B model (higher quality, non-commercial license, ~30GB download):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 9B is a gated model - you need a HuggingFace token\n# 1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.2-klein-9B\n# 2. Get your token from https://huggingface.co/settings/tokens\n./download_model.sh 9b --token YOUR_TOKEN\n# or: python download_model.py 9b --token YOUR_TOKEN\n# or: set HF_TOKEN env var\n./iris -d flux-klein-9b -p &quot;A woman wearing sunglasses&quot; -o output.png\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 9B is a gated model - you need a HuggingFace token</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.2-klein-9B</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Get your token from https://huggingface.co/settings/tokens</span>\n./download_model.sh 9b --token YOUR_TOKEN\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: python download_model.py 9b --token YOUR_TOKEN</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: set HF_TOKEN env var</span>\n./iris -d flux-klein-9b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>A woman wearing sunglasses<span class=\"pl-pds\">\"</span></span> -o output.png</pre></div>\n<p dir=\"auto\">For Z-Image-Turbo:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Download Z-Image-Turbo (~12GB)\npip install huggingface_hub &amp;&amp; python download_model.py zimage-turbo\n./iris -d zimage-turbo -p &quot;a fish&quot; -o fish.png\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Download Z-Image-Turbo (~12GB)</span>\npip install huggingface_hub <span class=\"pl-k\">&amp;&amp;</span> python download_model.py zimage-turbo\n./iris -d zimage-turbo -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a fish<span class=\"pl-pds\">\"</span></span> -o fish.png</pre></div>\n<p dir=\"auto\">That's it. No Python runtime or CUDA toolkit required at inference time.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Example Output</h2></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/antirez/iris.c/blob/main/images/woman_with_sunglasses.png\"><img src=\"https://raw.githubusercontent.com/antirez/iris.c/main/images/woman_with_sunglasses.png\" alt=\"Woman with sunglasses\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><em>Generated with: <code>./iris -d flux-klein-4b -p \"A picture of a woman in 1960 America. Sunglasses. ASA 400 film. Black and White.\" -W 512 -H 512 -o woman.png</code></em></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Image-to-Image Example</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/antirez/iris.c/blob/main/images/antirez_to_drawing.png\"><img src=\"https://raw.githubusercontent.com/antirez/iris.c/main/images/antirez_to_drawing.png\" alt=\"antirez to drawing\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><em>Generated with: <code>./iris -i antirez.png -o antirez_to_drawing.png -p \"make it a drawing\" -d flux-klein-4b</code></em></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li><strong>Zero dependencies</strong>: Pure C implementation, works standalone. BLAS optional for ~30x speedup (Apple Accelerate on macOS, OpenBLAS on Linux)</li>\n<li><strong>Metal GPU acceleration</strong>: Automatic on Apple Silicon Macs. Performance matches PyTorch's optimized MPS pipeline</li>\n<li><strong>Runs where Python can't</strong>: Memory-mapped weights (default) enable inference on 8GB RAM systems where the Python ML stack cannot run at all</li>\n<li><strong>Text-to-image</strong>: Generate images from text prompts</li>\n<li><strong>Image-to-image</strong>: Transform existing images guided by prompts (Flux models)</li>\n<li><strong>Multi-reference</strong>: Combine multiple reference images (e.g., <code>-i car.png -i beach.png</code> for \"car on beach\")</li>\n<li><strong>Integrated text encoder</strong>: Qwen3 encoder built-in (4B or 8B depending on model), no external embedding computation needed</li>\n<li><strong>Memory efficient</strong>: Automatic encoder release after encoding (up to ~16GB freed)</li>\n<li><strong>Memory-mapped weights</strong>: Enabled by default. Reduces peak memory from ~16GB to ~4-5GB. Fastest mode on MPS; BLAS users with plenty of RAM may prefer <code>--no-mmap</code> for faster inference</li>\n<li><strong>Size-independent seeds</strong>: Same seed produces similar compositions at different resolutions. Explore at 256x256, then render at 512x512 with the same seed</li>\n<li><strong>Terminal image display</strong>: watch the resulting image without leaving your terminal (Ghostty, Kitty, iTerm2, WezTerm, or Konsole).</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Terminal Image Display</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/antirez/iris.c/blob/main/images/kitty-example.png\"><img src=\"https://raw.githubusercontent.com/antirez/iris.c/main/images/kitty-example.png\" alt=\"Kitty protocol example\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Display generated images directly in your terminal with <code>--show</code>, or watch the denoising process step-by-step with <code>--show-steps</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Display final image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)\n./iris -d flux-klein-4b -p &quot;a cute robot&quot; -o robot.png --show\n\n# Display each denoising step (slower, but interesting to watch)\n./iris -d flux-klein-4b -p &quot;a cute robot&quot; -o robot.png --show-steps\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Display final image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)</span>\n./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cute robot<span class=\"pl-pds\">\"</span></span> -o robot.png --show\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Display each denoising step (slower, but interesting to watch)</span>\n./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cute robot<span class=\"pl-pds\">\"</span></span> -o robot.png --show-steps</pre></div>\n<p dir=\"auto\">Requires a terminal supporting the <a href=\"https://sw.kovidgoyal.net/kitty/graphics-protocol/\" rel=\"nofollow\">Kitty graphics protocol</a> (such as <a href=\"https://sw.kovidgoyal.net/kitty/\" rel=\"nofollow\">Kitty</a> or <a href=\"https://ghostty.org/\" rel=\"nofollow\">Ghostty</a>), the iTerm2 inline image protocol (<a href=\"https://iterm2.com/\" rel=\"nofollow\">iTerm2</a>, <a href=\"https://wezfurlong.org/wezterm/\" rel=\"nofollow\">WezTerm</a>), or <a href=\"https://konsole.kde.org/\" rel=\"nofollow\">Konsole</a>. Terminal type is auto-detected from environment variables.</p>\n<p dir=\"auto\">Use <code>--zoom N</code> to adjust the display size (default: 2 for Retina displays, use 1 for non-HiDPI screens).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Text-to-Image</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b -p &quot;A fluffy orange cat sitting on a windowsill&quot; -o cat.png\"><pre>./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>A fluffy orange cat sitting on a windowsill<span class=\"pl-pds\">\"</span></span> -o cat.png</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Image-to-Image</h3></div>\n<p dir=\"auto\">Transform an existing image based on a prompt:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b -p &quot;oil painting style&quot; -i photo.png -o painting.png\"><pre>./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>oil painting style<span class=\"pl-pds\">\"</span></span> -i photo.png -o painting.png</pre></div>\n<p dir=\"auto\">FLUX.2 uses <strong>in-context conditioning</strong> for image-to-image generation. Unlike traditional approaches that add noise to the input image, FLUX.2 passes the reference image as additional tokens that the model can attend to during generation. This means:</p>\n<ul dir=\"auto\">\n<li>The model \"sees\" your input image and uses it as a reference</li>\n<li>The prompt describes what you want the output to look like</li>\n<li>Results tend to preserve the composition while applying the described transformation</li>\n</ul>\n<p dir=\"auto\"><strong>Tips for good results:</strong></p>\n<ul dir=\"auto\">\n<li>Use descriptive prompts that describe the desired output, not instructions</li>\n<li>Good: <code>\"oil painting of a woman with sunglasses, impressionist style\"</code></li>\n<li>Less good: <code>\"make it an oil painting\"</code> (instructional prompts may work less well)</li>\n</ul>\n<p dir=\"auto\"><strong>Super Resolution:</strong> Since the reference image can be a different size than the output, you can use img2img for upscaling:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b -i small.png -W 1024 -H 1024 -o big.png -p &quot;Create an exact copy of the input image.&quot;\"><pre>./iris -d flux-klein-4b -i small.png -W 1024 -H 1024 -o big.png -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Create an exact copy of the input image.<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">The model will generate a higher-resolution version while preserving the composition and details of the input.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Multi-Reference Generation</h3></div>\n<p dir=\"auto\">Combine elements from multiple reference images:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b -i car.png -i beach.png -p &quot;a sports car on the beach&quot; -o result.png\"><pre>./iris -d flux-klein-4b -i car.png -i beach.png -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a sports car on the beach<span class=\"pl-pds\">\"</span></span> -o result.png</pre></div>\n<p dir=\"auto\">Each reference image is encoded separately and passed to the transformer with different positional embeddings (T=10, T=20, T=30, ...). The model attends to all references during generation, allowing it to combine elements from each.</p>\n<p dir=\"auto\"><strong>Example:</strong></p>\n<ul dir=\"auto\">\n<li>Reference 1: A red sports car</li>\n<li>Reference 2: A tropical beach with palm trees</li>\n<li>Prompt: \"combine the two images\"</li>\n<li>Result: A red sports car on a tropical beach</li>\n</ul>\n<p dir=\"auto\">You can specify up to 16 reference images with multiple <code>-i</code> flags. The prompt guides how the references are combined.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Interactive CLI Mode</h3></div>\n<p dir=\"auto\">Start without <code>-p</code> to enter interactive mode:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b\"><pre>./iris -d flux-klein-4b</pre></div>\n<p dir=\"auto\">Generate images by typing prompts. Each image gets a <code>$N</code> reference ID:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"iris&gt; a red sports car\nDone -&gt; /tmp/iris-.../image-0001.png (ref $0)\n\niris&gt; a tropical beach\nDone -&gt; /tmp/iris-.../image-0002.png (ref $1)\n\niris&gt; $0 $1 combine them\nGenerating 256x256 (multi-ref, 2 images)...\nDone -&gt; /tmp/iris-.../image-0003.png (ref $2)\"><pre class=\"notranslate\"><code>iris&gt; a red sports car\nDone -&gt; /tmp/iris-.../image-0001.png (ref $0)\n\niris&gt; a tropical beach\nDone -&gt; /tmp/iris-.../image-0002.png (ref $1)\n\niris&gt; $0 $1 combine them\nGenerating 256x256 (multi-ref, 2 images)...\nDone -&gt; /tmp/iris-.../image-0003.png (ref $2)\n</code></pre></div>\n<p dir=\"auto\"><strong>Prompt syntax:</strong></p>\n<ul dir=\"auto\">\n<li><code>prompt</code> - text-to-image</li>\n<li><code>512x512 prompt</code> - set size inline</li>\n<li><code>$ prompt</code> - img2img with last image</li>\n<li><code>$N prompt</code> - img2img with reference $N</li>\n<li><code>$0 $3 prompt</code> - multi-reference (combine images)</li>\n</ul>\n<p dir=\"auto\"><strong>Commands:</strong> <code>!help</code>, <code>!save</code>, <code>!load</code>, <code>!seed</code>, <code>!size</code>, <code>!steps</code>, <code>!guidance</code>, <code>!linear</code>, <code>!power</code>, <code>!explore</code>, <code>!show</code>, <code>!quit</code></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Command Line Options</h3></div>\n<p dir=\"auto\"><strong>Required:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"-d, --dir PATH        Path to model directory\n-p, --prompt TEXT     Text prompt for generation\n-o, --output PATH     Output image path (.png or .ppm)\"><pre class=\"notranslate\"><code>-d, --dir PATH        Path to model directory\n-p, --prompt TEXT     Text prompt for generation\n-o, --output PATH     Output image path (.png or .ppm)\n</code></pre></div>\n<p dir=\"auto\"><strong>Generation options:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"-W, --width N         Output width in pixels (default: 256)\n-H, --height N        Output height in pixels (default: 256)\n-s, --steps N         Sampling steps (default: auto, 4 distilled / 50 base / 9 zimage)\n-S, --seed N          Random seed for reproducibility\n-g, --guidance N      CFG guidance scale (default: auto, 1.0 distilled / 4.0 base / 0.0 zimage)\n    --linear          Use linear timestep schedule (see below)\n    --power           Use power curve timestep schedule (see below)\n    --power-alpha N   Set power schedule exponent (default: 2.0)\n    --base            Force base model mode (undistilled, CFG enabled)\"><pre class=\"notranslate\"><code>-W, --width N         Output width in pixels (default: 256)\n-H, --height N        Output height in pixels (default: 256)\n-s, --steps N         Sampling steps (default: auto, 4 distilled / 50 base / 9 zimage)\n-S, --seed N          Random seed for reproducibility\n-g, --guidance N      CFG guidance scale (default: auto, 1.0 distilled / 4.0 base / 0.0 zimage)\n    --linear          Use linear timestep schedule (see below)\n    --power           Use power curve timestep schedule (see below)\n    --power-alpha N   Set power schedule exponent (default: 2.0)\n    --base            Force base model mode (undistilled, CFG enabled)\n</code></pre></div>\n<p dir=\"auto\"><strong>Image-to-image options:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"-i, --input PATH      Reference image (can be specified multiple times)\"><pre class=\"notranslate\"><code>-i, --input PATH      Reference image (can be specified multiple times)\n</code></pre></div>\n<p dir=\"auto\"><strong>Output options:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"-q, --quiet           Silent mode, no output\n-v, --verbose         Show detailed config and timing info\n    --show            Display image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)\n    --show-steps      Display each denoising step (slower)\n    --zoom N          Terminal image zoom factor (default: 2 for Retina)\"><pre class=\"notranslate\"><code>-q, --quiet           Silent mode, no output\n-v, --verbose         Show detailed config and timing info\n    --show            Display image in terminal (auto-detects Kitty/Ghostty/iTerm2/WezTerm/Konsole)\n    --show-steps      Display each denoising step (slower)\n    --zoom N          Terminal image zoom factor (default: 2 for Retina)\n</code></pre></div>\n<p dir=\"auto\"><strong>Other options:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"-m, --mmap            Memory-mapped weights (default, fastest on MPS)\n    --no-mmap         Disable mmap, load all weights upfront\n    --no-license-info Suppress non-commercial license warning (9B model)\n-e, --embeddings PATH Load pre-computed text embeddings (advanced)\n-h, --help            Show help\"><pre class=\"notranslate\"><code>-m, --mmap            Memory-mapped weights (default, fastest on MPS)\n    --no-mmap         Disable mmap, load all weights upfront\n    --no-license-info Suppress non-commercial license warning (9B model)\n-e, --embeddings PATH Load pre-computed text embeddings (advanced)\n-h, --help            Show help\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Reproducibility</h2></div>\n<p dir=\"auto\">The seed is always printed to stderr, even when random:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"$ ./iris -d flux-klein-4b -p &quot;a landscape&quot; -o out.png\nSeed: 1705612345\n...\nSaving... out.png 256x256 (0.1s)\"><pre class=\"notranslate\"><code>$ ./iris -d flux-klein-4b -p \"a landscape\" -o out.png\nSeed: 1705612345\n...\nSaving... out.png 256x256 (0.1s)\n</code></pre></div>\n<p dir=\"auto\">To reproduce the same image, use the printed seed:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"$ ./iris -d flux-klein-4b -p &quot;a landscape&quot; -o out.png -S 1705612345\"><pre class=\"notranslate\"><code>$ ./iris -d flux-klein-4b -p \"a landscape\" -o out.png -S 1705612345\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">PNG Metadata</h2></div>\n<p dir=\"auto\">Generated PNG images include metadata with the seed and model information, so you can always recover the seed even if you didn't save the terminal output:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Using exiftool\nexiftool image.png | grep iris\n\n# Using Python/PIL\npython3 -c &quot;from PIL import Image; print(Image.open('image.png').info)&quot;\n\n# Using ImageMagick\nidentify -verbose image.png | grep -A1 &quot;Properties:&quot;\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Using exiftool</span>\nexiftool image.png <span class=\"pl-k\">|</span> grep iris\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Using Python/PIL</span>\npython3 -c <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>from PIL import Image; print(Image.open('image.png').info)<span class=\"pl-pds\">\"</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Using ImageMagick</span>\nidentify -verbose image.png <span class=\"pl-k\">|</span> grep -A1 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Properties:<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">The following metadata fields are stored:</p>\n<ul dir=\"auto\">\n<li><code>iris:seed</code> - The random seed used for generation</li>\n<li><code>iris:model</code> - The model used</li>\n<li><code>Software</code> - Program identifier</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<p dir=\"auto\">Choose a backend when building:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make            # Show available backends\nmake generic    # Pure C, no dependencies (slow)\nmake blas       # BLAS acceleration (~30x faster)\nmake mps        # Apple Silicon Metal GPU (fastest, macOS only)\"><pre>make            <span class=\"pl-c\"><span class=\"pl-c\">#</span> Show available backends</span>\nmake generic    <span class=\"pl-c\"><span class=\"pl-c\">#</span> Pure C, no dependencies (slow)</span>\nmake blas       <span class=\"pl-c\"><span class=\"pl-c\">#</span> BLAS acceleration (~30x faster)</span>\nmake mps        <span class=\"pl-c\"><span class=\"pl-c\">#</span> Apple Silicon Metal GPU (fastest, macOS only)</span></pre></div>\n<p dir=\"auto\"><strong>Recommended:</strong></p>\n<ul dir=\"auto\">\n<li>macOS Apple Silicon: <code>make mps</code></li>\n<li>macOS Intel: <code>make blas</code></li>\n<li>Linux with OpenBLAS: <code>make blas</code></li>\n<li>Linux without OpenBLAS: <code>make generic</code></li>\n</ul>\n<p dir=\"auto\">For <code>make blas</code> on Linux, install OpenBLAS first:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Ubuntu/Debian\nsudo apt install libopenblas-dev\n\n# Fedora\nsudo dnf install openblas-devel\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Ubuntu/Debian</span>\nsudo apt install libopenblas-dev\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Fedora</span>\nsudo dnf install openblas-devel</pre></div>\n<p dir=\"auto\">Other targets:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make clean      # Clean build artifacts\nmake info       # Show available backends for this platform\"><pre>make clean      <span class=\"pl-c\"><span class=\"pl-c\">#</span> Clean build artifacts</span>\nmake info       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Show available backends for this platform</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<p dir=\"auto\">Run the test suite to verify your build produces correct output:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make test        # Run all tests\nmake test-quick  # Run only the quick 64x64 test\"><pre>make <span class=\"pl-c1\">test</span>        <span class=\"pl-c\"><span class=\"pl-c\">#</span> Run all tests</span>\nmake test-quick  <span class=\"pl-c\"><span class=\"pl-c\">#</span> Run only the quick 64x64 test</span></pre></div>\n<p dir=\"auto\">The tests compare generated images against reference images in <code>test_vectors/</code>. A test passes if the maximum pixel difference is within tolerance (to allow for minor floating-point variations across platforms).</p>\n<p dir=\"auto\"><strong>Test cases:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Test</th>\n<th>Size</th>\n<th>Steps</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Quick</td>\n<td>64x64</td>\n<td>2</td>\n<td>Fast txt2img sanity check</td>\n</tr>\n<tr>\n<td>Full</td>\n<td>512x512</td>\n<td>4</td>\n<td>Validates txt2img at larger resolution</td>\n</tr>\n<tr>\n<td>img2img</td>\n<td>256x256</td>\n<td>4</td>\n<td>Validates image-to-image transformation</td>\n</tr>\n<tr>\n<td>Z-Image</td>\n<td>256x256</td>\n<td>2</td>\n<td>Z-Image smoke test (auto-detected)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">You can also run the test script directly for more options:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 run_test.py --help\npython3 run_test.py --quick\npython3 run_test.py --flux-binary ./iris --model-dir /path/to/model\"><pre>python3 run_test.py --help\npython3 run_test.py --quick\npython3 run_test.py --flux-binary ./iris --model-dir /path/to/model</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Model Download</h2></div>\n<p dir=\"auto\">Download model weights from HuggingFace using one of these methods:</p>\n<p dir=\"auto\"><strong>4B Distilled model</strong> (~16GB, fast 4-step inference):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./download_model.sh 4b                   # using curl\n# or: python download_model.py 4b        # using huggingface_hub\"><pre>./download_model.sh 4b                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> using curl</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: python download_model.py 4b        # using huggingface_hub</span></pre></div>\n<p dir=\"auto\"><strong>4B Base model</strong> (~16GB, 50-step inference with CFG, higher quality):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./download_model.sh 4b-base\n# or: python download_model.py 4b-base\"><pre>./download_model.sh 4b-base\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: python download_model.py 4b-base</span></pre></div>\n<p dir=\"auto\"><strong>9B models</strong> (~30GB, higher quality, non-commercial license):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 9B models are gated - require HuggingFace authentication\n# 1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.2-klein-9B\n# 2. Get a token from https://huggingface.co/settings/tokens\n./download_model.sh 9b --token YOUR_TOKEN       # distilled\n./download_model.sh 9b-base --token YOUR_TOKEN   # base (CFG, highest quality)\n# or: python download_model.py 9b --token YOUR_TOKEN\n# You can also set the HF_TOKEN environment variable\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 9B models are gated - require HuggingFace authentication</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.2-klein-9B</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Get a token from https://huggingface.co/settings/tokens</span>\n./download_model.sh 9b --token YOUR_TOKEN       <span class=\"pl-c\"><span class=\"pl-c\">#</span> distilled</span>\n./download_model.sh 9b-base --token YOUR_TOKEN   <span class=\"pl-c\"><span class=\"pl-c\">#</span> base (CFG, highest quality)</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or: python download_model.py 9b --token YOUR_TOKEN</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> You can also set the HF_TOKEN environment variable</span></pre></div>\n<p dir=\"auto\"><strong>Z-Image-Turbo</strong> (~12GB):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install huggingface_hub &amp;&amp; python download_model.py zimage-turbo\"><pre>pip install huggingface_hub <span class=\"pl-k\">&amp;&amp;</span> python download_model.py zimage-turbo</pre></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Model</th>\n<th>Directory</th>\n<th>Size</th>\n<th>Components</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>4B distilled</td>\n<td><code>./flux-klein-4b</code></td>\n<td>~16GB</td>\n<td>VAE (~300MB), Transformer (~4GB), Qwen3-4B (~8GB)</td>\n</tr>\n<tr>\n<td>4B base</td>\n<td><code>./flux-klein-4b-base</code></td>\n<td>~16GB</td>\n<td>VAE (~300MB), Transformer (~4GB), Qwen3-4B (~8GB)</td>\n</tr>\n<tr>\n<td>9B distilled</td>\n<td><code>./flux-klein-9b</code></td>\n<td>~30GB</td>\n<td>VAE (~300MB), Transformer (~17GB), Qwen3-8B (~15GB)</td>\n</tr>\n<tr>\n<td>9B base</td>\n<td><code>./flux-klein-9b-base</code></td>\n<td>~30GB</td>\n<td>VAE (~300MB), Transformer (~17GB), Qwen3-8B (~15GB)</td>\n</tr>\n<tr>\n<td>Z-Image-Turbo</td>\n<td><code>./zimage-turbo</code></td>\n<td>~12GB</td>\n<td>VAE, Transformer (~6B), Qwen3-4B</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How Fast Is It?</h2></div>\n<p dir=\"auto\">Benchmarks on <strong>Apple M3 Max</strong> (128GB RAM), Flux distilled model (4 steps).</p>\n<p dir=\"auto\">The MPS implementation is faster than the PyTorch optimized pipeline at all resolutions.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Size</th>\n<th>C (MPS)</th>\n<th>PyTorch (MPS)</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>256x256</td>\n<td>5.2s</td>\n<td>11s</td>\n</tr>\n<tr>\n<td>512x512</td>\n<td>7.6s</td>\n<td>13s</td>\n</tr>\n<tr>\n<td>1024x1024</td>\n<td>19s</td>\n<td>25s</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Notes:</strong></p>\n<ul dir=\"auto\">\n<li>All times measured as wall clock, including model loading, no warmup. PyTorch times exclude library import overhead (~5-10s) to be fair.</li>\n<li>The base model is roughly 25x slower (50 steps x 2 passes per step vs 4 steps x 1 pass). It actually produces acceptable results even with 10 steps, so you can tune quality/time. The 25x figure is not exactly accurate because it only covers the denoising steps: text encoding and VAE use the same time for both the models, however such steps are a minor percentage of the generation time.</li>\n<li>The C BLAS backend (CPU) is not shown.</li>\n<li>The <code>make generic</code> backend (pure C, no BLAS) is approximately 30x slower than BLAS and not included in benchmarks.</li>\n<li>The fastest implementation for Metal remains <a href=\"https://drawthings.ai/\" rel=\"nofollow\">the Draw Things app</a> that can produce a 1024x1024 image in just 14.23 seconds (in the same hardware), however it is worth noting that it uses 6-bit quantized weights, while this implementation uses the official BF16 weights. The 6-bit quantization used by Draw Things provides both a big memory win and a moderate speed advantage (not nearly as much as it could in an LLM, where causal attention is dominated by memory bandwidth); if we account for this, the performance is comparable.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Community Benchmarks</h3></div>\n<p dir=\"auto\">The following timings for 512x512 generation (Flux distilled model, 4 steps) were reported by users. They can serve as a rough indication of the performance you could expect, but results vary widely depending on the hardware, Metal availability (the code is heavily optimized for Apple Silicon via MPS), and whether BLAS acceleration is used on CPU.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Hardware</th>\n<th>Backend</th>\n<th>512x512</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>M3 Ultra</td>\n<td>MPS</td>\n<td>4.5s</td>\n</tr>\n<tr>\n<td>M3 Max</td>\n<td>MPS</td>\n<td>7.6s</td>\n</tr>\n<tr>\n<td>MacBook Pro M4</td>\n<td>MPS</td>\n<td>19s</td>\n</tr>\n<tr>\n<td>MacBook Pro M1 Max</td>\n<td>MPS</td>\n<td>39.9s</td>\n</tr>\n<tr>\n<td>Apple M1 Pro</td>\n<td>MPS</td>\n<td>42.4s</td>\n</tr>\n<tr>\n<td>AMD Ryzen 7800X3D</td>\n<td>BLAS</td>\n<td>47.8s</td>\n</tr>\n<tr>\n<td>Intel i5-1135G7</td>\n<td>BLAS</td>\n<td>218s</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Resolution Limits</h2></div>\n<p dir=\"auto\"><strong>Maximum resolution</strong>: 1792x1792 pixels. The model produces good results up to this size; beyond this resolution image quality degrades significantly (this is a model limitation, not an implementation issue).</p>\n<p dir=\"auto\"><strong>Minimum resolution</strong>: 64x64 pixels.</p>\n<p dir=\"auto\">Dimensions should be multiples of 16 (the VAE downsampling factor).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Model Architecture</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">FLUX.2 Klein</h3></div>\n<p dir=\"auto\">All Flux models share the same rectified flow transformer architecture, differing only in dimensions:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Component</th>\n<th>4B</th>\n<th>9B</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Transformer hidden</td>\n<td>3072</td>\n<td>4096</td>\n</tr>\n<tr>\n<td>Attention heads</td>\n<td>24</td>\n<td>32</td>\n</tr>\n<tr>\n<td>Head dim</td>\n<td>128</td>\n<td>128</td>\n</tr>\n<tr>\n<td>Double blocks</td>\n<td>5</td>\n<td>8</td>\n</tr>\n<tr>\n<td>Single blocks</td>\n<td>20</td>\n<td>24</td>\n</tr>\n<tr>\n<td>Text Encoder</td>\n<td>Qwen3-4B (2560 hidden, 36 layers)</td>\n<td>Qwen3-8B (4096 hidden, 36 layers)</td>\n</tr>\n<tr>\n<td>VAE</td>\n<td>AutoencoderKL, 128 latent channels, 8x spatial compression</td>\n<td>Same</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Architecture dimensions are read automatically from the model's config JSON files at load time.</p>\n<p dir=\"auto\">The distilled and base variants differ in inference:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>Distilled</th>\n<th>Base</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Steps</td>\n<td>4</td>\n<td>50 (default)</td>\n</tr>\n<tr>\n<td>CFG guidance</td>\n<td>1.0 (none)</td>\n<td>4.0 (default)</td>\n</tr>\n<tr>\n<td>Passes per step</td>\n<td>1</td>\n<td>2 (conditioned + unconditioned)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The model type (distilled vs base, 4B vs 9B) is autodetected from the model directory. Use <code>--base</code> to force base model mode if autodetection fails.</p>\n<p dir=\"auto\"><strong>Classifier-Free Guidance (CFG)</strong>: The base model runs the transformer twice per step -- once with an empty prompt (unconditioned) and once with the real prompt (conditioned). The final velocity is <code>v = v_uncond + guidance * (v_cond - v_uncond)</code>. This makes each step ~2x slower than the distilled model, and the base model needs ~12x more steps, making it roughly 25x slower overall.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Z-Image-Turbo</h3></div>\n<p dir=\"auto\">Z-Image-Turbo uses an S3-DiT single-stream architecture with noise and context refiners:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Component</th>\n<th>Z-Image-Turbo</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Transformer dim</td>\n<td>3840</td>\n</tr>\n<tr>\n<td>Attention heads</td>\n<td>30</td>\n</tr>\n<tr>\n<td>Head dim</td>\n<td>128</td>\n</tr>\n<tr>\n<td>Main layers</td>\n<td>30</td>\n</tr>\n<tr>\n<td>Refiner layers</td>\n<td>2 (noise) + 2 (context)</td>\n</tr>\n<tr>\n<td>Text Encoder</td>\n<td>Qwen3-4B (hidden_states[-2])</td>\n</tr>\n<tr>\n<td>VAE</td>\n<td>16 latent channels, patch_size=2</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Timestep Schedules</h2></div>\n<p dir=\"auto\">Each model family has its own default schedule. Alternative schedules (<code>--linear</code>, <code>--power</code>, <code>--sigmoid</code>, <code>--flowmatch</code>) are available for experimentation. Any schedule can be used with any model.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Flux Distilled (4B / 9B)</h3></div>\n<p dir=\"auto\">The distilled models use a <strong>shifted sigmoid</strong> schedule (matching the official BFL distillation). This schedule concentrates most steps in the high-noise regime and is part of the distillation training -- changing it will produce poor results. Use 4 steps (the default).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Flux Base (4B-base / 9B-base)</h3></div>\n<p dir=\"auto\">The base models default to the same shifted sigmoid schedule. At 50 steps it works very well, but 50 steps is slow. For quick tests, <strong>10 steps</strong> already produce decent results.</p>\n<p dir=\"auto\">The shifted sigmoid can look extremely unbalanced at low step counts -- for example at 10 steps, the first 5 steps cover only 12% of the denoising trajectory while the last 5 cover 88%. The <code>--linear</code> flag switches to a uniform schedule where each step covers an equal portion of the trajectory, which sometimes produces more realistic results at reduced step counts. The <code>--power</code> flag provides a middle ground: a power curve (<code>t = 1 - (i/n)^a</code>) that is denser at the start and sparser at the end, but less extreme than the shifted sigmoid. The default exponent is 2.0 (quadratic); use <code>--power-alpha</code> to adjust it (1.0 = linear, higher = more front-loaded).</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Base model, 10 steps with default schedule\n./iris -d flux-klein-4b-base -p &quot;a cat&quot; -o cat.png -s 10\n\n# Base model with linear schedule\n./iris -d flux-klein-4b-base -p &quot;a cat&quot; -o cat.png -s 10 --linear\n\n# Base model with power schedule (quadratic by default)\n./iris -d flux-klein-4b-base -p &quot;a cat&quot; -o cat.png -s 10 --power\n\n# Power schedule with custom exponent\n./iris -d flux-klein-4b-base -p &quot;a cat&quot; -o cat.png -s 10 --power-alpha 1.5\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Base model, 10 steps with default schedule</span>\n./iris -d flux-klein-4b-base -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cat<span class=\"pl-pds\">\"</span></span> -o cat.png -s 10\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Base model with linear schedule</span>\n./iris -d flux-klein-4b-base -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cat<span class=\"pl-pds\">\"</span></span> -o cat.png -s 10 --linear\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Base model with power schedule (quadratic by default)</span>\n./iris -d flux-klein-4b-base -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cat<span class=\"pl-pds\">\"</span></span> -o cat.png -s 10 --power\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Power schedule with custom exponent</span>\n./iris -d flux-klein-4b-base -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cat<span class=\"pl-pds\">\"</span></span> -o cat.png -s 10 --power-alpha 1.5</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Z-Image-Turbo</h3></div>\n<p dir=\"auto\">Z-Image-Turbo uses the official diffusers <strong>FlowMatch Euler</strong> schedule by default (static shift). The default is 8 NFE (9 scheduler values, with the terminal sigma at 0 making the last step a no-op).</p>\n<p dir=\"auto\">For quick tests, <strong>4 steps with <code>--linear</code></strong> works well and is twice as fast as the default:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Default schedule (8 NFE)\n./iris -d zimage-turbo -p &quot;a fish&quot; -o fish.png\n\n# Quick test: 4 steps with linear schedule\n./iris -d zimage-turbo -p &quot;a fish&quot; -o fish.png -s 4 --linear\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Default schedule (8 NFE)</span>\n./iris -d zimage-turbo -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a fish<span class=\"pl-pds\">\"</span></span> -o fish.png\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Quick test: 4 steps with linear schedule</span>\n./iris -d zimage-turbo -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a fish<span class=\"pl-pds\">\"</span></span> -o fish.png -s 4 --linear</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Cross-model schedules</h3></div>\n<p dir=\"auto\">You can use any schedule with any model via <code>--sigmoid</code> and <code>--flowmatch</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Flux base with Z-Image's FlowMatch schedule\n./iris -d flux-klein-4b-base -p &quot;a cat&quot; -o cat.png -s 10 --flowmatch\n\n# Z-Image with Flux's shifted sigmoid schedule\n./iris -d zimage-turbo -p &quot;a fish&quot; -o fish.png --sigmoid\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Flux base with Z-Image's FlowMatch schedule</span>\n./iris -d flux-klein-4b-base -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a cat<span class=\"pl-pds\">\"</span></span> -o cat.png -s 10 --flowmatch\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Z-Image with Flux's shifted sigmoid schedule</span>\n./iris -d zimage-turbo -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>a fish<span class=\"pl-pds\">\"</span></span> -o fish.png --sigmoid</pre></div>\n<p dir=\"auto\">This is not really useful with the Flux distilled models, but is interesting with both the base models of Flux and with Z-Image Turbo, even if it is a distilled model: the 9 steps training gives it enough flexibility, and other schedulers may be interesting especially at reduced steps count (quick preview).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Interactive mode</h3></div>\n<p dir=\"auto\">In interactive CLI mode, toggle schedules with <code>!linear</code>, <code>!power [alpha]</code>, <code>!sigmoid</code>, or <code>!flowmatch</code>.</p>\n<p dir=\"auto\">If you have a terminal supporting the iTerm2 or Kitty terminal graphics protocols, it is strongly suggested to test the different schedulers with <code>--show</code> and <code>--show-steps</code> options. It is quite an experience to see the denoising process happening in different ways.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Memory Requirements</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">4B model</h3></div>\n<p dir=\"auto\">With mmap (default):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Memory</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Text encoding</td>\n<td>~2GB (layers loaded on-demand)</td>\n</tr>\n<tr>\n<td>Diffusion</td>\n<td>~1-2GB (blocks loaded on-demand)</td>\n</tr>\n<tr>\n<td>Peak</td>\n<td>~4-5GB</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">With <code>--no-mmap</code> (all weights in RAM):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Memory</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Text encoding</td>\n<td>~8GB (encoder weights)</td>\n</tr>\n<tr>\n<td>Diffusion</td>\n<td>~8GB (transformer ~4GB + VAE ~300MB + activations)</td>\n</tr>\n<tr>\n<td>Peak</td>\n<td>~16GB (if encoder not released)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">9B model</h3></div>\n<p dir=\"auto\">With mmap (default):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Memory</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Text encoding</td>\n<td>~3-4GB (larger layers loaded on-demand)</td>\n</tr>\n<tr>\n<td>Diffusion</td>\n<td>~2-3GB (more/larger blocks loaded on-demand)</td>\n</tr>\n<tr>\n<td>Peak</td>\n<td>~8-10GB</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">With <code>--no-mmap</code> (all weights in RAM):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Phase</th>\n<th>Memory</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Text encoding</td>\n<td>~15GB (Qwen3-8B encoder weights)</td>\n</tr>\n<tr>\n<td>Diffusion</td>\n<td>~17GB (transformer ~17GB + VAE ~300MB + activations)</td>\n</tr>\n<tr>\n<td>Peak</td>\n<td>~32GB (if encoder not released)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The text encoder is automatically released after encoding, reducing peak memory during diffusion. If you generate multiple images with different prompts, the encoder reloads automatically.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Memory-Mapped Weights (Default)</h2></div>\n<p dir=\"auto\">Memory-mapped weight loading is enabled by default. Use <code>--no-mmap</code> to disable and load all weights upfront.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b -p &quot;A cat&quot; -o cat.png           # mmap (default)\n./iris -d flux-klein-4b -p &quot;A cat&quot; -o cat.png --no-mmap # load all upfront\"><pre>./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>A cat<span class=\"pl-pds\">\"</span></span> -o cat.png           <span class=\"pl-c\"><span class=\"pl-c\">#</span> mmap (default)</span>\n./iris -d flux-klein-4b -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>A cat<span class=\"pl-pds\">\"</span></span> -o cat.png --no-mmap <span class=\"pl-c\"><span class=\"pl-c\">#</span> load all upfront</span></pre></div>\n<p dir=\"auto\"><strong>How it works:</strong> Instead of loading all model weights into RAM upfront, mmap keeps the safetensors files memory-mapped and loads weights on-demand:</p>\n<ul dir=\"auto\">\n<li><strong>Text encoder (Qwen3):</strong> Each of the 36 transformer layers (~400MB each) is loaded, processed, and immediately freed. Only ~2GB stays resident instead of ~8GB.</li>\n<li><strong>Denoising transformer:</strong> Each of the 5 double-blocks (~300MB) and 20 single-blocks (~150MB) is loaded on-demand and freed after use. Only ~200MB of shared weights stays resident instead of ~4GB.</li>\n</ul>\n<p dir=\"auto\">This reduces peak memory from ~16GB to ~4-5GB, making inference possible on 16GB RAM systems where the Python ML stack cannot run at all.</p>\n<p dir=\"auto\"><strong>Performance varies by backend:</strong></p>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>MPS (Apple Silicon):</strong> mmap is the <strong>fastest</strong> mode. The model stores weights in bf16 format, and MPS uses them directly via zero-copy pointers into the memory-mapped region. No conversion overhead, and the kernel handles paging efficiently.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>BLAS (CPU):</strong> mmap is <strong>slightly slower</strong> but uses much less RAM. BLAS requires f32 weights, so each block must be converted from bf16-&gt;f32 on every step (25 blocks x 4 steps = 100 conversions). With <code>--no-mmap</code>, this conversion happens once at startup. <strong>Recommendation:</strong> If you have 32GB+ RAM and use BLAS, try <code>--no-mmap</code> for faster inference. If RAM is limited, mmap lets you run at all.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Generic (pure C):</strong> Same tradeoffs as BLAS, but slower overall.</p>\n</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">C Library API</h2></div>\n<p dir=\"auto\">The library can be integrated into your own C/C++ projects. Link against <code>libiris.a</code> and include <code>iris.h</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Text-to-Image Generation</h3></div>\n<p dir=\"auto\">Here's a complete program that generates an image from a text prompt:</p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"#include &quot;iris.h&quot;\n#include &lt;stdio.h&gt;\n\nint main(void) {\n    /* Load the model. This loads VAE, transformer, and text encoder. */\n    iris_ctx *ctx = iris_load_dir(&quot;flux-klein-4b&quot;);\n    if (!ctx) {\n        fprintf(stderr, &quot;Failed to load model: %s\\n&quot;, iris_get_error());\n        return 1;\n    }\n\n    /* Configure generation parameters. Start with defaults and customize. */\n    iris_params params = IRIS_PARAMS_DEFAULT;\n    params.width = 512;\n    params.height = 512;\n    params.seed = 42;  /* Use -1 for random seed */\n\n    /* Generate the image. This handles text encoding, diffusion, and VAE decode. */\n    iris_image *img = iris_generate(ctx, &quot;A fluffy orange cat in a sunbeam&quot;, &amp;params);\n    if (!img) {\n        fprintf(stderr, &quot;Generation failed: %s\\n&quot;, iris_get_error());\n        iris_free(ctx);\n        return 1;\n    }\n\n    /* Save to file. Format is determined by extension (.png or .ppm). */\n    iris_image_save(img, &quot;cat.png&quot;);\n    printf(&quot;Saved cat.png (%dx%d)\\n&quot;, img-&gt;width, img-&gt;height);\n\n    /* Clean up */\n    iris_image_free(img);\n    iris_free(ctx);\n    return 0;\n}\"><pre><span class=\"pl-k\">#include</span> <span class=\"pl-s\">\"iris.h\"</span>\n<span class=\"pl-k\">#include</span> <span class=\"pl-s\">&lt;stdio.h&gt;</span>\n\n<span class=\"pl-smi\">int</span> <span class=\"pl-en\">main</span>(<span class=\"pl-smi\">void</span>) {\n    <span class=\"pl-c\">/* Load the model. This loads VAE, transformer, and text encoder. */</span>\n    <span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_load_dir</span>(<span class=\"pl-s\">\"flux-klein-4b\"</span>);\n    <span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">ctx</span>) {\n        <span class=\"pl-en\">fprintf</span>(<span class=\"pl-s1\">stderr</span>, <span class=\"pl-s\">\"Failed to load model: %s\\n\"</span>, <span class=\"pl-en\">iris_get_error</span>());\n        <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n    }\n\n    <span class=\"pl-c\">/* Configure generation parameters. Start with defaults and customize. */</span>\n    <span class=\"pl-smi\">iris_params</span> <span class=\"pl-s1\">params</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">IRIS_PARAMS_DEFAULT</span>;\n    <span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">width</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">512</span>;\n    <span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">height</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">512</span>;\n    <span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">seed</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">42</span>;  <span class=\"pl-c\">/* Use -1 for random seed */</span>\n\n    <span class=\"pl-c\">/* Generate the image. This handles text encoding, diffusion, and VAE decode. */</span>\n    <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_generate</span>(<span class=\"pl-s1\">ctx</span>, <span class=\"pl-s\">\"A fluffy orange cat in a sunbeam\"</span>, <span class=\"pl-c1\">&amp;</span><span class=\"pl-s1\">params</span>);\n    <span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">img</span>) {\n        <span class=\"pl-en\">fprintf</span>(<span class=\"pl-s1\">stderr</span>, <span class=\"pl-s\">\"Generation failed: %s\\n\"</span>, <span class=\"pl-en\">iris_get_error</span>());\n        <span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);\n        <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n    }\n\n    <span class=\"pl-c\">/* Save to file. Format is determined by extension (.png or .ppm). */</span>\n    <span class=\"pl-en\">iris_image_save</span>(<span class=\"pl-s1\">img</span>, <span class=\"pl-s\">\"cat.png\"</span>);\n    <span class=\"pl-en\">printf</span>(<span class=\"pl-s\">\"Saved cat.png (%dx%d)\\n\"</span>, <span class=\"pl-s1\">img</span><span class=\"pl-c1\">-&gt;</span><span class=\"pl-c1\">width</span>, <span class=\"pl-s1\">img</span><span class=\"pl-c1\">-&gt;</span><span class=\"pl-c1\">height</span>);\n\n    <span class=\"pl-c\">/* Clean up */</span>\n    <span class=\"pl-en\">iris_image_free</span>(<span class=\"pl-s1\">img</span>);\n    <span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);\n    <span class=\"pl-k\">return</span> <span class=\"pl-c1\">0</span>;\n}</pre></div>\n<p dir=\"auto\">Compile with:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gcc -o myapp myapp.c -L. -liris -lm -framework Accelerate  # macOS\ngcc -o myapp myapp.c -L. -liris -lm -lopenblas              # Linux\"><pre>gcc -o myapp myapp.c -L. -liris -lm -framework Accelerate  <span class=\"pl-c\"><span class=\"pl-c\">#</span> macOS</span>\ngcc -o myapp myapp.c -L. -liris -lm -lopenblas              <span class=\"pl-c\"><span class=\"pl-c\">#</span> Linux</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Image-to-Image Transformation</h3></div>\n<p dir=\"auto\">Transform an existing image guided by a text prompt using in-context conditioning:</p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"#include &quot;iris.h&quot;\n#include &lt;stdio.h&gt;\n\nint main(void) {\n    iris_ctx *ctx = iris_load_dir(&quot;flux-klein-4b&quot;);\n    if (!ctx) return 1;\n\n    /* Load the input image */\n    iris_image *photo = iris_image_load(&quot;photo.png&quot;);\n    if (!photo) {\n        fprintf(stderr, &quot;Failed to load image\\n&quot;);\n        iris_free(ctx);\n        return 1;\n    }\n\n    /* Set up parameters. Output size defaults to input size. */\n    iris_params params = IRIS_PARAMS_DEFAULT;\n    params.seed = 123;\n\n    /* Transform the image - describe the desired output */\n    iris_image *painting = iris_img2img(ctx, &quot;oil painting of the scene, impressionist style&quot;,\n                                         photo, &amp;params);\n    iris_image_free(photo);  /* Done with input */\n\n    if (!painting) {\n        fprintf(stderr, &quot;Transformation failed: %s\\n&quot;, iris_get_error());\n        iris_free(ctx);\n        return 1;\n    }\n\n    iris_image_save(painting, &quot;painting.png&quot;);\n    printf(&quot;Saved painting.png\\n&quot;);\n\n    iris_image_free(painting);\n    iris_free(ctx);\n    return 0;\n}\"><pre><span class=\"pl-k\">#include</span> <span class=\"pl-s\">\"iris.h\"</span>\n<span class=\"pl-k\">#include</span> <span class=\"pl-s\">&lt;stdio.h&gt;</span>\n\n<span class=\"pl-smi\">int</span> <span class=\"pl-en\">main</span>(<span class=\"pl-smi\">void</span>) {\n    <span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_load_dir</span>(<span class=\"pl-s\">\"flux-klein-4b\"</span>);\n    <span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">ctx</span>) <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n\n    <span class=\"pl-c\">/* Load the input image */</span>\n    <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">photo</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_image_load</span>(<span class=\"pl-s\">\"photo.png\"</span>);\n    <span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">photo</span>) {\n        <span class=\"pl-en\">fprintf</span>(<span class=\"pl-s1\">stderr</span>, <span class=\"pl-s\">\"Failed to load image\\n\"</span>);\n        <span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);\n        <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n    }\n\n    <span class=\"pl-c\">/* Set up parameters. Output size defaults to input size. */</span>\n    <span class=\"pl-smi\">iris_params</span> <span class=\"pl-s1\">params</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">IRIS_PARAMS_DEFAULT</span>;\n    <span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">seed</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">123</span>;\n\n    <span class=\"pl-c\">/* Transform the image - describe the desired output */</span>\n    <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">painting</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_img2img</span>(<span class=\"pl-s1\">ctx</span>, <span class=\"pl-s\">\"oil painting of the scene, impressionist style\"</span>,\n                                         <span class=\"pl-s1\">photo</span>, <span class=\"pl-c1\">&amp;</span><span class=\"pl-s1\">params</span>);\n    <span class=\"pl-en\">iris_image_free</span>(<span class=\"pl-s1\">photo</span>);  <span class=\"pl-c\">/* Done with input */</span>\n\n    <span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">painting</span>) {\n        <span class=\"pl-en\">fprintf</span>(<span class=\"pl-s1\">stderr</span>, <span class=\"pl-s\">\"Transformation failed: %s\\n\"</span>, <span class=\"pl-en\">iris_get_error</span>());\n        <span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);\n        <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n    }\n\n    <span class=\"pl-en\">iris_image_save</span>(<span class=\"pl-s1\">painting</span>, <span class=\"pl-s\">\"painting.png\"</span>);\n    <span class=\"pl-en\">printf</span>(<span class=\"pl-s\">\"Saved painting.png\\n\"</span>);\n\n    <span class=\"pl-en\">iris_image_free</span>(<span class=\"pl-s1\">painting</span>);\n    <span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);\n    <span class=\"pl-k\">return</span> <span class=\"pl-c1\">0</span>;\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Generating Multiple Images</h3></div>\n<p dir=\"auto\">When generating multiple images with different seeds but the same prompt, you can avoid reloading the text encoder:</p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"iris_ctx *ctx = iris_load_dir(&quot;flux-klein-4b&quot;);\niris_params params = IRIS_PARAMS_DEFAULT;\nparams.width = 256;\nparams.height = 256;\n\n/* Generate 5 variations with different seeds */\nfor (int i = 0; i &lt; 5; i++) {\n    iris_set_seed(1000 + i);\n\n    iris_image *img = iris_generate(ctx, &quot;A mountain landscape at sunset&quot;, &amp;params);\n\n    char filename[64];\n    snprintf(filename, sizeof(filename), &quot;landscape_%d.png&quot;, i);\n    iris_image_save(img, filename);\n    iris_image_free(img);\n}\n\niris_free(ctx);\"><pre><span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_load_dir</span>(<span class=\"pl-s\">\"flux-klein-4b\"</span>);\n<span class=\"pl-smi\">iris_params</span> <span class=\"pl-s1\">params</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">IRIS_PARAMS_DEFAULT</span>;\n<span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">width</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">256</span>;\n<span class=\"pl-s1\">params</span>.<span class=\"pl-c1\">height</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">256</span>;\n\n<span class=\"pl-c\">/* Generate 5 variations with different seeds */</span>\n<span class=\"pl-k\">for</span> (<span class=\"pl-smi\">int</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>; <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-c1\">5</span>; <span class=\"pl-s1\">i</span><span class=\"pl-c1\">++</span>) {\n    <span class=\"pl-en\">iris_set_seed</span>(<span class=\"pl-c1\">1000</span> <span class=\"pl-c1\">+</span> <span class=\"pl-s1\">i</span>);\n\n    <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_generate</span>(<span class=\"pl-s1\">ctx</span>, <span class=\"pl-s\">\"A mountain landscape at sunset\"</span>, <span class=\"pl-c1\">&amp;</span><span class=\"pl-s1\">params</span>);\n\n    <span class=\"pl-smi\">char</span> <span class=\"pl-s1\">filename</span>[<span class=\"pl-c1\">64</span>];\n    <span class=\"pl-en\">snprintf</span>(<span class=\"pl-s1\">filename</span>, <span class=\"pl-k\">sizeof</span>(<span class=\"pl-s1\">filename</span>), <span class=\"pl-s\">\"landscape_%d.png\"</span>, <span class=\"pl-s1\">i</span>);\n    <span class=\"pl-en\">iris_image_save</span>(<span class=\"pl-s1\">img</span>, <span class=\"pl-s1\">filename</span>);\n    <span class=\"pl-en\">iris_image_free</span>(<span class=\"pl-s1\">img</span>);\n}\n\n<span class=\"pl-en\">iris_free</span>(<span class=\"pl-s1\">ctx</span>);</pre></div>\n<p dir=\"auto\">Note: The text encoder (~8GB) is automatically released after the first generation to save memory. It reloads automatically if you use a different prompt.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Error Handling</h3></div>\n<p dir=\"auto\">All functions that can fail return NULL on error. Use <code>iris_get_error()</code> to get a description:</p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"iris_ctx *ctx = iris_load_dir(&quot;nonexistent-model&quot;);\nif (!ctx) {\n    fprintf(stderr, &quot;Error: %s\\n&quot;, iris_get_error());\n    /* Prints something like: &quot;Failed to load VAE - cannot generate images&quot; */\n    return 1;\n}\"><pre><span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">iris_load_dir</span>(<span class=\"pl-s\">\"nonexistent-model\"</span>);\n<span class=\"pl-k\">if</span> (!<span class=\"pl-s1\">ctx</span>) {\n    <span class=\"pl-en\">fprintf</span>(<span class=\"pl-s1\">stderr</span>, <span class=\"pl-s\">\"Error: %s\\n\"</span>, <span class=\"pl-en\">iris_get_error</span>());\n    <span class=\"pl-c\">/* Prints something like: \"Failed to load VAE - cannot generate images\" */</span>\n    <span class=\"pl-k\">return</span> <span class=\"pl-c1\">1</span>;\n}</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">API Reference</h3></div>\n<p dir=\"auto\"><strong>Core functions:</strong></p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"iris_ctx *iris_load_dir(const char *model_dir);   /* Load model, returns NULL on error */\nvoid iris_free(iris_ctx *ctx);                     /* Free all resources */\n\niris_image *iris_generate(iris_ctx *ctx, const char *prompt, const iris_params *params);\niris_image *iris_img2img(iris_ctx *ctx, const char *prompt, const iris_image *input,\n                          const iris_params *params);\"><pre><span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_load_dir</span>(<span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">model_dir</span>);   <span class=\"pl-c\">/* Load model, returns NULL on error */</span>\n<span class=\"pl-smi\">void</span> <span class=\"pl-en\">iris_free</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>);                     <span class=\"pl-c\">/* Free all resources */</span>\n\n<span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_generate</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">prompt</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_params</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">params</span>);\n<span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_img2img</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">prompt</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">input</span>,\n                          <span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_params</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">params</span>);</pre></div>\n<p dir=\"auto\"><strong>Image handling:</strong></p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"iris_image *iris_image_load(const char *path);     /* Load PNG, JPEG, or PPM */\nint iris_image_save(const iris_image *img, const char *path);  /* 0=success, -1=error */\nint iris_image_save_with_seed(const iris_image *img, const char *path, int64_t seed);  /* Save with metadata */\niris_image *iris_image_resize(const iris_image *img, int new_w, int new_h);\nvoid iris_image_free(iris_image *img);\"><pre><span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_image_load</span>(<span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">path</span>);     <span class=\"pl-c\">/* Load PNG, JPEG, or PPM */</span>\n<span class=\"pl-smi\">int</span> <span class=\"pl-en\">iris_image_save</span>(<span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">path</span>);  <span class=\"pl-c\">/* 0=success, -1=error */</span>\n<span class=\"pl-smi\">int</span> <span class=\"pl-en\">iris_image_save_with_seed</span>(<span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span>, <span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">path</span>, <span class=\"pl-smi\">int64_t</span> <span class=\"pl-s1\">seed</span>);  <span class=\"pl-c\">/* Save with metadata */</span>\n<span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_image_resize</span>(<span class=\"pl-k\">const</span> <span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span>, <span class=\"pl-smi\">int</span> <span class=\"pl-s1\">new_w</span>, <span class=\"pl-smi\">int</span> <span class=\"pl-s1\">new_h</span>);\n<span class=\"pl-smi\">void</span> <span class=\"pl-en\">iris_image_free</span>(<span class=\"pl-smi\">iris_image</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">img</span>);</pre></div>\n<p dir=\"auto\"><strong>Utilities:</strong></p>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"void iris_set_seed(int64_t seed);                  /* Set RNG seed for reproducibility */\nconst char *iris_get_error(void);                  /* Get last error message */\nvoid iris_release_text_encoder(iris_ctx *ctx);     /* Manually free ~8GB (optional) */\nint iris_is_distilled(iris_ctx *ctx);              /* 1 = distilled, 0 = base */\nvoid iris_set_base_mode(iris_ctx *ctx);            /* Force base model mode */\"><pre><span class=\"pl-smi\">void</span> <span class=\"pl-en\">iris_set_seed</span>(<span class=\"pl-smi\">int64_t</span> <span class=\"pl-s1\">seed</span>);                  <span class=\"pl-c\">/* Set RNG seed for reproducibility */</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-smi\">char</span> <span class=\"pl-c1\">*</span><span class=\"pl-en\">iris_get_error</span>(<span class=\"pl-smi\">void</span>);                  <span class=\"pl-c\">/* Get last error message */</span>\n<span class=\"pl-smi\">void</span> <span class=\"pl-en\">iris_release_text_encoder</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>);     <span class=\"pl-c\">/* Manually free ~8GB (optional) */</span>\n<span class=\"pl-smi\">int</span> <span class=\"pl-en\">iris_is_distilled</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>);              <span class=\"pl-c\">/* 1 = distilled, 0 = base */</span>\n<span class=\"pl-smi\">void</span> <span class=\"pl-en\">iris_set_base_mode</span>(<span class=\"pl-smi\">iris_ctx</span> <span class=\"pl-c1\">*</span><span class=\"pl-s1\">ctx</span>);            <span class=\"pl-c\">/* Force base model mode */</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Parameters</h3></div>\n<div class=\"highlight highlight-source-c notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"typedef struct {\n    int width;              /* Output width in pixels (default: 256) */\n    int height;             /* Output height in pixels (default: 256) */\n    int num_steps;          /* Denoising steps, 0 = auto (4 distilled, 50 base, 9 zimage) */\n    int64_t seed;           /* Random seed, -1 for random (default: -1) */\n    float guidance;         /* CFG guidance scale, 0 = auto (1.0 distilled, 4.0 base, 0.0 zimage) */\n    int linear_schedule;    /* Use linear timestep schedule (0 = shifted sigmoid) */\n    int power_schedule;     /* Use power curve timestep schedule */\n    float power_alpha;      /* Exponent for power schedule (default: 2.0) */\n} iris_params;\n\n/* Initialize with sensible defaults (auto steps and guidance from model type) */\n#define IRIS_PARAMS_DEFAULT { 256, 256, 0, -1, 0.0f, 0, 0, 2.0f }\"><pre><span class=\"pl-k\">typedef</span> <span class=\"pl-k\">struct</span> {\n    <span class=\"pl-smi\">int</span> <span class=\"pl-c1\">width</span>;              <span class=\"pl-c\">/* Output width in pixels (default: 256) */</span>\n    <span class=\"pl-smi\">int</span> <span class=\"pl-c1\">height</span>;             <span class=\"pl-c\">/* Output height in pixels (default: 256) */</span>\n    <span class=\"pl-smi\">int</span> <span class=\"pl-c1\">num_steps</span>;          <span class=\"pl-c\">/* Denoising steps, 0 = auto (4 distilled, 50 base, 9 zimage) */</span>\n    <span class=\"pl-smi\">int64_t</span> <span class=\"pl-c1\">seed</span>;           <span class=\"pl-c\">/* Random seed, -1 for random (default: -1) */</span>\n    <span class=\"pl-smi\">float</span> <span class=\"pl-c1\">guidance</span>;         <span class=\"pl-c\">/* CFG guidance scale, 0 = auto (1.0 distilled, 4.0 base, 0.0 zimage) */</span>\n    <span class=\"pl-smi\">int</span> <span class=\"pl-c1\">linear_schedule</span>;    <span class=\"pl-c\">/* Use linear timestep schedule (0 = shifted sigmoid) */</span>\n    <span class=\"pl-smi\">int</span> <span class=\"pl-c1\">power_schedule</span>;     <span class=\"pl-c\">/* Use power curve timestep schedule */</span>\n    <span class=\"pl-smi\">float</span> <span class=\"pl-c1\">power_alpha</span>;      <span class=\"pl-c\">/* Exponent for power schedule (default: 2.0) */</span>\n} <span class=\"pl-smi\">iris_params</span>;\n\n<span class=\"pl-c\">/* Initialize with sensible defaults (auto steps and guidance from model type) */</span>\n<span class=\"pl-k\">#define</span> <span class=\"pl-c1\">IRIS_PARAMS_DEFAULT</span> { 256, 256, 0, -1, 0.0f, 0, 0, 2.0f }</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Debugging</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Comparing with Python Reference</h3></div>\n<p dir=\"auto\">When debugging img2img issues, the <code>--debug-py</code> flag allows you to run the C implementation with exact inputs saved from a Python reference script. This isolates whether differences are due to input preparation (VAE encoding, text encoding, noise generation) or the transformer itself.</p>\n<p dir=\"auto\"><strong>Setup:</strong></p>\n<ol dir=\"auto\">\n<li>Set up the Python environment:</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python -m venv flux_env\nsource flux_env/bin/activate\npip install torch diffusers transformers safetensors einops huggingface_hub\"><pre>python -m venv flux_env\n<span class=\"pl-c1\">source</span> flux_env/bin/activate\npip install torch diffusers transformers safetensors einops huggingface_hub</pre></div>\n<ol start=\"2\" dir=\"auto\">\n<li>Clone the flux2 reference (for the model class):</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/black-forest-labs/flux flux2\"><pre>git clone https://github.com/black-forest-labs/flux flux2</pre></div>\n<ol start=\"3\" dir=\"auto\">\n<li>Run the Python debug script to save inputs:</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python debug/debug_img2img_compare.py\"><pre>python debug/debug_img2img_compare.py</pre></div>\n<p dir=\"auto\">This saves to <code>/tmp/</code>:</p>\n<ul dir=\"auto\">\n<li><code>py_noise.bin</code> - Initial noise tensor</li>\n<li><code>py_ref_latent.bin</code> - VAE-encoded reference image</li>\n<li><code>py_text_emb.bin</code> - Text embeddings from Qwen3</li>\n</ul>\n<ol start=\"4\" dir=\"auto\">\n<li>Run C with the same inputs:</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./iris -d flux-klein-4b --debug-py -W 256 -H 256 --steps 4 -o /tmp/c_debug.png\"><pre>./iris -d flux-klein-4b --debug-py -W 256 -H 256 --steps 4 -o /tmp/c_debug.png</pre></div>\n<ol start=\"5\" dir=\"auto\">\n<li>Compare the outputs visually or numerically.</li>\n</ol>\n<p dir=\"auto\"><strong>What this helps diagnose:</strong></p>\n<ul dir=\"auto\">\n<li>If C and Python produce identical outputs with identical inputs, any differences in normal operation are due to input preparation (VAE, text encoder, RNG)</li>\n<li>If outputs differ even with identical inputs, the issue is in the transformer or sampling implementation</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Debug Scripts</h3></div>\n<p dir=\"auto\">The <code>debug/</code> directory contains Python scripts for comparing C and Python implementations:</p>\n<ul dir=\"auto\">\n<li><code>debug_img2img_compare.py</code> - Full img2img comparison with step-by-step statistics</li>\n<li><code>debug_rope_img2img.py</code> - Verify RoPE position encoding matches between C and Python</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT</p>\n</article></div>",
+  "contributorCount": 8,
+  "participation": {
+    "all": 230,
+    "owner": 221,
+    "community": 9
+  },
+  "recentIssues": [
+    {
+      "number": 50,
+      "title": "EXC_BAD_ACCESS in MPSGraph encodeToCommandBuffer during img2img (graph cache use-after-free)",
+      "url": "https://github.com/antirez/iris.c/issues/50",
+      "createdAt": "2026-03-23T18:08:01Z",
+      "comments": 0,
+      "labels": [],
+      "author": "sindresorhus"
+    },
+    {
+      "number": 48,
+      "title": "Could iris.c get features like inpainting/outpainting/LoRA/ and supporting other models?",
+      "url": "https://github.com/antirez/iris.c/issues/48",
+      "createdAt": "2026-03-09T22:34:25Z",
+      "comments": 2,
+      "labels": [],
+      "author": "cblc"
+    },
+    {
+      "number": 38,
+      "title": "Z-Image-Turbo on x86 (generic&blas) generates random color mosaics only",
+      "url": "https://github.com/antirez/iris.c/issues/38",
+      "createdAt": "2026-02-18T14:30:38Z",
+      "comments": 3,
+      "labels": [],
+      "author": "martin-frbg"
+    },
+    {
+      "number": 37,
+      "title": "Z-Image inference gets stuck on Loading transformer",
+      "url": "https://github.com/antirez/iris.c/issues/37",
+      "createdAt": "2026-02-17T21:27:21Z",
+      "comments": 1,
+      "labels": [],
+      "author": "timothybroome"
+    },
+    {
+      "number": 35,
+      "title": "suggestion: move from qwen3 for emb to qwen3-vl-embedding / reranking",
+      "url": "https://github.com/antirez/iris.c/issues/35",
+      "createdAt": "2026-02-12T11:49:45Z",
+      "comments": 0,
+      "labels": [],
+      "author": "S1M0N38"
+    },
+    {
+      "number": 34,
+      "title": "Web UI for iris.c",
+      "url": "https://github.com/antirez/iris.c/issues/34",
+      "createdAt": "2026-02-10T11:57:36Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Piergiuseppe"
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "9873887",
+      "message": "README: grammar.",
+      "url": "https://github.com/antirez/iris.c/commit/9873887d4aa0646c650adc5b86b986d2f653b7e0",
+      "date": "2026-02-13T15:22:47Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "c8d0b27",
+      "message": "Project renamed into Iris.",
+      "url": "https://github.com/antirez/iris.c/commit/c8d0b27ff307c2b42a03bc752bc4578aead65333",
+      "date": "2026-02-13T14:51:13Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "e2cf4ce",
+      "message": "Zimage turbo support",
+      "url": "https://github.com/antirez/iris.c/commit/e2cf4ce96077d2bd8be64e007a4cded2cb31d6a0",
+      "date": "2026-02-13T10:48:52Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "cc1da69",
+      "message": "Merge pull request #36 from FHult/fix/crash-fixes",
+      "url": "https://github.com/antirez/iris.c/commit/cc1da69fe1c82b122856534b1287628decbfbc2b",
+      "date": "2026-02-13T09:14:18Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "6e9129f",
+      "message": "Fix two crash bugs: 16-bit PNG loading and GPU VAE decode",
+      "url": "https://github.com/antirez/iris.c/commit/6e9129f6953b4d94db9a6c54dd7143d8679c854a",
+      "date": "2026-02-12T22:05:02Z",
+      "author": "FHult",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/48207954?v=4"
+    },
+    {
+      "sha": "bc06d4d",
+      "message": "Merge branch 'pr-24'",
+      "url": "https://github.com/antirez/iris.c/commit/bc06d4d5bfdce745fd1794e9375615d926f74b15",
+      "date": "2026-02-08T17:07:42Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "d62636d",
+      "message": "Dynamic reference resizing to fit MPS 4GB attention limit",
+      "url": "https://github.com/antirez/iris.c/commit/d62636d60ea239a515b59b679adf81976bb8aeea",
+      "date": "2026-02-08T16:51:48Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "6d533f4",
+      "message": "Invalidate GPU weight cache when freeing block weights",
+      "url": "https://github.com/antirez/iris.c/commit/6d533f41a60ee91cc27521a1956415af997596d2",
+      "date": "2026-02-08T15:40:28Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "11c3c15",
+      "message": "Fix indentation in Metal mathMode runtime check",
+      "url": "https://github.com/antirez/iris.c/commit/11c3c15dd3fed1d8d1bb8e988e012ea843b1a52a",
+      "date": "2026-02-08T15:32:58Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    },
+    {
+      "sha": "16f4b57",
+      "message": "Merge pull request #29 from brendon9x/runtime-mathmode-api",
+      "url": "https://github.com/antirez/iris.c/commit/16f4b57cc59a794775fefd68606e1a2bde31e375",
+      "date": "2026-02-08T15:32:05Z",
+      "author": "antirez",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65632?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "debug",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/antirez/iris.c/tree/main/debug"
+    },
+    {
+      "name": "images",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/antirez/iris.c/tree/main/images"
+    },
+    {
+      "name": "jpg_test",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/antirez/iris.c/tree/main/jpg_test"
+    },
+    {
+      "name": "test_vectors",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/antirez/iris.c/tree/main/test_vectors"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 321,
+      "url": "https://github.com/antirez/iris.c/blob/main/.gitignore"
+    },
+    {
+      "name": "AGENT.md",
+      "type": "file",
+      "size": 13679,
+      "url": "https://github.com/antirez/iris.c/blob/main/AGENT.md"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 8,
+      "url": "https://github.com/antirez/iris.c/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "download_model.py",
+      "type": "file",
+      "size": 5600,
+      "url": "https://github.com/antirez/iris.c/blob/main/download_model.py"
+    },
+    {
+      "name": "download_model.sh",
+      "type": "file",
+      "size": 6027,
+      "url": "https://github.com/antirez/iris.c/blob/main/download_model.sh"
+    },
+    {
+      "name": "embcache.c",
+      "type": "file",
+      "size": 7649,
+      "url": "https://github.com/antirez/iris.c/blob/main/embcache.c"
+    },
+    {
+      "name": "embcache.h",
+      "type": "file",
+      "size": 3046,
+      "url": "https://github.com/antirez/iris.c/blob/main/embcache.h"
+    },
+    {
+      "name": "iris_cli.c",
+      "type": "file",
+      "size": 38625,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_cli.c"
+    },
+    {
+      "name": "iris_cli.h",
+      "type": "file",
+      "size": 301,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_cli.h"
+    },
+    {
+      "name": "iris_image.c",
+      "type": "file",
+      "size": 32308,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_image.c"
+    },
+    {
+      "name": "iris_kernels.c",
+      "type": "file",
+      "size": 40854,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_kernels.c"
+    },
+    {
+      "name": "iris_kernels.h",
+      "type": "file",
+      "size": 11498,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_kernels.h"
+    },
+    {
+      "name": "iris_metal.h",
+      "type": "file",
+      "size": 32736,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_metal.h"
+    },
+    {
+      "name": "iris_metal.m",
+      "type": "file",
+      "size": 263252,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_metal.m"
+    },
+    {
+      "name": "iris_qwen3_tokenizer.c",
+      "type": "file",
+      "size": 33339,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_qwen3_tokenizer.c"
+    },
+    {
+      "name": "iris_qwen3.c",
+      "type": "file",
+      "size": 74383,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_qwen3.c"
+    },
+    {
+      "name": "iris_qwen3.h",
+      "type": "file",
+      "size": 4932,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_qwen3.h"
+    },
+    {
+      "name": "iris_safetensors.c",
+      "type": "file",
+      "size": 13613,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_safetensors.c"
+    },
+    {
+      "name": "iris_safetensors.h",
+      "type": "file",
+      "size": 2583,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_safetensors.h"
+    },
+    {
+      "name": "iris_sample.c",
+      "type": "file",
+      "size": 45300,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_sample.c"
+    },
+    {
+      "name": "iris_shaders.metal",
+      "type": "file",
+      "size": 73689,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_shaders.metal"
+    },
+    {
+      "name": "iris_tokenizer.c",
+      "type": "file",
+      "size": 16508,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_tokenizer.c"
+    },
+    {
+      "name": "iris_transformer_flux.c",
+      "type": "file",
+      "size": 229422,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_transformer_flux.c"
+    },
+    {
+      "name": "iris_transformer_zimage.c",
+      "type": "file",
+      "size": 102735,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_transformer_zimage.c"
+    },
+    {
+      "name": "iris_vae.c",
+      "type": "file",
+      "size": 56657,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris_vae.c"
+    },
+    {
+      "name": "iris.c",
+      "type": "file",
+      "size": 67249,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris.c"
+    },
+    {
+      "name": "iris.h",
+      "type": "file",
+      "size": 10195,
+      "url": "https://github.com/antirez/iris.c/blob/main/iris.h"
+    },
+    {
+      "name": "jpeg.c",
+      "type": "file",
+      "size": 228,
+      "url": "https://github.com/antirez/iris.c/blob/main/jpeg.c"
+    },
+    {
+      "name": "jpeg.h",
+      "type": "file",
+      "size": 51351,
+      "url": "https://github.com/antirez/iris.c/blob/main/jpeg.h"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1077,
+      "url": "https://github.com/antirez/iris.c/blob/main/LICENSE"
+    },
+    {
+      "name": "linenoise.c",
+      "type": "file",
+      "size": 62250,
+      "url": "https://github.com/antirez/iris.c/blob/main/linenoise.c"
+    },
+    {
+      "name": "linenoise.h",
+      "type": "file",
+      "size": 4612,
+      "url": "https://github.com/antirez/iris.c/blob/main/linenoise.h"
+    },
+    {
+      "name": "main.c",
+      "type": "file",
+      "size": 27985,
+      "url": "https://github.com/antirez/iris.c/blob/main/main.c"
+    },
+    {
+      "name": "Makefile",
+      "type": "file",
+      "size": 6714,
+      "url": "https://github.com/antirez/iris.c/blob/main/Makefile"
+    },
+    {
+      "name": "png_compare.c",
+      "type": "file",
+      "size": 1563,
+      "url": "https://github.com/antirez/iris.c/blob/main/png_compare.c"
+    },
+    {
+      "name": "png.c",
+      "type": "file",
+      "size": 231,
+      "url": "https://github.com/antirez/iris.c/blob/main/png.c"
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "recentPulls": [
+    {
+      "number": 32,
+      "title": "Pr/server keep model 2162c60",
+      "url": "https://github.com/antirez/iris.c/pull/32",
+      "state": "open",
+      "updatedAt": "2026-04-14T12:59:36Z",
+      "author": "taf2",
+      "draft": false
+    },
+    {
+      "number": 30,
+      "title": "Update params.seed when -S is not given",
+      "url": "https://github.com/antirez/iris.c/pull/30",
+      "state": "open",
+      "updatedAt": "2026-04-14T12:38:21Z",
+      "author": "gpakosz",
+      "draft": false
+    },
+    {
+      "number": 19,
+      "title": "feat: ROCm Backend Full GPU-Resident Architecture",
+      "url": "https://github.com/antirez/iris.c/pull/19",
+      "state": "open",
+      "updatedAt": "2026-04-14T11:26:44Z",
+      "author": "ogulcancelik",
+      "draft": false
+    },
+    {
+      "number": 42,
+      "title": "perf(embcache): extend to 4-slot hash-based cache",
+      "url": "https://github.com/antirez/iris.c/pull/42",
+      "state": "open",
+      "updatedAt": "2026-04-07T21:57:23Z",
+      "author": "FHult",
+      "draft": false
+    },
+    {
+      "number": 49,
+      "title": "Fix Z-Image Turbo colored mosaics on Linux BLAS",
+      "url": "https://github.com/antirez/iris.c/pull/49",
+      "state": "open",
+      "updatedAt": "2026-03-17T02:38:29Z",
+      "author": "makuto",
+      "draft": false
+    },
+    {
+      "number": 47,
+      "title": "Fix: null-check malloc/realloc in attention, sampling, and tokenizer",
+      "url": "https://github.com/antirez/iris.c/pull/47",
+      "state": "open",
+      "updatedAt": "2026-03-06T14:57:56Z",
+      "author": "FHult",
+      "draft": false
+    },
+    {
+      "number": 7,
+      "title": "Add ROCm (AMD GPU) support and critical VAE optimization",
+      "url": "https://github.com/antirez/iris.c/pull/7",
+      "state": "closed",
+      "updatedAt": "2026-03-03T11:19:49Z",
+      "author": "l33tm4st3r",
+      "draft": false
+    },
+    {
+      "number": 45,
+      "title": "Add FLUX.2-dev support with Mistral text encoder",
+      "url": "https://github.com/antirez/iris.c/pull/45",
+      "state": "closed",
+      "updatedAt": "2026-02-27T10:33:35Z",
+      "author": "marcelcotta",
+      "draft": false
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Copilot code review",
+      "status": "failure",
+      "url": "https://github.com/antirez/iris.c/actions/runs/21528812885",
+      "branch": "refs/pull/24/head",
+      "updatedAt": "2026-01-30T19:59:10Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 42,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 12,
+  "openPRs": 12,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 8,
+  "mergedPRs": 7,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 2
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 148
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 11
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 31
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 28
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 2
+    },
+    {
+      "date": "2026-01-18",
+      "count": 39
+    },
+    {
+      "date": "2026-01-19",
+      "count": 45
+    },
+    {
+      "date": "2026-01-20",
+      "count": 4
+    },
+    {
+      "date": "2026-01-21",
+      "count": 7
+    },
+    {
+      "date": "2026-01-22",
+      "count": 30
+    },
+    {
+      "date": "2026-01-23",
+      "count": 11
+    },
+    {
+      "date": "2026-01-24",
+      "count": 12
+    },
+    {
+      "date": "2026-01-25",
+      "count": 8
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 2
+    },
+    {
+      "date": "2026-01-31",
+      "count": 1
+    },
+    {
+      "date": "2026-02-01",
+      "count": 5
+    },
+    {
+      "date": "2026-02-02",
+      "count": 9
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 7
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 3
+    },
+    {
+      "date": "2026-02-07",
+      "count": 7
+    },
+    {
+      "date": "2026-02-08",
+      "count": 24
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 1
+    },
+    {
+      "date": "2026-02-13",
+      "count": 3
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-30T13:46:23.873Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2026-02-08",
+        "stars": 98
+      },
+      {
+        "date": "2026-02-15",
+        "stars": 590
+      },
+      {
+        "date": "2026-02-22",
+        "stars": 886
+      },
+      {
+        "date": "2026-03-01",
+        "stars": 1033
+      },
+      {
+        "date": "2026-03-08",
+        "stars": 1181
+      },
+      {
+        "date": "2026-03-15",
+        "stars": 1378
+      },
+      {
+        "date": "2026-03-22",
+        "stars": 1427
+      },
+      {
+        "date": "2026-03-29",
+        "stars": 1476
+      },
+      {
+        "date": "2026-04-05",
+        "stars": 1624
+      },
+      {
+        "date": "2026-04-12",
+        "stars": 1771
+      },
+      {
+        "date": "2026-05-03",
+        "stars": 1820
+      },
+      {
+        "date": "2026-05-10",
+        "stars": 1870
+      },
+      {
+        "date": "2026-05-17",
+        "stars": 1919
+      },
+      {
+        "date": "2026-06-21",
+        "stars": 1968
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 49.2,
+    "sampledAt": "2026-07-30T13:46:37.984Z"
+  }
+}
