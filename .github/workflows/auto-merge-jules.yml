@@ -21,6 +21,11 @@ name: Auto-merge Jules PRs
 on:
   pull_request:
     types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to re-run auto-merge against (for manually retrying after a fix to this workflow, without pushing a no-op commit to the PR branch)"
+        required: true
 
 permissions:
   contents: write
@@ -37,7 +42,7 @@ jobs:
         id: scope
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
         run: |
           files=$(gh pr view "$PR" --json files --jq '.files[].path')
           echo "$files"
@@ -51,22 +56,26 @@ jobs:
         if: steps.scope.outputs.content_only == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
         run: |
+          # Excludes the "automerge" check itself -- this job IS that check,
+          # so while it's running gh pr checks always reports it "pending",
+          # which would make every other-checks-pass poll loop forever
+          # (self-referential deadlock) instead of ever seeing all-pass.
           for i in $(seq 1 40); do
-            status=0
-            gh pr checks "$PR" || status=$?
-            if [ "$status" -eq 0 ]; then
-              echo "All checks passed -- merging."
+            checks=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name != "automerge")]')
+            echo "$checks"
+            if echo "$checks" | jq -e 'all(.bucket == "pass")' > /dev/null; then
+              echo "All other checks passed -- merging."
               gh pr merge "$PR" --squash --delete-branch
               exit 0
-            elif [ "$status" -eq 8 ]; then
-              echo "Checks still pending (attempt $i/40), waiting..."
-              sleep 20
-            else
+            elif echo "$checks" | jq -e 'any(.bucket == "fail")' > /dev/null; then
               echo "::error::A check failed on PR #$PR -- leaving it open for manual review."
               gh pr comment "$PR" --body "One or more checks failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
               exit 1
+            else
+              echo "Checks still pending (attempt $i/40), waiting..."
+              sleep 20
             fi
           done
           echo "::error::Checks did not finish within 15 minutes -- leaving PR #$PR open for manual review."
@@ -77,6 +86,6 @@ jobs:
         if: steps.scope.outputs.content_only == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
+          PR: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
         run: |
           gh pr comment "$PR" --body "This PR touches files outside data/ and content/, so it will not be auto-merged. A maintainer needs to review it."
