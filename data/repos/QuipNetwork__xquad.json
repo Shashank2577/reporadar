@@ -1,0 +1,3007 @@
+{
+  "id": "QuipNetwork/xquad",
+  "snapshots": [
+    {
+      "date": "2026-07-30",
+      "stars": 5589,
+      "forks": 18
+    }
+  ],
+  "trendingHistory": [],
+  "owner": "QuipNetwork",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/203704131?v=4",
+  "ownerType": "Organization",
+  "name": "xquad",
+  "description": "A rust implementation of the Quip Network's quantum virtual machine.",
+  "url": "https://github.com/QuipNetwork/xquad",
+  "homepage": null,
+  "license": "AGPL-3.0",
+  "language": "Python",
+  "topics": [],
+  "stars": 5589,
+  "forks": 18,
+  "watchers": 6,
+  "openIssues": 0,
+  "createdAt": "2026-04-02T13:07:49Z",
+  "pushedAt": "2026-07-27T21:28:54Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-30T08:14:37.875Z",
+  "languages": {
+    "Python": 901132,
+    "Rust": 685514,
+    "Shell": 25109,
+    "Makefile": 15070
+  },
+  "commitCount": 273,
+  "readmeExcerpt": "\n\n# XQuad\n\n> **Early public release.** The instruction set, binary format, and public API\n> may still change before v1.0. Production use is not recommended yet.\n\nXQuad is a hardware-agnostic toolchain for expressing and running quadratic\noptimization problems (QUBO / Ising / discrete) across quantum annealers and\nclassical solvers. It ships as three Rust crates plus five Python distributions\nbuilt around a single virtual-machine specification.\n\nThink of it as **LLVM for quadratic models** — a common intermediate\nrepresentation that lets you write a problem once and retarget it to any\nsupported backend.\n\n- **Spec-first.** Every behaviour is nailed down in [`spec/xqvm/SPEC.md`](spec/xqvm/SPEC.md)\n  and cross-implementation parity is mechanically enforced: every committed\n  conformance vector runs on both the Rust production VM (`xqvm`) and the\n  Python reference VM (`xqvm_py`) in CI; disagreement fails the build.\n- **Embeddable.** The Rust core supports `no_std + alloc`, so the same VM\n  runs inside WASM runtimes, Substrate pallets, and native binaries.\n- **Interactive.** The Python umbrella (`xquad`) is REPL and Jupyter-friendly:\n  load a program once, run it with different calldata, inspect outputs by\n  slot. Low-level FFI lives in `xqffi`; user-facing `Program` / `Session` /\n  `RunResult` live in `xquad.program`.\n\n## Install\n\n### Rust (from crates.io)\n\n```sh\ncargo install xqcli           # gives you the `xquad` binary\n```\n\n### Python (from PyPI)\n\n```sh\npip install xquad             # umbrella — full pipeline\n# or pick individual pieces:\npip install xqffi xqcp xqsa   # FFI bindings + DSL + solvers\n```\n\nPrebuilt wheels are available for Linux x86_64 and aarch64 (CPython >= 3.13). On macOS and Windows, pip builds the `xqffi` Rust extension from source -- this requires a [Rust toolchain](https://rustup.rs/) (>= 1.85).\n\n### GPU/QPU support\n\nThe base install includes CPU simulated annealing only. To use GPU or quantum hardware solvers, install the corresponding extra:\n\n| Solver | Install | Prerequisite |\n|--------|---------|-------------|\n| NVIDIA CUDA GPU (`cuda-gpu`) | `pip install xquad[cuda]` | CUDA 12.x driver + NVIDIA GPU |\n| Apple Metal GPU (`metal-gpu`) | `pip install xquad[metal]` | macOS 13+ with Apple Silicon |\n| D-Wave Advantage QPU (`dwave-qpu`) | `pip install xquad[dwave]` | D-Wave Leap account + API token |\n\nExtras are composable: `pip install xquad[cuda,dwave]`. See [`xqsa/README.md`](xqsa/README.md#install) for driver prerequisites and per-solver quick-starts.\n\n## Package map\n\nThree Rust crates on **crates.io**:\n\n| Crate | Binary | Description |\n|---|---|---|\n| [`xqvm`](xqvm/) | – | X-Quadratic Virtual Machine interpreter, bytecode codec, opcode table (`no_std + alloc`) |\n| [`xqasm`](xqasm/) | – | `.xqasm` text-format assembler |\n| [`xqcli`](xqcli/) | `xquad` | Unified CLI — `xquad run` / `asm` / `dsm` |\n\nFive Python distributions on **PyPI**:\n\n| Package | Description |\n|---|---|\n| [`xqffi`](xqffi/) | PyO3 FFI bindings for `xqvm` + `xqasm` (`xqffi.vm`, `xqffi.asm`) |\n| [`xqvm_py`](xqvm_py/) | Pure-Python reference VM (conformance oracle) |\n| [`xqcp`](xqcp/) | Constraint-programming DSL that compiles to `.xqasm` |\n| [`xqsa`](xqsa/) | Solver adapters (dwave-samplers; pluggable solver interface) |\n| [`xquad`](xquad/) | Umbrella meta-package with interactive `Program` / `Session` / `RunResult` API |\n\nThe one Rust package without a crates.io artefact is the `xqffi` pyo3\ncrate itself — it ships as the `xqffi` PyPI wheel rather than a reusable\nRust library.\n\n## Quick start\n\n### A minimal program (CLI)\n\n```asm\n; add.xqasm — push two integers and add them\nPUSH 10\nPUSH 32\nADD\nHALT\n```\n\n```sh\nxquad asm add.xqasm -o add.xqb && xquad run add.xqb\n```\n\n### End-to-end (Python, via the umbrella)\n\nThe recommended user-facing surface is `xquad.program.Program` +\n`Session` + `RunResult`. Load once, run many times with different\ncalldata, inspect outputs by slot:\n\n```python\nfrom xquad.program import Program\n\nprogram = Program.from_source(\"\"\"\nPUSH 0\nINPUT r0\nPUSH 1\nINPUT r1\nLOAD r0\nLOAD r1\nADD\nSTOW r2\nPUSH 0\nOUTPUT r2\nHALT\n\"\"\")\n\nsession = program.session(output_slots=1)\nsession.set_calldata([40, 2])\nresult = session.run()\nassert dict(result.outputs) == {0: 42}\n```\n\n`Program.load(bytes)` takes wire-format bytecode; `Session.run()`\nreturns a `RunResult` with dict-keyed outputs (unset slots present as\n`None`), residual stack, and step count. See\n[`docs/python-api-walkthrough.md`](docs/python-api-walkthrough.md) for\nthe full tour.\n\n#### Low-level / conformance surface\n\nFor conformance harnesses and one-shot execution, the raw\n`xqffi.vm.Vm` is still available directly:\n\n```python\nfrom xqffi.asm import assemble_source\nfrom xqffi.vm import Vm\n\nbytecode = assemble_source(src)\nv = Vm()\nv.set_calldata([40, 2])\nv.set_output_slots(1)\nv.run(bytecode)\nassert v.outputs() == [42]\n```\n\nThe `xquad.vm.VM` class offers a middle tier — a unified wrapper with\nbackend dispatch (`VMBackend.RUST` / `VMBackend.PYTHON`) that accepts\n`.xqasm` source and normalises types across the two interpreters.\n\n### End-to-end worked example\n\n[`examples/tsp/`](examples/tsp/) shows a full Travelling Salesman Problem\ndriven from the `xqcp` DSL through the VM and `xqsa` solver, runnable on\neither the Python reference VM or the Rust VM:\n\n```sh\nuv run --no-sync python examples/tsp/runner.py --seed 42\nuv run --no-sync python examples/maxcut/runner.py --seed 42 --interpreter rust\n\n# Run every example on both interpreters, diff against golden.json:\nmake example-smoke\n```\n\n## Architecture\n\nXQuad is a stack-based interpreter with a 256-slot register file. Registers\nhold typed values — integers, integer vectors, QUBO/Ising models\n(`XqmxModel`), and candidate solutions (`XqmxSample`). A dedicated loop stack\ndrives `RANGE`/`ITER` iteration.\n\nThe opcode table is declared once in `xqvm/src/bytecode/types/table.rs` via\nthe `opcodes!` x-macro; `conformance/opcodes.yaml` is the machine-readable\nmirror that all three representations (YAML, Rust macro, `xqvm_py.opcodes`)\nare checked against at build time and in CI\n(`scripts/check-opcode-parity.py`).\n\nThe binary format is a bare instruction stream — no header, no constant\npool — just an opcode byte followed by its operands in big-endian byte\norder.\n\nSee [`docs/bytecode-semantics.md`](docs/bytecode-semantics.md) for\ninstruction-by-instruction semantics and\n[`spec/xqvm/SPEC.md`](spec/xqvm/SPEC.md) for the normative spec.\n\n## Development\n\n### Prerequisites\n\n```sh\ncurl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # stable Rust\nmake deps                                                          # dev tools\n```\n\n### Local setup\n\n```sh\nmake xquad\n```\n\nThis syncs the Python workspace (`xqvm_py`, `xqcp`, `xqsa`, `xqffi`,\n`xquad`) into `.venv/`, builds the `xqffi` pyo3 extension via maturin,\nwrites a workspace `.pth` so scripts anywhere in the repo can\n`import xqcp` / `xqsa` / `xqvm_py` / `xqffi` / `xquad` naturally, and\ninstalls the `xquad` CLI binary under `~/.cargo/bin/`.\n\nOpen a REPL with everything ready:\n\n```sh\nmake repl\n```\n\n### CI-equivalent locally\n\n```sh\nmake all          # fmt + lint + test (what CI runs)\nmake conformance  # cross-impl parity suite (Rust + Python)\n```\n\n### Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, commit\nconventions, and DCO sign-off requirements. Agent guidelines for AI coding\nassistants are in [AGENTS.md](AGENTS.md); cutting a release is documented in\n[RELEASING.md](RELEASING.md).\n\n## License\n\nLicensed under the [GNU Affero General Public License v3.0 or later](LICENSE).\n",
+  "releases": [],
+  "contributors": [
+    {
+      "login": "kleczkowski",
+      "url": "https://github.com/kleczkowski",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1677935?v=4",
+      "contributions": 221
+    },
+    {
+      "login": "manishmeganathan",
+      "url": "https://github.com/manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4",
+      "contributions": 50
+    },
+    {
+      "login": "quip-infra",
+      "url": "https://github.com/quip-infra",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/264298939?v=4",
+      "contributions": 2
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\">\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">XQuad</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Early public release.</strong> The instruction set, binary format, and public API\nmay still change before v1.0. Production use is not recommended yet.</p>\n</blockquote>\n<p dir=\"auto\">XQuad is a hardware-agnostic toolchain for expressing and running quadratic\noptimization problems (QUBO / Ising / discrete) across quantum annealers and\nclassical solvers. It ships as three Rust crates plus five Python distributions\nbuilt around a single virtual-machine specification.</p>\n<p dir=\"auto\">Think of it as <strong>LLVM for quadratic models</strong> — a common intermediate\nrepresentation that lets you write a problem once and retarget it to any\nsupported backend.</p>\n<ul dir=\"auto\">\n<li><strong>Spec-first.</strong> Every behaviour is nailed down in <a href=\"https://github.com/QuipNetwork/xquad/blob/main/spec/xqvm/SPEC.md\"><code>spec/xqvm/SPEC.md</code></a>\nand cross-implementation parity is mechanically enforced: every committed\nconformance vector runs on both the Rust production VM (<code>xqvm</code>) and the\nPython reference VM (<code>xqvm_py</code>) in CI; disagreement fails the build.</li>\n<li><strong>Embeddable.</strong> The Rust core supports <code>no_std + alloc</code>, so the same VM\nruns inside WASM runtimes, Substrate pallets, and native binaries.</li>\n<li><strong>Interactive.</strong> The Python umbrella (<code>xquad</code>) is REPL and Jupyter-friendly:\nload a program once, run it with different calldata, inspect outputs by\nslot. Low-level FFI lives in <code>xqffi</code>; user-facing <code>Program</code> / <code>Session</code> /\n<code>RunResult</code> live in <code>xquad.program</code>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust (from crates.io)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo install xqcli           # gives you the `xquad` binary\"><pre>cargo install xqcli           <span class=\"pl-c\"><span class=\"pl-c\">#</span> gives you the `xquad` binary</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Python (from PyPI)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install xquad             # umbrella — full pipeline\n# or pick individual pieces:\npip install xqffi xqcp xqsa   # FFI bindings + DSL + solvers\"><pre>pip install xquad             <span class=\"pl-c\"><span class=\"pl-c\">#</span> umbrella — full pipeline</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> or pick individual pieces:</span>\npip install xqffi xqcp xqsa   <span class=\"pl-c\"><span class=\"pl-c\">#</span> FFI bindings + DSL + solvers</span></pre></div>\n<p dir=\"auto\">Prebuilt wheels are available for Linux x86_64 and aarch64 (CPython &gt;= 3.13). On macOS and Windows, pip builds the <code>xqffi</code> Rust extension from source -- this requires a <a href=\"https://rustup.rs/\" rel=\"nofollow\">Rust toolchain</a> (&gt;= 1.85).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">GPU/QPU support</h3></div>\n<p dir=\"auto\">The base install includes CPU simulated annealing only. To use GPU or quantum hardware solvers, install the corresponding extra:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Solver</th>\n<th>Install</th>\n<th>Prerequisite</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>NVIDIA CUDA GPU (<code>cuda-gpu</code>)</td>\n<td><code>pip install xquad[cuda]</code></td>\n<td>CUDA 12.x driver + NVIDIA GPU</td>\n</tr>\n<tr>\n<td>Apple Metal GPU (<code>metal-gpu</code>)</td>\n<td><code>pip install xquad[metal]</code></td>\n<td>macOS 13+ with Apple Silicon</td>\n</tr>\n<tr>\n<td>D-Wave Advantage QPU (<code>dwave-qpu</code>)</td>\n<td><code>pip install xquad[dwave]</code></td>\n<td>D-Wave Leap account + API token</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Extras are composable: <code>pip install xquad[cuda,dwave]</code>. See <a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqsa/README.md#install\"><code>xqsa/README.md</code></a> for driver prerequisites and per-solver quick-starts.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Package map</h2></div>\n<p dir=\"auto\">Three Rust crates on <strong>crates.io</strong>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Crate</th>\n<th>Binary</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqvm/\"><code>xqvm</code></a></td>\n<td>–</td>\n<td>X-Quadratic Virtual Machine interpreter, bytecode codec, opcode table (<code>no_std + alloc</code>)</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqasm/\"><code>xqasm</code></a></td>\n<td>–</td>\n<td><code>.xqasm</code> text-format assembler</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqcli/\"><code>xqcli</code></a></td>\n<td><code>xquad</code></td>\n<td>Unified CLI — <code>xquad run</code> / <code>asm</code> / <code>dsm</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Five Python distributions on <strong>PyPI</strong>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqffi/\"><code>xqffi</code></a></td>\n<td>PyO3 FFI bindings for <code>xqvm</code> + <code>xqasm</code> (<code>xqffi.vm</code>, <code>xqffi.asm</code>)</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqvm_py/\"><code>xqvm_py</code></a></td>\n<td>Pure-Python reference VM (conformance oracle)</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqcp/\"><code>xqcp</code></a></td>\n<td>Constraint-programming DSL that compiles to <code>.xqasm</code></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xqsa/\"><code>xqsa</code></a></td>\n<td>Solver adapters (dwave-samplers; pluggable solver interface)</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/QuipNetwork/xquad/blob/main/xquad/\"><code>xquad</code></a></td>\n<td>Umbrella meta-package with interactive <code>Program</code> / <code>Session</code> / <code>RunResult</code> API</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The one Rust package without a crates.io artefact is the <code>xqffi</code> pyo3\ncrate itself — it ships as the <code>xqffi</code> PyPI wheel rather than a reusable\nRust library.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">A minimal program (CLI)</h3></div>\n<div class=\"highlight highlight-source-assembly notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"; add.xqasm — push two integers and add them\nPUSH 10\nPUSH 32\nADD\nHALT\"><pre><span class=\"pl-c\">; add.xqasm — push two integers and add them</span>\n<span class=\"pl-k\">PUSH</span><span class=\"pl-en\"> </span><span class=\"pl-c1\">10</span>\n<span class=\"pl-k\">PUSH</span><span class=\"pl-en\"> </span><span class=\"pl-c1\">32</span>\n<span class=\"pl-k\">ADD</span>\n<span class=\"pl-en\">HALT</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"xquad asm add.xqasm -o add.xqb &amp;&amp; xquad run add.xqb\"><pre>xquad asm add.xqasm -o add.xqb <span class=\"pl-k\">&amp;&amp;</span> xquad run add.xqb</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">End-to-end (Python, via the umbrella)</h3></div>\n<p dir=\"auto\">The recommended user-facing surface is <code>xquad.program.Program</code> +\n<code>Session</code> + <code>RunResult</code>. Load once, run many times with different\ncalldata, inspect outputs by slot:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from xquad.program import Program\n\nprogram = Program.from_source(&quot;&quot;&quot;\nPUSH 0\nINPUT r0\nPUSH 1\nINPUT r1\nLOAD r0\nLOAD r1\nADD\nSTOW r2\nPUSH 0\nOUTPUT r2\nHALT\n&quot;&quot;&quot;)\n\nsession = program.session(output_slots=1)\nsession.set_calldata([40, 2])\nresult = session.run()\nassert dict(result.outputs) == {0: 42}\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">xquad</span>.<span class=\"pl-s1\">program</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">Program</span>\n\n<span class=\"pl-s1\">program</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">Program</span>.<span class=\"pl-c1\">from_source</span>(<span class=\"pl-s\">\"\"\"</span>\n<span class=\"pl-s\">PUSH 0</span>\n<span class=\"pl-s\">INPUT r0</span>\n<span class=\"pl-s\">PUSH 1</span>\n<span class=\"pl-s\">INPUT r1</span>\n<span class=\"pl-s\">LOAD r0</span>\n<span class=\"pl-s\">LOAD r1</span>\n<span class=\"pl-s\">ADD</span>\n<span class=\"pl-s\">STOW r2</span>\n<span class=\"pl-s\">PUSH 0</span>\n<span class=\"pl-s\">OUTPUT r2</span>\n<span class=\"pl-s\">HALT</span>\n<span class=\"pl-s\">\"\"\"</span>)\n\n<span class=\"pl-s1\">session</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">program</span>.<span class=\"pl-c1\">session</span>(<span class=\"pl-s1\">output_slots</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1</span>)\n<span class=\"pl-s1\">session</span>.<span class=\"pl-c1\">set_calldata</span>([<span class=\"pl-c1\">40</span>, <span class=\"pl-c1\">2</span>])\n<span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">session</span>.<span class=\"pl-c1\">run</span>()\n<span class=\"pl-k\">assert</span> <span class=\"pl-en\">dict</span>(<span class=\"pl-s1\">result</span>.<span class=\"pl-c1\">outputs</span>) <span class=\"pl-c1\">==</span> {<span class=\"pl-c1\">0</span>: <span class=\"pl-c1\">42</span>}</pre></div>\n<p dir=\"auto\"><code>Program.load(bytes)</code> takes wire-format bytecode; <code>Session.run()</code>\nreturns a <code>RunResult</code> with dict-keyed outputs (unset slots present as\n<code>None</code>), residual stack, and step count. See\n<a href=\"https://github.com/QuipNetwork/xquad/blob/main/docs/python-api-walkthrough.md\"><code>docs/python-api-walkthrough.md</code></a> for\nthe full tour.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Low-level / conformance surface</h4></div>\n<p dir=\"auto\">For conformance harnesses and one-shot execution, the raw\n<code>xqffi.vm.Vm</code> is still available directly:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from xqffi.asm import assemble_source\nfrom xqffi.vm import Vm\n\nbytecode = assemble_source(src)\nv = Vm()\nv.set_calldata([40, 2])\nv.set_output_slots(1)\nv.run(bytecode)\nassert v.outputs() == [42]\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">xqffi</span>.<span class=\"pl-s1\">asm</span> <span class=\"pl-k\">import</span> <span class=\"pl-s1\">assemble_source</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">xqffi</span>.<span class=\"pl-s1\">vm</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">Vm</span>\n\n<span class=\"pl-s1\">bytecode</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">assemble_source</span>(<span class=\"pl-s1\">src</span>)\n<span class=\"pl-s1\">v</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">Vm</span>()\n<span class=\"pl-s1\">v</span>.<span class=\"pl-c1\">set_calldata</span>([<span class=\"pl-c1\">40</span>, <span class=\"pl-c1\">2</span>])\n<span class=\"pl-s1\">v</span>.<span class=\"pl-c1\">set_output_slots</span>(<span class=\"pl-c1\">1</span>)\n<span class=\"pl-s1\">v</span>.<span class=\"pl-c1\">run</span>(<span class=\"pl-s1\">bytecode</span>)\n<span class=\"pl-k\">assert</span> <span class=\"pl-s1\">v</span>.<span class=\"pl-c1\">outputs</span>() <span class=\"pl-c1\">==</span> [<span class=\"pl-c1\">42</span>]</pre></div>\n<p dir=\"auto\">The <code>xquad.vm.VM</code> class offers a middle tier — a unified wrapper with\nbackend dispatch (<code>VMBackend.RUST</code> / <code>VMBackend.PYTHON</code>) that accepts\n<code>.xqasm</code> source and normalises types across the two interpreters.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">End-to-end worked example</h3></div>\n<p dir=\"auto\"><a href=\"https://github.com/QuipNetwork/xquad/blob/main/examples/tsp/\"><code>examples/tsp/</code></a> shows a full Travelling Salesman Problem\ndriven from the <code>xqcp</code> DSL through the VM and <code>xqsa</code> solver, runnable on\neither the Python reference VM or the Rust VM:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run --no-sync python examples/tsp/runner.py --seed 42\nuv run --no-sync python examples/maxcut/runner.py --seed 42 --interpreter rust\n\n# Run every example on both interpreters, diff against golden.json:\nmake example-smoke\"><pre>uv run --no-sync python examples/tsp/runner.py --seed 42\nuv run --no-sync python examples/maxcut/runner.py --seed 42 --interpreter rust\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Run every example on both interpreters, diff against golden.json:</span>\nmake example-smoke</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture</h2></div>\n<p dir=\"auto\">XQuad is a stack-based interpreter with a 256-slot register file. Registers\nhold typed values — integers, integer vectors, QUBO/Ising models\n(<code>XqmxModel</code>), and candidate solutions (<code>XqmxSample</code>). A dedicated loop stack\ndrives <code>RANGE</code>/<code>ITER</code> iteration.</p>\n<p dir=\"auto\">The opcode table is declared once in <code>xqvm/src/bytecode/types/table.rs</code> via\nthe <code>opcodes!</code> x-macro; <code>conformance/opcodes.yaml</code> is the machine-readable\nmirror that all three representations (YAML, Rust macro, <code>xqvm_py.opcodes</code>)\nare checked against at build time and in CI\n(<code>scripts/check-opcode-parity.py</code>).</p>\n<p dir=\"auto\">The binary format is a bare instruction stream — no header, no constant\npool — just an opcode byte followed by its operands in big-endian byte\norder.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/QuipNetwork/xquad/blob/main/docs/bytecode-semantics.md\"><code>docs/bytecode-semantics.md</code></a> for\ninstruction-by-instruction semantics and\n<a href=\"https://github.com/QuipNetwork/xquad/blob/main/spec/xqvm/SPEC.md\"><code>spec/xqvm/SPEC.md</code></a> for the normative spec.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Prerequisites</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # stable Rust\nmake deps                                                          # dev tools\"><pre>curl --proto <span class=\"pl-s\"><span class=\"pl-pds\">'</span>=https<span class=\"pl-pds\">'</span></span> --tlsv1.2 -sSf https://sh.rustup.rs <span class=\"pl-k\">|</span> sh   <span class=\"pl-c\"><span class=\"pl-c\">#</span> stable Rust</span>\nmake deps                                                          <span class=\"pl-c\"><span class=\"pl-c\">#</span> dev tools</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Local setup</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make xquad\"><pre>make xquad</pre></div>\n<p dir=\"auto\">This syncs the Python workspace (<code>xqvm_py</code>, <code>xqcp</code>, <code>xqsa</code>, <code>xqffi</code>,\n<code>xquad</code>) into <code>.venv/</code>, builds the <code>xqffi</code> pyo3 extension via maturin,\nwrites a workspace <code>.pth</code> so scripts anywhere in the repo can\n<code>import xqcp</code> / <code>xqsa</code> / <code>xqvm_py</code> / <code>xqffi</code> / <code>xquad</code> naturally, and\ninstalls the <code>xquad</code> CLI binary under <code>~/.cargo/bin/</code>.</p>\n<p dir=\"auto\">Open a REPL with everything ready:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make repl\"><pre>make repl</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">CI-equivalent locally</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make all          # fmt + lint + test (what CI runs)\nmake conformance  # cross-impl parity suite (Rust + Python)\"><pre>make all          <span class=\"pl-c\"><span class=\"pl-c\">#</span> fmt + lint + test (what CI runs)</span>\nmake conformance  <span class=\"pl-c\"><span class=\"pl-c\">#</span> cross-impl parity suite (Rust + Python)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contributing</h3></div>\n<p dir=\"auto\">See <a href=\"https://github.com/QuipNetwork/xquad/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a> for the development workflow, commit\nconventions, and DCO sign-off requirements. Agent guidelines for AI coding\nassistants are in <a href=\"https://github.com/QuipNetwork/xquad/blob/main/AGENTS.md\">AGENTS.md</a>; cutting a release is documented in\n<a href=\"https://github.com/QuipNetwork/xquad/blob/main/RELEASING.md\">RELEASING.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Licensed under the <a href=\"https://github.com/QuipNetwork/xquad/blob/main/LICENSE\">GNU Affero General Public License v3.0 or later</a>.</p>\n</article></div>",
+  "recentIssues": [],
+  "contributorCount": 3,
+  "firstCommitAt": "2026-03-11T12:15:01Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "participation": {
+    "all": 273,
+    "owner": 0,
+    "community": 273
+  },
+  "commitActivity": [
+    {
+      "week": "2025-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 51
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 18
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 31
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 2
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 19
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 9
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 8
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 5
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 8
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 4
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 7
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 2
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 5
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 7
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-02",
+      "count": 0
+    },
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 27
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 11
+    },
+    {
+      "date": "2026-03-14",
+      "count": 13
+    },
+    {
+      "date": "2026-03-15",
+      "count": 14
+    },
+    {
+      "date": "2026-03-16",
+      "count": 2
+    },
+    {
+      "date": "2026-03-17",
+      "count": 2
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 8
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 2
+    },
+    {
+      "date": "2026-03-26",
+      "count": 1
+    },
+    {
+      "date": "2026-03-27",
+      "count": 20
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 1
+    },
+    {
+      "date": "2026-04-02",
+      "count": 1
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 3
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 11
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 5
+    },
+    {
+      "date": "2026-04-16",
+      "count": 2
+    },
+    {
+      "date": "2026-04-17",
+      "count": 1
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 1
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 1
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 7
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 3
+    },
+    {
+      "date": "2026-04-28",
+      "count": 2
+    },
+    {
+      "date": "2026-04-29",
+      "count": 2
+    },
+    {
+      "date": "2026-04-30",
+      "count": 1
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 5
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 1
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 2
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 1
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 4
+    },
+    {
+      "date": "2026-05-26",
+      "count": 1
+    },
+    {
+      "date": "2026-05-27",
+      "count": 3
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 1
+    },
+    {
+      "date": "2026-06-02",
+      "count": 2
+    },
+    {
+      "date": "2026-06-03",
+      "count": 1
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 1
+    },
+    {
+      "date": "2026-06-08",
+      "count": 1
+    },
+    {
+      "date": "2026-06-09",
+      "count": 1
+    },
+    {
+      "date": "2026-06-10",
+      "count": 3
+    },
+    {
+      "date": "2026-06-11",
+      "count": 1
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 1
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 1
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 1
+    },
+    {
+      "date": "2026-07-14",
+      "count": 2
+    },
+    {
+      "date": "2026-07-15",
+      "count": 2
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 4
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 2
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 1
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "recentPulls": [],
+  "workflowRuns": [],
+  "fileTree": [
+    {
+      "name": ".cargo",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/.cargo"
+    },
+    {
+      "name": ".githooks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/.githooks"
+    },
+    {
+      "name": ".gitlab",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/.gitlab"
+    },
+    {
+      "name": "conformance",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/conformance"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/docs"
+    },
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/examples"
+    },
+    {
+      "name": "fixtures",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/fixtures"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/scripts"
+    },
+    {
+      "name": "spec",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/spec"
+    },
+    {
+      "name": "xqasm",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqasm"
+    },
+    {
+      "name": "xqcli",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqcli"
+    },
+    {
+      "name": "xqcp",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqcp"
+    },
+    {
+      "name": "xqffi",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqffi"
+    },
+    {
+      "name": "xqsa",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqsa"
+    },
+    {
+      "name": "xquad",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xquad"
+    },
+    {
+      "name": "xqvm",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqvm"
+    },
+    {
+      "name": "xqvm_py",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/xquad/tree/main/xqvm_py"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 1248,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/.gitignore"
+    },
+    {
+      "name": ".gitlab-ci.yml",
+      "type": "file",
+      "size": 3223,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/.gitlab-ci.yml"
+    },
+    {
+      "name": ".taplo.toml",
+      "type": "file",
+      "size": 912,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/.taplo.toml"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 20899,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/AGENTS.md"
+    },
+    {
+      "name": "book.toml",
+      "type": "file",
+      "size": 460,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/book.toml"
+    },
+    {
+      "name": "Cargo.lock",
+      "type": "file",
+      "size": 38938,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/Cargo.lock"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 2536,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/Cargo.toml"
+    },
+    {
+      "name": "cliff.toml",
+      "type": "file",
+      "size": 5318,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/cliff.toml"
+    },
+    {
+      "name": "clippy.toml",
+      "type": "file",
+      "size": 156,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/clippy.toml"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 7361,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "deny.toml",
+      "type": "file",
+      "size": 1294,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/deny.toml"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 34523,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/LICENSE"
+    },
+    {
+      "name": "Makefile",
+      "type": "file",
+      "size": 15070,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/Makefile"
+    },
+    {
+      "name": "NOTICE",
+      "type": "file",
+      "size": 8053,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/NOTICE"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 2000,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 7688,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/README.md"
+    },
+    {
+      "name": "RELEASING.md",
+      "type": "file",
+      "size": 8920,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/RELEASING.md"
+    },
+    {
+      "name": "uv.lock",
+      "type": "file",
+      "size": 319583,
+      "url": "https://github.com/QuipNetwork/xquad/blob/main/uv.lock"
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "2e1e51c",
+      "message": "Merge branch 'release/v0.3.1' into 'main'",
+      "url": "https://github.com/QuipNetwork/xquad/commit/2e1e51c7c3fb25b211c5f2fedbb3e08f94bd534b",
+      "date": "2026-07-24T09:02:24Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "b75625d",
+      "message": "release: v0.3.1",
+      "url": "https://github.com/QuipNetwork/xquad/commit/b75625d22cdc2d6674b5616b6434f7f9f2a8626e",
+      "date": "2026-07-24T09:02:24Z",
+      "author": "kleczkowski",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1677935?v=4"
+    },
+    {
+      "sha": "46db5e0",
+      "message": "Merge branch 'feature/qui-814' into 'main'",
+      "url": "https://github.com/QuipNetwork/xquad/commit/46db5e0637ad689acaaf86ac8e470445e87df479",
+      "date": "2026-07-22T10:28:07Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "39c232c",
+      "message": "feat(xqsa): validate resolved topology is mineable before proposing",
+      "url": "https://github.com/QuipNetwork/xquad/commit/39c232c0acaf01548e492b615321609ac69b0097",
+      "date": "2026-07-22T10:28:06Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "27dea23",
+      "message": "Merge branch 'feature/qui-848' into 'main'",
+      "url": "https://github.com/QuipNetwork/xquad/commit/27dea23ff4d7d701a86cfcb956ca19d58372ee32",
+      "date": "2026-07-22T09:23:56Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "7b29121",
+      "message": "test(xqsa): de-flake SolverQuip live tests",
+      "url": "https://github.com/QuipNetwork/xquad/commit/7b29121fa73fcdddf3904d627f50712282275113",
+      "date": "2026-07-22T09:23:56Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "8fec4a0",
+      "message": "Merge branch 'feature/qui-705' into 'main'",
+      "url": "https://github.com/QuipNetwork/xquad/commit/8fec4a05c1143b85bb0ab20fb3fa6faa8fe5ba53",
+      "date": "2026-07-20T20:57:43Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "6482bfa",
+      "message": "refactor(xqsa): move CUDA SA acceptance RNG on-device (QUI-705)",
+      "url": "https://github.com/QuipNetwork/xquad/commit/6482bfa5dcf24f751aa7860288981ccd129a476c",
+      "date": "2026-07-20T20:57:42Z",
+      "author": "kleczkowski",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1677935?v=4"
+    },
+    {
+      "sha": "1b1d9b4",
+      "message": "Merge branch 'feature/qui-852' into 'main'",
+      "url": "https://github.com/QuipNetwork/xquad/commit/1b1d9b40d620d1c91559cb2058c5d9e504a89edd",
+      "date": "2026-07-20T20:12:38Z",
+      "author": "manishmeganathan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/65660267?v=4"
+    },
+    {
+      "sha": "6dfd149",
+      "message": "perf(xqsa): parallelize GPU SA local-field reduction (CUDA + Metal)",
+      "url": "https://github.com/QuipNetwork/xquad/commit/6dfd149159719b73ec2bf81c1068f2abd4f3775d",
+      "date": "2026-07-20T20:12:37Z",
+      "author": "kleczkowski",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1677935?v=4"
+    }
+  ],
+  "community": {
+    "healthPercentage": 62,
+    "hasCodeOfConduct": false,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 0,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 0,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "branchCount": 7,
+  "tagCount": 6,
+  "codeFrequency": [
+    {
+      "week": "2026-03-08",
+      "additions": 11330,
+      "deletions": 676
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 2827,
+      "deletions": 1632
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 8234,
+      "deletions": 3020
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 25,
+      "deletions": 17
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 2681,
+      "deletions": 9
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 15576,
+      "deletions": 14408
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 35573,
+      "deletions": 16184
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 3301,
+      "deletions": 877
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 4383,
+      "deletions": 130
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 3074,
+      "deletions": 215
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 4522,
+      "deletions": 1826
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 2213,
+      "deletions": 668
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 6542,
+      "deletions": 70
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 4017,
+      "deletions": 583
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 6008,
+      "deletions": 110
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 3532,
+      "deletions": 44
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 4389,
+      "deletions": 237
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-30T08:14:41.141Z"
+}

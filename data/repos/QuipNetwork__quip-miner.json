@@ -1,0 +1,3334 @@
+{
+  "id": "QuipNetwork/quip-miner",
+  "snapshots": [
+    {
+      "date": "2026-07-30",
+      "stars": 11605,
+      "forks": 159
+    }
+  ],
+  "trendingHistory": [],
+  "owner": "QuipNetwork",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/203704131?v=4",
+  "ownerType": "Organization",
+  "name": "quip-miner",
+  "description": "The quip network mining stack. This includes a coordinator and links all of the official quip network miners.",
+  "url": "https://github.com/QuipNetwork/quip-miner",
+  "homepage": "https://quip.network/",
+  "license": "AGPL-3.0",
+  "language": "Python",
+  "topics": [
+    "cryptocurrency",
+    "ising",
+    "ising-model",
+    "ising-spin-models",
+    "mining",
+    "quantum",
+    "quantum-annealing",
+    "quantum-computing",
+    "quantum-sim-engine",
+    "quantum-simulation",
+    "quantum-simulations",
+    "quantum-simulator",
+    "quantum-simulators"
+  ],
+  "stars": 11605,
+  "forks": 159,
+  "watchers": 33,
+  "openIssues": 3,
+  "createdAt": "2026-01-16T05:39:29Z",
+  "pushedAt": "2026-07-27T21:28:27Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-07-30T08:14:37.734Z",
+  "languages": {
+    "Python": 3924992,
+    "Shell": 76895,
+    "Metal": 67704,
+    "Cuda": 35600
+  },
+  "commitCount": 1447,
+  "releases": [],
+  "readmeExcerpt": "# quip-miner\n\n> **Experimental software.** Use at your own risk. No production warranties.\n\nA Python mining stack for the [quip-protocol-rs](https://gitlab.com/quip.network/quip-protocol-rs) Substrate chain. Drives CPU SA, GPU (CUDA / Metal / Modal), and QPU (D-Wave) miners against the chain's `QuantumPow` pallet — fetch the mining snapshot at each new chain head, search for valid Ising solutions, submit `QuantumPow.submit_proof` extrinsics, repeat.\n\nThis is the `v0.2` line of the repository (formerly `quip-protocol`). In `v0.1` this codebase shipped its own consensus, P2P (QUIC), block store, REST API, and SPHINCS+ block signer. `v0.2` removes all of that — the chain is the source of truth, miners attach to it.\n\n## Architecture\n\n```\n                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\n```\n\nComponent responsibilities (`shared/`):\n\n| module | role |\n|--------|------|\n| `signer.py` | Abstract `Signer` + `Sr25519Signer`. Phase 7 adds `HybridSigner` (sr25519 + ML-DSA-44). |\n| `keystore.py` | sr25519 keystore (`0o600` JSON; plaintext seed for dev). |\n| `substrate_client.py` | `py-substrate-interface` async wrapper; `state_call` for the mining snapshot. |\n| `substrate_types.py` | `SubstrateMiningContext`, `SubstrateDifficulty`, `MinerInfo`, `ExtrinsicReceipt`. |\n| `substrate_submitter.py` | `MiningResult` → `QuantumProof` SCALE encoding + submission. |\n| `substrate_miner_controller.py` | Head subscription, snapshot fetch, dispatch, receipt classification. |\n| `miner_core.py` | Owns persistent `MinerHandle` workers, hardware descriptor cache, aggregate stats. |\n| `miner_bootstrap.py` | Idempotent fund + register pipeline. |\n| `telemetry_api.py` | HTTP REST surface (`/api/v1/status`, `/system`, `/stats`, `/block/*`). |\n| `base_miner.py` | Protocol-neutral `mine_work_item(context, stop_event)` loop. |\n| `miner_worker.py` | 2-process worker scaffolding (parent ↔ child mp.Queue + stop_event). |\n| `quantum_proof_of_work.py` | `derive_nonce`, `generate_ising_model_from_nonce`, `evaluate_sampleset`. |\n\nStandalone scripts at repo root:\n\n| file | role |\n|------|------|\n| `quip_cli.py` | `quip-miner` CLI dispatch (keygen / bootstrap / cpu / gpu / qpu). |\n\n## Installation\n\n```bash\npython3 -m venv .quip\nsource .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e .\n```\n\nDependencies pulled in by `pyproject.toml`:\n- `substrate-interface>=1.7.4`, `scalecodec>=1.2` — chain RPC + SCALE\n- `dwave-ocean-sdk>=9.0.0,<10`, `numpy>=1.24.0` — Ising sampling\n- `aiohttp>=3.9.0` — telemetry server + faucet\n- `click>=8.1.7` — CLI\n- `blake3>=1.0.5` — nonce derivation\n\nD-Wave QPU access requires `DWAVE_API_KEY` in `.env` (loaded via `python-dotenv`).\n\n## Quick start\n\nIn one terminal, bring up the chain:\n\n```bash\ncd ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   # confirm blocks being produced\n```\n\nThe dev faucet now lives in its own repository (`gitlab.com/quip.network/faucet`);\nlocal-network setup (node + faucet + chain seeding) is handled by the testing\nrepo at `nodes.quip.network`. Point the miner at a running faucet with\n`--faucet-url`; it self-funds and self-registers on first run.\n\nBootstrap a miner account (generates a keystore, funds it via the faucet, sudo-seeds `Difficulty` + `DefaultTopology` on a fresh chain, then submits `register_miner`):\n\n```bash\nquip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain\n```\n\nRun the miner:\n\n```bash\nquip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086\n```\n\nIn a third terminal, watch chain events for `QuantumPow.ProofAccepted` (via [polkadot.js](https://polkadot.js.org/apps/#/explorer) pointed at `ws://localhost:9944`), or hit the local telemetry API:\n\n```bash\ncurl http://localhost:8086/api/v1/status   | jq\ncurl http://localhost:8086/api/v1/stats    | jq\ncurl http://localhost:8086/api/v1/system   | jq\n```\n\n## CLI reference\n\n### `quip-miner keygen`\n\nGenerate a fresh sr25519 signing key. Writes a `0o600` JSON keystore with the seed in plaintext (passphrase-encrypted keystores ship in Phase 7).\n\n```\nquip-miner keygen --out ~/.quip-miner/signing.json\n```\n\n### `quip-miner bootstrap`\n\nIdempotent setup: generate keystore (if missing) → request funds from the faucet → submit `register_miner`. With `--seed-chain`, also sudo-submits `set_difficulty` + `register_topology` if missing.\n\n```\nquip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\n```\n\nRe-runs are no-ops that just verify state.\n\n### `quip-miner cpu | gpu | qpu`\n\nRun the mining controller. All three subcommands share these flags:\n\n- `--node-url ws://...` (required) — substrate WS endpoint\n- `--signer-key ~/.quip-miner/signing.json` — keystore path\n- `--topology zephyr:M,T` — sampler topology (defaults to `zephyr:9,2`)\n- `--rest-port 8086` — HTTP telemetry port (`-1` disables)\n\nThe `cpu` subcommand adds `--num-cpus N`; `gpu` adds `--gpu-backend {local,metal,modal}`; `qpu` adds `--qpu-type` and `--daily-budget`.\n\nTopology binding is enforced at startup: the CLI hashes the configured topology with the same `blake2_256(SCALE((sorted_nodes, canonical_edges)))` recipe the chain uses, and refuses to start if the hash doesn't match the chain's registered topology.\n\n## Telemetry REST API\n\n```\nGET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\n```\n\nResponse envelope: `{\"success\": bool, \"data\": ..., \"error\": ..., \"timestamp\": int}`.\n\nThe legacy `/api/v1/peers`, `/api/v1/join`, `/api/v1/gossip`, `/api/v1/heartbeat`, and `POST /api/v1/block` paths are removed — they were P2P / consensus surfaces with no equivalent in substrate mode. The legacy `/telemetry/*` SSE stream and per-peer aggregator also moved out; consumers should switch to substrate-side events and Prometheus (`http://localhost:9615/metrics`).\n\n## Topology\n\nMining works against any `BoundedVec`-bounded graph registered on chain (`QuantumPow.RegisteredTopologies`). The CLI's `--topology zephyr:M,T` constructs a [dwave-networkx](https://docs.ocean.dwavesys.com/projects/dwave-networkx/) Zephyr graph; the chain's `pallets/quantum-pow/src/topology.rs::hash_topology` canonicalizes and `blake2_256`-hashes the result.\n\n`bootstrap --seed-chain --seed-topology 9,2` registers Zephyr Z(9,2) (1368 nodes / 7692 edges — the legacy default that matches the chain's difficulty calibration of `max_energy_milli=-2_500_000`). Smaller graphs (Z(2,2), Z(3,2)) work too but need their own difficulty calibration since their ground-state energy range is much narrower.\n\n## Running tests\n\n```bash\npython -m pytest tests/ -v\n```\n\nIntegration tests against the docker chain auto-skip if `ws://localhost:9944` isn't reachable. The end-to-end controller test (`test_controller_submits_proof_end_to_end`) bootstraps inline and asserts at least one `QuantumPow.ProofAccepted` event lands within 120 seconds.\n\nThe cross-language nonce-parity test (`test_derive_nonce_parity.py`) reads `crates/quantum-validation/tests/fixtures/python_parity.json` from a sibling `quip-protocol-rs` checkout. Set `QUIP_RUST_FIXTURE_DIR` if your checkout is elsewhere.\n\n## What changed from v0.1\n\nRemoved entirely:\n\n- The local blockchain stack: `shared/block.py`, `shared/node.py`, `shared/network_node.py`, `shared/block_store.py`, `shared/block_synchronizer.py`, `shared/block_requirements.py`, `genesis_block_public.json`.\n- The P2P stack: QUIC client/server, SWIM failure detector, peer scorer / ban list, gossip telemetry aggregator, sync wire codecs.\n- The legacy signing path: SPHINCS+ block signer + certificate manager.\n- CLI: `quip-network-node` and `quip-network-simulator` are gone. Use `quip-miner` instead.\n\nKept (with rewired backends):\n\n- `/api/v1/status`, `/system`, `/stats`, `/block/*` (now substrate-backed)\n- The 2-process worker model (`MinerHandle` ↔ child mp.Queue + stop_event)\n- The Ising sampling code (`BaseMiner.mine_work_item`, `quantum_proof_of_work.*`, CPU/GPU/QPU subclasses)\n- The hardware descriptor / aggregate stats (now exposed via `MinerCore`)\n\nMigration:\n\n- A `v0.1` miner that ran a single mining node now runs a chain node (quip-protocol-rs docker compose) + `quip-miner cpu|gpu|qpu` against it.\n- Mining rewards now accrue on chain to the registered sr25519 account, not as v0.1 block-proposer credit.\n\n## License\n\nAGPL-3.0-or-later. See LICENSE.\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">quip-miner</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Experimental software.</strong> Use at your own risk. No production warranties.</p>\n</blockquote>\n<p dir=\"auto\">A Python mining stack for the <a href=\"https://gitlab.com/quip.network/quip-protocol-rs\" rel=\"nofollow\">quip-protocol-rs</a> Substrate chain. Drives CPU SA, GPU (CUDA / Metal / Modal), and QPU (D-Wave) miners against the chain's <code>QuantumPow</code> pallet — fetch the mining snapshot at each new chain head, search for valid Ising solutions, submit <code>QuantumPow.submit_proof</code> extrinsics, repeat.</p>\n<p dir=\"auto\">This is the <code>v0.2</code> line of the repository (formerly <code>quip-protocol</code>). In <code>v0.1</code> this codebase shipped its own consensus, P2P (QUIC), block store, REST API, and SPHINCS+ block signer. <code>v0.2</code> removes all of that — the chain is the source of truth, miners attach to it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\"><pre class=\"notranslate\"><code>                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\n</code></pre></div>\n<p dir=\"auto\">Component responsibilities (<code>shared/</code>):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>module</th>\n<th>role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>signer.py</code></td>\n<td>Abstract <code>Signer</code> + <code>Sr25519Signer</code>. Phase 7 adds <code>HybridSigner</code> (sr25519 + ML-DSA-44).</td>\n</tr>\n<tr>\n<td><code>keystore.py</code></td>\n<td>sr25519 keystore (<code>0o600</code> JSON; plaintext seed for dev).</td>\n</tr>\n<tr>\n<td><code>substrate_client.py</code></td>\n<td><code>py-substrate-interface</code> async wrapper; <code>state_call</code> for the mining snapshot.</td>\n</tr>\n<tr>\n<td><code>substrate_types.py</code></td>\n<td><code>SubstrateMiningContext</code>, <code>SubstrateDifficulty</code>, <code>MinerInfo</code>, <code>ExtrinsicReceipt</code>.</td>\n</tr>\n<tr>\n<td><code>substrate_submitter.py</code></td>\n<td><code>MiningResult</code> → <code>QuantumProof</code> SCALE encoding + submission.</td>\n</tr>\n<tr>\n<td><code>substrate_miner_controller.py</code></td>\n<td>Head subscription, snapshot fetch, dispatch, receipt classification.</td>\n</tr>\n<tr>\n<td><code>miner_core.py</code></td>\n<td>Owns persistent <code>MinerHandle</code> workers, hardware descriptor cache, aggregate stats.</td>\n</tr>\n<tr>\n<td><code>miner_bootstrap.py</code></td>\n<td>Idempotent fund + register pipeline.</td>\n</tr>\n<tr>\n<td><code>telemetry_api.py</code></td>\n<td>HTTP REST surface (<code>/api/v1/status</code>, <code>/system</code>, <code>/stats</code>, <code>/block/*</code>).</td>\n</tr>\n<tr>\n<td><code>base_miner.py</code></td>\n<td>Protocol-neutral <code>mine_work_item(context, stop_event)</code> loop.</td>\n</tr>\n<tr>\n<td><code>miner_worker.py</code></td>\n<td>2-process worker scaffolding (parent ↔ child mp.Queue + stop_event).</td>\n</tr>\n<tr>\n<td><code>quantum_proof_of_work.py</code></td>\n<td><code>derive_nonce</code>, <code>generate_ising_model_from_nonce</code>, <code>evaluate_sampleset</code>.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Standalone scripts at repo root:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>file</th>\n<th>role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>quip_cli.py</code></td>\n<td><code>quip-miner</code> CLI dispatch (keygen / bootstrap / cpu / gpu / qpu).</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 -m venv .quip\nsource .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e .\"><pre>python3 -m venv .quip\n<span class=\"pl-c1\">source</span> .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e <span class=\"pl-c1\">.</span></pre></div>\n<p dir=\"auto\">Dependencies pulled in by <code>pyproject.toml</code>:</p>\n<ul dir=\"auto\">\n<li><code>substrate-interface&gt;=1.7.4</code>, <code>scalecodec&gt;=1.2</code> — chain RPC + SCALE</li>\n<li><code>dwave-ocean-sdk&gt;=9.0.0,&lt;10</code>, <code>numpy&gt;=1.24.0</code> — Ising sampling</li>\n<li><code>aiohttp&gt;=3.9.0</code> — telemetry server + faucet</li>\n<li><code>click&gt;=8.1.7</code> — CLI</li>\n<li><code>blake3&gt;=1.0.5</code> — nonce derivation</li>\n</ul>\n<p dir=\"auto\">D-Wave QPU access requires <code>DWAVE_API_KEY</code> in <code>.env</code> (loaded via <code>python-dotenv</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<p dir=\"auto\">In one terminal, bring up the chain:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   # confirm blocks being produced\"><pre><span class=\"pl-c1\">cd</span> ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   <span class=\"pl-c\"><span class=\"pl-c\">#</span> confirm blocks being produced</span></pre></div>\n<p dir=\"auto\">The dev faucet now lives in its own repository (<code>gitlab.com/quip.network/faucet</code>);\nlocal-network setup (node + faucet + chain seeding) is handled by the testing\nrepo at <code>nodes.quip.network</code>. Point the miner at a running faucet with\n<code>--faucet-url</code>; it self-funds and self-registers on first run.</p>\n<p dir=\"auto\">Bootstrap a miner account (generates a keystore, funds it via the faucet, sudo-seeds <code>Difficulty</code> + <code>DefaultTopology</code> on a fresh chain, then submits <code>register_miner</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain\"><pre>quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain</pre></div>\n<p dir=\"auto\">Run the miner:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086\"><pre>quip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086</pre></div>\n<p dir=\"auto\">In a third terminal, watch chain events for <code>QuantumPow.ProofAccepted</code> (via <a href=\"https://polkadot.js.org/apps/#/explorer\" rel=\"nofollow\">polkadot.js</a> pointed at <code>ws://localhost:9944</code>), or hit the local telemetry API:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"curl http://localhost:8086/api/v1/status   | jq\ncurl http://localhost:8086/api/v1/stats    | jq\ncurl http://localhost:8086/api/v1/system   | jq\"><pre>curl http://localhost:8086/api/v1/status   <span class=\"pl-k\">|</span> jq\ncurl http://localhost:8086/api/v1/stats    <span class=\"pl-k\">|</span> jq\ncurl http://localhost:8086/api/v1/system   <span class=\"pl-k\">|</span> jq</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CLI reference</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner keygen</code></h3></div>\n<p dir=\"auto\">Generate a fresh sr25519 signing key. Writes a <code>0o600</code> JSON keystore with the seed in plaintext (passphrase-encrypted keystores ship in Phase 7).</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"quip-miner keygen --out ~/.quip-miner/signing.json\"><pre class=\"notranslate\"><code>quip-miner keygen --out ~/.quip-miner/signing.json\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner bootstrap</code></h3></div>\n<p dir=\"auto\">Idempotent setup: generate keystore (if missing) → request funds from the faucet → submit <code>register_miner</code>. With <code>--seed-chain</code>, also sudo-submits <code>set_difficulty</code> + <code>register_topology</code> if missing.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\"><pre class=\"notranslate\"><code>quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\n</code></pre></div>\n<p dir=\"auto\">Re-runs are no-ops that just verify state.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner cpu | gpu | qpu</code></h3></div>\n<p dir=\"auto\">Run the mining controller. All three subcommands share these flags:</p>\n<ul dir=\"auto\">\n<li><code>--node-url ws://...</code> (required) — substrate WS endpoint</li>\n<li><code>--signer-key ~/.quip-miner/signing.json</code> — keystore path</li>\n<li><code>--topology zephyr:M,T</code> — sampler topology (defaults to <code>zephyr:9,2</code>)</li>\n<li><code>--rest-port 8086</code> — HTTP telemetry port (<code>-1</code> disables)</li>\n</ul>\n<p dir=\"auto\">The <code>cpu</code> subcommand adds <code>--num-cpus N</code>; <code>gpu</code> adds <code>--gpu-backend {local,metal,modal}</code>; <code>qpu</code> adds <code>--qpu-type</code> and <code>--daily-budget</code>.</p>\n<p dir=\"auto\">Topology binding is enforced at startup: the CLI hashes the configured topology with the same <code>blake2_256(SCALE((sorted_nodes, canonical_edges)))</code> recipe the chain uses, and refuses to start if the hash doesn't match the chain's registered topology.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Telemetry REST API</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"GET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\"><pre class=\"notranslate\"><code>GET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\n</code></pre></div>\n<p dir=\"auto\">Response envelope: <code>{\"success\": bool, \"data\": ..., \"error\": ..., \"timestamp\": int}</code>.</p>\n<p dir=\"auto\">The legacy <code>/api/v1/peers</code>, <code>/api/v1/join</code>, <code>/api/v1/gossip</code>, <code>/api/v1/heartbeat</code>, and <code>POST /api/v1/block</code> paths are removed — they were P2P / consensus surfaces with no equivalent in substrate mode. The legacy <code>/telemetry/*</code> SSE stream and per-peer aggregator also moved out; consumers should switch to substrate-side events and Prometheus (<code>http://localhost:9615/metrics</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Topology</h2></div>\n<p dir=\"auto\">Mining works against any <code>BoundedVec</code>-bounded graph registered on chain (<code>QuantumPow.RegisteredTopologies</code>). The CLI's <code>--topology zephyr:M,T</code> constructs a <a href=\"https://docs.ocean.dwavesys.com/projects/dwave-networkx/\" rel=\"nofollow\">dwave-networkx</a> Zephyr graph; the chain's <code>pallets/quantum-pow/src/topology.rs::hash_topology</code> canonicalizes and <code>blake2_256</code>-hashes the result.</p>\n<p dir=\"auto\"><code>bootstrap --seed-chain --seed-topology 9,2</code> registers Zephyr Z(9,2) (1368 nodes / 7692 edges — the legacy default that matches the chain's difficulty calibration of <code>max_energy_milli=-2_500_000</code>). Smaller graphs (Z(2,2), Z(3,2)) work too but need their own difficulty calibration since their ground-state energy range is much narrower.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running tests</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python -m pytest tests/ -v\"><pre>python -m pytest tests/ -v</pre></div>\n<p dir=\"auto\">Integration tests against the docker chain auto-skip if <code>ws://localhost:9944</code> isn't reachable. The end-to-end controller test (<code>test_controller_submits_proof_end_to_end</code>) bootstraps inline and asserts at least one <code>QuantumPow.ProofAccepted</code> event lands within 120 seconds.</p>\n<p dir=\"auto\">The cross-language nonce-parity test (<code>test_derive_nonce_parity.py</code>) reads <code>crates/quantum-validation/tests/fixtures/python_parity.json</code> from a sibling <code>quip-protocol-rs</code> checkout. Set <code>QUIP_RUST_FIXTURE_DIR</code> if your checkout is elsewhere.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What changed from v0.1</h2></div>\n<p dir=\"auto\">Removed entirely:</p>\n<ul dir=\"auto\">\n<li>The local blockchain stack: <code>shared/block.py</code>, <code>shared/node.py</code>, <code>shared/network_node.py</code>, <code>shared/block_store.py</code>, <code>shared/block_synchronizer.py</code>, <code>shared/block_requirements.py</code>, <code>genesis_block_public.json</code>.</li>\n<li>The P2P stack: QUIC client/server, SWIM failure detector, peer scorer / ban list, gossip telemetry aggregator, sync wire codecs.</li>\n<li>The legacy signing path: SPHINCS+ block signer + certificate manager.</li>\n<li>CLI: <code>quip-network-node</code> and <code>quip-network-simulator</code> are gone. Use <code>quip-miner</code> instead.</li>\n</ul>\n<p dir=\"auto\">Kept (with rewired backends):</p>\n<ul dir=\"auto\">\n<li><code>/api/v1/status</code>, <code>/system</code>, <code>/stats</code>, <code>/block/*</code> (now substrate-backed)</li>\n<li>The 2-process worker model (<code>MinerHandle</code> ↔ child mp.Queue + stop_event)</li>\n<li>The Ising sampling code (<code>BaseMiner.mine_work_item</code>, <code>quantum_proof_of_work.*</code>, CPU/GPU/QPU subclasses)</li>\n<li>The hardware descriptor / aggregate stats (now exposed via <code>MinerCore</code>)</li>\n</ul>\n<p dir=\"auto\">Migration:</p>\n<ul dir=\"auto\">\n<li>A <code>v0.1</code> miner that ran a single mining node now runs a chain node (quip-protocol-rs docker compose) + <code>quip-miner cpu|gpu|qpu</code> against it.</li>\n<li>Mining rewards now accrue on chain to the registered sr25519 account, not as v0.1 block-proposer credit.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0-or-later. See LICENSE.</p>\n</article></div>",
+  "contributors": [
+    {
+      "login": "rcarback",
+      "url": "https://github.com/rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4",
+      "contributions": 1432
+    },
+    {
+      "login": "cadillion",
+      "url": "https://github.com/cadillion",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4454203?v=4",
+      "contributions": 14
+    },
+    {
+      "login": "ruseinov",
+      "url": "https://github.com/ruseinov",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/327569?v=4",
+      "contributions": 1
+    }
+  ],
+  "firstCommitAt": "2025-07-09T13:25:19Z",
+  "commitActivity": [
+    {
+      "week": "2025-08-03",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 11
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 37
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 90
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 49
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 20
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 7
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 6
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 9
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 10
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 17
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 16
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 7
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 16
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 6
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 3
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 13
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 15
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 22
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 14
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 12
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 59
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 41
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 7
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 70
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 41
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 42
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 95
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 122
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 274
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 6
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 7
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 15
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 75
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 6
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 11
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 6
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-03",
+      "count": 0
+    },
+    {
+      "date": "2025-08-04",
+      "count": 0
+    },
+    {
+      "date": "2025-08-05",
+      "count": 0
+    },
+    {
+      "date": "2025-08-06",
+      "count": 0
+    },
+    {
+      "date": "2025-08-07",
+      "count": 0
+    },
+    {
+      "date": "2025-08-08",
+      "count": 0
+    },
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 1
+    },
+    {
+      "date": "2025-08-20",
+      "count": 5
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 5
+    },
+    {
+      "date": "2025-08-24",
+      "count": 1
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 4
+    },
+    {
+      "date": "2025-08-28",
+      "count": 21
+    },
+    {
+      "date": "2025-08-29",
+      "count": 1
+    },
+    {
+      "date": "2025-08-30",
+      "count": 10
+    },
+    {
+      "date": "2025-08-31",
+      "count": 9
+    },
+    {
+      "date": "2025-09-01",
+      "count": 28
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 18
+    },
+    {
+      "date": "2025-09-04",
+      "count": 24
+    },
+    {
+      "date": "2025-09-05",
+      "count": 10
+    },
+    {
+      "date": "2025-09-06",
+      "count": 1
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 8
+    },
+    {
+      "date": "2025-09-09",
+      "count": 7
+    },
+    {
+      "date": "2025-09-10",
+      "count": 27
+    },
+    {
+      "date": "2025-09-11",
+      "count": 7
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 5
+    },
+    {
+      "date": "2025-09-17",
+      "count": 12
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 3
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 2
+    },
+    {
+      "date": "2025-09-22",
+      "count": 4
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 1
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 3
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 2
+    },
+    {
+      "date": "2025-10-02",
+      "count": 1
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 1
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 4
+    },
+    {
+      "date": "2025-10-17",
+      "count": 4
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 5
+    },
+    {
+      "date": "2025-10-20",
+      "count": 1
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 4
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 9
+    },
+    {
+      "date": "2025-10-28",
+      "count": 7
+    },
+    {
+      "date": "2025-10-29",
+      "count": 1
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 1
+    },
+    {
+      "date": "2025-11-04",
+      "count": 1
+    },
+    {
+      "date": "2025-11-05",
+      "count": 5
+    },
+    {
+      "date": "2025-11-06",
+      "count": 8
+    },
+    {
+      "date": "2025-11-07",
+      "count": 1
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 3
+    },
+    {
+      "date": "2025-11-19",
+      "count": 1
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 3
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 7
+    },
+    {
+      "date": "2025-11-27",
+      "count": 1
+    },
+    {
+      "date": "2025-11-28",
+      "count": 4
+    },
+    {
+      "date": "2025-11-29",
+      "count": 4
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 3
+    },
+    {
+      "date": "2025-12-02",
+      "count": 3
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 3
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 4
+    },
+    {
+      "date": "2026-01-16",
+      "count": 9
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 14
+    },
+    {
+      "date": "2026-02-05",
+      "count": 1
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 13
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 6
+    },
+    {
+      "date": "2026-03-06",
+      "count": 3
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 1
+    },
+    {
+      "date": "2026-03-09",
+      "count": 2
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 7
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 4
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 5
+    },
+    {
+      "date": "2026-03-17",
+      "count": 3
+    },
+    {
+      "date": "2026-03-18",
+      "count": 4
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 15
+    },
+    {
+      "date": "2026-03-24",
+      "count": 12
+    },
+    {
+      "date": "2026-03-25",
+      "count": 31
+    },
+    {
+      "date": "2026-03-26",
+      "count": 1
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 1
+    },
+    {
+      "date": "2026-03-31",
+      "count": 3
+    },
+    {
+      "date": "2026-04-01",
+      "count": 13
+    },
+    {
+      "date": "2026-04-02",
+      "count": 19
+    },
+    {
+      "date": "2026-04-03",
+      "count": 5
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 6
+    },
+    {
+      "date": "2026-04-08",
+      "count": 1
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 20
+    },
+    {
+      "date": "2026-04-16",
+      "count": 35
+    },
+    {
+      "date": "2026-04-17",
+      "count": 15
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 10
+    },
+    {
+      "date": "2026-04-22",
+      "count": 13
+    },
+    {
+      "date": "2026-04-23",
+      "count": 14
+    },
+    {
+      "date": "2026-04-24",
+      "count": 4
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 3
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 3
+    },
+    {
+      "date": "2026-05-13",
+      "count": 16
+    },
+    {
+      "date": "2026-05-14",
+      "count": 6
+    },
+    {
+      "date": "2026-05-15",
+      "count": 17
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 7
+    },
+    {
+      "date": "2026-05-18",
+      "count": 1
+    },
+    {
+      "date": "2026-05-19",
+      "count": 1
+    },
+    {
+      "date": "2026-05-20",
+      "count": 9
+    },
+    {
+      "date": "2026-05-21",
+      "count": 15
+    },
+    {
+      "date": "2026-05-22",
+      "count": 5
+    },
+    {
+      "date": "2026-05-23",
+      "count": 57
+    },
+    {
+      "date": "2026-05-24",
+      "count": 8
+    },
+    {
+      "date": "2026-05-25",
+      "count": 3
+    },
+    {
+      "date": "2026-05-26",
+      "count": 8
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 6
+    },
+    {
+      "date": "2026-05-29",
+      "count": 38
+    },
+    {
+      "date": "2026-05-30",
+      "count": 59
+    },
+    {
+      "date": "2026-05-31",
+      "count": 63
+    },
+    {
+      "date": "2026-06-01",
+      "count": 14
+    },
+    {
+      "date": "2026-06-02",
+      "count": 3
+    },
+    {
+      "date": "2026-06-03",
+      "count": 174
+    },
+    {
+      "date": "2026-06-04",
+      "count": 20
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 6
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 1
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 6
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 2
+    },
+    {
+      "date": "2026-06-23",
+      "count": 4
+    },
+    {
+      "date": "2026-06-24",
+      "count": 7
+    },
+    {
+      "date": "2026-06-25",
+      "count": 2
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 10
+    },
+    {
+      "date": "2026-06-29",
+      "count": 14
+    },
+    {
+      "date": "2026-06-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 14
+    },
+    {
+      "date": "2026-07-03",
+      "count": 20
+    },
+    {
+      "date": "2026-07-04",
+      "count": 15
+    },
+    {
+      "date": "2026-07-05",
+      "count": 4
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 1
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 1
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 4
+    },
+    {
+      "date": "2026-07-14",
+      "count": 1
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 4
+    },
+    {
+      "date": "2026-07-17",
+      "count": 2
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 5
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 1
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 29,
+      "title": "Follow-up on #21: after the log-rotation artifact was removed, a real board-power + att/s decay still remains over uptime on WSL2",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/29",
+      "createdAt": "2026-07-20T07:56:25Z",
+      "comments": 5,
+      "labels": [],
+      "author": "ntllinh2511"
+    },
+    {
+      "number": 28,
+      "title": "Miner attempts to mine before validator sync, emitting a misleading wallet-underfunded error",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/28",
+      "createdAt": "2026-07-19T16:20:32Z",
+      "comments": 1,
+      "labels": [],
+      "author": "rcarback"
+    },
+    {
+      "number": 27,
+      "title": "Add last_successful_submission timestamp to /api/v1/status",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/27",
+      "createdAt": "2026-07-19T16:20:31Z",
+      "comments": 1,
+      "labels": [],
+      "author": "rcarback"
+    }
+  ],
+  "contributorCount": 3,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 12
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 12
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 10
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 9
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 9
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 13
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 16
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 14
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 54
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 63
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 36
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 33
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 30
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 20
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 22
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 20
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 12
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 22
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 17
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 13
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 18
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 12
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 21
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 13
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 17
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 17
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 11
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 12
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 14
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 23
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 20
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 20
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 2
+    }
+  ],
+  "participation": {
+    "all": 1441,
+    "owner": 0,
+    "community": 1441
+  },
+  "recentCommits": [
+    {
+      "sha": "72a7e77",
+      "message": "Merge branch 'v0.2' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/72a7e77a31fbbf6797d63dd9462b9038fb19b710",
+      "date": "2026-07-21T20:44:44Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "8ce541c",
+      "message": "Release v0.2.1: version drift fix and Docker tag policy",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/8ce541c8b134ce516a9b76b9fc63ea598ad9453e",
+      "date": "2026-07-21T20:36:13Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "a49bdc6",
+      "message": "Merge branch 'chore/release-v0.2.1-rc54' into 'v0.2'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/a49bdc632ede2fe1a0f4935e7306844975d56a16",
+      "date": "2026-07-19T20:58:38Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "d43ef1b",
+      "message": "chore(release): v0.2.1-rc54",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/d43ef1b705d6a428ac22f55f3a1e853c15945f58",
+      "date": "2026-07-19T20:54:20Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "86b1271",
+      "message": "Merge branch 'fix/qui-825-startup-sync-gate' into 'v0.2'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/86b1271109e5ef8b685425888f78f81cac9dead3",
+      "date": "2026-07-19T20:52:25Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "0efbc4c",
+      "message": "fix(startup): gate mining on validator sync before funding check",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/0efbc4c6c207eb616cf859d1ddf5e3968e7084d5",
+      "date": "2026-07-19T20:52:25Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "d480fce",
+      "message": "Merge branch 'feature/qui-896' into 'v0.2'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/d480fce15cc77794c1a33c14fa4435dec4b053b8",
+      "date": "2026-07-19T20:48:42Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "525700c",
+      "message": "fix(cuda): neutralize forward-compat libs on consumer GPUs",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/525700cd92416a28559e4fdc0c11dd1cfe953728",
+      "date": "2026-07-19T20:43:16Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "7094d1c",
+      "message": "Merge branch 'fix/qui-899-submit-failure-telemetry' into 'v0.2'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/7094d1ca743d936cd5fd30fbece9f2da8a02b7dc",
+      "date": "2026-07-19T19:18:11Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    },
+    {
+      "sha": "a96a2d2",
+      "message": "fix(substrate): make the QUI-899 fix verifiable + close two related holes",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/a96a2d21c225c109461aa61b1f25c94ed895b0a0",
+      "date": "2026-07-19T19:18:11Z",
+      "author": "rcarback",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/.github"
+    },
+    {
+      "name": "benchmarks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/benchmarks"
+    },
+    {
+      "name": "CPU",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/CPU"
+    },
+    {
+      "name": "docker",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/docker"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/docs"
+    },
+    {
+      "name": "dwave_topologies",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/dwave_topologies"
+    },
+    {
+      "name": "gibbs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/gibbs"
+    },
+    {
+      "name": "GPU",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/GPU"
+    },
+    {
+      "name": "minertest",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/minertest"
+    },
+    {
+      "name": "pyinstaller",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/pyinstaller"
+    },
+    {
+      "name": "QPU",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/QPU"
+    },
+    {
+      "name": "shared",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/shared"
+    },
+    {
+      "name": "substrate",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/substrate"
+    },
+    {
+      "name": "systemd-linux",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/systemd-linux"
+    },
+    {
+      "name": "tests",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/tests"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/tools"
+    },
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "size": 698,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.dockerignore"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 1179,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitignore"
+    },
+    {
+      "name": ".gitlab-ci.yml",
+      "type": "file",
+      "size": 11475,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitlab-ci.yml"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 16383,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/AGENTS.md"
+    },
+    {
+      "name": "ARCHITECTURE.md",
+      "type": "file",
+      "size": 23893,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/ARCHITECTURE.md"
+    },
+    {
+      "name": "genesis_block.json",
+      "type": "file",
+      "size": 553,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/genesis_block.json"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 34273,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/LICENSE"
+    },
+    {
+      "name": "MANIFEST.in",
+      "type": "file",
+      "size": 44,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/MANIFEST.in"
+    },
+    {
+      "name": "MINER_README.md",
+      "type": "file",
+      "size": 2177,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/MINER_README.md"
+    },
+    {
+      "name": "Mining.sh",
+      "type": "file",
+      "size": 3078,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Mining.sh"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 2637,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/pyproject.toml"
+    },
+    {
+      "name": "quip_cli.py",
+      "type": "file",
+      "size": 114119,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip_cli.py"
+    },
+    {
+      "name": "quip-miner.example.toml",
+      "type": "file",
+      "size": 7371,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip-miner.example.toml"
+    },
+    {
+      "name": "quip.network.cpu.example.toml",
+      "type": "file",
+      "size": 1039,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.cpu.example.toml"
+    },
+    {
+      "name": "quip.network.gpu.example.toml",
+      "type": "file",
+      "size": 3067,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.gpu.example.toml"
+    },
+    {
+      "name": "quip.network.qpu.example.toml",
+      "type": "file",
+      "size": 5630,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.qpu.example.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 10972,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/README.md"
+    },
+    {
+      "name": "reload.sh",
+      "type": "file",
+      "size": 703,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/reload.sh"
+    },
+    {
+      "name": "SOLVE.md",
+      "type": "file",
+      "size": 3067,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/SOLVE.md"
+    },
+    {
+      "name": "TESTSTOEVAL.md",
+      "type": "file",
+      "size": 2337,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/TESTSTOEVAL.md"
+    },
+    {
+      "name": "uv.lock",
+      "type": "file",
+      "size": 1098634,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/uv.lock"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "dwave-ocean-sdk",
+        "version": "9.0.0"
+      },
+      {
+        "name": "numpy",
+        "version": "1.24.0"
+      },
+      {
+        "name": "python-dotenv",
+        "version": "1.0.0"
+      },
+      {
+        "name": "aiohttp",
+        "version": "3.9.0"
+      },
+      {
+        "name": "click",
+        "version": "8.1.7"
+      },
+      {
+        "name": "blake3",
+        "version": "1.0.5"
+      },
+      {
+        "name": "substrate-interface",
+        "version": "1.7.4"
+      },
+      {
+        "name": "scalecodec",
+        "version": "1.2"
+      },
+      {
+        "name": "dilithium-py",
+        "version": "1.0"
+      },
+      {
+        "name": "tomli",
+        "version": "2.0.1; python_version <"
+      }
+    ],
+    "total": 10
+  },
+  "branchCount": 13,
+  "tagCount": 92,
+  "recentPulls": [
+    {
+      "number": 30,
+      "title": "Split miner/coordinator stream reads from writes",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/30",
+      "state": "closed",
+      "updatedAt": "2026-07-27T04:14:30Z",
+      "author": "rcarback",
+      "draft": false
+    },
+    {
+      "number": 17,
+      "title": "Python client lockstep: per-topology difficulty + mineable-topology whitelist",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/17",
+      "state": "merged",
+      "updatedAt": "2026-07-27T03:20:39Z",
+      "author": "rcarback",
+      "draft": false
+    },
+    {
+      "number": 1,
+      "title": ".Update README.md",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/1",
+      "state": "closed",
+      "updatedAt": "2026-07-13T21:47:12Z",
+      "author": "mmbala12",
+      "draft": false
+    },
+    {
+      "number": 2,
+      "title": "Update README.md",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/2",
+      "state": "closed",
+      "updatedAt": "2026-07-13T21:46:51Z",
+      "author": "shahabsadat456-code",
+      "draft": false
+    },
+    {
+      "number": 4,
+      "title": "fix: replace 3 bare except clauses with except Exception",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/4",
+      "state": "closed",
+      "updatedAt": "2026-07-13T21:46:33Z",
+      "author": "haosenwang1018",
+      "draft": false
+    },
+    {
+      "number": 7,
+      "title": "Rename README.md to README.mdn",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/7",
+      "state": "closed",
+      "updatedAt": "2026-07-13T21:45:53Z",
+      "author": "ephraimh64-cell",
+      "draft": false
+    },
+    {
+      "number": 10,
+      "title": "chore: remove extra dot in comment",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/10",
+      "state": "closed",
+      "updatedAt": "2026-07-13T21:45:33Z",
+      "author": "chuanshanjida",
+      "draft": false
+    }
+  ],
+  "community": {
+    "healthPercentage": 50,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "workflowRuns": [
+    {
+      "name": "CI",
+      "status": "failure",
+      "url": "https://github.com/QuipNetwork/quip-miner/actions/runs/29867113419",
+      "branch": "main",
+      "updatedAt": "2026-07-21T20:45:32Z"
+    }
+  ],
+  "fundingLinks": [],
+  "openIssuesOnly": 3,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 20,
+  "mergedPRs": 1,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2025-08-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-08-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-08-17",
+      "additions": 5650,
+      "deletions": 714
+    },
+    {
+      "week": "2025-08-24",
+      "additions": 8332,
+      "deletions": 4430
+    },
+    {
+      "week": "2025-08-31",
+      "additions": 8522,
+      "deletions": 4727
+    },
+    {
+      "week": "2025-09-07",
+      "additions": 7173,
+      "deletions": 2225
+    },
+    {
+      "week": "2025-09-14",
+      "additions": 6213,
+      "deletions": 2941
+    },
+    {
+      "week": "2025-09-21",
+      "additions": 2556,
+      "deletions": 3792
+    },
+    {
+      "week": "2025-09-28",
+      "additions": 7759,
+      "deletions": 4059
+    },
+    {
+      "week": "2025-10-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-12",
+      "additions": 2118,
+      "deletions": 5654
+    },
+    {
+      "week": "2025-10-19",
+      "additions": 9099,
+      "deletions": 5089
+    },
+    {
+      "week": "2025-10-26",
+      "additions": 4183,
+      "deletions": 1002
+    },
+    {
+      "week": "2025-11-02",
+      "additions": 6862,
+      "deletions": 806
+    },
+    {
+      "week": "2025-11-09",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-16",
+      "additions": 6064,
+      "deletions": 183
+    },
+    {
+      "week": "2025-11-23",
+      "additions": 19260,
+      "deletions": 2950
+    },
+    {
+      "week": "2025-11-30",
+      "additions": 2638,
+      "deletions": 1589
+    },
+    {
+      "week": "2025-12-07",
+      "additions": 2201,
+      "deletions": 967
+    },
+    {
+      "week": "2025-12-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-04",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-11",
+      "additions": 5166,
+      "deletions": 5481
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 2874,
+      "deletions": 297
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 7938,
+      "deletions": 5354
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 18872,
+      "deletions": 3206
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 11945,
+      "deletions": 14834
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 2520,
+      "deletions": 1168
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 5764,
+      "deletions": 751
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 4359,
+      "deletions": 200
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 14736,
+      "deletions": 21732
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 8069,
+      "deletions": 1172
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 389,
+      "deletions": 12
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 17739,
+      "deletions": 33300
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 26152,
+      "deletions": 15065
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 23862,
+      "deletions": 3971
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 25249,
+      "deletions": 22536
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 370,
+      "deletions": 23
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 729,
+      "deletions": 396
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 1661,
+      "deletions": 724
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 17503,
+      "deletions": 5566
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 703,
+      "deletions": 72
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 2560,
+      "deletions": 202
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 868,
+      "deletions": 77
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-07-30T08:14:41.000Z"
+}
