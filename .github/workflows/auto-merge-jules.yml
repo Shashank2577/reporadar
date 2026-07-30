@@ -1,16 +1,22 @@
 name: Auto-merge Jules PRs
 
-# Enables auto-merge on any pull request whose diff only touches data/ and
-# content/ (the scope check below is the sole gate). Originally this also
-# required the author to be google-labs-jules[bot] or a "jules" label, but
-# Jules's automationMode: AUTO_CREATE_PR opens PRs under the connected
-# account (the human GitHub user who authorized the Jules source), not a
-# bot login -- so that check never matched and this workflow never
-# auto-merged a single real Jules PR. Scope is what AGENTS.md actually
-# promises ("content-only PRs auto-merge after CI"), so it's sufficient on
-# its own. The PR still has to pass the CI build before GitHub merges it,
-# and branch protection rules apply. PRs touching other paths are left for
-# manual review.
+# Merges any pull request whose diff only touches data/ and content/ (the
+# scope check below is the sole gate), once its CI checks pass. Originally
+# this also required the author to be google-labs-jules[bot] or a "jules"
+# label, but Jules's automationMode: AUTO_CREATE_PR opens PRs under the
+# connected account (the human GitHub user who authorized the Jules
+# source), not a bot login -- so that check never matched and this
+# workflow never auto-merged a single real Jules PR. Scope is what
+# AGENTS.md actually promises ("content-only PRs auto-merge after CI"),
+# so it's sufficient on its own.
+#
+# This does NOT use `gh pr merge --auto` (GitHub's native auto-merge
+# queue), because that requires the repo-level "Allow auto-merge" setting
+# to be on -- it's currently off, and flipping it would affect every PR
+# in the repo (including future human ones), not just Jules's. Instead
+# this job polls the PR's own checks directly and merges once they all
+# pass, which needs no repo-wide setting change. PRs touching paths other
+# than data/ and content/ are left for manual review.
 
 on:
   pull_request:
@@ -23,6 +29,7 @@ permissions:
 jobs:
   automerge:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -40,12 +47,31 @@ jobs:
             echo "content_only=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Enable auto-merge
+      - name: Wait for checks, then merge
         if: steps.scope.outputs.content_only == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-        run: gh pr merge "$PR" --auto --squash
+        run: |
+          for i in $(seq 1 40); do
+            status=0
+            gh pr checks "$PR" || status=$?
+            if [ "$status" -eq 0 ]; then
+              echo "All checks passed -- merging."
+              gh pr merge "$PR" --squash --delete-branch
+              exit 0
+            elif [ "$status" -eq 8 ]; then
+              echo "Checks still pending (attempt $i/40), waiting..."
+              sleep 20
+            else
+              echo "::error::A check failed on PR #$PR -- leaving it open for manual review."
+              gh pr comment "$PR" --body "One or more checks failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
+              exit 1
+            fi
+          done
+          echo "::error::Checks did not finish within 15 minutes -- leaving PR #$PR open for manual review."
+          gh pr comment "$PR" --body "Checks didn't finish within the auto-merge workflow's 15-minute window, so this PR was left open. A maintainer needs to review and merge it manually."
+          exit 1
 
       - name: Flag for manual review
         if: steps.scope.outputs.content_only == 'false'
