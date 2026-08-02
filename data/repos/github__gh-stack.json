@@ -1,0 +1,3166 @@
+{
+  "id": "github/gh-stack",
+  "snapshots": [
+    {
+      "date": "2026-08-02",
+      "stars": 878,
+      "forks": 38
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-08-02",
+      "period": "daily",
+      "rank": 6,
+      "starsGained": 46
+    }
+  ],
+  "owner": "github",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/9919?v=4",
+  "ownerType": "Organization",
+  "name": "gh-stack",
+  "description": "GitHub Stacked PRs",
+  "url": "https://github.com/github/gh-stack",
+  "homepage": "https://gh.io/stacks",
+  "license": "MIT",
+  "language": "Go",
+  "topics": [
+    "cli",
+    "gh-extension",
+    "github",
+    "stacked-prs"
+  ],
+  "stars": 878,
+  "forks": 38,
+  "watchers": 6,
+  "openIssues": 59,
+  "createdAt": "2026-02-06T17:49:56Z",
+  "pushedAt": "2026-07-31T00:36:50Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-08-02T08:37:51.919Z",
+  "commitCount": 89,
+  "languages": {
+    "Go": 1613801
+  },
+  "readmeExcerpt": "# GitHub Stacked PRs\n\nA GitHub CLI extension for managing stacked branches and pull requests.\n\nStacked PRs break large changes into a chain of small, reviewable pull requests that build on each other. `gh stack` automates the tedious parts — creating branches, keeping them rebased, setting correct PR base branches, and navigating between layers.\n\n## Installation\n\n```sh\ngh extension install github/gh-stack\n```\n\nRequires the [GitHub CLI](https://cli.github.com/) (`gh`) v2.0+.\n\n## AI agent integration\n\nInstall the gh-stack skill so your AI coding agent knows how to work with stacked PRs and the `gh stack` CLI:\n\n```sh\ngh skill install github/gh-stack\n```\n\n## Quick start\n\n```sh\n# Start a new stack (creates and checks out the first branch)\ngh stack init\n\n# ... make commits on the first branch ...\n\n# Add another branch on top\ngh stack add api-endpoints\n# ... make commits ...\n\n# Push all branches\ngh stack push\n\n# View the stack\ngh stack view\n\n# Open a stack of PRs\ngh stack submit\n```\n\n## How it works\n\nA **stack** is an ordered list of branches where each branch builds on the one below it. The **bottom** of the stack is based on a **trunk** branch (typically `main`).\n\n```\nfrontend      → PR #3 (base: api-endpoints) ← top\napi-endpoints → PR #2 (base: auth-layer)\nauth-layer    → PR #1 (base: main)          ← bottom\n─────────────\nmain (trunk)\n```\n\nThe **bottom** of the stack is the branch closest to the trunk, and the **top** is the branch furthest from it. Each branch inherits from the one below it. Navigation commands (`up`, `down`, `top`, `bottom`) follow this model: `up` moves away from trunk, `down` moves toward it.\n\nWhen you submit, `gh stack` creates one PR per branch and links them together as a **Stack** on GitHub. Each PR's base is set to the branch below it in the stack, so reviewers see only the diff for that layer.\n\n### Local tracking\n\nStack metadata is stored in `.git/gh-stack` (a JSON file, not committed to the repo). This tracks which branches belong to which stack and their ordering. Rebase state during interrupted rebases is stored separately in `.git/gh-stack-rebase-state`.\n\n## Commands\n\n### `gh stack init`\n\nInitialize a new stack in the current repository.\n\n```\ngh stack init [flags] [branches...]\n```\n\nInitializes a new stack locally. In interactive mode (no arguments), prompts for a branch name and offers to use the current branch as the first layer.\n\nWhen explicit branch names are given, existing branches are adopted automatically and any missing branches are created. The trunk defaults to the repository's default branch unless overridden with `--base`.\n\nEnables `git rerere` automatically so that conflict resolutions are remembered across rebases.\n\n| Flag | Description |\n|------|-------------|\n| `-b, --base <branch>` | Trunk branch for the stack (defaults to the repository's default branch) |\n\n**Examples:**\n\n```sh\n# Interactive — prompts for branch names\ngh stack init\n\n# Non-interactive — specify branches upfront\ngh stack init feature-auth feature-api feature-ui\n\n# Use a different trunk branch\ngh stack init --base develop feature-auth\n\n# Adopt existing branches into a stack\ngh stack init feature-auth feature-api\n```\n\n### `gh stack add`\n\nAdd a new branch on top of the current stack.\n\n```\ngh stack add [flags] [branch]\n```\n\nCreates a new branch at the current HEAD, adds it to the top of the stack, and checks it out. Must be run while on the topmost branch of a stack. If no branch name is given, prompts for one.\n\nYou can optionally stage changes and create a commit as part of the `add` flow. When `-m` is provided without an explicit branch name, the branch name is auto-generated in date+slug format (e.g., `03-24-add_login`).\n\n| Flag | Description |\n|------|-------------|\n| `-A, --all` | Stage all changes (including untracked files); requires `-m` |\n| `-u, --update` | Stage changes to tracked files only; requires `-m` |\n| `-m, --message <string>` | Create a commit with this message before creating the branch |\n\n> **Note:** `-A` and `-u` are mutually exclusive.\n\n**Examples:**\n\n```sh\n# Create a branch by name\ngh stack add api-routes\n\n# Prompt for a branch name interactively\ngh stack add\n\n# Stage all changes, commit, and auto-generate the branch name\ngh stack add -Am \"Add login endpoint\"\n\n# Stage only tracked files, commit, and auto-generate the branch name\ngh stack add -um \"Fix auth bug\"\n\n# Commit already-staged changes and auto-generate the branch name\ngh stack add -m \"Add user model\"\n\n# Stage all changes, commit, and use an explicit branch name\ngh stack add -Am \"Add tests\" test-layer\n\n# Stage only tracked files, commit, and use an explicit branch name\ngh stack add -um \"Update docs\" docs-layer\n\n# Commit already-staged changes and use an explicit branch name\ngh stack add -m \"Refactor utils\" cleanup-layer\n```\n\n### `gh stack checkout`\n\nCheck out a stack by its stack number, a pull request number, a PR URL, or a branch name.\n\n```\ngh stack checkout [<stack-number> | <pr-number> | <pr-url> | <branch>]\n```\n\nA bare number is interpreted first as a stack or PR number (repo-scoped identifiers shown in the GitHub UI). If nothing matches the number, it is tried as a branch name.\n\nWhen a remote stack is referenced, the command fetches the stack on GitHub, pulls the branches, and sets up the stack locally. If the stack already exists locally and matches, it switches to the branch. If the local and remote stacks have different compositions, you'll be prompted to resolve the conflict.\n\nWhen a branch name is provided, the command resolves it against locally tracked stacks only.\n\nWhen run without arguments in an interactive terminal, opens a searchable picker listing every stack available to you — both the stacks tracked locally and the stacks that exist only on GitHub. Each row shows the stack number, its bottom and top branch, base branch, a status bar summarizing how many of its pull requests are merged, open, closed, or not yet pushed, and whether the stack is available locally or only on the remote. Filter with the All / Local / Remote tabs or type `/` to search; fully merged stacks are omitted. Selecting a remote-only stack clones it locally before switching to it.\n\n**Examples:**\n\n```sh\n# Check out a stack by its stack number\ngh stack checkout 7\n\n# Check out a stack by PR number\ngh stack checkout 42\n\n# Check out a stack by PR URL\ngh stack checkout https://github.com/owner/repo/pull/42\n\n# Check out a stack by branch name (local only)\ngh stack checkout feature-auth\n\n# Interactive — pick from all available stacks (local and remote)\ngh stack checkout\n```\n\n### `gh stack rebase`\n\nPull from remote and do a cascading rebase across the stack.\n\n```\ngh stack rebase [flags] [branch]\n```\n\nFetches the latest changes from `origin`, then ensures each branch in the stack has the tip of the previous layer in its commit history. Rebases branches in order from trunk upward. If a branch's PR has been merged, the rebase automatically switches to `--onto` mode to correctly replay commits on top of the merge target.\n\nIf a rebase conflict occurs, the operation pauses and prints the conflicted files with line numbers. Resolve the conflicts, stage with `git add`, and continue with `--continue`. To undo the entire rebase, use `--abort` to restore all branches to their pre-rebase state.\n\n| Flag | Description |\n|------|-------------|\n| `--downstack` | Only rebase branches from trunk to the current branch |\n| `--upstack` | Only rebase branches from the current branch to the top |\n| `--no-trunk` | Skip trunk — only rebase stack branches onto each other (no fetch, no trunk rebase) |\n| `--continue` | Continue the rebase after resolving conflicts |\n| `--abort` | Abort the rebase and restore all branches to their pre-rebase state |\n| `--remote <name>` | Remote to fetch from (defaults to auto-detected remote) |\n| `--committer-date-is-author-date` | Set the committer date to the author date during rebase. Alias: `--preserve-dates` |\n\n| Argument | Description |\n|----------|-------------|\n| `[branch]` | Target branch (defaults to the current branch) |\n\n**Examples:**\n\n```sh\n# Rebase the entire stack\ngh stack rebase\n\n# Only rebase branches below the current one\ngh stack rebase --downstack\n\n# Only rebase branches above the current one\ngh stack rebase --upstack\n\n# Rebase stack branches without pulling from or rebasing with trunk\ngh stack rebase --no-trunk\n\n# After resolving a conflict\ngh stack rebase --continue\n\n# Abort rebase and restore everything\ngh stack rebase --abort\n\n# Rebase and preserve committer date as author date\ngh stack rebase --committer-date-is-author-date\n```\n\n### `gh stack modify`\n\nInteractively restructure the current stack.\n\n```\ngh stack modify [flags]\n```\n\nOpens a terminal UI for restructuring a stack. You can drop, fold, insert, rename, and reorder branches. All the changes are staged during the preview and applied at once on save.\n\nIf the stack of PRs has been created on GitHub, run `gh stack submit` afterwards to push the changes and recreate the stack.\n\n| Flag | Description |\n|------|-------------|\n| `--continue` | Continue after resolving conflicts |\n| `--abort` | Abort the modify session and restore the stack to its pre-modify state |\n\n**Operations:**\n\n- **Drop** (`x`): Remove a branch and its commits from the stack. Local branch and associated PR are preserved.\n- **Fold down** (`d`): Absorb a branch's commits into the branch below (toward trunk). Folded branch removed from stack.\n- **Fold up** (`u`): Absorb a branch's commits into the branch above (away from trunk). Folded branch removed from stack.\n- **Insert** (`i`/`I`): Insert a new empty branch into the stack. `i` inserts below the cursor; `I` inserts above.\n- **Reorder** (`Shift+↑`/`Shift+↓`): Move a branch up (away from trunk) or down (toward trunk) in the stack.\n- **Rename** (`r`): Rename a branch locally and in the stack metadata.\n- **Undo** (`z`): Undo the last staged action.\n\n**Keybindings:**\n\n| Key | Action |\n|-----|--------|\n| `↑`/`↓` | Navigate branch list |\n| `f` | View files changed |\n| `c` | View commits |\n| `x` | Drop branch |\n| `r` | Rename branch |\n| `i/I` | Insert branch below/above |\n| `d/u` | Fold branch down/up |\n| `Shift+↑`/`Shift+↓` | Move branch up/down |\n| `z` | Undo last action |\n| `Ctrl+S` | Apply all changes |\n| `q`/`Esc` | Cancel and exit |\n| `?` | Help |\n\n**Preconditions:**\n- Must have an active stack checked out locally\n- Working tree must be clean\n- No rebase in progress\n- No PR in the stack is queued for merge\n- Commit history must be linear\n\n**Examples:**\n\n```sh\n# Open the modify TUI\ngh stack modify\n\n# Continue after resolving a conflict\ngh stack modify --continue\n\n# Abort and restore to the previous state\ngh stack modify --abort\n```\n\n### `gh stack sync`\n\nFetch, rebase, push, and sync PR state in a single command.\n\n```\ngh stack sync [flags]\n```\n\nPerforms a synchronization of the entire stack:\n\n1. **Fetch** — fetches the latest changes from `origin`.\n2. **Reconcile the remote stack** — mirrors the GitHub stack locally. When PRs have been added to the stack on GitHub (the remote is ahead of your local stack), their branches are pulled down and appended to your local stack automatically. When the local and remote stacks have genuinely diverged (for example, you added a branch locally while different PRs were added to the stack on GitHub), you are prompted to resolve (see [Diverged stacks](#diverged-stacks) below). In a non-interactive terminal a divergence aborts the sync (nothing is pushed or updated).\n3. **Fast-forward trunk** — fast-forwards the trunk branch to match the remote (skips if diverged).\n4. **Cascade rebase** — rebases all stack branches onto their updated parents (only if trunk moved). If a conflict is detected, all branches are restored to their original state, and you are advised to run `gh stack rebase` to resolve conflicts interactively.\n5. **Push** — pushes all branches (uses `--force-with-lease` if a rebase occurred).\n6. **Sync PRs** — syncs PR state from GitHub and reports the status of eac",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">GitHub Stacked PRs</h1></div>\n<p dir=\"auto\">A GitHub CLI extension for managing stacked branches and pull requests.</p>\n<p dir=\"auto\">Stacked PRs break large changes into a chain of small, reviewable pull requests that build on each other. <code>gh stack</code> automates the tedious parts — creating branches, keeping them rebased, setting correct PR base branches, and navigating between layers.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh extension install github/gh-stack\"><pre>gh extension install github/gh-stack</pre></div>\n<p dir=\"auto\">Requires the <a href=\"https://cli.github.com/\">GitHub CLI</a> (<code>gh</code>) v2.0+.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">AI agent integration</h2></div>\n<p dir=\"auto\">Install the gh-stack skill so your AI coding agent knows how to work with stacked PRs and the <code>gh stack</code> CLI:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh skill install github/gh-stack\"><pre>gh skill install github/gh-stack</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Start a new stack (creates and checks out the first branch)\ngh stack init\n\n# ... make commits on the first branch ...\n\n# Add another branch on top\ngh stack add api-endpoints\n# ... make commits ...\n\n# Push all branches\ngh stack push\n\n# View the stack\ngh stack view\n\n# Open a stack of PRs\ngh stack submit\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Start a new stack (creates and checks out the first branch)</span>\ngh stack init\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ... make commits on the first branch ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Add another branch on top</span>\ngh stack add api-endpoints\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ... make commits ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Push all branches</span>\ngh stack push\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> View the stack</span>\ngh stack view\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Open a stack of PRs</span>\ngh stack submit</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">A <strong>stack</strong> is an ordered list of branches where each branch builds on the one below it. The <strong>bottom</strong> of the stack is based on a <strong>trunk</strong> branch (typically <code>main</code>).</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"frontend      → PR #3 (base: api-endpoints) ← top\napi-endpoints → PR #2 (base: auth-layer)\nauth-layer    → PR #1 (base: main)          ← bottom\n─────────────\nmain (trunk)\"><pre class=\"notranslate\"><code>frontend      → PR #3 (base: api-endpoints) ← top\napi-endpoints → PR #2 (base: auth-layer)\nauth-layer    → PR #1 (base: main)          ← bottom\n─────────────\nmain (trunk)\n</code></pre></div>\n<p dir=\"auto\">The <strong>bottom</strong> of the stack is the branch closest to the trunk, and the <strong>top</strong> is the branch furthest from it. Each branch inherits from the one below it. Navigation commands (<code>up</code>, <code>down</code>, <code>top</code>, <code>bottom</code>) follow this model: <code>up</code> moves away from trunk, <code>down</code> moves toward it.</p>\n<p dir=\"auto\">When you submit, <code>gh stack</code> creates one PR per branch and links them together as a <strong>Stack</strong> on GitHub. Each PR's base is set to the branch below it in the stack, so reviewers see only the diff for that layer.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Local tracking</h3></div>\n<p dir=\"auto\">Stack metadata is stored in <code>.git/gh-stack</code> (a JSON file, not committed to the repo). This tracks which branches belong to which stack and their ordering. Rebase state during interrupted rebases is stored separately in <code>.git/gh-stack-rebase-state</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Commands</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack init</code></h3></div>\n<p dir=\"auto\">Initialize a new stack in the current repository.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack init [flags] [branches...]\"><pre class=\"notranslate\"><code>gh stack init [flags] [branches...]\n</code></pre></div>\n<p dir=\"auto\">Initializes a new stack locally. In interactive mode (no arguments), prompts for a branch name and offers to use the current branch as the first layer.</p>\n<p dir=\"auto\">When explicit branch names are given, existing branches are adopted automatically and any missing branches are created. The trunk defaults to the repository's default branch unless overridden with <code>--base</code>.</p>\n<p dir=\"auto\">Enables <code>git rerere</code> automatically so that conflict resolutions are remembered across rebases.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>-b, --base &lt;branch&gt;</code></td>\n<td>Trunk branch for the stack (defaults to the repository's default branch)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Interactive — prompts for branch names\ngh stack init\n\n# Non-interactive — specify branches upfront\ngh stack init feature-auth feature-api feature-ui\n\n# Use a different trunk branch\ngh stack init --base develop feature-auth\n\n# Adopt existing branches into a stack\ngh stack init feature-auth feature-api\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Interactive — prompts for branch names</span>\ngh stack init\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Non-interactive — specify branches upfront</span>\ngh stack init feature-auth feature-api feature-ui\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Use a different trunk branch</span>\ngh stack init --base develop feature-auth\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Adopt existing branches into a stack</span>\ngh stack init feature-auth feature-api</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack add</code></h3></div>\n<p dir=\"auto\">Add a new branch on top of the current stack.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack add [flags] [branch]\"><pre class=\"notranslate\"><code>gh stack add [flags] [branch]\n</code></pre></div>\n<p dir=\"auto\">Creates a new branch at the current HEAD, adds it to the top of the stack, and checks it out. Must be run while on the topmost branch of a stack. If no branch name is given, prompts for one.</p>\n<p dir=\"auto\">You can optionally stage changes and create a commit as part of the <code>add</code> flow. When <code>-m</code> is provided without an explicit branch name, the branch name is auto-generated in date+slug format (e.g., <code>03-24-add_login</code>).</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>-A, --all</code></td>\n<td>Stage all changes (including untracked files); requires <code>-m</code></td>\n</tr>\n<tr>\n<td><code>-u, --update</code></td>\n<td>Stage changes to tracked files only; requires <code>-m</code></td>\n</tr>\n<tr>\n<td><code>-m, --message &lt;string&gt;</code></td>\n<td>Create a commit with this message before creating the branch</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<blockquote>\n<p dir=\"auto\"><strong>Note:</strong> <code>-A</code> and <code>-u</code> are mutually exclusive.</p>\n</blockquote>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Create a branch by name\ngh stack add api-routes\n\n# Prompt for a branch name interactively\ngh stack add\n\n# Stage all changes, commit, and auto-generate the branch name\ngh stack add -Am &quot;Add login endpoint&quot;\n\n# Stage only tracked files, commit, and auto-generate the branch name\ngh stack add -um &quot;Fix auth bug&quot;\n\n# Commit already-staged changes and auto-generate the branch name\ngh stack add -m &quot;Add user model&quot;\n\n# Stage all changes, commit, and use an explicit branch name\ngh stack add -Am &quot;Add tests&quot; test-layer\n\n# Stage only tracked files, commit, and use an explicit branch name\ngh stack add -um &quot;Update docs&quot; docs-layer\n\n# Commit already-staged changes and use an explicit branch name\ngh stack add -m &quot;Refactor utils&quot; cleanup-layer\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Create a branch by name</span>\ngh stack add api-routes\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Prompt for a branch name interactively</span>\ngh stack add\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Stage all changes, commit, and auto-generate the branch name</span>\ngh stack add -Am <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Add login endpoint<span class=\"pl-pds\">\"</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Stage only tracked files, commit, and auto-generate the branch name</span>\ngh stack add -um <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Fix auth bug<span class=\"pl-pds\">\"</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Commit already-staged changes and auto-generate the branch name</span>\ngh stack add -m <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Add user model<span class=\"pl-pds\">\"</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Stage all changes, commit, and use an explicit branch name</span>\ngh stack add -Am <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Add tests<span class=\"pl-pds\">\"</span></span> test-layer\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Stage only tracked files, commit, and use an explicit branch name</span>\ngh stack add -um <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Update docs<span class=\"pl-pds\">\"</span></span> docs-layer\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Commit already-staged changes and use an explicit branch name</span>\ngh stack add -m <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Refactor utils<span class=\"pl-pds\">\"</span></span> cleanup-layer</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack checkout</code></h3></div>\n<p dir=\"auto\">Check out a stack by its stack number, a pull request number, a PR URL, or a branch name.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack checkout [&lt;stack-number&gt; | &lt;pr-number&gt; | &lt;pr-url&gt; | &lt;branch&gt;]\"><pre class=\"notranslate\"><code>gh stack checkout [&lt;stack-number&gt; | &lt;pr-number&gt; | &lt;pr-url&gt; | &lt;branch&gt;]\n</code></pre></div>\n<p dir=\"auto\">A bare number is interpreted first as a stack or PR number (repo-scoped identifiers shown in the GitHub UI). If nothing matches the number, it is tried as a branch name.</p>\n<p dir=\"auto\">When a remote stack is referenced, the command fetches the stack on GitHub, pulls the branches, and sets up the stack locally. If the stack already exists locally and matches, it switches to the branch. If the local and remote stacks have different compositions, you'll be prompted to resolve the conflict.</p>\n<p dir=\"auto\">When a branch name is provided, the command resolves it against locally tracked stacks only.</p>\n<p dir=\"auto\">When run without arguments in an interactive terminal, opens a searchable picker listing every stack available to you — both the stacks tracked locally and the stacks that exist only on GitHub. Each row shows the stack number, its bottom and top branch, base branch, a status bar summarizing how many of its pull requests are merged, open, closed, or not yet pushed, and whether the stack is available locally or only on the remote. Filter with the All / Local / Remote tabs or type <code>/</code> to search; fully merged stacks are omitted. Selecting a remote-only stack clones it locally before switching to it.</p>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Check out a stack by its stack number\ngh stack checkout 7\n\n# Check out a stack by PR number\ngh stack checkout 42\n\n# Check out a stack by PR URL\ngh stack checkout https://github.com/owner/repo/pull/42\n\n# Check out a stack by branch name (local only)\ngh stack checkout feature-auth\n\n# Interactive — pick from all available stacks (local and remote)\ngh stack checkout\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Check out a stack by its stack number</span>\ngh stack checkout 7\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Check out a stack by PR number</span>\ngh stack checkout 42\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Check out a stack by PR URL</span>\ngh stack checkout https://github.com/owner/repo/pull/42\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Check out a stack by branch name (local only)</span>\ngh stack checkout feature-auth\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Interactive — pick from all available stacks (local and remote)</span>\ngh stack checkout</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack rebase</code></h3></div>\n<p dir=\"auto\">Pull from remote and do a cascading rebase across the stack.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack rebase [flags] [branch]\"><pre class=\"notranslate\"><code>gh stack rebase [flags] [branch]\n</code></pre></div>\n<p dir=\"auto\">Fetches the latest changes from <code>origin</code>, then ensures each branch in the stack has the tip of the previous layer in its commit history. Rebases branches in order from trunk upward. If a branch's PR has been merged, the rebase automatically switches to <code>--onto</code> mode to correctly replay commits on top of the merge target.</p>\n<p dir=\"auto\">If a rebase conflict occurs, the operation pauses and prints the conflicted files with line numbers. Resolve the conflicts, stage with <code>git add</code>, and continue with <code>--continue</code>. To undo the entire rebase, use <code>--abort</code> to restore all branches to their pre-rebase state.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--downstack</code></td>\n<td>Only rebase branches from trunk to the current branch</td>\n</tr>\n<tr>\n<td><code>--upstack</code></td>\n<td>Only rebase branches from the current branch to the top</td>\n</tr>\n<tr>\n<td><code>--no-trunk</code></td>\n<td>Skip trunk — only rebase stack branches onto each other (no fetch, no trunk rebase)</td>\n</tr>\n<tr>\n<td><code>--continue</code></td>\n<td>Continue the rebase after resolving conflicts</td>\n</tr>\n<tr>\n<td><code>--abort</code></td>\n<td>Abort the rebase and restore all branches to their pre-rebase state</td>\n</tr>\n<tr>\n<td><code>--remote &lt;name&gt;</code></td>\n<td>Remote to fetch from (defaults to auto-detected remote)</td>\n</tr>\n<tr>\n<td><code>--committer-date-is-author-date</code></td>\n<td>Set the committer date to the author date during rebase. Alias: <code>--preserve-dates</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Argument</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>[branch]</code></td>\n<td>Target branch (defaults to the current branch)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Rebase the entire stack\ngh stack rebase\n\n# Only rebase branches below the current one\ngh stack rebase --downstack\n\n# Only rebase branches above the current one\ngh stack rebase --upstack\n\n# Rebase stack branches without pulling from or rebasing with trunk\ngh stack rebase --no-trunk\n\n# After resolving a conflict\ngh stack rebase --continue\n\n# Abort rebase and restore everything\ngh stack rebase --abort\n\n# Rebase and preserve committer date as author date\ngh stack rebase --committer-date-is-author-date\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Rebase the entire stack</span>\ngh stack rebase\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Only rebase branches below the current one</span>\ngh stack rebase --downstack\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Only rebase branches above the current one</span>\ngh stack rebase --upstack\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Rebase stack branches without pulling from or rebasing with trunk</span>\ngh stack rebase --no-trunk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> After resolving a conflict</span>\ngh stack rebase --continue\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Abort rebase and restore everything</span>\ngh stack rebase --abort\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Rebase and preserve committer date as author date</span>\ngh stack rebase --committer-date-is-author-date</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack modify</code></h3></div>\n<p dir=\"auto\">Interactively restructure the current stack.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack modify [flags]\"><pre class=\"notranslate\"><code>gh stack modify [flags]\n</code></pre></div>\n<p dir=\"auto\">Opens a terminal UI for restructuring a stack. You can drop, fold, insert, rename, and reorder branches. All the changes are staged during the preview and applied at once on save.</p>\n<p dir=\"auto\">If the stack of PRs has been created on GitHub, run <code>gh stack submit</code> afterwards to push the changes and recreate the stack.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--continue</code></td>\n<td>Continue after resolving conflicts</td>\n</tr>\n<tr>\n<td><code>--abort</code></td>\n<td>Abort the modify session and restore the stack to its pre-modify state</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Operations:</strong></p>\n<ul dir=\"auto\">\n<li><strong>Drop</strong> (<code>x</code>): Remove a branch and its commits from the stack. Local branch and associated PR are preserved.</li>\n<li><strong>Fold down</strong> (<code>d</code>): Absorb a branch's commits into the branch below (toward trunk). Folded branch removed from stack.</li>\n<li><strong>Fold up</strong> (<code>u</code>): Absorb a branch's commits into the branch above (away from trunk). Folded branch removed from stack.</li>\n<li><strong>Insert</strong> (<code>i</code>/<code>I</code>): Insert a new empty branch into the stack. <code>i</code> inserts below the cursor; <code>I</code> inserts above.</li>\n<li><strong>Reorder</strong> (<code>Shift+↑</code>/<code>Shift+↓</code>): Move a branch up (away from trunk) or down (toward trunk) in the stack.</li>\n<li><strong>Rename</strong> (<code>r</code>): Rename a branch locally and in the stack metadata.</li>\n<li><strong>Undo</strong> (<code>z</code>): Undo the last staged action.</li>\n</ul>\n<p dir=\"auto\"><strong>Keybindings:</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Key</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>↑</code>/<code>↓</code></td>\n<td>Navigate branch list</td>\n</tr>\n<tr>\n<td><code>f</code></td>\n<td>View files changed</td>\n</tr>\n<tr>\n<td><code>c</code></td>\n<td>View commits</td>\n</tr>\n<tr>\n<td><code>x</code></td>\n<td>Drop branch</td>\n</tr>\n<tr>\n<td><code>r</code></td>\n<td>Rename branch</td>\n</tr>\n<tr>\n<td><code>i/I</code></td>\n<td>Insert branch below/above</td>\n</tr>\n<tr>\n<td><code>d/u</code></td>\n<td>Fold branch down/up</td>\n</tr>\n<tr>\n<td><code>Shift+↑</code>/<code>Shift+↓</code></td>\n<td>Move branch up/down</td>\n</tr>\n<tr>\n<td><code>z</code></td>\n<td>Undo last action</td>\n</tr>\n<tr>\n<td><code>Ctrl+S</code></td>\n<td>Apply all changes</td>\n</tr>\n<tr>\n<td><code>q</code>/<code>Esc</code></td>\n<td>Cancel and exit</td>\n</tr>\n<tr>\n<td><code>?</code></td>\n<td>Help</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Preconditions:</strong></p>\n<ul dir=\"auto\">\n<li>Must have an active stack checked out locally</li>\n<li>Working tree must be clean</li>\n<li>No rebase in progress</li>\n<li>No PR in the stack is queued for merge</li>\n<li>Commit history must be linear</li>\n</ul>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Open the modify TUI\ngh stack modify\n\n# Continue after resolving a conflict\ngh stack modify --continue\n\n# Abort and restore to the previous state\ngh stack modify --abort\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Open the modify TUI</span>\ngh stack modify\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Continue after resolving a conflict</span>\ngh stack modify --continue\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Abort and restore to the previous state</span>\ngh stack modify --abort</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack sync</code></h3></div>\n<p dir=\"auto\">Fetch, rebase, push, and sync PR state in a single command.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack sync [flags]\"><pre class=\"notranslate\"><code>gh stack sync [flags]\n</code></pre></div>\n<p dir=\"auto\">Performs a synchronization of the entire stack:</p>\n<ol dir=\"auto\">\n<li><strong>Fetch</strong> — fetches the latest changes from <code>origin</code>.</li>\n<li><strong>Reconcile the remote stack</strong> — mirrors the GitHub stack locally. When PRs have been added to the stack on GitHub (the remote is ahead of your local stack), their branches are pulled down and appended to your local stack automatically. When the local and remote stacks have genuinely diverged (for example, you added a branch locally while different PRs were added to the stack on GitHub), you are prompted to resolve (see <a href=\"#diverged-stacks\">Diverged stacks</a> below). In a non-interactive terminal a divergence aborts the sync (nothing is pushed or updated).</li>\n<li><strong>Fast-forward trunk</strong> — fast-forwards the trunk branch to match the remote (skips if diverged).</li>\n<li><strong>Cascade rebase</strong> — rebases all stack branches onto their updated parents (only if trunk moved). If a conflict is detected, all branches are restored to their original state, and you are advised to run <code>gh stack rebase</code> to resolve conflicts interactively.</li>\n<li><strong>Push</strong> — pushes all branches (uses <code>--force-with-lease</code> if a rebase occurred).</li>\n<li><strong>Sync PRs</strong> — syncs PR state from GitHub and reports the status of each PR.</li>\n<li><strong>Sync the stack</strong> — links the stack's open PRs into a stack on GitHub, creating the remote stack object if it doesn't exist yet or updating it if it's partially formed. This only happens when two or more PRs exist; sync never opens PRs (use <code>gh stack submit</code> for that).</li>\n<li><strong>Prune</strong> — in interactive terminals, prompts to delete local branches for merged PRs. Use <code>--prune</code> to prune automatically.</li>\n</ol>\n<p dir=\"auto\">A clean remote-ahead update (PRs added on top of your local stack) is pulled down automatically without prompting, so <code>sync</code> is safe to run in automation. Sync only prompts when the stacks have truly diverged.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Diverged stacks</h4></div>\n<p dir=\"auto\">When neither stack is a clean prefix of the other — for example, you added a branch locally while separate PRs were added to the same stack on GitHub — sync cannot merge the two automatically. In an interactive terminal it offers three choices:</p>\n<ul dir=\"auto\">\n<li><strong>Use the remote stack as the source of truth</strong> — replaces your local stack composition with the remote's, pulling any missing branches. If you were on a branch that the remote stack no longer contains, you're moved to the nearest surviving branch. Requires a clean working state with no uncommitted changes.</li>\n<li><strong>Delete the stack on GitHub</strong> — deletes the stack object on GitHub and stops the sync. Your PRs and local branches are untouched (only the stack on GitHub is removed); recreate the stack with <code>gh stack submit</code> (run <code>gh stack modify</code> first if you want to change its structure). This is the way to make GitHub match your local stack, because <code>submit</code> — unlike <code>sync</code> — also creates PRs for any branches you haven't submitted yet.</li>\n<li><strong>Cancel</strong> — aborts the sync without pushing branches or updating any PRs.</li>\n</ul>\n<p dir=\"auto\">In a non-interactive terminal, a divergence aborts the sync (exit success) without pushing branches or updating PRs; resolve it by unstacking and recreating the stack.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--remote &lt;name&gt;</code></td>\n<td>Remote to fetch from and push to (defaults to auto-detected remote)</td>\n</tr>\n<tr>\n<td><code>--prune</code></td>\n<td>Delete local branches for merged PRs</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack sync\n\n# Sync and automatically prune merged branches\ngh stack sync --prune\"><pre>gh stack sync\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Sync and automatically prune merged branches</span>\ngh stack sync --prune</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack push</code></h3></div>\n<p dir=\"auto\">Push active branches in the current stack to the remote.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack push [flags]\"><pre class=\"notranslate\"><code>gh stack push [flags]\n</code></pre></div>\n<p dir=\"auto\">Pushes every active branch (excluding merged and queued branches) in one <code>git push</code> using explicit per-branch <code>--force-with-lease</code> checks. The update is not atomic: branches whose leases pass may update even if another branch is rejected. Fix the rejected branch and rerun the command; branches already updated will be unchanged. This command does not create or update pull requests — use <code>gh stack submit</code> for that.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--remote &lt;name&gt;</code></td>\n<td>Remote to push to (defaults to auto-detected remote)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack push\ngh stack push --remote upstream\"><pre>gh stack push\ngh stack push --remote upstream</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack submit</code></h3></div>\n<p dir=\"auto\">Push all branches and create/update PRs and the stack on GitHub.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack submit [flags]\"><pre class=\"notranslate\"><code>gh stack submit [flags]\n</code></pre></div>\n<p dir=\"auto\">Creates a Stacked PR for every branch in the stack, pushing branches to the remote.</p>\n<p dir=\"auto\">After creating PRs, <code>submit</code> automatically creates a <strong>Stack</strong> on GitHub to link the PRs together. If the stack already exists on GitHub (e.g., from a previous submit), new PRs will be added to the top of the stack.</p>\n<p dir=\"auto\">If every PR in the stack has already been merged, that stack is complete and can't be extended — a new PR on top would target the trunk directly rather than chaining onto the merged PRs. In that case <code>submit</code> automatically starts a <strong>new</strong> stack rooted at the trunk for your unmerged branches and creates it on GitHub, leaving the merged stack untouched.</p>\n<p dir=\"auto\">In an interactive terminal, <code>submit</code> opens a full-screen, mouse- and keyboard-driven editor on a single screen. Every branch without a PR is included by default — deselect any you don't want on the left panel (<kbd>Ctrl</kbd>+<kbd>X</kbd>). Because each PR builds on the branch below it, deselecting a branch also deselects the ones stacked above it, and re-including a branch re-includes the ones below it. Draft each PR's title, description (with a markdown preview and <code>$EDITOR</code> escape), and choose ready-for-review or draft on the right, then submit them all at once with <kbd>Ctrl</kbd>+<kbd>S</kbd>. Pass <code>--auto</code> (or run in CI) to skip the editor and use auto-generated titles.</p>\n<p dir=\"auto\">If the branches already have open PRs but no stack exists on GitHub, you will have the option to link the PRs into a stack with <kbd>Ctrl</kbd>+<kbd>B</kbd>.</p>\n<p dir=\"auto\">In the editor, new PRs default to ready for review; flip any PR to draft with the ready ↔ draft toggle. With <code>--auto</code>, new PRs are created as drafts unless you pass <code>--open</code>.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--auto</code></td>\n<td>Skip the editor and use auto-generated PR titles</td>\n</tr>\n<tr>\n<td><code>--open</code></td>\n<td>Mark new and existing PRs as ready for review</td>\n</tr>\n<tr>\n<td><code>--remote &lt;name&gt;</code></td>\n<td>Remote to push to (defaults to auto-detected remote)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack submit\ngh stack submit --auto\ngh stack submit --open\"><pre>gh stack submit\ngh stack submit --auto\ngh stack submit --open</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack link</code></h3></div>\n<p dir=\"auto\">Link PRs into a stack on GitHub without local tracking.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack link [flags] &lt;branch-or-pr&gt; &lt;branch-or-pr&gt; [...]\"><pre class=\"notranslate\"><code>gh stack link [flags] &lt;branch-or-pr&gt; &lt;branch-or-pr&gt; [...]\n</code></pre></div>\n<p dir=\"auto\">Creates or updates a stack on GitHub from branch names or PR numbers/URLs. This command does not store or modify any <code>gh stack</code> local tracking state. It is designed for users who manage branches with other tools locally (e.g., jj, Sapling, git-town) and want to simply open a stack of PRs.</p>\n<p dir=\"auto\">Arguments are provided in stack order (bottom to top). Branch arguments are automatically pushed to the remote before creating or looking up PRs. For branches that already have open PRs, those PRs are used. For branches without PRs, new PRs are created automatically with the correct base branch chaining. Existing PRs whose base branch doesn't match the expected chain are corrected automatically.</p>\n<p dir=\"auto\">If the PRs are not yet in a stack, a new stack is created. If some of the PRs are already in a stack, the existing stack is updated to include the new PRs. Existing PRs are never removed from a stack — the update is additive only.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--base &lt;branch&gt;</code></td>\n<td>Base branch for the bottom of the stack (defaults to the repository's default branch)</td>\n</tr>\n<tr>\n<td><code>--open</code></td>\n<td>Mark new and existing PRs as ready for review</td>\n</tr>\n<tr>\n<td><code>--remote &lt;name&gt;</code></td>\n<td>Remote to push to (defaults to auto-detected remote)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Link branches into a stack (pushes branches, creates PRs, creates stack)\ngh stack link feature-auth feature-api feature-ui\n\n# Link existing PRs by number\ngh stack link 10 20 30\n\n# Link existing PRs by URL\ngh stack link https://github.com/owner/repo/pull/10 https://github.com/owner/repo/pull/20\n\n# Add branches to an existing stack of PRs\ngh stack link 42 43 feature-auth feature-ui\n\n# Use a different base branch and mark PRs as ready for review\ngh stack link --base develop --open feat-a feat-b feat-c\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Link branches into a stack (pushes branches, creates PRs, creates stack)</span>\ngh stack link feature-auth feature-api feature-ui\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Link existing PRs by number</span>\ngh stack link 10 20 30\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Link existing PRs by URL</span>\ngh stack link https://github.com/owner/repo/pull/10 https://github.com/owner/repo/pull/20\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Add branches to an existing stack of PRs</span>\ngh stack link 42 43 feature-auth feature-ui\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Use a different base branch and mark PRs as ready for review</span>\ngh stack link --base develop --open feat-a feat-b feat-c</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack merge</code></h3></div>\n<p dir=\"auto\">Merge one or multiple stacked PRs at once.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack merge [&lt;stack-number&gt; | &lt;pr-number&gt;]\"><pre class=\"notranslate\"><code>gh stack merge [&lt;stack-number&gt; | &lt;pr-number&gt;]\n</code></pre></div>\n<p dir=\"auto\">All members of the stack up to and including your chosen pull request are merged into the base branch in a single, all-or-nothing operation: if any PR can't be merged, none are.</p>\n<p dir=\"auto\">With no argument, the current active local stack is used. Pass a stack number to merge a stack you don't have checked out (a purely remote operation), or a pull request number to merge directly up to that PR.</p>\n<p dir=\"auto\">In an interactive terminal, a short wizard walks you through choosing which PRs to merge, picking the merge method, and confirming. In a non-interactive terminal, or with <code>--yes</code>, the whole stack (or everything up to the given PR) is merged without prompting, using your last-used merge method unless one is specified.</p>\n<p dir=\"auto\">Only basic pull request state is checked before merging (open and not a draft); GitHub evaluates branch protection and repository rules when the merge runs, so any such failure is reported back to you. <strong>Bypassing merge requirements is not supported</strong> for stacked PR merges.</p>\n<p dir=\"auto\">If the base branch uses a merge queue, the stack is added to the queue instead of merging directly. The queue chooses the merge method, so the wizard skips the method step and any <code>--merge-method</code> (or <code>--squash</code>/<code>--rebase</code>/<code>--merge</code>) flag is ignored with a warning. The selected pull requests are added to the queue together but merge as the queue processes them — they may land in separate groups rather than all at once.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--merge-method &lt;method&gt;</code></td>\n<td>Merge method to use: <code>merge</code>, <code>squash</code>, or <code>rebase</code></td>\n</tr>\n<tr>\n<td><code>--merge</code> / <code>--squash</code> / <code>--rebase</code></td>\n<td>Shorthands for the corresponding merge method</td>\n</tr>\n<tr>\n<td><code>-y, --yes</code></td>\n<td>Merge without prompting for confirmation</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Merge the current stack (interactive picker)\ngh stack merge\n\n# Merge a stack you don't have checked out, by stack number\ngh stack merge 7\n\n# Merge everything up to and including PR #42\ngh stack merge 42\n\n# Merge the whole current stack without prompting, squashing\ngh stack merge --yes --squash\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Merge the current stack (interactive picker)</span>\ngh stack merge\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Merge a stack you don't have checked out, by stack number</span>\ngh stack merge 7\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Merge everything up to and including PR #42</span>\ngh stack merge 42\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Merge the whole current stack without prompting, squashing</span>\ngh stack merge --yes --squash</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack view</code></h3></div>\n<p dir=\"auto\">View the current stack.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack view [flags]\"><pre class=\"notranslate\"><code>gh stack view [flags]\n</code></pre></div>\n<p dir=\"auto\">Shows all branches in the stack, their ordering, PR links, and the most recent commit with a relative timestamp. Output is piped through a pager (respects <code>GIT_PAGER</code>, <code>PAGER</code>, or defaults to <code>less -R</code>).</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>-s, --short</code></td>\n<td>Compact output (branch names only)</td>\n</tr>\n<tr>\n<td><code>--json</code></td>\n<td>Output stack data as JSON</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack view\ngh stack view --short\ngh stack view --json\"><pre>gh stack view\ngh stack view --short\ngh stack view --json</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack unstack</code></h3></div>\n<p dir=\"auto\">Remove a stack from local tracking and unstack it on GitHub. Also available as <code>gh stack delete</code>.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack unstack [&lt;stack-number&gt;] [flags]\"><pre class=\"notranslate\"><code>gh stack unstack [&lt;stack-number&gt;] [flags]\n</code></pre></div>\n<p dir=\"auto\">With no argument, the command targets the active stack — the one that contains the currently checked out branch — unstacking it on GitHub and removing local tracking.</p>\n<p dir=\"auto\">Provide a stack number (the identifier shown in the github.com stack UI) to unstack a specific stack on GitHub. This works from anywhere in the repository, whether or not the stack is checked out locally — the number is unstacked directly through the GitHub API. If the stack is also tracked locally, its local tracking is removed as well.</p>\n<p dir=\"auto\">Use <code>--local</code> to only remove local tracking without contacting GitHub.</p>\n<p dir=\"auto\">GitHub decides which pull requests can be unstacked: PRs that are queued for merge or have auto-merge enabled are left stacked. When some pull requests remain stacked, the stack is kept (and local tracking, if any, is unchanged).</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--local</code></td>\n<td>Only remove the stack locally (keep it on GitHub)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Remove the current stack from local tracking and GitHub\ngh stack unstack\n\n# Unstack a specific stack by its number\ngh stack unstack 7\n\n# Only remove local tracking\ngh stack unstack --local\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Remove the current stack from local tracking and GitHub</span>\ngh stack unstack\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Unstack a specific stack by its number</span>\ngh stack unstack 7\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Only remove local tracking</span>\ngh stack unstack --local</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Navigation</h3></div>\n<p dir=\"auto\">Move between branches in the current stack without having to remember branch names.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack up [n]      # Move up n branches (default 1)\ngh stack down [n]    # Move down n branches (default 1)\ngh stack top         # Jump to the top of the stack\ngh stack bottom      # Jump to the bottom of the stack\ngh stack trunk       # Jump to the trunk branch\ngh stack switch      # Interactively pick a branch to switch to\"><pre>gh stack up [n]      <span class=\"pl-c\"><span class=\"pl-c\">#</span> Move up n branches (default 1)</span>\ngh stack down [n]    <span class=\"pl-c\"><span class=\"pl-c\">#</span> Move down n branches (default 1)</span>\ngh stack top         <span class=\"pl-c\"><span class=\"pl-c\">#</span> Jump to the top of the stack</span>\ngh stack bottom      <span class=\"pl-c\"><span class=\"pl-c\">#</span> Jump to the bottom of the stack</span>\ngh stack trunk       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Jump to the trunk branch</span>\ngh stack switch      <span class=\"pl-c\"><span class=\"pl-c\">#</span> Interactively pick a branch to switch to</span></pre></div>\n<p dir=\"auto\">Navigation commands clamp to the bounds of the stack — moving up from the top or down from the bottom is a no-op with a message. If you're on the trunk branch, <code>up</code> moves to the first stack branch.</p>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack up          # move up one layer\ngh stack up 3        # move up three layers\ngh stack down\ngh stack top\ngh stack bottom\ngh stack trunk       # jump to the trunk branch (e.g., main)\ngh stack switch      # shows an interactive picker\"><pre>gh stack up          <span class=\"pl-c\"><span class=\"pl-c\">#</span> move up one layer</span>\ngh stack up 3        <span class=\"pl-c\"><span class=\"pl-c\">#</span> move up three layers</span>\ngh stack down\ngh stack top\ngh stack bottom\ngh stack trunk       <span class=\"pl-c\"><span class=\"pl-c\">#</span> jump to the trunk branch (e.g., main)</span>\ngh stack switch      <span class=\"pl-c\"><span class=\"pl-c\">#</span> shows an interactive picker</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack feedback</code></h3></div>\n<p dir=\"auto\">Share feedback about gh-stack.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack feedback [title]\"><pre class=\"notranslate\"><code>gh stack feedback [title]\n</code></pre></div>\n<p dir=\"auto\">Opens a GitHub Discussion in the <a href=\"https://github.com/github/gh-stack\">gh-stack repository</a> to submit feedback. Optionally provide a title for the discussion post.</p>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"gh stack feedback\ngh stack feedback &quot;Support for reordering branches&quot;\"><pre>gh stack feedback\ngh stack feedback <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Support for reordering branches<span class=\"pl-pds\">\"</span></span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>gh stack alias</code></h3></div>\n<p dir=\"auto\">Create a short command alias so you can type less.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"gh stack alias [flags] [name]\"><pre class=\"notranslate\"><code>gh stack alias [flags] [name]\n</code></pre></div>\n<p dir=\"auto\">Installs a small wrapper script into <code>~/.local/bin/</code> that forwards all arguments to <code>gh stack</code>. The default alias name is <code>gs</code>, but you can choose any name by passing it as an argument. After setup, you can run <code>gs push</code> instead of <code>gh stack push</code>.</p>\n<p dir=\"auto\">On Windows, automatic alias creation is not supported — the command prints manual instructions for creating a batch file or PowerShell function.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>--remove</code></td>\n<td>Remove a previously created alias</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Examples:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Create the default alias (gs)\ngh stack alias\n#    → now &quot;gs push&quot;, &quot;gs view&quot;, etc. all work\n\n# Create a custom alias\ngh stack alias gst\n\n# Remove an alias\ngh stack alias --remove\ngh stack alias gst --remove\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Create the default alias (gs)</span>\ngh stack <span class=\"pl-c1\">alias</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    → now \"gs push\", \"gs view\", etc. all work</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Create a custom alias</span>\ngh stack <span class=\"pl-c1\">alias</span> gst\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Remove an alias</span>\ngh stack <span class=\"pl-c1\">alias</span> --remove\ngh stack <span class=\"pl-c1\">alias</span> gst --remove</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Typical workflow</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Start a stack (creates and checks out the first branch)\ngh stack init\n\n# 2. Work on the first layer\n#    ... write code, make commits ...\n\n# 3. Add the next layer\ngh stack add api-routes\n#    ... write code, make commits ...\n\n# 4. Push everything and create Stacked PRs\ngh stack submit\n\n# 5. Reviewer requests changes on the first PR\ngh stack bottom\n#    ... make changes, commit ...\n\n# 6. Rebase the rest of the stack on top of your fix\ngh stack rebase\n\n# 7. Push the updated branches\ngh stack push\n\n# 8. When the first PR is merged, sync the stack\ngh stack sync\n# → prompts to prune merged branches (or use --prune to prune automatically and avoid the prompt)\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Start a stack (creates and checks out the first branch)</span>\ngh stack init\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Work on the first layer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... write code, make commits ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Add the next layer</span>\ngh stack add api-routes\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... write code, make commits ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 4. Push everything and create Stacked PRs</span>\ngh stack submit\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 5. Reviewer requests changes on the first PR</span>\ngh stack bottom\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... make changes, commit ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 6. Rebase the rest of the stack on top of your fix</span>\ngh stack rebase\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 7. Push the updated branches</span>\ngh stack push\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 8. When the first PR is merged, sync the stack</span>\ngh stack sync\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> → prompts to prune merged branches (or use --prune to prune automatically and avoid the prompt)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Abbreviated workflow</h2></div>\n<p dir=\"auto\">If you want to minimize keystrokes, use the <code>-Am</code> flags to fold staging, committing, and branch creation into a single command. When you don't pass a branch name, one is auto-generated from the commit message in date+slug format (e.g., <code>03-24-auth_middleware</code>).</p>\n<p dir=\"auto\">When a branch has no commits yet (e.g., right after <code>init</code>), <code>add -Am</code> stages and commits directly on that branch instead of creating a new one. Once a branch has commits, <code>add -Am</code> creates a new branch, checks it out, and commits there.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Start a stack\ngh stack init auth\n#    → creates auth and checks it out\n\n# 2. Write code for the first layer\n#    ... write code ...\n\n# 3. Stage and commit on the current branch\ngh stack add -Am &quot;Auth middleware&quot;\n#    → auth has no commits yet, so the commit lands here\n#      (no new branch is created)\n\n# 4. Write code for the next layer\n#    ... write code ...\n\n# 5. Create the next branch and commit\ngh stack add -Am &quot;API routes&quot;\n#    → auth already has commits, so a new branch is created from the\n#      commit message, checked out, and the commit lands there\n\n# 6. Keep going\n#    ... write code ...\n\ngh stack add -Am &quot;Frontend components&quot;\n#    → creates another branch and commits there\n\n# 7. Push everything and create PRs\ngh stack submit\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Start a stack</span>\ngh stack init auth\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    → creates auth and checks it out</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Write code for the first layer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... write code ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Stage and commit on the current branch</span>\ngh stack add -Am <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Auth middleware<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    → auth has no commits yet, so the commit lands here</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>      (no new branch is created)</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 4. Write code for the next layer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... write code ...</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 5. Create the next branch and commit</span>\ngh stack add -Am <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>API routes<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    → auth already has commits, so a new branch is created from the</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>      commit message, checked out, and the commit lands there</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 6. Keep going</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    ... write code ...</span>\n\ngh stack add -Am <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Frontend components<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span>    → creates another branch and commits there</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 7. Push everything and create PRs</span>\ngh stack submit</pre></div>\n<p dir=\"auto\">Compared to the typical workflow, there's no need to name branches, run <code>git add</code>, or run <code>git commit</code> separately. Each <code>gh stack add -Am \"...\"</code> does it all. Pass an explicit branch name any time you want to control it: <code>gh stack add -Am \"API routes\" api-routes</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Terminal theme</h2></div>\n<p dir=\"auto\">The interactive screens (<code>submit</code>, <code>modify</code>, and <code>view</code>) and all colored command output (status messages, prompts) automatically adapt their colors to your terminal's background, so they're readable on both dark and light themes. The background is detected from the terminal; if a terminal doesn't report it (some SSH or <code>tmux</code> setups), the dark palette is used.</p>\n<p dir=\"auto\">Set <code>GH_STACK_THEME</code> to force a palette if detection is wrong:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Value</th>\n<th>Behavior</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>auto</code> (default)</td>\n<td>Detect from the terminal background</td>\n</tr>\n<tr>\n<td><code>light</code></td>\n<td>Force the light palette</td>\n</tr>\n<tr>\n<td><code>dark</code></td>\n<td>Force the dark palette</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Force the light palette\nexport GH_STACK_THEME=light &amp;&amp; gh stack view\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Force the light palette</span>\n<span class=\"pl-k\">export</span> GH_STACK_THEME=light <span class=\"pl-k\">&amp;&amp;</span> gh stack view</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Exit codes</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Code</th>\n<th>Meaning</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>0</td>\n<td>Success</td>\n</tr>\n<tr>\n<td>1</td>\n<td>Generic error</td>\n</tr>\n<tr>\n<td>2</td>\n<td>Not in a stack / stack not found</td>\n</tr>\n<tr>\n<td>3</td>\n<td>Rebase conflict</td>\n</tr>\n<tr>\n<td>4</td>\n<td>GitHub API failure</td>\n</tr>\n<tr>\n<td>5</td>\n<td>Invalid arguments or flags</td>\n</tr>\n<tr>\n<td>6</td>\n<td>Disambiguation required (branch belongs to multiple stacks)</td>\n</tr>\n<tr>\n<td>7</td>\n<td>Rebase already in progress</td>\n</tr>\n<tr>\n<td>8</td>\n<td>Stack is locked by another process</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">This project is licensed under the terms of the MIT open source license. Please refer to the <a href=\"https://github.com/github/gh-stack/blob/main/LICENSE\">LICENSE</a> file for the full terms.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Maintainers</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/github/gh-stack/blob/main/CODEOWNERS\">CODEOWNERS</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Support</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/github/gh-stack/blob/main/SUPPORT.md\">SUPPORT.md</a></p>\n</article></div>",
+  "contributors": [
+    {
+      "login": "skarim",
+      "url": "https://github.com/skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4",
+      "contributions": 71
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 13
+    },
+    {
+      "login": "Copilot",
+      "url": "https://github.com/apps/copilot-swe-agent",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/1143301?v=4",
+      "contributions": 3
+    },
+    {
+      "login": "wiseemily88",
+      "url": "https://github.com/wiseemily88",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/28613896?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "francisfuzz",
+      "url": "https://github.com/francisfuzz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/15894826?v=4",
+      "contributions": 1
+    }
+  ],
+  "firstCommitAt": "2026-04-10T07:32:08Z",
+  "releases": [
+    {
+      "name": "v0.1.0",
+      "tag": "v0.1.0",
+      "url": "https://github.com/github/gh-stack/releases/tag/v0.1.0",
+      "publishedAt": "2026-07-29T17:41:51Z",
+      "prerelease": false,
+      "body": "`gh-stack` is a GitHub CLI extension for managing stacked branches and pull requests. Learn more about [GitHub Stacked PRs here](https://gh.io/stacks).\r\n\r\nView the [Quick Start guide](https://github.github.com/gh-stack/getting-started/quick-start/) to get started.\r\n\r\nInstall the extension with:\r\n\r\n```sh\r\ngh extension install github/gh-stack\r\n```\r\n\r\nOr upgrade to the latest version with:\r\n\r\n```sh\r\ngh extension upgrade stack\r\n```\r\n\r\n## What's new in v0.1.0\r\n\r\n### Added\r\n\r\n- **`gh stack merge` command**: Land a stack — or part of one — in a single atomic operation. Every PR up to and including the one you choose is merged into the base branch, and if any PR can't be merged, none are. You can target the merge three ways: no argument merges the current stack, a **stack number** merges a stack you don't have checked out, and a **PR number** merges everything up to that PR. In a terminal, an interactive wizard walks you through how far up the stack to merge, which merge method to use (only the methods your repo allows, defaulting to your last-used one), and a final confirmation — then shows live progress as the merge completes. With `--yes` (or no TTY) it runs headlessly using `--merge` /",
+      "downloads": 27802,
+      "reactions": 2
+    },
+    {
+      "name": "v0.0.8",
+      "tag": "v0.0.8",
+      "url": "https://github.com/github/gh-stack/releases/tag/v0.0.8",
+      "publishedAt": "2026-07-15T17:28:54Z",
+      "prerelease": false,
+      "body": "## What's new in v0.0.8\r\n\r\n### Added\r\n\r\n- **Interactive stack picker for `gh stack checkout`**: Running `gh stack checkout` with no argument now opens an inline interactive picker that merges your local stacks with the repository's stacks on GitHub — each labeled **Local** or **Remote** — showing the stack number, branch range, base branch, and a summary of how many of its PRs are merged / open / not yet pushed. It has All/Local/Remote tabs and `/` search (matching the stack number, the base, and every branch in the stack, including mid-stack branches). Selecting a remote-only stack clones it down first, then checks it out.\r\n- **Reference a stack by its number**: Now that the Stacks API exposes each stack's **number** (the identifier shown in the GitHub stack UI), it's the primary way to reference a stack in the CLI. `gh stack checkout <number>` checks out a stack by number, `gh stack unstack [<number>]` targets a specific tracked stack, and the number is now shown in `submit` / `link` / `checkout` / `unstack` success messages and in the `view` and `submit` TUI headers.\r\n- **`gh stack link <stack-number>`**: Append PRs to the top of an existing stack by number (e.g. `gh stack link ",
+      "downloads": 34165,
+      "reactions": 1
+    },
+    {
+      "name": "v0.0.7",
+      "tag": "v0.0.7",
+      "url": "https://github.com/github/gh-stack/releases/tag/v0.0.7",
+      "publishedAt": "2026-06-30T00:20:12Z",
+      "prerelease": false,
+      "body": "## What's new in v0.0.7\r\n\r\n### Added\r\n\r\n- **Interactive `gh stack submit` TUI**: `submit` now opens a single-screen, keyboard- and mouse-driven interface for customizing a whole stack before anything is created. A left-hand git-graph timeline shows each branch's PR state and lets you toggle which branches become PRs (with dependency cascade); a right-hand editor lets you set each PR's **title**, **description** (with live markdown preview and `$EDITOR` support), and **ready/draft** state. Previously `submit` could only customize each PR's title.\r\n- **Smaller, more responsive TUI header**: The shared header used by `view`, `modify`, and the new `submit` TUI takes up less screen space and has a more responsive layout. It will optionally display a GitHub logo image when the terminal supports it.\r\n- **Light and dark terminal theming**: A new background-aware color palette adapts both the interactive TUIs and plain command output (status messages, prompts) to light, dark, and solarized terminals instead of assuming a dark background. Set **`GH_STACK_THEME=auto|light|dark`** to force the palette on terminals that mis-detect their background.\r\n\r\n### Changed\r\n\r\n- **`gh stack submit` adopts",
+      "downloads": 10628,
+      "reactions": 0
+    },
+    {
+      "name": "v0.0.6",
+      "tag": "v0.0.6",
+      "url": "https://github.com/github/gh-stack/releases/tag/v0.0.6",
+      "publishedAt": "2026-06-15T17:59:29Z",
+      "prerelease": false,
+      "body": "## What's new in v0.0.6\r\n\r\n### Added\r\n\r\n- **`gh stack rebase --no-trunk`**: New flag that runs only the inter-branch cascade rebase, skipping all remote fetch and trunk operations so you can align branches without touching the network.\r\n- **PR URL arguments**: `gh stack link` and `gh stack checkout` now accept full PR URLs (e.g. `https://github.com/org/repo/pull/42`) in addition to PR numbers and branch names.\r\n- **Cached remote selection**: After interactively choosing a remote, you can save it to `gh-stack.remote` git config so you're not prompted on every operation.\r\n- **PAT auth warning**: When authenticated with an unsupported personal access token, the CLI now shows a clear \"run `gh auth login`\" message instead of a misleading \"Stacked PRs are not enabled\" error.\r\n\r\n### Changed\r\n\r\n- **`gh stack link` PR eligibility validation**: Merged, closed, merge-queued, or auto-merge-enabled PRs are now rejected up front with per-PR error messages before any stack operations run.\r\n- **Auto-merge disabled on adopted PRs**: `gh stack submit` now detects and disables auto-merge on existing PRs it adopts, preventing them from merging independently and breaking the stack.\r\n- **`gh stack init`",
+      "downloads": 8949,
+      "reactions": 0
+    },
+    {
+      "name": "v0.0.5",
+      "tag": "v0.0.5",
+      "url": "https://github.com/github/gh-stack/releases/tag/v0.0.5",
+      "publishedAt": "2026-05-26T21:46:46Z",
+      "prerelease": false,
+      "body": "## What's new in v0.0.5\r\n\r\n### Added\r\n\r\n- **Insert branches with `gh stack modify`**: New `i` / `I` keybindings in the modify TUI to insert empty branches below or above the cursor, applied alongside other structural changes.\r\n- **`gh stack add` adopts existing branches**: If the target branch already exists locally and isn't part of another stack, `add` adopts it instead of erroring.\r\n- **`gh stack trunk`**: New navigation command that checks out the trunk branch of the current stack.\r\n- **`gh stack rebase --committer-date-is-author-date`**: New opt-in flag (alias `--preserve-dates`) keeps committer dates equal to author dates so identical content rebased onto an identical parent produces stable SHAs.\r\n- **Inline prefix prefill in prompts**: Branch name prompts in `init`/`add` now place the configured prefix directly in the editable input (with cyan-colored user text) instead of silently prepending it.\r\n\r\n### Changed\r\n\r\n- **`gh stack modify` smart checkout**: After `modify`, the CLI now switches to the nearest surviving branch (rename target, fold target, neighbor, or stack top) instead of staying on the original branch, which may no longer be part of a stack.\r\n- **`gh stack modif",
+      "downloads": 11578,
+      "reactions": 0
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "contributorCount": 5,
+  "recentIssues": [
+    {
+      "number": 385,
+      "title": "Getting Every PR in this stack has already been merged, when there is a PR already",
+      "url": "https://github.com/github/gh-stack/issues/385",
+      "createdAt": "2026-07-31T21:38:30Z",
+      "comments": 0,
+      "labels": [],
+      "author": "harsh183"
+    },
+    {
+      "number": 384,
+      "title": "`gh stack submit` with PULL_REQUEST_TEMPLATE.md that has `CRLF` line endings",
+      "url": "https://github.com/github/gh-stack/issues/384",
+      "createdAt": "2026-07-31T16:51:57Z",
+      "comments": 0,
+      "labels": [],
+      "author": "MelDommer"
+    },
+    {
+      "number": 383,
+      "title": "Make submit shortcut configurable (or change default from `Ctrl+S`)",
+      "url": "https://github.com/github/gh-stack/issues/383",
+      "createdAt": "2026-07-31T15:37:15Z",
+      "comments": 0,
+      "labels": [],
+      "author": "marcoroth"
+    },
+    {
+      "number": 382,
+      "title": "Inserting a layer in the middle of a stack requires unstack + link, which permanently drops merged PRs",
+      "url": "https://github.com/github/gh-stack/issues/382",
+      "createdAt": "2026-07-31T14:48:37Z",
+      "comments": 0,
+      "labels": [],
+      "author": "diegoferigo-rai"
+    },
+    {
+      "number": 381,
+      "title": "`gh stack` resolves the API repository from the `origin` remote, ignoring `--remote`, `gh repo set-default`, and its own state file — silently operating on the wrong repository in multi-remote clones",
+      "url": "https://github.com/github/gh-stack/issues/381",
+      "createdAt": "2026-07-31T13:15:15Z",
+      "comments": 1,
+      "labels": [],
+      "author": "Joibel"
+    },
+    {
+      "number": 380,
+      "title": "`gh stack push` silently discards commits that exist only on the remote (fetch-then-lease defeats --force-with-lease)",
+      "url": "https://github.com/github/gh-stack/issues/380",
+      "createdAt": "2026-07-31T09:24:02Z",
+      "comments": 0,
+      "labels": [],
+      "author": "kohhta"
+    }
+  ],
+  "participation": {
+    "all": 89,
+    "owner": 0,
+    "community": 89
+  },
+  "recentCommits": [
+    {
+      "sha": "8c9c833",
+      "message": "remove private preview mentions from docs (#368)",
+      "url": "https://github.com/github/gh-stack/commit/8c9c8331309529e2114d4c34e77f4edea543f9fa",
+      "date": "2026-07-30T15:13:25Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "a1b4a3d",
+      "message": "Async merge API docs (#321)",
+      "url": "https://github.com/github/gh-stack/commit/a1b4a3d4d0bcde9ec3a78ab99b2d63af121857a9",
+      "date": "2026-07-29T17:32:07Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "68ce60c",
+      "message": "Merge Stacked PRs with `merge` command (#307)",
+      "url": "https://github.com/github/gh-stack/commit/68ce60c76096c1aecdc19a8af6fa7e89d31ebc2b",
+      "date": "2026-07-29T17:32:07Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "fded736",
+      "message": "Minor docs updates (#343)",
+      "url": "https://github.com/github/gh-stack/commit/fded736e78721104cd6e11c1bb29dc3d38e3efc3",
+      "date": "2026-07-29T17:32:06Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "9421bd6",
+      "message": "Fix for replaying amended parent commits during rebase (#333)",
+      "url": "https://github.com/github/gh-stack/commit/9421bd66a383f6218c7dfef8fac43a2f95873211",
+      "date": "2026-07-29T17:32:06Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "a5cae7b",
+      "message": "Rebase stacks onto the latest remote trunk (#330)",
+      "url": "https://github.com/github/gh-stack/commit/a5cae7bbe0f00f542ced94932a76187c8669218b",
+      "date": "2026-07-29T17:32:06Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "53ed88c",
+      "message": "Docs Content Updates (#185)",
+      "url": "https://github.com/github/gh-stack/commit/53ed88c2a2637ac6d037d6fae02d21c4646a7bad",
+      "date": "2026-07-26T15:26:04Z",
+      "author": "skarim",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1701557?v=4"
+    },
+    {
+      "sha": "c79f2b2",
+      "message": "Bump postcss in /docs in the npm_and_yarn group across 1 directory (#318)",
+      "url": "https://github.com/github/gh-stack/commit/c79f2b22a1ddff3ac16f64f95ff48c03755c6191",
+      "date": "2026-07-26T13:03:56Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    },
+    {
+      "sha": "effa94b",
+      "message": "Bump sharp in /docs in the npm_and_yarn group across 1 directory (#317)",
+      "url": "https://github.com/github/gh-stack/commit/effa94bf5a4427cf03cf94785c666d1a5e219822",
+      "date": "2026-07-26T13:00:01Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    },
+    {
+      "sha": "6dcf9f0",
+      "message": "Respect repository default branch in `gh stack link` (#265)",
+      "url": "https://github.com/github/gh-stack/commit/6dcf9f050ae922aa0beea2027e5d456118d972b3",
+      "date": "2026-07-24T10:54:23Z",
+      "author": "Copilot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/1143301?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 368,
+      "title": "Remove private preview mentions from docs",
+      "url": "https://github.com/github/gh-stack/pull/368",
+      "state": "merged",
+      "updatedAt": "2026-07-30T15:13:29Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 321,
+      "title": "Async merge API docs",
+      "url": "https://github.com/github/gh-stack/pull/321",
+      "state": "merged",
+      "updatedAt": "2026-07-29T17:32:17Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 307,
+      "title": "Merge Stacked PRs with `merge` command",
+      "url": "https://github.com/github/gh-stack/pull/307",
+      "state": "merged",
+      "updatedAt": "2026-07-29T17:32:16Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 343,
+      "title": "Minor docs updates",
+      "url": "https://github.com/github/gh-stack/pull/343",
+      "state": "merged",
+      "updatedAt": "2026-07-29T17:32:15Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 330,
+      "title": "Rebase stacks onto the latest remote trunk",
+      "url": "https://github.com/github/gh-stack/pull/330",
+      "state": "merged",
+      "updatedAt": "2026-07-29T17:32:14Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 333,
+      "title": "Fix for replaying amended parent commits during rebase",
+      "url": "https://github.com/github/gh-stack/pull/333",
+      "state": "merged",
+      "updatedAt": "2026-07-29T17:32:10Z",
+      "author": "skarim",
+      "draft": false
+    },
+    {
+      "number": 344,
+      "title": "Adopt equivalent server-rebased branches",
+      "url": "https://github.com/github/gh-stack/pull/344",
+      "state": "open",
+      "updatedAt": "2026-07-29T12:31:54Z",
+      "author": "skarim",
+      "draft": true
+    },
+    {
+      "number": 320,
+      "title": "Stop reporting rebases that git refused to run as successes",
+      "url": "https://github.com/github/gh-stack/pull/320",
+      "state": "closed",
+      "updatedAt": "2026-07-27T22:19:42Z",
+      "author": "skarim",
+      "draft": true
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/github/gh-stack/tree/main/.github"
+    },
+    {
+      "name": "cmd",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/github/gh-stack/tree/main/cmd"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/github/gh-stack/tree/main/docs"
+    },
+    {
+      "name": "internal",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/github/gh-stack/tree/main/internal"
+    },
+    {
+      "name": "skills",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/github/gh-stack/tree/main/skills"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 62,
+      "url": "https://github.com/github/gh-stack/blob/main/.gitignore"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 7863,
+      "url": "https://github.com/github/gh-stack/blob/main/AGENTS.md"
+    },
+    {
+      "name": "CODE_OF_CONDUCT.md",
+      "type": "file",
+      "size": 3231,
+      "url": "https://github.com/github/gh-stack/blob/main/CODE_OF_CONDUCT.md"
+    },
+    {
+      "name": "CODEOWNERS",
+      "type": "file",
+      "size": 46,
+      "url": "https://github.com/github/gh-stack/blob/main/CODEOWNERS"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 2687,
+      "url": "https://github.com/github/gh-stack/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "go.mod",
+      "type": "file",
+      "size": 2940,
+      "url": "https://github.com/github/gh-stack/blob/main/go.mod"
+    },
+    {
+      "name": "go.sum",
+      "type": "file",
+      "size": 18235,
+      "url": "https://github.com/github/gh-stack/blob/main/go.sum"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1060,
+      "url": "https://github.com/github/gh-stack/blob/main/LICENSE"
+    },
+    {
+      "name": "main.go",
+      "type": "file",
+      "size": 91,
+      "url": "https://github.com/github/gh-stack/blob/main/main.go"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 28680,
+      "url": "https://github.com/github/gh-stack/blob/main/README.md"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 1744,
+      "url": "https://github.com/github/gh-stack/blob/main/SECURITY.md"
+    },
+    {
+      "name": "SUPPORT.md",
+      "type": "file",
+      "size": 681,
+      "url": "https://github.com/github/gh-stack/blob/main/SUPPORT.md"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Docs",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30594055510",
+      "branch": "skarim/docs-site-redirects",
+      "updatedAt": "2026-07-31T00:37:43Z"
+    },
+    {
+      "name": "Tests",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30555613948",
+      "branch": "main",
+      "updatedAt": "2026-07-30T15:17:29Z"
+    },
+    {
+      "name": "Push on main",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30555612084",
+      "branch": "main",
+      "updatedAt": "2026-07-30T15:15:09Z"
+    },
+    {
+      "name": "Running Copilot Code Review",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30554612638",
+      "branch": "skarim/docs-public-preview",
+      "updatedAt": "2026-07-30T15:02:22Z"
+    },
+    {
+      "name": "Code scanning AI findings on PR #368",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30554608887",
+      "branch": "skarim/docs-public-preview",
+      "updatedAt": "2026-07-30T15:02:16Z"
+    },
+    {
+      "name": "PR #368",
+      "status": "success",
+      "url": "https://github.com/github/gh-stack/actions/runs/30554603296",
+      "branch": "refs/pull/368/head",
+      "updatedAt": "2026-07-30T15:02:29Z"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "go.mod",
+    "dependencies": [
+      {
+        "name": "github.com/AlecAivazis/survey/v2",
+        "version": "v2.3.7"
+      },
+      {
+        "name": "github.com/BourgeoisBear/rasterm",
+        "version": "v1.1.2"
+      },
+      {
+        "name": "github.com/charmbracelet/bubbles",
+        "version": "v0.21.1-0.20250623103423-23b8fd6302d7"
+      },
+      {
+        "name": "github.com/charmbracelet/bubbletea",
+        "version": "v1.3.10"
+      },
+      {
+        "name": "github.com/charmbracelet/glamour",
+        "version": "v0.10.0"
+      },
+      {
+        "name": "github.com/charmbracelet/lipgloss",
+        "version": "v1.1.1-0.20250404203927-76690c660834"
+      },
+      {
+        "name": "github.com/cli/cli/v2",
+        "version": "v2.93.0"
+      },
+      {
+        "name": "github.com/cli/go-gh/v2",
+        "version": "v2.13.0"
+      },
+      {
+        "name": "github.com/cli/shurcooL-graphql",
+        "version": "v0.0.4"
+      },
+      {
+        "name": "github.com/muesli/termenv",
+        "version": "v0.16.0"
+      },
+      {
+        "name": "github.com/spf13/cobra",
+        "version": "v1.10.2"
+      },
+      {
+        "name": "github.com/stretchr/testify",
+        "version": "v1.11.1"
+      },
+      {
+        "name": "golang.org/x/sys",
+        "version": "v0.45.0"
+      },
+      {
+        "name": "golang.org/x/term",
+        "version": "v0.43.0"
+      },
+      {
+        "name": "golang.org/x/text",
+        "version": "v0.37.0"
+      }
+    ],
+    "total": 15
+  },
+  "branchCount": 23,
+  "tagCount": 9,
+  "community": {
+    "healthPercentage": 75,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 56,
+  "openPRs": 3,
+  "releaseCount": 9,
+  "discussionsEnabled": true,
+  "discussionCount": 186,
+  "discussions": [
+    {
+      "title": "stacks out of sync between multiple clients",
+      "url": "https://github.com/github/gh-stack/discussions/386",
+      "createdAt": "2026-08-02T03:19:17Z",
+      "comments": 1,
+      "category": "Q&A"
+    },
+    {
+      "title": "\"Force push\" noise in PR history toward top of stack",
+      "url": "https://github.com/github/gh-stack/discussions/109",
+      "createdAt": "2026-05-28T13:39:06Z",
+      "comments": 2,
+      "category": "Feedback"
+    },
+    {
+      "title": "Squashing and merging a stack is stuck",
+      "url": "https://github.com/github/gh-stack/discussions/212",
+      "createdAt": "2026-07-17T19:03:01Z",
+      "comments": 9,
+      "category": "Feedback"
+    },
+    {
+      "title": "Merging stack consistently fails with message: \"auto-merge was automatically disabled / Pull Request is not mergeable\"",
+      "url": "https://github.com/github/gh-stack/discussions/256",
+      "createdAt": "2026-07-21T18:50:42Z",
+      "comments": 6,
+      "category": "Feedback"
+    },
+    {
+      "title": "` --adopt flag is deprecated. Existing branches are now adopted automatically.` but --help text still suggests `adopt`",
+      "url": "https://github.com/github/gh-stack/discussions/369",
+      "createdAt": "2026-07-30T16:03:58Z",
+      "comments": 1,
+      "category": "Feedback"
+    }
+  ],
+  "closedIssues": 23,
+  "mergedPRs": 102,
+  "environmentCount": 2,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/github/gh-stack/security/policy",
+  "codeOfConduct": {
+    "name": "Contributor Covenant",
+    "url": "https://github.com/github/gh-stack/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": {
+    "tag": "v0.1.0",
+    "publishedAt": "2026-07-29T17:41:51Z"
+  },
+  "commitActivity": [
+    {
+      "week": "2025-08-10",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 1
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 12
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 4
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 14
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 9
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 12
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 8
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 12
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 3
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 9
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 1
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 1
+    },
+    {
+      "date": "2026-04-14",
+      "count": 2
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 10
+    },
+    {
+      "date": "2026-04-21",
+      "count": 1
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 1
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 3
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 1
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 7
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 2
+    },
+    {
+      "date": "2026-05-15",
+      "count": 5
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 1
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 8
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 1
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 1
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 10
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 1
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 1
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 7
+    },
+    {
+      "date": "2026-06-30",
+      "count": 1
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 12
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 1
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 1
+    },
+    {
+      "date": "2026-07-24",
+      "count": 1
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 3
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 5
+    },
+    {
+      "date": "2026-07-30",
+      "count": 1
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-08-02T08:38:03.408Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2026-04-12",
+        "stars": 675
+      },
+      {
+        "date": "2026-04-19",
+        "stars": 788
+      },
+      {
+        "date": "2026-04-26",
+        "stars": 855
+      },
+      {
+        "date": "2026-05-03",
+        "stars": 878
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 22.513,
+    "sampledAt": "2026-08-02T08:38:06.192Z"
+  }
+}
