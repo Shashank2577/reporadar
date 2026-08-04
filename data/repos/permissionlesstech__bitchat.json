@@ -226,55 +226,46 @@
   "readmeExcerpt": "<img width=\"256\" height=\"256\" alt=\"icon_128x128@2x\" src=\"https://github.com/user-attachments/assets/90133f83-b4f6-41c6-aab9-25d0859d2a47\" />\n\n## bitchat\n\nA decentralized peer-to-peer messaging app with dual transport architecture: local Bluetooth mesh networks for offline communication and internet-based Nostr protocol for global reach. No accounts, no phone numbers, no central servers. It's the side-groupchat.\n\n[bitchat.free](http://bitchat.free)\n\n📲 [App Store](https://apps.apple.com/us/app/bitchat-mesh/id6748219622)\n\n📲 [Play Store](https://play.google.com/store/apps/details?id=com.bitchat.droid)\n\n### Getting a copy you can trust\n\nInstall from the App Store, or build from source you have verified. A compiled build from anywhere else cannot be verified — see [Verifying bitchat](docs/VERIFYING-A-BUILD.md) for how to check source against the per-release hash manifest, and for what to do if that is the only build you can get.\n\nThis matters more than it usually would: this repository has been the target of takedown demands, and when a repository or releases page disappears, mirrors appear that nobody can check.\n\n## License\n\nThis project is released into the public domain. See the [LICENSE](LICENSE) file for details.\n\n## Features\n\n- **Dual Transport Architecture**: Bluetooth mesh for offline + Nostr protocol for internet-based messaging\n- **Location-Based Channels**: Geographic chat rooms using geohash coordinates over global Nostr relays\n- **Intelligent Message Routing**: Automatically chooses best transport (Bluetooth → Nostr fallback)\n- **Decentralized Mesh Network**: Automatic peer discovery and multi-hop message relay over Bluetooth LE\n- **Privacy First**: No accounts, no phone numbers, no servers. Note that the mesh does use a persistent per-device identifier derived from your identity key — see [the whitepaper](WHITEPAPER.md) on identity and metadata for what a nearby radio can observe\n- **Private Message End-to-End Encryption**: [Noise Protocol](https://noiseprotocol.org) for mesh, BitChat private envelopes for Nostr fallback\n- **IRC-Style Commands**: Familiar `/slap`, `/msg`, `/who` style interface\n- **Universal App**: Native support for iOS and macOS\n- **Emergency Wipe**: Triple-tap to instantly clear all data\n- **Performance Optimizations**: LZ4 message compression, adaptive battery modes, and optimized networking\n\n## [Technical Architecture](https://deepwiki.com/permissionlesstech/bitchat)\n\nBitChat uses a **hybrid messaging architecture** with two complementary transport layers:\n\n### Bluetooth Mesh Network (Offline)\n\n- **Local Communication**: Direct peer-to-peer within Bluetooth range\n- **Multi-hop Relay**: Messages route through nearby devices (max 7 hops)\n- **No Internet Required**: Works completely offline in disaster scenarios\n- **Noise Protocol Encryption**: End-to-end encryption, with forward secrecy for live sessions (store-and-forward mail is sealed without it — see the whitepaper)\n- **Binary Protocol**: Compact packet format optimized for Bluetooth LE constraints\n- **Automatic Discovery**: Peer discovery and connection management\n- **Adaptive Power**: Battery-optimized duty cycling\n\n### Nostr Protocol (Internet)\n\n- **Global Reach**: Connect with users worldwide via internet relays\n- **Location Channels**: Geographic chat rooms using geohash coordinates\n- **440+ Relay Network**: Distributed across the globe for reliability\n- **BitChat Private Envelopes**: App-specific encrypted private messages over Nostr relays\n- **Ephemeral Keys**: Fresh cryptographic identity per geohash area\n\nBitChat's private-envelope format is proprietary and is **not** NIP-17,\nNIP-44, or NIP-59 compatible. It uses Nostr as a relay transport but only\ninteroperates with BitChat clients: private payloads travel inside kind-1059\nevents whose `v2:`-prefixed content is a BitChat-specific XChaCha20-Poly1305\nconstruction, not NIP-44 encryption.\n\n### Channel Types\n\n#### `mesh #bluetooth`\n\n- **Transport**: Bluetooth Low Energy mesh network\n- **Scope**: Local devices within multi-hop range\n- **Internet**: Not required\n- **Use Case**: Offline communication, protests, disasters, remote areas\n\n#### Location Channels (`block #dr5rsj7`, `neighborhood #dr5rs`, `country #dr`)\n\n- **Transport**: Nostr protocol over internet\n- **Scope**: Geographic areas defined by geohash precision\n  - `block` (7 chars): City block level\n  - `neighborhood` (6 chars): District/neighborhood\n  - `city` (5 chars): City level\n  - `province` (4 chars): State/province\n  - `region` (2 chars): Country/large region\n- **Internet**: Required (connects to Nostr relays)\n- **Use Case**: Location-based community chat, local events, regional discussions\n\n### Direct Message Routing\n\nPrivate messages use **intelligent transport selection**:\n\n1. **Bluetooth First** (preferred when available)\n\n   - Direct connection with established Noise session\n   - Fastest and most private option\n\n2. **Nostr Fallback** (when Bluetooth unavailable)\n\n   - Uses recipient's Nostr public key\n   - BitChat's app-specific private-envelope encryption\n   - Routes through global relay network\n\n3. **Smart Queuing** (when neither available)\n   - Messages queued until transport becomes available\n   - Automatic delivery when connection established\n\nFor detailed protocol documentation, see the [Technical Whitepaper](WHITEPAPER.md).\n\n## Setup\n\n### Option 1: Using Xcode\n\n```bash\nopen bitchat.xcodeproj\n```\n\nFor a signed device build, create your ignored local configuration and replace\nthe example team ID with your Apple Developer Team ID:\n\n```bash\ncp Configs/Local.xcconfig.example Configs/Local.xcconfig\n```\n\n`Local.xcconfig.example` derives unique app and App Group identifiers from that\nteam ID. The entitlement files already reference `$(APP_GROUP_ID)`, so tracked\nproject or entitlement files do not need to be edited.\n\nUseful command-line checks from the repository root:\n\n```bash\n# macOS Debug build without signing\nxcodebuild -project bitchat.xcodeproj -scheme \"bitchat (macOS)\" \\\n  -configuration Debug CODE_SIGNING_ALLOWED=NO build\n\n# Full SwiftPM test suite\nswift test\n\n# iOS simulator tests\nxcodebuild -project bitchat.xcodeproj -scheme \"bitchat (iOS)\" \\\n  -sdk iphonesimulator \\\n  -destination 'platform=iOS Simulator,name=iPhone 17' test\n```\n\nIf `iPhone 17` is unavailable, choose an installed simulator from:\n\n```bash\nxcodebuild -showdestinations -project bitchat.xcodeproj -scheme \"bitchat (iOS)\"\n```\n\n### Option 2: Using `just`\n\n```bash\nbrew install just\njust check\njust run\n```\n\n`just build` and `just run` use the current `bitchat (macOS)` scheme and keep\nXcode output in the ignored `.DerivedData/` directory. They never patch source,\nproject, configuration, or entitlement files.\n\n`just clean` removes only `.DerivedData/` and `.build/`. It does not invoke Git\nor restore tracked files, so uncommitted work is preserved. `just test` runs the\nSwiftPM suite and `just test-ios` runs the iPhone 17 simulator suite.\n\n## Localization\n\n- App localizations live in `bitchat/Localizable.xcstrings`.\n- Share extension strings are separate in `bitchatShareExtension/Localization/Localizable.xcstrings`.\n- Prefer keys that describe intent (`app_info.features.offline.title`) and reuse existing ones where possible.\n- Run `xcodebuild -project bitchat.xcodeproj -scheme \"bitchat (macOS)\" -configuration Debug CODE_SIGNING_ALLOWED=NO build` to compile-check any localization updates.\n",
   "factsUpdatedAt": "2026-08-03T10:06:44.447Z",
   "aiSummary": {
-    "oneLiner": "Decentralized Bluetooth mesh and Nostr-based messaging app with end-to-end encryption.",
-    "whatItDoes": "BitChat enables peer-to-peer messaging over Bluetooth mesh networks for offline communication and the Nostr protocol for global connectivity. It eliminates the need for accounts, phone numbers, or central servers, ensuring privacy and resilience. Its hybrid architecture intelligently selects between local mesh and internet relays for message delivery.",
+    "oneLiner": "A decentralized peer-to-peer messaging app using Bluetooth mesh networks and the Nostr protocol.",
+    "whatItDoes": "Bitchat provides a highly resilient, decentralized messaging experience by utilizing a dual transport architecture. For local offline communication, it leverages Bluetooth Low Energy mesh networks to relay messages directly between devices without internet access. For global reach, it integrates with the decentralized Nostr protocol. The application requires no accounts, phone numbers, or central servers, offering complete anonymity and end-to-end encryption. It is designed to function as an unblockable, permissionless communication tool in any environment.",
     "keyFeatures": [
-      "Dual Transport Architecture: Bluetooth mesh for offline and Nostr protocol for internet-based messaging.",
-      "End-to-End Encryption: Noise Protocol for mesh and XChaCha20-Poly1305 for Nostr private envelopes.",
-      "Location-Based Channels: Geohash-defined chat rooms for localized discussions over Nostr.",
-      "Multi-Hop Bluetooth Relay: Messages route through up to 7 nearby devices without internet.",
-      "Emergency Wipe: Triple-tap to instantly clear all data from the device.",
-      "Performance Optimizations: LZ4 compression and adaptive battery modes for efficient networking."
+      "Bluetooth Mesh: Relays messages locally between devices when internet access is unavailable or restricted.",
+      "Nostr Integration: Uses the decentralized Nostr protocol for global, censorship-resistant messaging.",
+      "No Accounts Required: Functions completely without phone numbers, emails, or central registration servers.",
+      "End-to-End Encryption: Secures all communications cryptographically to ensure absolute privacy.",
+      "Cross-Platform: Available as native applications for iOS and macOS environments."
     ],
     "useCases": [
       {
-        "title": "Disaster communication",
-        "description": "Emergency responders use Bluetooth mesh to coordinate in areas without internet access, leveraging multi-hop relays."
+        "title": "Offline Communication",
+        "description": "Connecting users at crowded events, festivals, or in remote areas with poor cellular coverage."
       },
       {
-        "title": "Protest organization",
-        "description": "Activists communicate securely offline using encrypted Bluetooth mesh channels to avoid surveillance."
+        "title": "Censorship Evasion",
+        "description": "Providing a reliable communication channel during internet blackouts or state-sponsored censorship."
       },
       {
-        "title": "Local event coordination",
-        "description": "Community members join geohash-based Nostr channels for city-level discussions and event planning."
+        "title": "Anonymous Group Chats",
+        "description": "Creating secure, untraceable 'side-groupchats' for sensitive discussions."
       },
       {
-        "title": "Privacy-focused messaging",
-        "description": "Individuals use BitChat for encrypted private messages without requiring accounts or phone numbers."
-      },
-      {
-        "title": "Remote area connectivity",
-        "description": "Travelers in regions with limited internet rely on Bluetooth mesh for peer-to-peer messaging."
+        "title": "Disaster Recovery",
+        "description": "Coordinating rescue and relief efforts when traditional telecom infrastructure has been destroyed."
       }
     ],
-    "whoIsItFor": "Privacy-conscious users, activists, and developers with experience in Swift and Xcode. Suitable for those needing offline or decentralized communication.",
-    "gettingStarted": "Install via the App Store or build from source: `open bitchat.xcodeproj`, then configure with your Apple Developer Team ID using `cp Configs/Local.xcconfig.example Configs/Local.xcconfig`.",
+    "whoIsItFor": "This app is built for privacy advocates, activists, and anyone needing reliable offline or decentralized communication tools.",
+    "gettingStarted": "Download the app directly from the Apple App Store.",
     "tags": [
       "bluetooth-mesh",
-      "nostr-protocol",
-      "decentralized-messaging",
-      "end-to-end-encryption",
-      "swift",
-      "ios",
-      "macos",
-      "privacy"
+      "decentralized",
+      "nostr",
+      "messaging",
+      "privacy",
+      "e2e-encryption"
     ],
     "category": "mobile",
-    "source": "llm",
-    "model": "openai/gpt-4o",
-    "version": 2,
-    "generatedAt": "2026-07-27T07:12:56.467Z"
+    "source": "jules",
+    "version": 4
   },
   "watchers": 303,
   "releases": [
