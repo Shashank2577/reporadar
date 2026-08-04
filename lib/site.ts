@@ -9,6 +9,12 @@ export const site = {
   // Buttondown username for the newsletter embed form (free tier, RSS-to-email).
   buttondownUsername: process.env.NEXT_PUBLIC_BUTTONDOWN_USERNAME || "",
   locale: "en_US",
+  creator: {
+    name: "Shashank Saxena",
+    github: "https://github.com/Shashank2577",
+    linkedin: "https://www.linkedin.com/in/shashank2577/",
+    portfolio: "https://shashanksaxena.info/",
+  },
 } as const;
 
 export function absoluteUrl(path: string): string {

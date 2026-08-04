@@ -70,6 +70,16 @@ export default function AboutPage() {
         refreshes star snapshots and detects jumps. Weekly digests are published on Sundays and
         monthly roundups on the first of each month.
       </p>
+      <h2>Who built this</h2>
+      <p>
+        {site.name} is built and maintained by {site.creator.name}, a software engineer building
+        small, focused products.{" "}
+        <a href={site.creator.github} target="_blank" rel="noopener noreferrer">GitHub</a>
+        {" · "}
+        <a href={site.creator.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        {" · "}
+        <a href={site.creator.portfolio} target="_blank" rel="noopener noreferrer">Portfolio</a>
+      </p>
     </article>
   );
 }

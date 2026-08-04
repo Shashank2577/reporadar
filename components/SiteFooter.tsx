@@ -7,6 +7,7 @@ export default function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4">
         <p>
           {site.name} — {site.tagline}. Data refreshed twice daily from the GitHub API.
+          {" "}Built by <Link href="/about" className="hover:text-foreground">{site.creator.name}</Link>.
         </p>
         <nav className="flex flex-wrap gap-4">
           <Link href="/about" className="hover:text-foreground">About</Link>
