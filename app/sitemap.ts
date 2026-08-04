@@ -21,6 +21,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: absoluteUrl("/search"), changeFrequency: "monthly", priority: 0.5 },
     { url: absoluteUrl("/newsletter"), changeFrequency: "monthly", priority: 0.5 },
     { url: absoluteUrl("/about"), changeFrequency: "monthly", priority: 0.4 },
+    { url: absoluteUrl("/mcp"), changeFrequency: "monthly", priority: 0.5 },
   ];
 
   const repos: MetadataRoute.Sitemap = getAllRepos().map((r) => ({

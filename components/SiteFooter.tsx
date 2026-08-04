@@ -11,6 +11,7 @@ export default function SiteFooter() {
         </p>
         <nav className="flex flex-wrap gap-4">
           <Link href="/about" className="hover:text-foreground">About</Link>
+          <Link href="/mcp" className="hover:text-foreground">MCP</Link>
           <Link href="/reports" className="hover:text-foreground">Reports</Link>
           <Link href="/newsletter" className="hover:text-foreground">Newsletter</Link>
           <a href="/feed.xml" className="hover:text-foreground">RSS</a>

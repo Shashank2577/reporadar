@@ -47,6 +47,7 @@ function collectRoutes() {
     "/topics",
     "/languages",
     "/about",
+    "/mcp",
     "/newsletter",
     "/request",
   ]);

@@ -20,6 +20,7 @@ export default function SiteHeader() {
           <Link href="/trending/daily" className="hover:text-accent">Trending</Link>
           <Link href="/reports" className="hover:text-accent">Reports</Link>
           <Link href="/blog" className="hover:text-accent">Blog</Link>
+          <Link href="/mcp" className="hover:text-accent">MCP</Link>
           <Link href="/watchlist" className="hover:text-accent">Watchlist</Link>
           <Link href="/request" className="hover:text-accent">Request a repo</Link>
           <Link
