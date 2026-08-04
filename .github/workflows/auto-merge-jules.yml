@@ -65,7 +65,15 @@ jobs:
           for i in $(seq 1 40); do
             checks=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name != "automerge")]')
             echo "$checks"
-            if echo "$checks" | jq -e 'all(.bucket == "pass")' > /dev/null; then
+            # Require the "build" check to actually be present, not just
+            # whatever's currently reported -- observed live on PRs #54/#63
+            # that a push to a PR branch can silently fail to trigger CI at
+            # all (no check-suite created), which would otherwise let this
+            # merge on Vercel's checks alone with the code never validated.
+            if ! echo "$checks" | jq -e 'any(.name == "build")' > /dev/null; then
+              echo "\"build\" check hasn't appeared yet (attempt $i/40), waiting..."
+              sleep 20
+            elif echo "$checks" | jq -e 'all(.bucket == "pass")' > /dev/null; then
               echo "All other checks passed -- merging."
               # Jules opens these PRs as drafts; GitHub refuses to merge a
               # draft PR, so it must be marked ready first.
