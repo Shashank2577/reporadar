@@ -62,16 +62,24 @@ function collectRoutes() {
   const repos = readJsonDir(path.join(ROOT, "data", "repos"));
   for (const r of repos) if (r.id) routes.add(`/repos/${r.id}`);
 
-  const topics = new Set();
+  const topicCounts = new Map();
   const languages = new Set();
   const categories = new Set();
   for (const r of repos) {
-    for (const t of [...(r.topics || []), ...(r.aiSummary?.tags || [])]) topics.add(t);
+    for (const t of [...(r.topics || []), ...(r.aiSummary?.tags || [])]) {
+      topicCounts.set(t, (topicCounts.get(t) || 0) + 1);
+    }
     if (r.language) languages.add(r.language);
     const cat = r.aiSummary?.category;
     if (cat) categories.add(KNOWN_CATEGORIES.has(cat) ? cat : "other");
   }
-  for (const t of topics) routes.add(`/topics/${encodeURIComponent(t)}`);
+  // Same top-100 cutoff as app/topics/[topic]/page.tsx's generateStaticParams
+  // -- the long tail (3,700+ topics tagging 1-2 repos) is only ever rendered
+  // on-demand now, not prerendered, so crawling it here would just render
+  // every one of those pages on first hit instead of skipping thin content
+  // not worth indexing anyway.
+  const topTopics = [...topicCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 100);
+  for (const [t] of topTopics) routes.add(`/topics/${encodeURIComponent(t)}`);
   for (const l of languages) {
     routes.add(`/languages/${l.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
   }

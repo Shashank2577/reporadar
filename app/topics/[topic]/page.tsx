@@ -4,11 +4,19 @@ import { allTopics, reposByTopic, toBrowserRepo } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
 import { itemListJsonLd } from "@/lib/site";
 
-export function generateStaticParams() {
-  return allTopics().map(({ topic }) => ({ topic }));
-}
+// Prerendering every topic (3,800+, most tagging only 1-2 repos) was the
+// single biggest driver of build time and page count for near-zero benefit --
+// thin, rarely-visited pages. Only the topics with real traction are worth
+// prerendering; the long tail still works, it just renders on first request
+// and gets cached from then on (the default when dynamicParams isn't set to
+// false), instead of being generated at every single build forever.
+const PRERENDER_TOP_N = 100;
 
-export const dynamicParams = false;
+export function generateStaticParams() {
+  return allTopics()
+    .slice(0, PRERENDER_TOP_N)
+    .map(({ topic }) => ({ topic }));
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ topic: string }> }): Promise<Metadata> {
   const { topic } = await params;
