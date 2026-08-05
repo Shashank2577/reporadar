@@ -20,6 +20,11 @@
       "date": "2026-08-03",
       "stars": 7480,
       "forks": 1095
+    },
+    {
+      "date": "2026-08-05",
+      "stars": 7537,
+      "forks": 1099
     }
   ],
   "trendingHistory": [
@@ -133,24 +138,24 @@
   "license": "MIT",
   "language": "Swift",
   "topics": [],
-  "stars": 7480,
-  "forks": 1095,
-  "watchers": 47,
-  "openIssues": 26,
+  "stars": 7537,
+  "forks": 1099,
+  "watchers": 49,
+  "openIssues": 27,
   "createdAt": "2026-02-26T11:29:08Z",
-  "pushedAt": "2026-08-03T11:03:53Z",
+  "pushedAt": "2026-08-03T15:42:24Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-03T13:36:40.694Z",
+  "updatedAt": "2026-08-05T03:56:16.287Z",
   "languages": {
-    "Swift": 1107902,
+    "Swift": 1146345,
     "Objective-C": 345082,
-    "Shell": 233515,
-    "Python": 228726,
+    "Shell": 233472,
+    "Python": 228758,
     "Makefile": 25791
   },
   "readmeExcerpt": "<div align=\"right\"><strong><a href=\"./docs/README_ko.md\">🇰🇷한국어</a></strong> | <strong><a href=\"./docs/README_ja.md\">🇯🇵日本語</a></strong> | <strong><a href=\"./docs/README_zh.md\">🇨🇳中文</a></strong> | <strong>🇬🇧English</strong></div>\n\n# vphone-cli\n\nBoot a virtual iPhone via Apple's Virtualization.framework using PCC research VM infrastructure.\n\n\n\n## Prerequisites\n\n**Host:**\n\n- Apple Silicon\n- macOS 15+ (Sequoia)\n- [SIP/AMFI relaxation to allow private PV=3 entitlements with unsigned-binary](#sipamfi-relaxation)\n\n**Dependencies:**\n\n```bash\nbrew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone libusb ipsw zstd\n```\n\n## Install\n\n```bash\nbrew install zqxwce/tap/vphone-cli\n```\n\n## Build\n\n```bash\ngit clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      # install deps, build toolchain submodules, create the Python venv\n./scripts/build.sh            # build + sign vphone-cli, bundle the .app, cross-compile vphoned\n\ncd .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help\n```\n\n## Quick Start\n\nOne command creates a VM end-to-end (download → patch → DFU restore → CFW install → first boot):\n\n```bash\nvphone-cli vm create myphone -V jb        # -V / --variant\n\nvphone-cli vm launch myphone\n```\n\n## Commands\n\n`vphone-cli vm create` runs the whole pipeline; the individual steps below let you drive it manually or re-run one stage.\n\n### Manage\n\n```bash\nvphone-cli vm list                         # list VMs (--json for scripting)\nvphone-cli vm info myphone                  # show one VM\nvphone-cli vm new myphone                   # create an empty bundle (cpu/mem/disk options)\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       # fast APFS clone, fresh device identity\nvphone-cli vm export myphone --out myphone.tar.xz   # xz -9; skips restore dir + staging files\nvphone-cli vm import --in myphone.tar.xz --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16\n```\n\n### Build a VM manually (what `vm create` automates)\n\n```bash\nvphone-cli vm new myphone                              # 1. empty bundle\nvphone-cli fw prepare myphone --iphone-version 26.1     # 2. download + merge IPSWs\nvphone-cli fw patch myphone --variant jb                # 3. patch the boot chain\n\nvphone-cli vm launch myphone --dfu &                    # 4. boot into DFU (background)\nvphone-cli restore myphone --get-shsh                   #    fetch SHSH\nvphone-cli restore myphone                              #    DFU restore\nvphone-cli vm stop myphone                              #    stop the DFU boot\n\nvphone-cli cfw install myphone --variant jb             # 5. install CFW (host-mount; asks for sudo)\nvphone-cli vm launch myphone                            # 6. first boot\n```\n\nUpdate to a newer iOS by pointing `fw prepare` at an IPSW: `--iphone-source /path/to.ipsw --cloudos-source /path/to.ipsw`.\n\n## Firmware Variants\n\nFive patch variants with increasing security bypass — pass one to `--variant`:\n\n| Variant      | Boot Chain  | CFW       | Notes                                                              |\n| ------------ | ----------- | --------- | ----------------------------------------------------------------- |\n| `less`       | 4 patches   | 2 phases  | Patchless — keeps iOS mitigations enabled                         |\n| `regular`    | 42 patches  | 10 phases | AMFI/SSV/Img4/TXM bypass                                           |\n| `dev`        | 53 patches  | 12 phases | + TXM entitlement/debug bypass                                    |\n| `jb`         | 113 patches | 14 phases | + full jailbreak (Sileo, TrollStore auto-install on first boot)   |\n| `exp`        | 141 patches | 18 phases | JB superset + anti-VM-detection research patches                  |\n\nSee [`research/0_binary_patch_comparison.md`](./research/0_binary_patch_comparison.md) for the per-component breakdown.\n\n## Running & Connecting\n\n- **SSH (jailbreak):** `ssh -p 22222 mobile@<vm-ip>` (password `alpine`)\n- **SSH (regular/dev):** `ssh -p 22222 root@<vm-ip>`\n- **VNC:** `vnc://<vm-ip>:5901`\n\n## Locations\n\nEverything vphone-cli creates lives under `~/.vphone/` — kept outside the repo and the `.app` so the signed bundle stays portable:\n\n| Path              | Contents                                                                                     |\n| ----------------- | -------------------------------------------------------------------------------------------- |\n| `~/.vphone/VMs/`  | VM bundles — one directory per VM. This is the library; override with `$VPHONE_LIBRARY_ROOT`. |\n| `~/.vphone/ipsws/`| Downloaded iPhone + cloudOS IPSWs, cached and reused across VMs.                              |\n| `~/.vphone/tools/`| Cached APFS seal-volume artifacts (`apfs_sealvolume_<version>`) fetched during `fw prepare`.  |\n| `~/.vphone/debs/` | Cached `.deb` packages the `jb`/`exp` CFW install lays into the guest (Sileo, apt, …).        |\n| `~/.vphone/venv/` | Auto-provisioned Python environment (see [Python runtime](#python-runtime); override with `$VPHONE_VENV_DIR`). |\n\n## SIP/AMFI Relaxation\n\n**Option A — fully disable SIP, then disable AMFI via boot-arg (most permissive).** \n\nIn Recovery (long-press power → Terminal):\n\n```bash\ncsrutil disable\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and set the AMFI boot-arg (needs SIP fully off to take effect):\n\n```bash\nsudo nvram boot-args=\"amfi_get_out_of_my_way=1 -v\"   # reboot after\n```\n\n**Option B — keep SIP on (debug-only relaxed), then allowlist the binary with amfidont** (leaves AMFI enabled system-wide). \n\nIn Recovery:\n\n```bash\ncsrutil enable --without debug\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and:\n\n```bash\nvphone-amfidont         # .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds\n```\n\n## Tested Environments\n\n| Host            | iPhone                | CloudOS         |\n| --------------- | --------------------- | --------------- |\n| Mac16,11 27.0b2 | `17,3_18.6.2_22G100`  | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0_23A341`    | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0.1_23A355`  | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.1_23B85`     | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.3-23D128`   |\n| Mac16,12 26.3   | `17,3_26.3.1_23D8133` | `26.3-23D128`   |\n| Mac16,11 26.2   | `17,3_26.4_23E246`    | `26.4-23E5207q` |\n| Mac16,11 26.2   | `17,3_26.5_23F77`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_26.5.2_23F84`   | `26.4-23E5207q` |\n| Mac16,6 25.4.1  | `17,3_26.6_23G71`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5380h`  | `26.4-23E5207q` |\n| Mac16,6 25.4.1  | `17,3_27.0_24A5390f`  | `26.4-23E5207q` |\n\n## FAQ\n\n**`zsh: killed ./vphone-cli`** — AMFI/debug restrictions aren't bypassed; see [Prerequisites](#prerequisites) (`amfi_get_out_of_my_way=1` or `amfidont`).\n\n**`Virtualization is not available on this hardware`** — your Mac is itself a VM; PV=3 guest boot can't nest. Use a non-nested macOS 15+ host.\n\n**Stuck on \"Press home to continue\"** — connect via VNC and right-click (two-finger click) to simulate the home button.\n\n**System apps won't install** — during iOS setup, don't pick Japan or the EU as your region (extra regulatory checks the VM can't satisfy); pick e.g. United States.\n\n**App crashes on launch with `EXC_GUARD` / `GUARD_TYPE_MACH_PORT`** — re-patch with `vphone-cli fw patch <name> --variant <v> --force-exc-guard`, then re-restore/install ([#291](https://github.com/Lakr233/vphone-cli/issues/291)). Always on for iOS 18 bases.\n\n**Install a `.ipa`/`.tipa`** — use the running VM's Install menu (drag-drop or file picker).\n\n## Automation\n\n`vphone-cli` exposes a host control socket (`<bundle>/vphone.sock`) for programmatic control — screenshots, touch, swipes, hardware keys, clipboard — each action returning an inline screenshot for AI-driven E2E testing. See [vphone-mcp](https://github.com/pluginslab/vphone-mcp) for an MCP server wrapping it.\n\n## Acknowledgements\n\n- [wh1te4ever/super-tart-vphone-writeup](https://github.com/wh1te4ever/super-tart-vphone-writeup)\n",
-  "commitCount": 331,
+  "commitCount": 340,
   "contributors": [
     {
       "login": "Lakr233",
@@ -162,7 +167,7 @@
       "login": "zqxwce",
       "url": "https://github.com/zqxwce",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4",
-      "contributions": 89
+      "contributions": 97
     },
     {
       "login": "mpass99",
@@ -215,13 +220,23 @@
   ],
   "releases": [
     {
+      "name": "v1.0.3",
+      "tag": "1.0.3",
+      "url": "https://github.com/Lakr233/vphone-cli/releases/tag/1.0.3",
+      "publishedAt": "2026-08-03T15:42:24Z",
+      "prerelease": false,
+      "body": "Preparation for vphone-ws\r\n\r\n## What's Changed\r\n* docs: streamline README and re-sync ko/ja/zh translations by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/401\r\n* fix(bridge): skip unpaired devices when resolving SHSH target by @Kila2 in https://github.com/Lakr233/vphone-cli/pull/402\r\n* feat(vm): record iOS + cloudOS versions on restore by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/403\r\n* Reclaim intermediate build artifacts after use by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/404\r\n* Feature/root popup by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/405\r\n* networking: Add `vm config --network` to edit VM network mode after creation by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/406\r\n* vphone-cli: Add variant, udid, and device to `vm info` by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/407\r\n* vphone-cli: Add network to `vm info`/`vm list` JSON by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/408\r\n* vphone-cli: Add `fw catalog` with recommended pairings and `--json` by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/409\r\n* vphone-cli: Add `--disk-size` to `vm create` by @zqxwce in https://github.com/Lakr233/",
+      "downloads": 176,
+      "reactions": 0
+    },
+    {
       "name": "v1.0.2",
       "tag": "1.0.2",
       "url": "https://github.com/Lakr233/vphone-cli/releases/tag/1.0.2",
       "publishedAt": "2026-07-28T14:27:11Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* fix: resolve all paths correctly for the bundled / brew-installed app by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/397\r\n* vm create: prompt for firmware pairing when a source is omitted by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/398\r\n* Add vphone-amfidont helper to allowlist the .app through amfid by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/399\r\n* Fix release build: bundle vphone-amfidont in Resources, not MacOS by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/400\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.1...1.0.2",
-      "downloads": 1,
+      "downloads": 215,
       "reactions": 0
     },
     {
@@ -231,7 +246,7 @@
       "publishedAt": "2026-07-28T11:48:46Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* ci: build the portable .app in the release workflow by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/394\r\n* fix: run the CFW-install sudo as a foreground terminal job by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/395\r\n* fix: preflight checks the running binary, not a dev .build path by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/396\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.0...1.0.1",
-      "downloads": 0,
+      "downloads": 1,
       "reactions": 0
     },
     {
@@ -251,17 +266,7 @@
       "publishedAt": "2026-07-27T16:28:47Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* doc: Add 27b4 and 26.6RC tested envs by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/381\r\n* Bugfix/ios27 various crashes by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/387\r\n* cfw: dsc: Add FORCE_DSC_MAXSLIDE opt-in to zero maxSlide on non-27 bases by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/389\r\n* cfw: Add opt-in --force-exc-guard for the EXC_GUARD Mach-port-guard p… by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/391\r\n* adapt macos 27 beta by @Kila2 in https://github.com/Lakr233/vphone-cli/pull/383\r\n\r\n## New Contributors\r\n* @Kila2 made their first contribution in https://github.com/Lakr233/vphone-cli/pull/383\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/0.1.9...0.1.10",
-      "downloads": 1,
-      "reactions": 0
-    },
-    {
-      "name": "v0.1.9",
-      "tag": "0.1.9",
-      "url": "https://github.com/Lakr233/vphone-cli/releases/tag/0.1.9",
-      "publishedAt": "2026-07-20T13:25:26Z",
-      "prerelease": false,
-      "body": "## What's Changed\r\n* Fix Patchless Pipeline by @mpass99 in https://github.com/Lakr233/vphone-cli/pull/377\r\n* Feature/ios27 support by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/378\r\n* doc: Remove iOS 26 specification from README by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/379\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/0.1.8...0.1.9",
-      "downloads": 139,
+      "downloads": 4,
       "reactions": 0
     }
   ],
@@ -327,7 +332,7 @@
     {
       "day": 0,
       "hour": 11,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 0,
@@ -337,7 +342,7 @@
     {
       "day": 0,
       "hour": 13,
-      "commits": 9
+      "commits": 10
     },
     {
       "day": 0,
@@ -367,7 +372,7 @@
     {
       "day": 0,
       "hour": 19,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 0,
@@ -447,7 +452,7 @@
     {
       "day": 1,
       "hour": 11,
-      "commits": 7
+      "commits": 9
     },
     {
       "day": 1,
@@ -457,7 +462,7 @@
     {
       "day": 1,
       "hour": 13,
-      "commits": 5
+      "commits": 6
     },
     {
       "day": 1,
@@ -817,7 +822,7 @@
     {
       "day": 4,
       "hour": 13,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 4,
@@ -827,12 +832,12 @@
     {
       "day": 4,
       "hour": 15,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 4,
       "hour": 16,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 4,
@@ -1112,15 +1117,6 @@
   ],
   "recentIssues": [
     {
-      "number": 393,
-      "title": "Does App Store Sign In Works?",
-      "url": "https://github.com/Lakr233/vphone-cli/issues/393",
-      "createdAt": "2026-07-27T20:33:59Z",
-      "comments": 1,
-      "labels": [],
-      "author": "kpratik9"
-    },
-    {
       "number": 386,
       "title": "error when make cfw_install_dev",
       "url": "https://github.com/Lakr233/vphone-cli/issues/386",
@@ -1164,14 +1160,95 @@
       "comments": 0,
       "labels": [],
       "author": "gilboz"
+    },
+    {
+      "number": 351,
+      "title": "Suggestion for a research variant that extends JB",
+      "url": "https://github.com/Lakr233/vphone-cli/issues/351",
+      "createdAt": "2026-06-17T15:22:39Z",
+      "comments": 2,
+      "labels": [],
+      "author": "gilboz"
     }
   ],
   "participation": {
-    "all": 323,
+    "all": 340,
     "owner": 123,
-    "community": 200
+    "community": 217
   },
   "recentCommits": [
+    {
+      "sha": "1ceef58",
+      "message": "vphone-cli: Add --disk-size to `vm create`",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/1ceef58106368ba8a49c6a67f64bd10cbadaee1e",
+      "date": "2026-08-03T10:59:12Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "4397dc7",
+      "message": "vphone-cli: Add `fw catalog` with recommended pairings and `--json`",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/4397dc7d492a6f2df6c43e81c75518273c8db397",
+      "date": "2026-08-03T08:53:03Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "d37c06b",
+      "message": "vphone-cli: Add network to `vm info`/`vm list` JSON",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/d37c06b61d2bdc8ac7d0ba0dee9ca26f55a87a33",
+      "date": "2026-08-03T08:33:53Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "aeba01f",
+      "message": "vphone-cli: Add variant, udid, and device to `vm info`",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/aeba01f13cf96ef71edc21372d00707e6127b71c",
+      "date": "2026-08-02T16:35:39Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "c6fa19e",
+      "message": "networking: Add `vm config --network` to edit VM network mode after creation",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/c6fa19efcb7bbc9df5e5f3c344a44f303046921f",
+      "date": "2026-08-02T10:09:44Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "6aef60b",
+      "message": "vphone-cli: Add --root-popup to elevate CFW host-mount via macOS auth dialog",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/6aef60bd9a30903cce7192cfcc1727eff66651f3",
+      "date": "2026-08-02T08:20:22Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "744090f",
+      "message": "setup: Remove artifacts when done to save disk space",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/744090f6949142000ae8814234559dff1c654f4c",
+      "date": "2026-07-30T12:06:45Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "966bddb",
+      "message": "setup: Record iOS + cloudOS versions on restore",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/966bddb62aea68f4e2189411300e12e35b2585b2",
+      "date": "2026-07-30T10:27:18Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "25da0fa",
+      "message": "pymobiledevice3: Skip pairing refused devices",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/25da0fa24a78458b1744b939ee3ef93c31be9351",
+      "date": "2026-07-30T08:08:25Z",
+      "author": "Kila2",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7580754?v=4"
+    },
     {
       "sha": "ecf798e",
       "message": "docs: streamline README and re-sync ko/ja/zh translations",
@@ -1179,150 +1256,78 @@
       "date": "2026-07-28T14:58:52Z",
       "author": "zqxwce",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "8b6ffd2",
-      "message": "fix: bundle vphone-amfidont in Resources, not MacOS (unbreaks .app signing)",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/8b6ffd2e2675f9f26afa99543f7c8ad379948643",
-      "date": "2026-07-28T14:13:23Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "766d155",
-      "message": "feat: add vphone-amfidont helper to allow the .app through amfid",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/766d1555fbf2067b1b79100d3880368dae3a3c55",
-      "date": "2026-07-28T13:27:46Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "e490a2a",
-      "message": "feat(vm create): prompt for firmware pairing when a source is omitted",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/e490a2aaf8f27543841e424122c5587e56c25b1f",
-      "date": "2026-07-28T12:34:46Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "084e239",
-      "message": "fix: resolve all paths correctly for the bundled / brew-installed app",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/084e239c36997fcc3ccb9bd8e802553576e023fa",
-      "date": "2026-07-28T12:18:18Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "70ff750",
-      "message": "fix: preflight checks the running binary, not a dev .build path",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/70ff75067ae2b35b51f74b2753f92c4d00342f97",
-      "date": "2026-07-28T11:43:20Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "f79c897",
-      "message": "fix: run the CFW-install sudo as a foreground terminal job",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/f79c897dd18aaaab679f5b8c42fba8c5ccd735e6",
-      "date": "2026-07-28T11:19:17Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "8ecab43",
-      "message": "ci: build the portable .app in the release workflow",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/8ecab43818234fc65344c869eea96d6914b4ae83",
-      "date": "2026-07-28T09:56:10Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "d5283b4",
-      "message": "docs: rewrite README make-free + re-translate ko/ja/zh",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/d5283b41864ecd911caee23c4867d420cd62ef7d",
-      "date": "2026-07-27T16:08:57Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "37ee294",
-      "message": "feat: guest restore/CFW pipeline updates for the consolidated CLI",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/37ee2943c633bfc725527519e266b7916b3d1962",
-      "date": "2026-07-27T16:08:57Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 401,
-      "title": "docs: streamline README and re-sync ko/ja/zh translations",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/401",
+      "number": 412,
+      "title": "fix: enable Frida Stalker on 26.4",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/412",
+      "state": "open",
+      "updatedAt": "2026-08-05T00:32:09Z",
+      "author": "retX0",
+      "draft": false
+    },
+    {
+      "number": 410,
+      "title": "vphone-cli: Add `--disk-size` to `vm create`",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/410",
       "state": "merged",
-      "updatedAt": "2026-07-28T15:04:46Z",
+      "updatedAt": "2026-08-03T11:03:53Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 400,
-      "title": "Fix release build: bundle vphone-amfidont in Resources, not MacOS",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/400",
+      "number": 409,
+      "title": "vphone-cli: Add `fw catalog` with recommended pairings and `--json`",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/409",
       "state": "merged",
-      "updatedAt": "2026-07-28T14:26:27Z",
+      "updatedAt": "2026-08-03T08:55:03Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 399,
-      "title": "Add vphone-amfidont helper to allowlist the .app through amfid",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/399",
+      "number": 408,
+      "title": "vphone-cli: Add network to `vm info`/`vm list` JSON",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/408",
       "state": "merged",
-      "updatedAt": "2026-07-28T13:59:27Z",
+      "updatedAt": "2026-08-03T08:35:35Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 398,
-      "title": "vm create: prompt for firmware pairing when a source is omitted",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/398",
+      "number": 407,
+      "title": "vphone-cli: Add variant, udid, and device to `vm info`",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/407",
       "state": "merged",
-      "updatedAt": "2026-07-28T13:03:52Z",
+      "updatedAt": "2026-08-03T08:19:22Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 397,
-      "title": "fix: resolve all paths correctly for the bundled / brew-installed app",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/397",
+      "number": 406,
+      "title": "networking: Add `vm config --network` to edit VM network mode after creation",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/406",
       "state": "merged",
-      "updatedAt": "2026-07-28T12:21:29Z",
+      "updatedAt": "2026-08-02T10:13:50Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 396,
-      "title": "fix: preflight checks the running binary, not a dev .build path",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/396",
+      "number": 405,
+      "title": "Feature/root popup",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/405",
       "state": "merged",
-      "updatedAt": "2026-07-28T11:48:20Z",
+      "updatedAt": "2026-08-02T08:20:23Z",
       "author": "zqxwce",
       "draft": false
     },
     {
-      "number": 395,
-      "title": "fix: run the CFW-install sudo as a foreground terminal job",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/395",
+      "number": 404,
+      "title": "Reclaim intermediate build artifacts after use",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/404",
       "state": "merged",
-      "updatedAt": "2026-07-28T11:25:57Z",
-      "author": "zqxwce",
-      "draft": false
-    },
-    {
-      "number": 394,
-      "title": "ci: build the portable .app in the release workflow",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/394",
-      "state": "merged",
-      "updatedAt": "2026-07-28T10:01:20Z",
+      "updatedAt": "2026-07-30T12:06:46Z",
       "author": "zqxwce",
       "draft": false
     }
@@ -1444,7 +1449,7 @@
     }
   ],
   "branchCount": 3,
-  "tagCount": 14,
+  "tagCount": 15,
   "community": {
     "healthPercentage": 28,
     "hasCodeOfConduct": false,
@@ -1486,22 +1491,15 @@
     {
       "name": "release",
       "status": "success",
-      "url": "https://github.com/Lakr233/vphone-cli/actions/runs/30368433811",
-      "branch": "1.0.2",
-      "updatedAt": "2026-07-28T14:37:10Z"
-    },
-    {
-      "name": "Running Copilot Code Review",
-      "status": "success",
-      "url": "https://github.com/Lakr233/vphone-cli/actions/runs/26352994376",
-      "branch": "main",
-      "updatedAt": "2026-05-24T05:33:22Z"
+      "url": "https://github.com/Lakr233/vphone-cli/actions/runs/30828749875",
+      "branch": "1.0.3",
+      "updatedAt": "2026-08-03T15:45:10Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 23,
-  "openPRs": 6,
-  "releaseCount": 11,
+  "openIssuesOnly": 20,
+  "openPRs": 7,
+  "releaseCount": 12,
   "discussionsEnabled": true,
   "discussionCount": 13,
   "discussions": [
@@ -1541,22 +1539,18 @@
       "category": "General"
     }
   ],
-  "closedIssues": 167,
-  "mergedPRs": 151,
+  "closedIssues": 169,
+  "mergedPRs": 160,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
   "securityPolicyUrl": null,
   "codeOfConduct": null,
   "latestRelease": {
-    "tag": "1.0.2",
-    "publishedAt": "2026-07-28T14:27:11Z"
+    "tag": "1.0.3",
+    "publishedAt": "2026-08-03T15:42:24Z"
   },
   "commitActivity": [
-    {
-      "week": "2025-08-02",
-      "commits": 0
-    },
     {
       "week": "2025-08-09",
       "commits": 0
@@ -1759,38 +1753,14 @@
     },
     {
       "week": "2026-07-26",
-      "commits": 15
+      "commits": 18
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 6
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-02",
-      "count": 0
-    },
-    {
-      "date": "2025-08-03",
-      "count": 0
-    },
-    {
-      "date": "2025-08-04",
-      "count": 0
-    },
-    {
-      "date": "2025-08-05",
-      "count": 0
-    },
-    {
-      "date": "2025-08-06",
-      "count": 0
-    },
-    {
-      "date": "2025-08-07",
-      "count": 0
-    },
-    {
-      "date": "2025-08-08",
-      "count": 0
-    },
     {
       "date": "2025-08-09",
       "count": 0
@@ -3209,7 +3179,7 @@
     },
     {
       "date": "2026-07-30",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-07-31",
@@ -3218,10 +3188,38 @@
     {
       "date": "2026-08-01",
       "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 3
+    },
+    {
+      "date": "2026-08-03",
+      "count": 3
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-28T16:03:06.586Z",
+  "factsUpdatedAt": "2026-08-05T03:56:27.831Z",
   "aiSummary": {
     "oneLiner": "A command-line tool for interacting with VirtualPhone, enabling automated management of virtual iOS devices.",
     "whatItDoes": "vphone-cli provides a terminal-based interface and automation toolkit for managing VirtualPhone instances (a platform for running virtualized iOS devices). It bridges the gap between the VirtualPhone GUI and automated CI/CD workflows by allowing developers to programmatically control device lifecycles. Users can use the CLI to create, start, stop, and snapshot virtual iPhones, as well as install applications, push files, and execute shell commands inside the virtual environment. This abstraction is critical for teams that need to integrate iOS testing, security analysis, or app deployment into headless scripts without relying on manual interaction.",
