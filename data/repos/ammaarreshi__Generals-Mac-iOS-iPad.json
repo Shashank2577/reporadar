@@ -30,6 +30,11 @@
       "date": "2026-08-05",
       "stars": 1547,
       "forks": 135
+    },
+    {
+      "date": "2026-08-07",
+      "stars": 1548,
+      "forks": 135
     }
   ],
   "trendingHistory": [
@@ -84,7 +89,7 @@
     "rts",
     "sdl3"
   ],
-  "stars": 1547,
+  "stars": 1548,
   "forks": 135,
   "watchers": 8,
   "openIssues": 15,
@@ -92,7 +97,7 @@
   "pushedAt": "2026-07-05T17:23:48Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-05T11:54:20.587Z",
+  "updatedAt": "2026-08-07T07:06:16.385Z",
   "languages": {
     "C++": 56796073,
     "C": 1598833,
@@ -171,7 +176,7 @@
   "releases": [],
   "readmeExcerpt": "# Command & Conquer Generals: Zero Hour — macOS, iOS & iPadOS\n\n<img width=\"500\" height=\"281\" alt=\"IMG_3457_500\" src=\"https://github.com/user-attachments/assets/aeaf6692-36e6-40c8-b9f8-8066d014ec4b\" />\n\n**Zero Hour running natively on Apple Silicon Macs, iPhone, and iPad** — campaign,\nskirmish, and Generals Challenge, with touch controls built for RTS (tap-select,\ndrag-box, long-press deselect, two-finger scroll, pinch zoom). No emulation: this\nis the real 2003 engine compiled for ARM64, rendering DirectX 8 →\n[DXVK](https://github.com/doitsujin/dxvk) → Vulkan →\n[MoltenVK](https://github.com/KhronosGroup/MoltenVK) → Metal.\n\nBuilt on EA's GPL v3 source release, standing on a chain of community work —\n[TheSuperHackers](https://github.com/TheSuperHackers/GeneralsGameCode),\n[Fighter19's original Unix port](https://github.com/Fighter19/CnC_Generals_Zero_Hour), and\n[fbraz3/GeneralsX](https://github.com/fbraz3/GeneralsX) — this fork adds the iOS/iPadOS\nport and a set of engine fixes. See [Lineage & credits](#lineage--credits) for who built\nwhat. The original GeneralsX README lives on the `upstream-main` branch.\n\n**No game assets are included or distributed.** You need your own copy\n([Steam](https://store.steampowered.com/app/2732960/), ~$5 on sale).\n\n## What this port actually involved\n\n\"Porting\" undersells how weird this journey was, so here's the honest shape of it.\nThe lineage below built the foundation: EA's source release, the community's\nmodernization, Fighter19's original Unix port, GeneralsX's macOS/Linux work.\nWhat did *not* exist was any of this on iOS — and iOS is a hostile place for a\n2003 Windows RTS:\n\n- **The engine assumes a writable filesystem wherever it lives.** iOS apps live in a\n  read-only, code-signed bundle. Every config write, cache, and save path had to be\n  rerouted — and the working directory bootstrapped from the bundle itself.\n- **The renderer speaks DirectX 8. The iPad speaks Metal.** In between: DXVK\n  translating D3D8→Vulkan, MoltenVK translating Vulkan→Metal — and DXVK had never\n  been built for iPhoneOS. That took a Meson cross-build and a patch to its Vulkan\n  loader, because iOS confines `dlopen` to the app bundle ([`Patches/dxvk-ios.patch`](Patches/dxvk-ios.patch)).\n- **iOS owns your process.** Open the app switcher and the OS seizes the Metal\n  drawable *without backgrounding you* — draw one more frame and you're dead on\n  resume. The whole render/sim loop learned to hold its breath.\n- **An RTS needs a mouse.** SDL3 (from the lineage below) delivers raw touch events;\n  the RTS semantics on top are new. Taps defer until the 2003 GUI has processed\n  hover (or menu buttons never highlight), a drag has to decide \"selection box or\n  camera pan,\" long-press became right-click, and a cancelled touch must never\n  ghost-click a rally point.\n- **And then the bug hunts** — the best part. The minimap that rendered black\n  because a 2003 texture-format fallback silently dropped the alpha channel. The\n  EVA voice that went randomly mute because one zombie audio stream held a global\n  \"don't talk over speech\" flag while chirping forever. Every one chased to root\n  cause on a real device, fixed, and offered upstream.\n\n**→ The war stories: [Porting Playbook §8 — the bug archaeology](docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section)**\n**→ The complete engineering log: [docs/port/PORTING_PLAYBOOK.md](docs/port/PORTING_PLAYBOOK.md)**\n**→ How to do this to another game: [docs/port/PORTING_PATTERNS.md](docs/port/PORTING_PATTERNS.md)**\n\nWorth saying plainly: this was a **human + AI collaboration**. The engineering —\nthe C++, the cross-builds, the device debugging — was done by\n[Claude Code](https://claude.com/claude-code) (Anthropic's Claude, Fable model),\ndirected and playtested by a human who described symptoms like *\"the minimap is\nblack\"* and *\"I hear chirping\"* and owned every decision. Neither half ships this\nalone: one of us can't write C++, and the other can't hear the chirping.\n\n## Quick start — macOS\n\nPrerequisites (one time):\n\n```sh\n# Toolchain\nxcode-select --install\nbrew install cmake ninja meson pkgconf\nbrew install --cask steamcmd\n\n# vcpkg (full clone — a shallow clone breaks manifest baselines)\ngit clone https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh\nexport VCPKG_ROOT=~/vcpkg          # add to your shell profile\n\n# LunarG Vulkan SDK (NOT the Homebrew cask) — https://vulkan.lunarg.com/sdk/home\nexport VULKAN_SDK=$HOME/VulkanSDK/<version>/macOS   # add to your shell profile\n```\n\nClone, build, get assets, play:\n\n```sh\ngit clone https://github.com/ammaarreshi/Generals-Mac-iOS-iPad.git GeneralsX\ncd GeneralsX\n./scripts/build/macos/build-macos-zh.sh     # checks deps, configures, builds\n./scripts/build/macos/deploy-macos-zh.sh    # creates ~/GeneralsX/GeneralsZH + run.sh\n./scripts/get-assets.sh <your_steam_username>   # fetches game data you own\ncd ~/GeneralsX/GeneralsZH && ./run.sh -win\n```\n\n## Quick start — iPhone / iPad\n\nOn top of the macOS prerequisites: full Xcode (signed into your Apple ID),\n`brew install xcodegen`, and a (free or paid) Apple Developer team.\n\n```sh\ncd GeneralsX\ngit submodule update --init references/fbraz3-dxvk   # iOS DXVK is built from this + Patches/dxvk-ios.patch\n./scripts/build/ios/fetch-moltenvk.sh                # pinned MoltenVK.framework (checksummed)\n./scripts/build/ios/stage-fonts.sh                   # Liberation fonts, renamed as the game expects\ncmake --preset ios-vulkan\ncmake --build build/ios-vulkan --target z_generals\nGX_TEAM_ID=<your-team-id> GX_BUNDLE_ID=com.you.generalszh \\\n    ./scripts/build/ios/package-ios-zh.sh --install  # assembles, signs, installs\n```\n\nFind your team id in Xcode → Settings → Accounts. Assets ship inside the app\nbundle (self-contained install); `--dev` skips the ~2.7 GB copy for fast code\niteration.\n\n## Where things are\n\n| Path | What it is |\n|---|---|\n| [`docs/port/PORTING_PLAYBOOK.md`](docs/port/PORTING_PLAYBOOK.md) | The complete engineering log of this port: every failure mode, root cause, fix — start with [§8, the bug archaeology](docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section): the black minimap, the silent EVA lines, and the chirp |\n| `docs/port/PORTING_PATTERNS.md` | Generalized methodology for porting classic Windows games to Apple platforms |\n| `docs/port/RELEASE_CHECKLIST.md` | Gate for public release |\n| `scripts/get-assets.sh` | Steam asset fetcher (your own copy; app 2732960) |\n| `scripts/build/macos/`, `scripts/build/ios/` | Build, deploy, packaging pipelines |\n| `ios/` | XcodeGen signing-stub project + `ios/config/` (staged Options.ini, dxvk.conf) |\n| `Patches/dxvk-ios.patch` | DXVK changes the iOS d3d8/d3d9 dylibs are built from (applied via the local-fork build) |\n\n## Known issues\n\n- Long sessions on iPad can be killed by iOS for memory (~3 GB+ resident); the app\n  exits to the home screen with no dialog. Session logs (current + previous) are in\n  the Files app under the game's folder. Under investigation.\n- Backgrounding mid-game can occasionally crash on iOS — the lifecycle pause covers\n  the common paths; a rare race remains. Save often.\n\n## What's next: Renegade 👀\n\nGenerals had a chain of giants to stand on. **Command & Conquer: Renegade** — EA's\n2002 FPS from the same GPL source release — has far less: no native macOS or iOS\nbuild of the W3D engine has ever shipped (Mac players today go through Wine-based\ncompatibility layers). The [OpenW3D](https://github.com/w3dhub/OpenW3D) community\nproject has real cross-platform groundwork — a DXVK wrapper scaffold and SDL3 build\nplumbing — with Mac/Linux on its roadmap, and that groundwork is exactly what we\nbuilt on.\n\nSame methodology as this repo, much deeper water: OpenW3D's Win32 compat scaffold\nexpanded by ~3,000 lines (the engine calls raw Windows APIs for file finding,\nkeyboard state, COM), a case-sensitivity strategy for twenty thousand asset paths,\nthe DXVK/MoltenVK renderer bring-up, the audio/video stack, and FPS touch controls.\nIt's playable today — campaign, cinematics, mission scripts — on a Mac and an\niPhone. For scale: this Generals port added ~2,200 lines on top of GeneralsX;\nRenegade needed ~6,700 on top of the Windows-only source.\n\nRepo drops soon, with the OpenW3D lineage credited the way this repo credits its\nchain. Same rules: GPL v3, bring your own copy, full engineering log.\n\n## Lineage & credits\n\nThis port is the newest link in a long chain, and the earlier links did foundational\nwork that this repo inherits everywhere:\n\n- **Westwood / EA Pacific** — the game; **EA** — the GPL v3 source release\n- **[TheSuperHackers/GeneralsGameCode](https://github.com/TheSuperHackers/GeneralsGameCode)** —\n  the community mainline: build modernization, VC6→modern toolchain, and much of the\n  cross-platform groundwork, including the FFmpeg video backend authored by\n  **[feliwir](https://github.com/feliwir)** (of [OpenSAGE](https://github.com/OpenSAGE/OpenSAGE)),\n  who also authored the OpenAL audio device work this port's audio stack builds on\n- **[Fighter19/CnC_Generals_Zero_Hour](https://github.com/Fighter19/CnC_Generals_Zero_Hour)** —\n  the original Unix/64-bit port: SDL3 platform management, C++17\n  filesystem/threading, Freetype/Fontconfig text rendering, and the DXVK approach\n  this renderer path descends from\n- **[fbraz3/GeneralsX](https://github.com/fbraz3/GeneralsX)** — the macOS/Linux port\n  this fork builds on directly, integrating and extending the above\n- **This fork** — the iOS/iPadOS port (arm64-ios cross-build, DXVK-on-iOS, touch\n  controls, app lifecycle, packaging) and engine fixes, offered upstream\n- **DXVK, MoltenVK, SDL, OpenAL Soft, FFmpeg, Liberation Fonts** — the load-bearing walls\n\nEngine code **GPL v3** (EA's source release → the chain above → this fork). Game\nassets: not included, not licensed here.\n",
   "commitCount": 2003,
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Command &amp; Conquer Generals: Zero Hour — macOS, iOS &amp; iPadOS</h1></div>\n<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://private-user-images.githubusercontent.com/159876365/617135099-aeaf6692-36e6-40c8-b9f8-8066d014ec4b.gif?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODUyNzYyMzYsIm5iZiI6MTc4NTI3NTkzNiwicGF0aCI6Ii8xNTk4NzYzNjUvNjE3MTM1MDk5LWFlYWY2NjkyLTM2ZTYtNDBjOC1iOWY4LTgwNjZkMDE0ZWM0Yi5naWY_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwNzI4JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDcyOFQyMTU4NTZaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1iMWFmNzZkY2FjMjE4ZTA1NTg3MzU1MGUwNDlkNWQxNGM3OWY0NjZiNzFjYzY5YjNiMzA3NzhmMjc3ZjUyZTMwJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZyZXNwb25zZS1jb250ZW50LXR5cGU9aW1hZ2UlMkZnaWYifQ.MdYRU4i0wkRPeHC4EBNvm5MliCWSc3jIPh2WQxObJwA\"><img width=\"500\" height=\"281\" alt=\"IMG_3457_500\" src=\"https://private-user-images.githubusercontent.com/159876365/617135099-aeaf6692-36e6-40c8-b9f8-8066d014ec4b.gif?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODUyNzYyMzYsIm5iZiI6MTc4NTI3NTkzNiwicGF0aCI6Ii8xNTk4NzYzNjUvNjE3MTM1MDk5LWFlYWY2NjkyLTM2ZTYtNDBjOC1iOWY4LTgwNjZkMDE0ZWM0Yi5naWY_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwNzI4JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDcyOFQyMTU4NTZaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1iMWFmNzZkY2FjMjE4ZTA1NTg3MzU1MGUwNDlkNWQxNGM3OWY0NjZiNzFjYzY5YjNiMzA3NzhmMjc3ZjUyZTMwJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZyZXNwb25zZS1jb250ZW50LXR5cGU9aW1hZ2UlMkZnaWYifQ.MdYRU4i0wkRPeHC4EBNvm5MliCWSc3jIPh2WQxObJwA\" data-animated-image=\"\" style=\"max-width: 100%; height: auto; max-height: 281px;; aspect-ratio: 500 / 281; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<p dir=\"auto\"><strong>Zero Hour running natively on Apple Silicon Macs, iPhone, and iPad</strong> — campaign,\nskirmish, and Generals Challenge, with touch controls built for RTS (tap-select,\ndrag-box, long-press deselect, two-finger scroll, pinch zoom). No emulation: this\nis the real 2003 engine compiled for ARM64, rendering DirectX 8 →\n<a href=\"https://github.com/doitsujin/dxvk\">DXVK</a> → Vulkan →\n<a href=\"https://github.com/KhronosGroup/MoltenVK\">MoltenVK</a> → Metal.</p>\n<p dir=\"auto\">Built on EA's GPL v3 source release, standing on a chain of community work —\n<a href=\"https://github.com/TheSuperHackers/GeneralsGameCode\">TheSuperHackers</a>,\n<a href=\"https://github.com/Fighter19/CnC_Generals_Zero_Hour\">Fighter19's original Unix port</a>, and\n<a href=\"https://github.com/fbraz3/GeneralsX\">fbraz3/GeneralsX</a> — this fork adds the iOS/iPadOS\nport and a set of engine fixes. See <a href=\"#lineage--credits\">Lineage &amp; credits</a> for who built\nwhat. The original GeneralsX README lives on the <code>upstream-main</code> branch.</p>\n<p dir=\"auto\"><strong>No game assets are included or distributed.</strong> You need your own copy\n(<a href=\"https://store.steampowered.com/app/2732960/\" rel=\"nofollow\">Steam</a>, ~$5 on sale).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What this port actually involved</h2></div>\n<p dir=\"auto\">\"Porting\" undersells how weird this journey was, so here's the honest shape of it.\nThe lineage below built the foundation: EA's source release, the community's\nmodernization, Fighter19's original Unix port, GeneralsX's macOS/Linux work.\nWhat did <em>not</em> exist was any of this on iOS — and iOS is a hostile place for a\n2003 Windows RTS:</p>\n<ul dir=\"auto\">\n<li><strong>The engine assumes a writable filesystem wherever it lives.</strong> iOS apps live in a\nread-only, code-signed bundle. Every config write, cache, and save path had to be\nrerouted — and the working directory bootstrapped from the bundle itself.</li>\n<li><strong>The renderer speaks DirectX 8. The iPad speaks Metal.</strong> In between: DXVK\ntranslating D3D8→Vulkan, MoltenVK translating Vulkan→Metal — and DXVK had never\nbeen built for iPhoneOS. That took a Meson cross-build and a patch to its Vulkan\nloader, because iOS confines <code>dlopen</code> to the app bundle (<a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/Patches/dxvk-ios.patch\"><code>Patches/dxvk-ios.patch</code></a>).</li>\n<li><strong>iOS owns your process.</strong> Open the app switcher and the OS seizes the Metal\ndrawable <em>without backgrounding you</em> — draw one more frame and you're dead on\nresume. The whole render/sim loop learned to hold its breath.</li>\n<li><strong>An RTS needs a mouse.</strong> SDL3 (from the lineage below) delivers raw touch events;\nthe RTS semantics on top are new. Taps defer until the 2003 GUI has processed\nhover (or menu buttons never highlight), a drag has to decide \"selection box or\ncamera pan,\" long-press became right-click, and a cancelled touch must never\nghost-click a rally point.</li>\n<li><strong>And then the bug hunts</strong> — the best part. The minimap that rendered black\nbecause a 2003 texture-format fallback silently dropped the alpha channel. The\nEVA voice that went randomly mute because one zombie audio stream held a global\n\"don't talk over speech\" flag while chirping forever. Every one chased to root\ncause on a real device, fixed, and offered upstream.</li>\n</ul>\n<p dir=\"auto\"><strong>→ The war stories: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section\">Porting Playbook §8 — the bug archaeology</a></strong>\n<strong>→ The complete engineering log: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md\">docs/port/PORTING_PLAYBOOK.md</a></strong>\n<strong>→ How to do this to another game: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PATTERNS.md\">docs/port/PORTING_PATTERNS.md</a></strong></p>\n<p dir=\"auto\">Worth saying plainly: this was a <strong>human + AI collaboration</strong>. The engineering —\nthe C++, the cross-builds, the device debugging — was done by\n<a href=\"https://claude.com/claude-code\" rel=\"nofollow\">Claude Code</a> (Anthropic's Claude, Fable model),\ndirected and playtested by a human who described symptoms like <em>\"the minimap is\nblack\"</em> and <em>\"I hear chirping\"</em> and owned every decision. Neither half ships this\nalone: one of us can't write C++, and the other can't hear the chirping.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start — macOS</h2></div>\n<p dir=\"auto\">Prerequisites (one time):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Toolchain\nxcode-select --install\nbrew install cmake ninja meson pkgconf\nbrew install --cask steamcmd\n\n# vcpkg (full clone — a shallow clone breaks manifest baselines)\ngit clone https://github.com/microsoft/vcpkg ~/vcpkg &amp;&amp; ~/vcpkg/bootstrap-vcpkg.sh\nexport VCPKG_ROOT=~/vcpkg          # add to your shell profile\n\n# LunarG Vulkan SDK (NOT the Homebrew cask) — https://vulkan.lunarg.com/sdk/home\nexport VULKAN_SDK=$HOME/VulkanSDK/&lt;version&gt;/macOS   # add to your shell profile\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Toolchain</span>\nxcode-select --install\nbrew install cmake ninja meson pkgconf\nbrew install --cask steamcmd\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> vcpkg (full clone — a shallow clone breaks manifest baselines)</span>\ngit clone https://github.com/microsoft/vcpkg <span class=\"pl-k\">~</span>/vcpkg <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-k\">~</span>/vcpkg/bootstrap-vcpkg.sh\n<span class=\"pl-k\">export</span> VCPKG_ROOT=<span class=\"pl-k\">~</span>/vcpkg          <span class=\"pl-c\"><span class=\"pl-c\">#</span> add to your shell profile</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> LunarG Vulkan SDK (NOT the Homebrew cask) — https://vulkan.lunarg.com/sdk/home</span>\n<span class=\"pl-k\">export</span> VULKAN_SDK=<span class=\"pl-smi\">$HOME</span>/VulkanSDK/<span class=\"pl-k\">&lt;</span>version<span class=\"pl-k\">&gt;</span>/macOS   <span class=\"pl-c\"><span class=\"pl-c\">#</span> add to your shell profile</span></pre></div>\n<p dir=\"auto\">Clone, build, get assets, play:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/ammaarreshi/Generals-Mac-iOS-iPad.git GeneralsX\ncd GeneralsX\n./scripts/build/macos/build-macos-zh.sh     # checks deps, configures, builds\n./scripts/build/macos/deploy-macos-zh.sh    # creates ~/GeneralsX/GeneralsZH + run.sh\n./scripts/get-assets.sh &lt;your_steam_username&gt;   # fetches game data you own\ncd ~/GeneralsX/GeneralsZH &amp;&amp; ./run.sh -win\"><pre>git clone https://github.com/ammaarreshi/Generals-Mac-iOS-iPad.git GeneralsX\n<span class=\"pl-c1\">cd</span> GeneralsX\n./scripts/build/macos/build-macos-zh.sh     <span class=\"pl-c\"><span class=\"pl-c\">#</span> checks deps, configures, builds</span>\n./scripts/build/macos/deploy-macos-zh.sh    <span class=\"pl-c\"><span class=\"pl-c\">#</span> creates ~/GeneralsX/GeneralsZH + run.sh</span>\n./scripts/get-assets.sh <span class=\"pl-k\">&lt;</span>your_steam_username<span class=\"pl-k\">&gt;</span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> fetches game data you own</span>\n<span class=\"pl-c1\">cd</span> <span class=\"pl-k\">~</span>/GeneralsX/GeneralsZH <span class=\"pl-k\">&amp;&amp;</span> ./run.sh -win</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start — iPhone / iPad</h2></div>\n<p dir=\"auto\">On top of the macOS prerequisites: full Xcode (signed into your Apple ID),\n<code>brew install xcodegen</code>, and a (free or paid) Apple Developer team.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd GeneralsX\ngit submodule update --init references/fbraz3-dxvk   # iOS DXVK is built from this + Patches/dxvk-ios.patch\n./scripts/build/ios/fetch-moltenvk.sh                # pinned MoltenVK.framework (checksummed)\n./scripts/build/ios/stage-fonts.sh                   # Liberation fonts, renamed as the game expects\ncmake --preset ios-vulkan\ncmake --build build/ios-vulkan --target z_generals\nGX_TEAM_ID=&lt;your-team-id&gt; GX_BUNDLE_ID=com.you.generalszh \\\n    ./scripts/build/ios/package-ios-zh.sh --install  # assembles, signs, installs\"><pre><span class=\"pl-c1\">cd</span> GeneralsX\ngit submodule update --init references/fbraz3-dxvk   <span class=\"pl-c\"><span class=\"pl-c\">#</span> iOS DXVK is built from this + Patches/dxvk-ios.patch</span>\n./scripts/build/ios/fetch-moltenvk.sh                <span class=\"pl-c\"><span class=\"pl-c\">#</span> pinned MoltenVK.framework (checksummed)</span>\n./scripts/build/ios/stage-fonts.sh                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> Liberation fonts, renamed as the game expects</span>\ncmake --preset ios-vulkan\ncmake --build build/ios-vulkan --target z_generals\nGX_TEAM_ID=<span class=\"pl-k\">&lt;</span>your-team-id<span class=\"pl-k\">&gt;</span> GX_BUNDLE_ID=com.you.generalszh \\\n    ./scripts/build/ios/package-ios-zh.sh --install  <span class=\"pl-c\"><span class=\"pl-c\">#</span> assembles, signs, installs</span></pre></div>\n<p dir=\"auto\">Find your team id in Xcode → Settings → Accounts. Assets ship inside the app\nbundle (self-contained install); <code>--dev</code> skips the ~2.7 GB copy for fast code\niteration.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Where things are</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>What it is</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md\"><code>docs/port/PORTING_PLAYBOOK.md</code></a></td>\n<td>The complete engineering log of this port: every failure mode, root cause, fix — start with <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section\">§8, the bug archaeology</a>: the black minimap, the silent EVA lines, and the chirp</td>\n</tr>\n<tr>\n<td><code>docs/port/PORTING_PATTERNS.md</code></td>\n<td>Generalized methodology for porting classic Windows games to Apple platforms</td>\n</tr>\n<tr>\n<td><code>docs/port/RELEASE_CHECKLIST.md</code></td>\n<td>Gate for public release</td>\n</tr>\n<tr>\n<td><code>scripts/get-assets.sh</code></td>\n<td>Steam asset fetcher (your own copy; app 2732960)</td>\n</tr>\n<tr>\n<td><code>scripts/build/macos/</code>, <code>scripts/build/ios/</code></td>\n<td>Build, deploy, packaging pipelines</td>\n</tr>\n<tr>\n<td><code>ios/</code></td>\n<td>XcodeGen signing-stub project + <code>ios/config/</code> (staged Options.ini, dxvk.conf)</td>\n</tr>\n<tr>\n<td><code>Patches/dxvk-ios.patch</code></td>\n<td>DXVK changes the iOS d3d8/d3d9 dylibs are built from (applied via the local-fork build)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Known issues</h2></div>\n<ul dir=\"auto\">\n<li>Long sessions on iPad can be killed by iOS for memory (~3 GB+ resident); the app\nexits to the home screen with no dialog. Session logs (current + previous) are in\nthe Files app under the game's folder. Under investigation.</li>\n<li>Backgrounding mid-game can occasionally crash on iOS — the lifecycle pause covers\nthe common paths; a rare race remains. Save often.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What's next: Renegade 👀</h2></div>\n<p dir=\"auto\">Generals had a chain of giants to stand on. <strong>Command &amp; Conquer: Renegade</strong> — EA's\n2002 FPS from the same GPL source release — has far less: no native macOS or iOS\nbuild of the W3D engine has ever shipped (Mac players today go through Wine-based\ncompatibility layers). The <a href=\"https://github.com/w3dhub/OpenW3D\">OpenW3D</a> community\nproject has real cross-platform groundwork — a DXVK wrapper scaffold and SDL3 build\nplumbing — with Mac/Linux on its roadmap, and that groundwork is exactly what we\nbuilt on.</p>\n<p dir=\"auto\">Same methodology as this repo, much deeper water: OpenW3D's Win32 compat scaffold\nexpanded by ~3,000 lines (the engine calls raw Windows APIs for file finding,\nkeyboard state, COM), a case-sensitivity strategy for twenty thousand asset paths,\nthe DXVK/MoltenVK renderer bring-up, the audio/video stack, and FPS touch controls.\nIt's playable today — campaign, cinematics, mission scripts — on a Mac and an\niPhone. For scale: this Generals port added ~2,200 lines on top of GeneralsX;\nRenegade needed ~6,700 on top of the Windows-only source.</p>\n<p dir=\"auto\">Repo drops soon, with the OpenW3D lineage credited the way this repo credits its\nchain. Same rules: GPL v3, bring your own copy, full engineering log.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Lineage &amp; credits</h2></div>\n<p dir=\"auto\">This port is the newest link in a long chain, and the earlier links did foundational\nwork that this repo inherits everywhere:</p>\n<ul dir=\"auto\">\n<li><strong>Westwood / EA Pacific</strong> — the game; <strong>EA</strong> — the GPL v3 source release</li>\n<li><strong><a href=\"https://github.com/TheSuperHackers/GeneralsGameCode\">TheSuperHackers/GeneralsGameCode</a></strong> —\nthe community mainline: build modernization, VC6→modern toolchain, and much of the\ncross-platform groundwork, including the FFmpeg video backend authored by\n<strong><a href=\"https://github.com/feliwir\">feliwir</a></strong> (of <a href=\"https://github.com/OpenSAGE/OpenSAGE\">OpenSAGE</a>),\nwho also authored the OpenAL audio device work this port's audio stack builds on</li>\n<li><strong><a href=\"https://github.com/Fighter19/CnC_Generals_Zero_Hour\">Fighter19/CnC_Generals_Zero_Hour</a></strong> —\nthe original Unix/64-bit port: SDL3 platform management, C++17\nfilesystem/threading, Freetype/Fontconfig text rendering, and the DXVK approach\nthis renderer path descends from</li>\n<li><strong><a href=\"https://github.com/fbraz3/GeneralsX\">fbraz3/GeneralsX</a></strong> — the macOS/Linux port\nthis fork builds on directly, integrating and extending the above</li>\n<li><strong>This fork</strong> — the iOS/iPadOS port (arm64-ios cross-build, DXVK-on-iOS, touch\ncontrols, app lifecycle, packaging) and engine fixes, offered upstream</li>\n<li><strong>DXVK, MoltenVK, SDL, OpenAL Soft, FFmpeg, Liberation Fonts</strong> — the load-bearing walls</li>\n</ul>\n<p dir=\"auto\">Engine code <strong>GPL v3</strong> (EA's source release → the chain above → this fork). Game\nassets: not included, not licensed here.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Command &amp; Conquer Generals: Zero Hour — macOS, iOS &amp; iPadOS</h1></div>\n<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://private-user-images.githubusercontent.com/159876365/617135099-aeaf6692-36e6-40c8-b9f8-8066d014ec4b.gif?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODYwODY2NzYsIm5iZiI6MTc4NjA4NjM3NiwicGF0aCI6Ii8xNTk4NzYzNjUvNjE3MTM1MDk5LWFlYWY2NjkyLTM2ZTYtNDBjOC1iOWY4LTgwNjZkMDE0ZWM0Yi5naWY_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwODA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDgwN1QwNzA2MTZaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT0wZjlhYWJjZmJjYmU0NjJiNzVjYzYzNTRjMDZkNjBmZWYwOTQzOTQ1ZDBhODk5NGE2ODgwMTU5NDIwMjRmMmFhJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZyZXNwb25zZS1jb250ZW50LXR5cGU9aW1hZ2UlMkZnaWYifQ.sVITQklqiP2x7SoJLCEWQH1mOVCTAKY7d7yVQtHu05A\"><img width=\"500\" height=\"281\" alt=\"IMG_3457_500\" src=\"https://private-user-images.githubusercontent.com/159876365/617135099-aeaf6692-36e6-40c8-b9f8-8066d014ec4b.gif?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODYwODY2NzYsIm5iZiI6MTc4NjA4NjM3NiwicGF0aCI6Ii8xNTk4NzYzNjUvNjE3MTM1MDk5LWFlYWY2NjkyLTM2ZTYtNDBjOC1iOWY4LTgwNjZkMDE0ZWM0Yi5naWY_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwODA3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDgwN1QwNzA2MTZaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT0wZjlhYWJjZmJjYmU0NjJiNzVjYzYzNTRjMDZkNjBmZWYwOTQzOTQ1ZDBhODk5NGE2ODgwMTU5NDIwMjRmMmFhJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZyZXNwb25zZS1jb250ZW50LXR5cGU9aW1hZ2UlMkZnaWYifQ.sVITQklqiP2x7SoJLCEWQH1mOVCTAKY7d7yVQtHu05A\" data-animated-image=\"\" style=\"max-width: 100%; height: auto; max-height: 281px;; aspect-ratio: 500 / 281; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<p dir=\"auto\"><strong>Zero Hour running natively on Apple Silicon Macs, iPhone, and iPad</strong> — campaign,\nskirmish, and Generals Challenge, with touch controls built for RTS (tap-select,\ndrag-box, long-press deselect, two-finger scroll, pinch zoom). No emulation: this\nis the real 2003 engine compiled for ARM64, rendering DirectX 8 →\n<a href=\"https://github.com/doitsujin/dxvk\">DXVK</a> → Vulkan →\n<a href=\"https://github.com/KhronosGroup/MoltenVK\">MoltenVK</a> → Metal.</p>\n<p dir=\"auto\">Built on EA's GPL v3 source release, standing on a chain of community work —\n<a href=\"https://github.com/TheSuperHackers/GeneralsGameCode\">TheSuperHackers</a>,\n<a href=\"https://github.com/Fighter19/CnC_Generals_Zero_Hour\">Fighter19's original Unix port</a>, and\n<a href=\"https://github.com/fbraz3/GeneralsX\">fbraz3/GeneralsX</a> — this fork adds the iOS/iPadOS\nport and a set of engine fixes. See <a href=\"#lineage--credits\">Lineage &amp; credits</a> for who built\nwhat. The original GeneralsX README lives on the <code>upstream-main</code> branch.</p>\n<p dir=\"auto\"><strong>No game assets are included or distributed.</strong> You need your own copy\n(<a href=\"https://store.steampowered.com/app/2732960/\" rel=\"nofollow\">Steam</a>, ~$5 on sale).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What this port actually involved</h2></div>\n<p dir=\"auto\">\"Porting\" undersells how weird this journey was, so here's the honest shape of it.\nThe lineage below built the foundation: EA's source release, the community's\nmodernization, Fighter19's original Unix port, GeneralsX's macOS/Linux work.\nWhat did <em>not</em> exist was any of this on iOS — and iOS is a hostile place for a\n2003 Windows RTS:</p>\n<ul dir=\"auto\">\n<li><strong>The engine assumes a writable filesystem wherever it lives.</strong> iOS apps live in a\nread-only, code-signed bundle. Every config write, cache, and save path had to be\nrerouted — and the working directory bootstrapped from the bundle itself.</li>\n<li><strong>The renderer speaks DirectX 8. The iPad speaks Metal.</strong> In between: DXVK\ntranslating D3D8→Vulkan, MoltenVK translating Vulkan→Metal — and DXVK had never\nbeen built for iPhoneOS. That took a Meson cross-build and a patch to its Vulkan\nloader, because iOS confines <code>dlopen</code> to the app bundle (<a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/Patches/dxvk-ios.patch\"><code>Patches/dxvk-ios.patch</code></a>).</li>\n<li><strong>iOS owns your process.</strong> Open the app switcher and the OS seizes the Metal\ndrawable <em>without backgrounding you</em> — draw one more frame and you're dead on\nresume. The whole render/sim loop learned to hold its breath.</li>\n<li><strong>An RTS needs a mouse.</strong> SDL3 (from the lineage below) delivers raw touch events;\nthe RTS semantics on top are new. Taps defer until the 2003 GUI has processed\nhover (or menu buttons never highlight), a drag has to decide \"selection box or\ncamera pan,\" long-press became right-click, and a cancelled touch must never\nghost-click a rally point.</li>\n<li><strong>And then the bug hunts</strong> — the best part. The minimap that rendered black\nbecause a 2003 texture-format fallback silently dropped the alpha channel. The\nEVA voice that went randomly mute because one zombie audio stream held a global\n\"don't talk over speech\" flag while chirping forever. Every one chased to root\ncause on a real device, fixed, and offered upstream.</li>\n</ul>\n<p dir=\"auto\"><strong>→ The war stories: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section\">Porting Playbook §8 — the bug archaeology</a></strong>\n<strong>→ The complete engineering log: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md\">docs/port/PORTING_PLAYBOOK.md</a></strong>\n<strong>→ How to do this to another game: <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PATTERNS.md\">docs/port/PORTING_PATTERNS.md</a></strong></p>\n<p dir=\"auto\">Worth saying plainly: this was a <strong>human + AI collaboration</strong>. The engineering —\nthe C++, the cross-builds, the device debugging — was done by\n<a href=\"https://claude.com/claude-code\" rel=\"nofollow\">Claude Code</a> (Anthropic's Claude, Fable model),\ndirected and playtested by a human who described symptoms like <em>\"the minimap is\nblack\"</em> and <em>\"I hear chirping\"</em> and owned every decision. Neither half ships this\nalone: one of us can't write C++, and the other can't hear the chirping.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start — macOS</h2></div>\n<p dir=\"auto\">Prerequisites (one time):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Toolchain\nxcode-select --install\nbrew install cmake ninja meson pkgconf\nbrew install --cask steamcmd\n\n# vcpkg (full clone — a shallow clone breaks manifest baselines)\ngit clone https://github.com/microsoft/vcpkg ~/vcpkg &amp;&amp; ~/vcpkg/bootstrap-vcpkg.sh\nexport VCPKG_ROOT=~/vcpkg          # add to your shell profile\n\n# LunarG Vulkan SDK (NOT the Homebrew cask) — https://vulkan.lunarg.com/sdk/home\nexport VULKAN_SDK=$HOME/VulkanSDK/&lt;version&gt;/macOS   # add to your shell profile\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Toolchain</span>\nxcode-select --install\nbrew install cmake ninja meson pkgconf\nbrew install --cask steamcmd\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> vcpkg (full clone — a shallow clone breaks manifest baselines)</span>\ngit clone https://github.com/microsoft/vcpkg <span class=\"pl-k\">~</span>/vcpkg <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-k\">~</span>/vcpkg/bootstrap-vcpkg.sh\n<span class=\"pl-k\">export</span> VCPKG_ROOT=<span class=\"pl-k\">~</span>/vcpkg          <span class=\"pl-c\"><span class=\"pl-c\">#</span> add to your shell profile</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> LunarG Vulkan SDK (NOT the Homebrew cask) — https://vulkan.lunarg.com/sdk/home</span>\n<span class=\"pl-k\">export</span> VULKAN_SDK=<span class=\"pl-smi\">$HOME</span>/VulkanSDK/<span class=\"pl-k\">&lt;</span>version<span class=\"pl-k\">&gt;</span>/macOS   <span class=\"pl-c\"><span class=\"pl-c\">#</span> add to your shell profile</span></pre></div>\n<p dir=\"auto\">Clone, build, get assets, play:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/ammaarreshi/Generals-Mac-iOS-iPad.git GeneralsX\ncd GeneralsX\n./scripts/build/macos/build-macos-zh.sh     # checks deps, configures, builds\n./scripts/build/macos/deploy-macos-zh.sh    # creates ~/GeneralsX/GeneralsZH + run.sh\n./scripts/get-assets.sh &lt;your_steam_username&gt;   # fetches game data you own\ncd ~/GeneralsX/GeneralsZH &amp;&amp; ./run.sh -win\"><pre>git clone https://github.com/ammaarreshi/Generals-Mac-iOS-iPad.git GeneralsX\n<span class=\"pl-c1\">cd</span> GeneralsX\n./scripts/build/macos/build-macos-zh.sh     <span class=\"pl-c\"><span class=\"pl-c\">#</span> checks deps, configures, builds</span>\n./scripts/build/macos/deploy-macos-zh.sh    <span class=\"pl-c\"><span class=\"pl-c\">#</span> creates ~/GeneralsX/GeneralsZH + run.sh</span>\n./scripts/get-assets.sh <span class=\"pl-k\">&lt;</span>your_steam_username<span class=\"pl-k\">&gt;</span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> fetches game data you own</span>\n<span class=\"pl-c1\">cd</span> <span class=\"pl-k\">~</span>/GeneralsX/GeneralsZH <span class=\"pl-k\">&amp;&amp;</span> ./run.sh -win</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start — iPhone / iPad</h2></div>\n<p dir=\"auto\">On top of the macOS prerequisites: full Xcode (signed into your Apple ID),\n<code>brew install xcodegen</code>, and a (free or paid) Apple Developer team.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd GeneralsX\ngit submodule update --init references/fbraz3-dxvk   # iOS DXVK is built from this + Patches/dxvk-ios.patch\n./scripts/build/ios/fetch-moltenvk.sh                # pinned MoltenVK.framework (checksummed)\n./scripts/build/ios/stage-fonts.sh                   # Liberation fonts, renamed as the game expects\ncmake --preset ios-vulkan\ncmake --build build/ios-vulkan --target z_generals\nGX_TEAM_ID=&lt;your-team-id&gt; GX_BUNDLE_ID=com.you.generalszh \\\n    ./scripts/build/ios/package-ios-zh.sh --install  # assembles, signs, installs\"><pre><span class=\"pl-c1\">cd</span> GeneralsX\ngit submodule update --init references/fbraz3-dxvk   <span class=\"pl-c\"><span class=\"pl-c\">#</span> iOS DXVK is built from this + Patches/dxvk-ios.patch</span>\n./scripts/build/ios/fetch-moltenvk.sh                <span class=\"pl-c\"><span class=\"pl-c\">#</span> pinned MoltenVK.framework (checksummed)</span>\n./scripts/build/ios/stage-fonts.sh                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> Liberation fonts, renamed as the game expects</span>\ncmake --preset ios-vulkan\ncmake --build build/ios-vulkan --target z_generals\nGX_TEAM_ID=<span class=\"pl-k\">&lt;</span>your-team-id<span class=\"pl-k\">&gt;</span> GX_BUNDLE_ID=com.you.generalszh \\\n    ./scripts/build/ios/package-ios-zh.sh --install  <span class=\"pl-c\"><span class=\"pl-c\">#</span> assembles, signs, installs</span></pre></div>\n<p dir=\"auto\">Find your team id in Xcode → Settings → Accounts. Assets ship inside the app\nbundle (self-contained install); <code>--dev</code> skips the ~2.7 GB copy for fast code\niteration.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Where things are</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>What it is</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md\"><code>docs/port/PORTING_PLAYBOOK.md</code></a></td>\n<td>The complete engineering log of this port: every failure mode, root cause, fix — start with <a href=\"https://github.com/ammaarreshi/Generals-Mac-iOS-iPad/blob/main/docs/port/PORTING_PLAYBOOK.md#8-post-ship-bug-hunts-junejuly-2026--the-archaeology-section\">§8, the bug archaeology</a>: the black minimap, the silent EVA lines, and the chirp</td>\n</tr>\n<tr>\n<td><code>docs/port/PORTING_PATTERNS.md</code></td>\n<td>Generalized methodology for porting classic Windows games to Apple platforms</td>\n</tr>\n<tr>\n<td><code>docs/port/RELEASE_CHECKLIST.md</code></td>\n<td>Gate for public release</td>\n</tr>\n<tr>\n<td><code>scripts/get-assets.sh</code></td>\n<td>Steam asset fetcher (your own copy; app 2732960)</td>\n</tr>\n<tr>\n<td><code>scripts/build/macos/</code>, <code>scripts/build/ios/</code></td>\n<td>Build, deploy, packaging pipelines</td>\n</tr>\n<tr>\n<td><code>ios/</code></td>\n<td>XcodeGen signing-stub project + <code>ios/config/</code> (staged Options.ini, dxvk.conf)</td>\n</tr>\n<tr>\n<td><code>Patches/dxvk-ios.patch</code></td>\n<td>DXVK changes the iOS d3d8/d3d9 dylibs are built from (applied via the local-fork build)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Known issues</h2></div>\n<ul dir=\"auto\">\n<li>Long sessions on iPad can be killed by iOS for memory (~3 GB+ resident); the app\nexits to the home screen with no dialog. Session logs (current + previous) are in\nthe Files app under the game's folder. Under investigation.</li>\n<li>Backgrounding mid-game can occasionally crash on iOS — the lifecycle pause covers\nthe common paths; a rare race remains. Save often.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What's next: Renegade 👀</h2></div>\n<p dir=\"auto\">Generals had a chain of giants to stand on. <strong>Command &amp; Conquer: Renegade</strong> — EA's\n2002 FPS from the same GPL source release — has far less: no native macOS or iOS\nbuild of the W3D engine has ever shipped (Mac players today go through Wine-based\ncompatibility layers). The <a href=\"https://github.com/w3dhub/OpenW3D\">OpenW3D</a> community\nproject has real cross-platform groundwork — a DXVK wrapper scaffold and SDL3 build\nplumbing — with Mac/Linux on its roadmap, and that groundwork is exactly what we\nbuilt on.</p>\n<p dir=\"auto\">Same methodology as this repo, much deeper water: OpenW3D's Win32 compat scaffold\nexpanded by ~3,000 lines (the engine calls raw Windows APIs for file finding,\nkeyboard state, COM), a case-sensitivity strategy for twenty thousand asset paths,\nthe DXVK/MoltenVK renderer bring-up, the audio/video stack, and FPS touch controls.\nIt's playable today — campaign, cinematics, mission scripts — on a Mac and an\niPhone. For scale: this Generals port added ~2,200 lines on top of GeneralsX;\nRenegade needed ~6,700 on top of the Windows-only source.</p>\n<p dir=\"auto\">Repo drops soon, with the OpenW3D lineage credited the way this repo credits its\nchain. Same rules: GPL v3, bring your own copy, full engineering log.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Lineage &amp; credits</h2></div>\n<p dir=\"auto\">This port is the newest link in a long chain, and the earlier links did foundational\nwork that this repo inherits everywhere:</p>\n<ul dir=\"auto\">\n<li><strong>Westwood / EA Pacific</strong> — the game; <strong>EA</strong> — the GPL v3 source release</li>\n<li><strong><a href=\"https://github.com/TheSuperHackers/GeneralsGameCode\">TheSuperHackers/GeneralsGameCode</a></strong> —\nthe community mainline: build modernization, VC6→modern toolchain, and much of the\ncross-platform groundwork, including the FFmpeg video backend authored by\n<strong><a href=\"https://github.com/feliwir\">feliwir</a></strong> (of <a href=\"https://github.com/OpenSAGE/OpenSAGE\">OpenSAGE</a>),\nwho also authored the OpenAL audio device work this port's audio stack builds on</li>\n<li><strong><a href=\"https://github.com/Fighter19/CnC_Generals_Zero_Hour\">Fighter19/CnC_Generals_Zero_Hour</a></strong> —\nthe original Unix/64-bit port: SDL3 platform management, C++17\nfilesystem/threading, Freetype/Fontconfig text rendering, and the DXVK approach\nthis renderer path descends from</li>\n<li><strong><a href=\"https://github.com/fbraz3/GeneralsX\">fbraz3/GeneralsX</a></strong> — the macOS/Linux port\nthis fork builds on directly, integrating and extending the above</li>\n<li><strong>This fork</strong> — the iOS/iPadOS port (arm64-ios cross-build, DXVK-on-iOS, touch\ncontrols, app lifecycle, packaging) and engine fixes, offered upstream</li>\n<li><strong>DXVK, MoltenVK, SDL, OpenAL Soft, FFmpeg, Liberation Fonts</strong> — the load-bearing walls</li>\n</ul>\n<p dir=\"auto\">Engine code <strong>GPL v3</strong> (EA's source release → the chain above → this fork). Game\nassets: not included, not licensed here.</p>\n</article></div>",
   "punchCard": [
     {
       "day": 0,
@@ -1073,9 +1078,9 @@
   ],
   "firstCommitAt": "2025-02-27T16:34:27Z",
   "participation": {
-    "all": 1345,
+    "all": 1310,
     "owner": 22,
-    "community": 1323
+    "community": 1288
   },
   "workflowRuns": [],
   "recentCommits": [
@@ -1732,7 +1737,7 @@
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-28T21:59:07.886Z",
+  "factsUpdatedAt": "2026-08-07T07:06:27.712Z",
   "aiSummary": {
     "oneLiner": "A native source port of Command & Conquer Generals: Zero Hour for Apple Silicon Macs, iOS, and iPadOS.",
     "whatItDoes": "This repository provides a native ARM64 port of the classic 2003 RTS engine for 'Command & Conquer Generals: Zero Hour', bringing it to modern Apple hardware including macOS, iOS, and iPadOS. It translates DirectX 8 calls through DXVK and MoltenVK to Metal, allowing the game to run flawlessly without emulation. Crucially, the iOS/iPadOS port features custom RTS touch controls (drag-box, pinch zoom, long-press) and fundamental engine changes to survive Apple's strict read-only bundles and strict process backgrounding limits. The project was notably engineered via a human-AI collaboration using Claude Code.",
@@ -1772,5 +1777,1673 @@
     "category": "other",
     "source": "jules",
     "version": 1
-  }
+  },
+  "commitActivity": [
+    {
+      "week": "2025-08-10",
+      "commits": 24
+    },
+    {
+      "week": "2025-08-17",
+      "commits": 8
+    },
+    {
+      "week": "2025-08-24",
+      "commits": 9
+    },
+    {
+      "week": "2025-08-31",
+      "commits": 22
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 39
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 32
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 25
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 17
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 10
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 24
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 18
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 16
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 23
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 13
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 19
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 15
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 13
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 16
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 12
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 8
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 11
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 35
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 27
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 38
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 37
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 22
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 84
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 60
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 68
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 60
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 45
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 37
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 21
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 39
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 32
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 45
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 40
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 30
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 20
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 14
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 25
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 7
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 12
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 25
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 20
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 2
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-10",
+      "count": 10
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 6
+    },
+    {
+      "date": "2025-08-13",
+      "count": 3
+    },
+    {
+      "date": "2025-08-14",
+      "count": 1
+    },
+    {
+      "date": "2025-08-15",
+      "count": 3
+    },
+    {
+      "date": "2025-08-16",
+      "count": 1
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 4
+    },
+    {
+      "date": "2025-08-20",
+      "count": 2
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 1
+    },
+    {
+      "date": "2025-08-23",
+      "count": 1
+    },
+    {
+      "date": "2025-08-24",
+      "count": 1
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 2
+    },
+    {
+      "date": "2025-08-27",
+      "count": 3
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 1
+    },
+    {
+      "date": "2025-08-30",
+      "count": 2
+    },
+    {
+      "date": "2025-08-31",
+      "count": 2
+    },
+    {
+      "date": "2025-09-01",
+      "count": 2
+    },
+    {
+      "date": "2025-09-02",
+      "count": 3
+    },
+    {
+      "date": "2025-09-03",
+      "count": 5
+    },
+    {
+      "date": "2025-09-04",
+      "count": 5
+    },
+    {
+      "date": "2025-09-05",
+      "count": 4
+    },
+    {
+      "date": "2025-09-06",
+      "count": 1
+    },
+    {
+      "date": "2025-09-07",
+      "count": 1
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 4
+    },
+    {
+      "date": "2025-09-10",
+      "count": 4
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 21
+    },
+    {
+      "date": "2025-09-13",
+      "count": 9
+    },
+    {
+      "date": "2025-09-14",
+      "count": 5
+    },
+    {
+      "date": "2025-09-15",
+      "count": 5
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 2
+    },
+    {
+      "date": "2025-09-18",
+      "count": 4
+    },
+    {
+      "date": "2025-09-19",
+      "count": 4
+    },
+    {
+      "date": "2025-09-20",
+      "count": 12
+    },
+    {
+      "date": "2025-09-21",
+      "count": 4
+    },
+    {
+      "date": "2025-09-22",
+      "count": 7
+    },
+    {
+      "date": "2025-09-23",
+      "count": 6
+    },
+    {
+      "date": "2025-09-24",
+      "count": 1
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 4
+    },
+    {
+      "date": "2025-09-27",
+      "count": 3
+    },
+    {
+      "date": "2025-09-28",
+      "count": 2
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 13
+    },
+    {
+      "date": "2025-10-01",
+      "count": 2
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 3
+    },
+    {
+      "date": "2025-10-08",
+      "count": 3
+    },
+    {
+      "date": "2025-10-09",
+      "count": 2
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 2
+    },
+    {
+      "date": "2025-10-12",
+      "count": 3
+    },
+    {
+      "date": "2025-10-13",
+      "count": 2
+    },
+    {
+      "date": "2025-10-14",
+      "count": 2
+    },
+    {
+      "date": "2025-10-15",
+      "count": 6
+    },
+    {
+      "date": "2025-10-16",
+      "count": 5
+    },
+    {
+      "date": "2025-10-17",
+      "count": 3
+    },
+    {
+      "date": "2025-10-18",
+      "count": 3
+    },
+    {
+      "date": "2025-10-19",
+      "count": 3
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 5
+    },
+    {
+      "date": "2025-10-23",
+      "count": 3
+    },
+    {
+      "date": "2025-10-24",
+      "count": 2
+    },
+    {
+      "date": "2025-10-25",
+      "count": 5
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 2
+    },
+    {
+      "date": "2025-10-28",
+      "count": 3
+    },
+    {
+      "date": "2025-10-29",
+      "count": 1
+    },
+    {
+      "date": "2025-10-30",
+      "count": 1
+    },
+    {
+      "date": "2025-10-31",
+      "count": 3
+    },
+    {
+      "date": "2025-11-01",
+      "count": 6
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 5
+    },
+    {
+      "date": "2025-11-04",
+      "count": 2
+    },
+    {
+      "date": "2025-11-05",
+      "count": 4
+    },
+    {
+      "date": "2025-11-06",
+      "count": 5
+    },
+    {
+      "date": "2025-11-07",
+      "count": 4
+    },
+    {
+      "date": "2025-11-08",
+      "count": 3
+    },
+    {
+      "date": "2025-11-09",
+      "count": 3
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 4
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 1
+    },
+    {
+      "date": "2025-11-14",
+      "count": 1
+    },
+    {
+      "date": "2025-11-15",
+      "count": 4
+    },
+    {
+      "date": "2025-11-16",
+      "count": 2
+    },
+    {
+      "date": "2025-11-17",
+      "count": 6
+    },
+    {
+      "date": "2025-11-18",
+      "count": 3
+    },
+    {
+      "date": "2025-11-19",
+      "count": 2
+    },
+    {
+      "date": "2025-11-20",
+      "count": 1
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 5
+    },
+    {
+      "date": "2025-11-23",
+      "count": 4
+    },
+    {
+      "date": "2025-11-24",
+      "count": 1
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 3
+    },
+    {
+      "date": "2025-11-27",
+      "count": 2
+    },
+    {
+      "date": "2025-11-28",
+      "count": 4
+    },
+    {
+      "date": "2025-11-29",
+      "count": 1
+    },
+    {
+      "date": "2025-11-30",
+      "count": 6
+    },
+    {
+      "date": "2025-12-01",
+      "count": 1
+    },
+    {
+      "date": "2025-12-02",
+      "count": 6
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 5
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 3
+    },
+    {
+      "date": "2025-12-11",
+      "count": 4
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 4
+    },
+    {
+      "date": "2025-12-14",
+      "count": 4
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 1
+    },
+    {
+      "date": "2025-12-17",
+      "count": 2
+    },
+    {
+      "date": "2025-12-18",
+      "count": 3
+    },
+    {
+      "date": "2025-12-19",
+      "count": 1
+    },
+    {
+      "date": "2025-12-20",
+      "count": 1
+    },
+    {
+      "date": "2025-12-21",
+      "count": 5
+    },
+    {
+      "date": "2025-12-22",
+      "count": 3
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 2
+    },
+    {
+      "date": "2025-12-31",
+      "count": 3
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 3
+    },
+    {
+      "date": "2026-01-03",
+      "count": 3
+    },
+    {
+      "date": "2026-01-04",
+      "count": 7
+    },
+    {
+      "date": "2026-01-05",
+      "count": 15
+    },
+    {
+      "date": "2026-01-06",
+      "count": 5
+    },
+    {
+      "date": "2026-01-07",
+      "count": 3
+    },
+    {
+      "date": "2026-01-08",
+      "count": 3
+    },
+    {
+      "date": "2026-01-09",
+      "count": 2
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 1
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 6
+    },
+    {
+      "date": "2026-01-15",
+      "count": 2
+    },
+    {
+      "date": "2026-01-16",
+      "count": 2
+    },
+    {
+      "date": "2026-01-17",
+      "count": 16
+    },
+    {
+      "date": "2026-01-18",
+      "count": 18
+    },
+    {
+      "date": "2026-01-19",
+      "count": 4
+    },
+    {
+      "date": "2026-01-20",
+      "count": 4
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 4
+    },
+    {
+      "date": "2026-01-23",
+      "count": 5
+    },
+    {
+      "date": "2026-01-24",
+      "count": 3
+    },
+    {
+      "date": "2026-01-25",
+      "count": 5
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 4
+    },
+    {
+      "date": "2026-01-28",
+      "count": 6
+    },
+    {
+      "date": "2026-01-29",
+      "count": 5
+    },
+    {
+      "date": "2026-01-30",
+      "count": 4
+    },
+    {
+      "date": "2026-01-31",
+      "count": 13
+    },
+    {
+      "date": "2026-02-01",
+      "count": 7
+    },
+    {
+      "date": "2026-02-02",
+      "count": 4
+    },
+    {
+      "date": "2026-02-03",
+      "count": 6
+    },
+    {
+      "date": "2026-02-04",
+      "count": 2
+    },
+    {
+      "date": "2026-02-05",
+      "count": 1
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 2
+    },
+    {
+      "date": "2026-02-08",
+      "count": 17
+    },
+    {
+      "date": "2026-02-09",
+      "count": 10
+    },
+    {
+      "date": "2026-02-10",
+      "count": 7
+    },
+    {
+      "date": "2026-02-11",
+      "count": 11
+    },
+    {
+      "date": "2026-02-12",
+      "count": 10
+    },
+    {
+      "date": "2026-02-13",
+      "count": 17
+    },
+    {
+      "date": "2026-02-14",
+      "count": 12
+    },
+    {
+      "date": "2026-02-15",
+      "count": 4
+    },
+    {
+      "date": "2026-02-16",
+      "count": 11
+    },
+    {
+      "date": "2026-02-17",
+      "count": 10
+    },
+    {
+      "date": "2026-02-18",
+      "count": 6
+    },
+    {
+      "date": "2026-02-19",
+      "count": 7
+    },
+    {
+      "date": "2026-02-20",
+      "count": 10
+    },
+    {
+      "date": "2026-02-21",
+      "count": 12
+    },
+    {
+      "date": "2026-02-22",
+      "count": 4
+    },
+    {
+      "date": "2026-02-23",
+      "count": 4
+    },
+    {
+      "date": "2026-02-24",
+      "count": 24
+    },
+    {
+      "date": "2026-02-25",
+      "count": 2
+    },
+    {
+      "date": "2026-02-26",
+      "count": 4
+    },
+    {
+      "date": "2026-02-27",
+      "count": 10
+    },
+    {
+      "date": "2026-02-28",
+      "count": 20
+    },
+    {
+      "date": "2026-03-01",
+      "count": 1
+    },
+    {
+      "date": "2026-03-02",
+      "count": 9
+    },
+    {
+      "date": "2026-03-03",
+      "count": 21
+    },
+    {
+      "date": "2026-03-04",
+      "count": 12
+    },
+    {
+      "date": "2026-03-05",
+      "count": 6
+    },
+    {
+      "date": "2026-03-06",
+      "count": 1
+    },
+    {
+      "date": "2026-03-07",
+      "count": 10
+    },
+    {
+      "date": "2026-03-08",
+      "count": 9
+    },
+    {
+      "date": "2026-03-09",
+      "count": 6
+    },
+    {
+      "date": "2026-03-10",
+      "count": 4
+    },
+    {
+      "date": "2026-03-11",
+      "count": 2
+    },
+    {
+      "date": "2026-03-12",
+      "count": 3
+    },
+    {
+      "date": "2026-03-13",
+      "count": 7
+    },
+    {
+      "date": "2026-03-14",
+      "count": 14
+    },
+    {
+      "date": "2026-03-15",
+      "count": 8
+    },
+    {
+      "date": "2026-03-16",
+      "count": 2
+    },
+    {
+      "date": "2026-03-17",
+      "count": 1
+    },
+    {
+      "date": "2026-03-18",
+      "count": 7
+    },
+    {
+      "date": "2026-03-19",
+      "count": 5
+    },
+    {
+      "date": "2026-03-20",
+      "count": 4
+    },
+    {
+      "date": "2026-03-21",
+      "count": 10
+    },
+    {
+      "date": "2026-03-22",
+      "count": 2
+    },
+    {
+      "date": "2026-03-23",
+      "count": 7
+    },
+    {
+      "date": "2026-03-24",
+      "count": 6
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 2
+    },
+    {
+      "date": "2026-03-27",
+      "count": 3
+    },
+    {
+      "date": "2026-03-28",
+      "count": 1
+    },
+    {
+      "date": "2026-03-29",
+      "count": 5
+    },
+    {
+      "date": "2026-03-30",
+      "count": 10
+    },
+    {
+      "date": "2026-03-31",
+      "count": 2
+    },
+    {
+      "date": "2026-04-01",
+      "count": 8
+    },
+    {
+      "date": "2026-04-02",
+      "count": 6
+    },
+    {
+      "date": "2026-04-03",
+      "count": 5
+    },
+    {
+      "date": "2026-04-04",
+      "count": 3
+    },
+    {
+      "date": "2026-04-05",
+      "count": 1
+    },
+    {
+      "date": "2026-04-06",
+      "count": 6
+    },
+    {
+      "date": "2026-04-07",
+      "count": 7
+    },
+    {
+      "date": "2026-04-08",
+      "count": 3
+    },
+    {
+      "date": "2026-04-09",
+      "count": 3
+    },
+    {
+      "date": "2026-04-10",
+      "count": 9
+    },
+    {
+      "date": "2026-04-11",
+      "count": 3
+    },
+    {
+      "date": "2026-04-12",
+      "count": 7
+    },
+    {
+      "date": "2026-04-13",
+      "count": 5
+    },
+    {
+      "date": "2026-04-14",
+      "count": 4
+    },
+    {
+      "date": "2026-04-15",
+      "count": 16
+    },
+    {
+      "date": "2026-04-16",
+      "count": 4
+    },
+    {
+      "date": "2026-04-17",
+      "count": 4
+    },
+    {
+      "date": "2026-04-18",
+      "count": 5
+    },
+    {
+      "date": "2026-04-19",
+      "count": 8
+    },
+    {
+      "date": "2026-04-20",
+      "count": 1
+    },
+    {
+      "date": "2026-04-21",
+      "count": 4
+    },
+    {
+      "date": "2026-04-22",
+      "count": 2
+    },
+    {
+      "date": "2026-04-23",
+      "count": 6
+    },
+    {
+      "date": "2026-04-24",
+      "count": 10
+    },
+    {
+      "date": "2026-04-25",
+      "count": 9
+    },
+    {
+      "date": "2026-04-26",
+      "count": 4
+    },
+    {
+      "date": "2026-04-27",
+      "count": 9
+    },
+    {
+      "date": "2026-04-28",
+      "count": 4
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 1
+    },
+    {
+      "date": "2026-05-01",
+      "count": 4
+    },
+    {
+      "date": "2026-05-02",
+      "count": 8
+    },
+    {
+      "date": "2026-05-03",
+      "count": 4
+    },
+    {
+      "date": "2026-05-04",
+      "count": 5
+    },
+    {
+      "date": "2026-05-05",
+      "count": 3
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 5
+    },
+    {
+      "date": "2026-05-08",
+      "count": 1
+    },
+    {
+      "date": "2026-05-09",
+      "count": 2
+    },
+    {
+      "date": "2026-05-10",
+      "count": 5
+    },
+    {
+      "date": "2026-05-11",
+      "count": 2
+    },
+    {
+      "date": "2026-05-12",
+      "count": 1
+    },
+    {
+      "date": "2026-05-13",
+      "count": 1
+    },
+    {
+      "date": "2026-05-14",
+      "count": 1
+    },
+    {
+      "date": "2026-05-15",
+      "count": 1
+    },
+    {
+      "date": "2026-05-16",
+      "count": 3
+    },
+    {
+      "date": "2026-05-17",
+      "count": 12
+    },
+    {
+      "date": "2026-05-18",
+      "count": 2
+    },
+    {
+      "date": "2026-05-19",
+      "count": 2
+    },
+    {
+      "date": "2026-05-20",
+      "count": 8
+    },
+    {
+      "date": "2026-05-21",
+      "count": 1
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 2
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 2
+    },
+    {
+      "date": "2026-05-29",
+      "count": 1
+    },
+    {
+      "date": "2026-05-30",
+      "count": 2
+    },
+    {
+      "date": "2026-05-31",
+      "count": 2
+    },
+    {
+      "date": "2026-06-01",
+      "count": 3
+    },
+    {
+      "date": "2026-06-02",
+      "count": 1
+    },
+    {
+      "date": "2026-06-03",
+      "count": 1
+    },
+    {
+      "date": "2026-06-04",
+      "count": 1
+    },
+    {
+      "date": "2026-06-05",
+      "count": 1
+    },
+    {
+      "date": "2026-06-06",
+      "count": 3
+    },
+    {
+      "date": "2026-06-07",
+      "count": 4
+    },
+    {
+      "date": "2026-06-08",
+      "count": 18
+    },
+    {
+      "date": "2026-06-09",
+      "count": 3
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 5
+    },
+    {
+      "date": "2026-07-04",
+      "count": 15
+    },
+    {
+      "date": "2026-07-05",
+      "count": 2
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    }
+  ]
 }
