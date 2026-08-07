@@ -30,6 +30,11 @@
       "date": "2026-08-06",
       "stars": 1981,
       "forks": 60
+    },
+    {
+      "date": "2026-08-07",
+      "stars": 2003,
+      "forks": 61
     }
   ],
   "trendingHistory": [
@@ -76,17 +81,17 @@
     "streaming",
     "video"
   ],
-  "stars": 1981,
-  "forks": 60,
+  "stars": 2003,
+  "forks": 61,
   "watchers": 3,
   "openIssues": 4,
   "createdAt": "2026-02-08T10:39:36Z",
   "pushedAt": "2026-08-03T20:37:48Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-06T08:25:14.278Z",
+  "updatedAt": "2026-08-07T18:46:37.735Z",
   "languages": {
-    "Go": 469651,
+    "Go": 511022,
     "JavaScript": 15749,
     "Shell": 2664,
     "Makefile": 1510,
@@ -96,14 +101,14 @@
     "C": 540,
     "HCL": 454
   },
-  "commitCount": 146,
-  "readmeExcerpt": "\n<p align=\"center\">\n  <img src=\".github/images/castor.svg\" alt=\"Castor\" width=\"200\"/>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://trendshift.io/repositories/86848?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-86848\" target=\"_blank\" rel=\"noopener noreferrer\"><img src=\"https://trendshift.io/api/badge/trendshift/repositories/86848/daily?language=Go\" alt=\"stupside%2Fcastor | Trendshift\" width=\"250\" height=\"55\"/></a>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/stupside/castor/releases/latest\">\n    <img src=\"https://img.shields.io/github/v/release/stupside/castor?style=flat-square\" alt=\"Latest Release\">\n  </a>\n  <a href=\"https://pkg.go.dev/github.com/stupside/castor\">\n    <img src=\"https://img.shields.io/badge/Go-Reference-00ADD8?style=flat-square&logo=go\" alt=\"Go Reference\">\n  </a>\n  <a href=\"https://github.com/stupside/homebrew-tap/blob/main/Casks/castor.rb\">\n    <img src=\"https://img.shields.io/badge/Homebrew-Available-FBB040?style=flat-square&logo=homebrew\" alt=\"Homebrew\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/blob/main/LICENSE\">\n    <img src=\"https://img.shields.io/github/license/stupside/castor?style=flat-square\" alt=\"License\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/actions\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/stupside/castor/continuous-integration.yml?style=flat-square\" alt=\"Build Status\">\n  </a>\n</p>\n\n# Castor\n\nSmart TVs won't cast arbitrary web video, and screen mirroring is laggy and drops resolution. Castor casts the real stream instead, at full quality, from your terminal.\n\nPoint Castor at a web page you are watching, or at a direct stream URL, and it finds the video, extracts the stream, transcodes it for your TV, and casts in real time. It can also resolve an IMDB/TMDB id against sources you configure yourself, and burn in auto-generated subtitles.\n\nTo extract, it launches headless Chrome and watches network traffic over the Chrome DevTools Protocol, then runs a short action pipeline to start playback: click the page, navigate into the largest iframe, and click again as a fallback. This works on pages that allow automated playback, and won't work everywhere.\n\n*A general-purpose casting tool: it casts only what you point it at. See [Purpose and disclaimer](#purpose-and-disclaimer).*\n\n<p align=\"center\">\n  <img src=\".github/images/screen-selection.png\" alt=\"Browsing titles in the castor TUI\" width=\"640\"/>\n  <br/>\n  <sub><em>Run <code>castor cast</code> to browse titles and cast, without leaving the terminal.</em></sub>\n</p>\n\n\n## Installation\n\nRun Castor as a **native binary** (recommended): it runs on your machine, so it shares your TV's network, which device discovery needs. The binary shells out to three tools that must be on your `PATH`:\n\n| Tool | Version | Used for |\n| --- | --- | --- |\n| **Chrome / Chromium** | Any recent | Headless stream extraction |\n| **ffmpeg** | 7.1+ | Transcoding (and stream copy) |\n| **ffprobe** | 7.1+ | Source format detection |\n\nffmpeg and ffprobe must be **7.1 or newer**: Castor uses flags (`-readrate_initial_burst`, stricter HLS extension handling) that older builds reject. The [Docker image](#docker-optional) bundles a suitable build (Linux only).\n\n### Homebrew (macOS)\n\n```sh\nbrew install --cask stupside/tap/castor\n```\n\n<details>\n<summary><b>Build from source</b> (needs Go 1.26+ and cmake)</summary>\n\nThe whisper.cpp bindings are cgo and link a locally built `libwhisper.a`, so clone with submodules and build with `make`:\n\n```sh\ngit clone --recurse-submodules https://github.com/stupside/castor.git\ncd castor\nmake          # builds libwhisper.a, then the castor binary\n```\n\n`go install` won't work: the vendored whisper.cpp bindings come in through a local `replace` and need that prebuilt static lib.\n\n</details>\n\n\n## Quick start\n\nTell Castor which TV to use: find its name with `castor scan` and put it in `config.yaml`.\n\n```yaml\ndevice:\n  name: \"Living Room TV\"   # exact name from `castor scan`\n  type: dlna\n```\n\n### Can't discover the device? Pin it by address\n\nIf `castor scan` finds nothing, point Castor straight at the device by IP and it skips discovery:\n\n```yaml\ndevice:\n  name: \"Living Room TV\"   # now just a label\n  type: dlna\n  host: 192.168.0.3        # the device's LAN IP\n```\n\nDiscovery uses SSDP/mDNS **multicast**, which doesn't cross VLANs/subnets and is blocked on Android/Termux (you'll see `netlinkrib: permission denied`). A pinned `host` reaches the device by **unicast** instead, so it works across those networks and skips the discovery wait on every cast.\n\n- **DLNA** `host` is the device IP; Castor asks it for its description over a single unicast request. If your TV doesn't answer that, set `host` to its full description URL instead (e.g. `http://192.168.0.3:9197/dmr`).\n- **Chromecast / Roku** `host` is the device IP.\n\n> On Android/Termux, also leave `network.interface` empty (the default): pinning one needs the same blocked interface lookup.\n\nNow cast a page you are watching, or a stream URL you have:\n\n```sh\ncastor cast player https://example.com/watch/some-video\n```\n\nFor the interactive browser, which searches titles and casts them for you, add a TMDB key and a source (see [Configuration](#configuration)), then run `castor cast`:\n\n<p align=\"center\">\n  <img src=\".github/images/screen-devices.png\" alt=\"Selecting a cast target in the castor TUI\" width=\"640\"/>\n</p>\n\nThe commands you'll use most (run `castor --help` for all flags):\n\n| Command | What it does |\n| --- | --- |\n| `castor scan` | List cast targets on your network |\n| `castor cast` | Browse titles and cast, interactively (needs a TMDB key) |\n| `castor cast player <url>` | Cast a web page that has an embedded video player |\n| `castor cast url <url>` | Cast a direct stream or video URL |\n| `castor cast movie <id>` | Resolve a movie id against your sources and cast |\n| `castor cast episode <id> --season N --episode N` | Resolve a TV episode and cast |\n\n\n## Configuration\n\nCastor reads `config.yaml` from the working directory (or `--config <path>`). **The only required key is the `device`** shown in [Quick start](#quick-start); everything else (timeouts, probing, capture, transcoding, network interface, Chrome discovery) has working defaults.\n\n> [!TIP]\n> Keep secrets like your TMDB key out of the committed file: put them in a git-ignored `config.local.yaml` that overlays `config.yaml`, or in `CASTOR_SECTION__FIELD` environment variables. See [SECURITY.md](SECURITY.md).\n\nEverything below is optional.\n\n<details>\n<summary><b>Sources</b>: resolve movie / episode ids against sites you configure</summary>\n\n`cast movie`, `cast episode`, and the interactive browser resolve a title id against sources you configure. Castor bundles none, so add your own (sites you are authorized to use). There is no catalog and no lookup: Castor substitutes the id into the `templates` you write, prefixes each of your `proxies`, and opens the resulting page, then extracts the stream exactly like `cast player`. For example, `castor cast movie tt12300742` opens `https://your-source.example/embed/movie/tt12300742`.\n\n```yaml\nsources:\n  - proxies: [\"https://your-source.example\"]   # base URLs, tried in order\n    templates:\n      movie: \"/embed/movie/{itemID}\"\n      episode: \"/embed/tv/{itemID}/{season}-{episode}\"\n```\n\n</details>\n\n<details>\n<summary><b>Resolver</b>: cap resolution with <code>max_height</code></summary>\n\nSource selection and stream probing. All options have sensible defaults; you normally only set `max_height` to your TV's vertical resolution, which caps both the selected stream and the encoder output.\n\n```yaml\nresolver:\n  # The tallest video to cast. Source selection prefers the largest stream no\n  # taller than this, and the encoder scales its output down to it. Defaults to\n  # 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass\n  # 4K through, or lower it to save bandwidth.\n  max_height: 2160\n  # hls_timeout: 30s\n  # probe_timeout: 30s\n  # probe_max_concurrency: 2\n  # ffprobe_path: ffprobe\n```\n\n</details>\n\n<details>\n<summary><b>TMDB</b>: API key for the interactive browser</summary>\n\nThe interactive browser (`castor cast`) uses a TMDB API key to search titles; direct commands like `cast movie <id>` do not need it. Get a free key from [themoviedb.org](https://www.themoviedb.org/settings/api) and keep it in `config.local.yaml`:\n\n```yaml\ntmdb:\n  api_key: \"<KEY>\"\n```\n\n</details>\n\n<details>\n<summary><b>Subtitles</b>: auto-transcribe with whisper and burn in (off by default)</summary>\n\nAuto-generated subtitles, transcribed with whisper and burned into the video:\n\n```yaml\nwhisper:\n  enable: true             # off by default\n  # language: \"fr\"         # default: English\n  # model_path: \"\"         # default: ggml-tiny.en (~75 MB, auto-downloaded)\n```\n\n</details>\n\n<details>\n<summary><b>Roku</b>: cast to a Roku TV or player (one-time Developer Mode setup)</summary>\n\nRoku devices are not DLNA renderers, so Castor reaches them over Roku's ECP (External Control Protocol). Roku has no supported way to play an arbitrary URL from a preinstalled app, so Castor ships a tiny channel of its own and plays through it. A source Roku already accepts (HLS, MP4, MKV) is passed straight through; anything else is remuxed to live HLS on the fly.\n\n```yaml\ndevice:\n  name: \"Living Room\"   # the Roku's name, from `castor scan`\n  type: roku\n  roku:\n    # Only needed the first time, to sideload Castor's channel (see below).\n    password: \"<dev-web-server-password>\"\n```\n\nSideloading the channel uses Roku's developer web server, which you turn on by hand once (there is no remote API for it):\n\n1. On the Roku remote press **Home x3, Up x2, Right, Left, Right, Left, Right**.\n2. Enable developer mode and set a **web-server password** (the device reboots).\n3. Put that password in `device.roku.password` (keep it in a git-ignored `config.local.yaml`, or set `CASTOR_DEVICE__ROKU__PASSWORD`).\n\nOn the first cast Castor sideloads its channel automatically; later casts reuse it. If you publish the channel to your account instead, set `device.roku.app_id` to its numeric id (no dev mode or password needed).\n\n> [!NOTE]\n> Roku's live playback is a sliding-window HLS stream and stays roughly 30 s behind the live edge, so expect a longer start delay and more latency than DLNA.\n\n</details>\n\n\n## Supported devices\n\nRun `castor scan` to list what is on your network.\n\n| Protocol | Works with | Status |\n| --- | --- | --- |\n| **DLNA / UPnP** (`MediaRenderer:1`) | Virtually every smart TV from the last decade (Samsung, LG, Sony Bravia, Panasonic Viera, Philips, Hisense, TCL, VIZIO, Sharp), plus networked players like Kodi, VLC, and Plex | Tested on Samsung |\n| **Chromecast** | Google Cast devices | Experimental, untested (contributions welcome) |\n| **Roku** | Roku TVs and streaming players (via a sideloaded channel over ECP) | Experimental, untested (contributions welcome) |\n\n\n## Docker (optional)\n\nThe prebuilt `ghcr.io/stupside/castor` image bundles Chrome, ffmpeg, and ffprobe, so you install nothing by hand. Run it on a **Linux host on the same LAN as your TV**.\n\n> [!WARNING]\n> `--network host` is required: device discovery (SSDP multicast) and the TV streaming back from Castor both need the container on your real LAN. On Docker Desktop (macOS/Windows) that flag is a no-op, so the container never reaches your TV and `scan` finds nothing. Use the [native binary](#homebrew-macos) there instead.\n\n```sh\n# Discover devices (no config needed)\ndocker run --rm --network host ghcr.io/stupside/castor:latest scan\n\n# Cast, passing the Intel GPU through for hardware transcoding\ndocker run --rm --network host --device /dev/dri \\\n  -v \"$PWD/config.yaml:/config.yaml\" \\\n  -v castor-cache:/root/.cache \\\n  ghcr.io/stupside/castor:latest \\\n  cast player https://example.com/watch/some-video\n```\n\n`--device /dev/dri` hands the container your Intel GPU for VA-API hardware H.264 encoding; without it (or on a non-Intel host) Castor falls bac",
+  "commitCount": 153,
+  "readmeExcerpt": "\n<p align=\"center\">\n  <img src=\".github/images/castor.svg\" alt=\"Castor\" width=\"200\"/>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://trendshift.io/repositories/86848?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-86848\" target=\"_blank\" rel=\"noopener noreferrer\"><img src=\"https://trendshift.io/api/badge/trendshift/repositories/86848/daily?language=Go\" alt=\"stupside%2Fcastor | Trendshift\" width=\"250\" height=\"55\"/></a>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/stupside/castor/releases/latest\">\n    <img src=\"https://img.shields.io/github/v/release/stupside/castor?style=flat-square\" alt=\"Latest Release\">\n  </a>\n  <a href=\"https://pkg.go.dev/github.com/stupside/castor\">\n    <img src=\"https://img.shields.io/badge/Go-Reference-00ADD8?style=flat-square&logo=go\" alt=\"Go Reference\">\n  </a>\n  <a href=\"https://github.com/stupside/homebrew-tap/blob/main/Casks/castor.rb\">\n    <img src=\"https://img.shields.io/badge/Homebrew-Available-FBB040?style=flat-square&logo=homebrew\" alt=\"Homebrew\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/blob/main/LICENSE\">\n    <img src=\"https://img.shields.io/github/license/stupside/castor?style=flat-square\" alt=\"License\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/actions\">\n    <img src=\"https://img.shields.io/github/actions/workflow/status/stupside/castor/continuous-integration.yml?style=flat-square\" alt=\"Build Status\">\n  </a>\n</p>\n\n# Castor\n\nSmart TVs won't cast arbitrary web video, and screen mirroring is laggy and drops resolution. Castor casts the real stream instead, at full quality, from your terminal.\n\nPoint Castor at a web page you are watching, or at a direct stream URL, and it finds the video, extracts the stream, transcodes it for your TV, and casts in real time. It can also resolve an IMDB/TMDB id against sources you configure yourself, and burn in auto-generated subtitles.\n\nTo extract, it launches headless Chrome and watches network traffic over the Chrome DevTools Protocol, then runs a short action pipeline to start playback: click the page, navigate into the largest iframe, and click again as a fallback. This works on pages that allow automated playback, and won't work everywhere.\n\n*A general-purpose casting tool: it casts only what you point it at. See [Purpose and disclaimer](#purpose-and-disclaimer).*\n\n<p align=\"center\">\n  <img src=\".github/images/screen-selection.png\" alt=\"Browsing titles in the castor TUI\" width=\"640\"/>\n  <br/>\n  <sub><em>Run <code>castor cast</code> to browse titles and cast, without leaving the terminal.</em></sub>\n</p>\n\n\n## Installation\n\nRun Castor as a **native binary** (recommended): it runs on your machine, so it shares your TV's network, which device discovery needs. The binary shells out to three tools that must be on your `PATH`:\n\n| Tool | Version | Used for |\n| --- | --- | --- |\n| **Chrome / Chromium** | Any recent | Headless stream extraction |\n| **ffmpeg** | 7.1+ | Transcoding (and stream copy) |\n| **ffprobe** | 7.1+ | Source format detection |\n\nffmpeg and ffprobe must be **7.1 or newer**: Castor uses flags (`-readrate_initial_burst`, stricter HLS extension handling) that older builds reject. The [Docker image](#docker-optional) bundles a suitable build (Linux only).\n\n### Homebrew (macOS)\n\n```sh\nbrew install --cask stupside/tap/castor\n```\n\n<details>\n<summary><b>Build from source</b> (needs Go 1.26+ and cmake)</summary>\n\nThe whisper.cpp bindings are cgo and link a locally built `libwhisper.a`, so clone with submodules and build with `make`:\n\n```sh\ngit clone --recurse-submodules https://github.com/stupside/castor.git\ncd castor\nmake          # builds libwhisper.a, then the castor binary\n```\n\n`go install` won't work: the vendored whisper.cpp bindings come in through a local `replace` and need that prebuilt static lib.\n\n</details>\n\n\n## Quick start\n\nTell Castor which TV to use: find its name with `castor scan` and put it in `config.yaml`.\n\n```yaml\ndevice:\n  name: \"Living Room TV\"   # exact name from `castor scan`\n  type: dlna\n```\n\n### Can't discover the device? Pin it by address\n\nIf `castor scan` finds nothing, point Castor straight at the device by IP and it skips discovery:\n\n```yaml\ndevice:\n  name: \"Living Room TV\"   # now just a label\n  type: dlna\n  host: 192.168.0.3        # the device's LAN IP\n```\n\nDiscovery uses SSDP/mDNS **multicast**, which doesn't cross VLANs/subnets and is blocked on Android/Termux (you'll see `netlinkrib: permission denied`). A pinned `host` reaches the device by **unicast** instead, so it works across those networks and skips the discovery wait on every cast.\n\n- **DLNA** `host` is the device IP; Castor asks it for its description over a single unicast request. If your TV doesn't answer that, set `host` to its full description URL instead (e.g. `http://192.168.0.3:9197/dmr`).\n- **Chromecast / Roku** `host` is the device IP.\n\n> On Android/Termux, also leave `network.interface` empty (the default): pinning one needs the same blocked interface lookup.\n\nNow cast a page you are watching, or a stream URL you have:\n\n```sh\ncastor cast player https://example.com/watch/some-video\n```\n\nFor the interactive browser, which searches titles and casts them for you, add a TMDB key and a source (see [Configuration](#configuration)), then run `castor cast`:\n\n<p align=\"center\">\n  <img src=\".github/images/screen-devices.png\" alt=\"Selecting a cast target in the castor TUI\" width=\"640\"/>\n</p>\n\nThe commands you'll use most (run `castor --help` for all flags):\n\n| Command | What it does |\n| --- | --- |\n| `castor scan` | List cast targets on your network |\n| `castor cast` | Browse titles and cast, interactively (needs a TMDB key) |\n| `castor cast player <url>` | Cast a web page that has an embedded video player |\n| `castor cast url <url>` | Cast a direct stream or video URL |\n| `castor cast movie <id>` | Resolve a movie id against your sources and cast |\n| `castor cast episode <id> --season N --episode N` | Resolve a TV episode and cast |\n\n\n## Configuration\n\nCastor reads `config.yaml` from the working directory (or `--config <path>`). **The only required key is the `device`** shown in [Quick start](#quick-start); everything else (timeouts, probing, capture, transcoding, network interface, Chrome discovery) has working defaults.\n\n> [!TIP]\n> Keep secrets like your TMDB key out of the committed file: put them in a git-ignored `config.local.yaml` that overlays `config.yaml`, or in `CASTOR_SECTION__FIELD` environment variables. See [SECURITY.md](SECURITY.md).\n\nEverything below is optional.\n\n<details>\n<summary><b>Sources</b>: resolve movie / episode ids against sites you configure</summary>\n\n`cast movie`, `cast episode`, and the interactive browser resolve a title id against sources you configure. Castor bundles none, so add your own (sites you are authorized to use). There is no catalog and no lookup: Castor substitutes the id into the `templates` you write, prefixes each of your `proxies`, and opens the resulting page, then extracts the stream exactly like `cast player`. For example, `castor cast movie tt12300742` opens `https://your-source.example/embed/movie/tt12300742`.\n\n```yaml\nsources:\n  - proxies: [\"https://your-source.example\"]   # base URLs, tried in order\n    templates:\n      movie: \"/embed/movie/{itemID}\"\n      episode: \"/embed/tv/{itemID}/{season}-{episode}\"\n```\n\n</details>\n\n<details>\n<summary><b>Cast</b>: force a local relay with <code>delivery</code></summary>\n\nCastor decides per source whether the device fetches the stream itself or Castor relays it: a source that only answers with the headers Castor captured is always relayed, since a device is handed the URL and none of those headers. A few sources look fetchable and are refused anyway, typically an HLS playlist whose segments are served under a disguised extension (`.jpg` with `image/jpeg`), which Castor reads fine but a Chromecast rejects, showing the idle Cast icon. Nothing in the stream reveals this, so `delivery: serve` is how you say it.\n\n```yaml\ncast:\n  delivery: serve   # always relay; \"auto\" (the default) decides per source\n```\n\nRelaying spends this machine's bandwidth and CPU on every cast, so try it as a one-off first: `CASTOR_CAST__DELIVERY=serve castor cast url <url>`. Any key works that way, e.g. `CASTOR_RESOLVER__MAX_HEIGHT=720`.\n\n</details>\n\n<details>\n<summary><b>Resolver</b>: cap resolution with <code>max_height</code></summary>\n\nSource selection and stream probing. All options have sensible defaults; you normally only set `max_height` to your TV's vertical resolution, which caps both the selected stream and the encoder output.\n\n```yaml\nresolver:\n  # The tallest video to cast. Source selection prefers the largest stream no\n  # taller than this, and the encoder scales its output down to it. Defaults to\n  # 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass\n  # 4K through, or lower it to save bandwidth.\n  max_height: 2160\n  # hls_timeout: 30s\n  # probe_timeout: 30s\n  # probe_max_concurrency: 2\n  # ffprobe_path: ffprobe\n```\n\n</details>\n\n<details>\n<summary><b>TMDB</b>: API key for the interactive browser</summary>\n\nThe interactive browser (`castor cast`) uses a TMDB API key to search titles; direct commands like `cast movie <id>` do not need it. Get a free key from [themoviedb.org](https://www.themoviedb.org/settings/api) and keep it in `config.local.yaml`:\n\n```yaml\ntmdb:\n  api_key: \"<KEY>\"\n```\n\n</details>\n\n<details>\n<summary><b>Subtitles</b>: auto-transcribe with whisper and burn in (off by default)</summary>\n\nAuto-generated subtitles, transcribed with whisper and burned into the video:\n\n```yaml\nwhisper:\n  enable: true             # off by default\n  # language: \"fr\"         # default: English\n  # model_path: \"\"         # default: ggml-tiny.en (~75 MB, auto-downloaded)\n```\n\n</details>\n\n<details>\n<summary><b>Roku</b>: cast to a Roku TV or player (one-time Developer Mode setup)</summary>\n\nRoku devices are not DLNA renderers, so Castor reaches them over Roku's ECP (External Control Protocol). Roku has no supported way to play an arbitrary URL from a preinstalled app, so Castor ships a tiny channel of its own and plays through it. A source Roku already accepts (HLS, MP4, MKV) is passed straight through; anything else is remuxed to live HLS on the fly.\n\n```yaml\ndevice:\n  name: \"Living Room\"   # the Roku's name, from `castor scan`\n  type: roku\n  roku:\n    # Only needed the first time, to sideload Castor's channel (see below).\n    password: \"<dev-web-server-password>\"\n```\n\nSideloading the channel uses Roku's developer web server, which you turn on by hand once (there is no remote API for it):\n\n1. On the Roku remote press **Home x3, Up x2, Right, Left, Right, Left, Right**.\n2. Enable developer mode and set a **web-server password** (the device reboots).\n3. Put that password in `device.roku.password` (keep it in a git-ignored `config.local.yaml`, or set `CASTOR_DEVICE__ROKU__PASSWORD`).\n\nOn the first cast Castor sideloads its channel automatically; later casts reuse it. If you publish the channel to your account instead, set `device.roku.app_id` to its numeric id (no dev mode or password needed).\n\n> [!NOTE]\n> Roku's live playback is a sliding-window HLS stream and stays roughly 30 s behind the live edge, so expect a longer start delay and more latency than DLNA.\n\n</details>\n\n\n## Supported devices\n\nRun `castor scan` to list what is on your network.\n\n| Protocol | Works with | Status |\n| --- | --- | --- |\n| **DLNA / UPnP** (`MediaRenderer:1`) | Virtually every smart TV from the last decade (Samsung, LG, Sony Bravia, Panasonic Viera, Philips, Hisense, TCL, VIZIO, Sharp), plus networked players like Kodi, VLC, and Plex | Tested on Samsung |\n| **Chromecast** | Google Cast devices | Experimental, untested (contributions welcome) |\n| **Roku** | Roku TVs and streaming players (via a sideloaded channel over ECP) | Experimental, untested (contributions welcome) |\n\n\n## Docker (optional)\n\nThe prebuilt `ghcr.io/stupside/castor` image bundles Chrome, ffmpeg, and ffprobe, s",
   "contributors": [
     {
       "login": "stupside",
       "url": "https://github.com/stupside",
       "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4",
-      "contributions": 135
+      "contributions": 142
     },
     {
       "login": "github-actions[bot]",
@@ -130,7 +135,7 @@
       "contributions": 1
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/castor.svg\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/castor.svg\" alt=\"Castor\" width=\"200\" style=\"max-width: 100%;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://trendshift.io/repositories/86848?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-86848\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/0137330046cba1727cbcd369b39a51b3952bbc354464a2113e959f2a1925c0a5/68747470733a2f2f7472656e6473686966742e696f2f6170692f62616467652f7472656e6473686966742f7265706f7369746f726965732f38363834382f6461696c793f6c616e67756167653d476f\" alt=\"stupside%2Fcastor | Trendshift\" width=\"250\" height=\"55\" data-canonical-src=\"https://trendshift.io/api/badge/trendshift/repositories/86848/daily?language=Go\" style=\"max-width: 100%; height: auto; max-height: 55px;; aspect-ratio: 250 / 55; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/stupside/castor/releases/latest\">\n    <img src=\"https://camo.githubusercontent.com/3a1161db28aec96f742ff94a1368515c6b73cbf32b726b7ac44f12833ea6493a/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f762f72656c656173652f73747570736964652f636173746f723f7374796c653d666c61742d737175617265\" alt=\"Latest Release\" data-canonical-src=\"https://img.shields.io/github/v/release/stupside/castor?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://pkg.go.dev/github.com/stupside/castor\" rel=\"nofollow\">\n    <img src=\"https://camo.githubusercontent.com/2add8726aa27d4f34f60d26e014b823117ff9690749e9bf7f7ef0c181432c7f4/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f476f2d5265666572656e63652d3030414444383f7374796c653d666c61742d737175617265266c6f676f3d676f\" alt=\"Go Reference\" data-canonical-src=\"https://img.shields.io/badge/Go-Reference-00ADD8?style=flat-square&amp;logo=go\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/homebrew-tap/blob/main/Casks/castor.rb\">\n    <img src=\"https://camo.githubusercontent.com/475fc040ef9170faf1cb81315e26a454ea8ff1940b3b9ed1879a0097b5326c87/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f486f6d65627265772d417661696c61626c652d4642423034303f7374796c653d666c61742d737175617265266c6f676f3d686f6d6562726577\" alt=\"Homebrew\" data-canonical-src=\"https://img.shields.io/badge/Homebrew-Available-FBB040?style=flat-square&amp;logo=homebrew\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/blob/main/LICENSE\">\n    <img src=\"https://camo.githubusercontent.com/df31b8f1c93a01c82e31cd0bc04913857c4ce5c82ccb33afa351a706cec35c55/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f73747570736964652f636173746f723f7374796c653d666c61742d737175617265\" alt=\"License\" data-canonical-src=\"https://img.shields.io/github/license/stupside/castor?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/actions\">\n    <img src=\"https://camo.githubusercontent.com/970118313ba9758db5fac9560426f22a1924af2fdb390ca673eed3403f035a92/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f73747570736964652f636173746f722f636f6e74696e756f75732d696e746567726174696f6e2e796d6c3f7374796c653d666c61742d737175617265\" alt=\"Build Status\" data-canonical-src=\"https://img.shields.io/github/actions/workflow/status/stupside/castor/continuous-integration.yml?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Castor</h1></div>\n<p dir=\"auto\">Smart TVs won't cast arbitrary web video, and screen mirroring is laggy and drops resolution. Castor casts the real stream instead, at full quality, from your terminal.</p>\n<p dir=\"auto\">Point Castor at a web page you are watching, or at a direct stream URL, and it finds the video, extracts the stream, transcodes it for your TV, and casts in real time. It can also resolve an IMDB/TMDB id against sources you configure yourself, and burn in auto-generated subtitles.</p>\n<p dir=\"auto\">To extract, it launches headless Chrome and watches network traffic over the Chrome DevTools Protocol, then runs a short action pipeline to start playback: click the page, navigate into the largest iframe, and click again as a fallback. This works on pages that allow automated playback, and won't work everywhere.</p>\n<p dir=\"auto\"><em>A general-purpose casting tool: it casts only what you point it at. See <a href=\"#purpose-and-disclaimer\">Purpose and disclaimer</a>.</em></p>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/screen-selection.png\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/screen-selection.png\" alt=\"Browsing titles in the castor TUI\" width=\"640\" style=\"max-width: 100%;\"></a>\n  <br>\n  <sub><em>Run <code>castor cast</code> to browse titles and cast, without leaving the terminal.</em></sub>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<p dir=\"auto\">Run Castor as a <strong>native binary</strong> (recommended): it runs on your machine, so it shares your TV's network, which device discovery needs. The binary shells out to three tools that must be on your <code>PATH</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tool</th>\n<th>Version</th>\n<th>Used for</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Chrome / Chromium</strong></td>\n<td>Any recent</td>\n<td>Headless stream extraction</td>\n</tr>\n<tr>\n<td><strong>ffmpeg</strong></td>\n<td>7.1+</td>\n<td>Transcoding (and stream copy)</td>\n</tr>\n<tr>\n<td><strong>ffprobe</strong></td>\n<td>7.1+</td>\n<td>Source format detection</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">ffmpeg and ffprobe must be <strong>7.1 or newer</strong>: Castor uses flags (<code>-readrate_initial_burst</code>, stricter HLS extension handling) that older builds reject. The <a href=\"#docker-optional\">Docker image</a> bundles a suitable build (Linux only).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Homebrew (macOS)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install --cask stupside/tap/castor\"><pre>brew install --cask stupside/tap/castor</pre></div>\n<details>\n<summary><b>Build from source</b> (needs Go 1.26+ and cmake)</summary>\n<p dir=\"auto\">The whisper.cpp bindings are cgo and link a locally built <code>libwhisper.a</code>, so clone with submodules and build with <code>make</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/stupside/castor.git\ncd castor\nmake          # builds libwhisper.a, then the castor binary\"><pre>git clone --recurse-submodules https://github.com/stupside/castor.git\n<span class=\"pl-c1\">cd</span> castor\nmake          <span class=\"pl-c\"><span class=\"pl-c\">#</span> builds libwhisper.a, then the castor binary</span></pre></div>\n<p dir=\"auto\"><code>go install</code> won't work: the vendored whisper.cpp bindings come in through a local <code>replace</code> and need that prebuilt static lib.</p>\n</details>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<p dir=\"auto\">Tell Castor which TV to use: find its name with <code>castor scan</code> and put it in <code>config.yaml</code>.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room TV&quot;   # exact name from `castor scan`\n  type: dlna\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room TV<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> exact name from `castor scan`</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">dlna</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Can't discover the device? Pin it by address</h3></div>\n<p dir=\"auto\">If <code>castor scan</code> finds nothing, point Castor straight at the device by IP and it skips discovery:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room TV&quot;   # now just a label\n  type: dlna\n  host: 192.168.0.3        # the device's LAN IP\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room TV<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> now just a label</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">dlna</span>\n  <span class=\"pl-ent\">host</span>: <span class=\"pl-s\">192.168.0.3        </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> the device's LAN IP</span></pre></div>\n<p dir=\"auto\">Discovery uses SSDP/mDNS <strong>multicast</strong>, which doesn't cross VLANs/subnets and is blocked on Android/Termux (you'll see <code>netlinkrib: permission denied</code>). A pinned <code>host</code> reaches the device by <strong>unicast</strong> instead, so it works across those networks and skips the discovery wait on every cast.</p>\n<ul dir=\"auto\">\n<li><strong>DLNA</strong> <code>host</code> is the device IP; Castor asks it for its description over a single unicast request. If your TV doesn't answer that, set <code>host</code> to its full description URL instead (e.g. <code>http://192.168.0.3:9197/dmr</code>).</li>\n<li><strong>Chromecast / Roku</strong> <code>host</code> is the device IP.</li>\n</ul>\n<blockquote>\n<p dir=\"auto\">On Android/Termux, also leave <code>network.interface</code> empty (the default): pinning one needs the same blocked interface lookup.</p>\n</blockquote>\n<p dir=\"auto\">Now cast a page you are watching, or a stream URL you have:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"castor cast player https://example.com/watch/some-video\"><pre>castor cast player https://example.com/watch/some-video</pre></div>\n<p dir=\"auto\">For the interactive browser, which searches titles and casts them for you, add a TMDB key and a source (see <a href=\"#configuration\">Configuration</a>), then run <code>castor cast</code>:</p>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/screen-devices.png\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/screen-devices.png\" alt=\"Selecting a cast target in the castor TUI\" width=\"640\" style=\"max-width: 100%;\"></a>\n</p>\n<p dir=\"auto\">The commands you'll use most (run <code>castor --help</code> for all flags):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Command</th>\n<th>What it does</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>castor scan</code></td>\n<td>List cast targets on your network</td>\n</tr>\n<tr>\n<td><code>castor cast</code></td>\n<td>Browse titles and cast, interactively (needs a TMDB key)</td>\n</tr>\n<tr>\n<td><code>castor cast player &lt;url&gt;</code></td>\n<td>Cast a web page that has an embedded video player</td>\n</tr>\n<tr>\n<td><code>castor cast url &lt;url&gt;</code></td>\n<td>Cast a direct stream or video URL</td>\n</tr>\n<tr>\n<td><code>castor cast movie &lt;id&gt;</code></td>\n<td>Resolve a movie id against your sources and cast</td>\n</tr>\n<tr>\n<td><code>castor cast episode &lt;id&gt; --season N --episode N</code></td>\n<td>Resolve a TV episode and cast</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Configuration</h2></div>\n<p dir=\"auto\">Castor reads <code>config.yaml</code> from the working directory (or <code>--config &lt;path&gt;</code>). <strong>The only required key is the <code>device</code></strong> shown in <a href=\"#quick-start\">Quick start</a>; everything else (timeouts, probing, capture, transcoding, network interface, Chrome discovery) has working defaults.</p>\n<div class=\"markdown-alert markdown-alert-tip\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-light-bulb mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z\"></path></svg>Tip</p><p dir=\"auto\">Keep secrets like your TMDB key out of the committed file: put them in a git-ignored <code>config.local.yaml</code> that overlays <code>config.yaml</code>, or in <code>CASTOR_SECTION__FIELD</code> environment variables. See <a href=\"https://github.com/stupside/castor/blob/main/SECURITY.md\">SECURITY.md</a>.</p>\n</div>\n<p dir=\"auto\">Everything below is optional.</p>\n<details>\n<summary><b>Sources</b>: resolve movie / episode ids against sites you configure</summary>\n<p dir=\"auto\"><code>cast movie</code>, <code>cast episode</code>, and the interactive browser resolve a title id against sources you configure. Castor bundles none, so add your own (sites you are authorized to use). There is no catalog and no lookup: Castor substitutes the id into the <code>templates</code> you write, prefixes each of your <code>proxies</code>, and opens the resulting page, then extracts the stream exactly like <code>cast player</code>. For example, <code>castor cast movie tt12300742</code> opens <code>https://your-source.example/embed/movie/tt12300742</code>.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sources:\n  - proxies: [&quot;https://your-source.example&quot;]   # base URLs, tried in order\n    templates:\n      movie: &quot;/embed/movie/{itemID}&quot;\n      episode: &quot;/embed/tv/{itemID}/{season}-{episode}&quot;\"><pre><span class=\"pl-ent\">sources</span>:\n  - <span class=\"pl-ent\">proxies</span>: <span class=\"pl-s\">[\"https://your-source.example\"]   </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> base URLs, tried in order</span>\n    <span class=\"pl-ent\">templates</span>:\n      <span class=\"pl-ent\">movie</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/embed/movie/{itemID}<span class=\"pl-pds\">\"</span></span>\n      <span class=\"pl-ent\">episode</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/embed/tv/{itemID}/{season}-{episode}<span class=\"pl-pds\">\"</span></span></pre></div>\n</details>\n<details>\n<summary><b>Resolver</b>: cap resolution with <code>max_height</code></summary>\n<p dir=\"auto\">Source selection and stream probing. All options have sensible defaults; you normally only set <code>max_height</code> to your TV's vertical resolution, which caps both the selected stream and the encoder output.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"resolver:\n  # The tallest video to cast. Source selection prefers the largest stream no\n  # taller than this, and the encoder scales its output down to it. Defaults to\n  # 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass\n  # 4K through, or lower it to save bandwidth.\n  max_height: 2160\n  # hls_timeout: 30s\n  # probe_timeout: 30s\n  # probe_max_concurrency: 2\n  # ffprobe_path: ffprobe\"><pre><span class=\"pl-ent\">resolver</span>:\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> The tallest video to cast. Source selection prefers the largest stream no</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> taller than this, and the encoder scales its output down to it. Defaults to</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> 4K through, or lower it to save bandwidth.</span>\n  <span class=\"pl-ent\">max_height</span>: <span class=\"pl-c1\">2160</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> hls_timeout: 30s</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> probe_timeout: 30s</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> probe_max_concurrency: 2</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> ffprobe_path: ffprobe</span></pre></div>\n</details>\n<details>\n<summary><b>TMDB</b>: API key for the interactive browser</summary>\n<p dir=\"auto\">The interactive browser (<code>castor cast</code>) uses a TMDB API key to search titles; direct commands like <code>cast movie &lt;id&gt;</code> do not need it. Get a free key from <a href=\"https://www.themoviedb.org/settings/api\" rel=\"nofollow\">themoviedb.org</a> and keep it in <code>config.local.yaml</code>:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"tmdb:\n  api_key: &quot;&lt;KEY&gt;&quot;\"><pre><span class=\"pl-ent\">tmdb</span>:\n  <span class=\"pl-ent\">api_key</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;KEY&gt;<span class=\"pl-pds\">\"</span></span></pre></div>\n</details>\n<details>\n<summary><b>Subtitles</b>: auto-transcribe with whisper and burn in (off by default)</summary>\n<p dir=\"auto\">Auto-generated subtitles, transcribed with whisper and burned into the video:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"whisper:\n  enable: true             # off by default\n  # language: &quot;fr&quot;         # default: English\n  # model_path: &quot;&quot;         # default: ggml-tiny.en (~75 MB, auto-downloaded)\"><pre><span class=\"pl-ent\">whisper</span>:\n  <span class=\"pl-ent\">enable</span>: <span class=\"pl-s\">true             </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> off by default</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> language: \"fr\"         # default: English</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> model_path: \"\"         # default: ggml-tiny.en (~75 MB, auto-downloaded)</span></pre></div>\n</details>\n<details>\n<summary><b>Roku</b>: cast to a Roku TV or player (one-time Developer Mode setup)</summary>\n<p dir=\"auto\">Roku devices are not DLNA renderers, so Castor reaches them over Roku's ECP (External Control Protocol). Roku has no supported way to play an arbitrary URL from a preinstalled app, so Castor ships a tiny channel of its own and plays through it. A source Roku already accepts (HLS, MP4, MKV) is passed straight through; anything else is remuxed to live HLS on the fly.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room&quot;   # the Roku's name, from `castor scan`\n  type: roku\n  roku:\n    # Only needed the first time, to sideload Castor's channel (see below).\n    password: &quot;&lt;dev-web-server-password&gt;&quot;\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> the Roku's name, from `castor scan`</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">roku</span>\n  <span class=\"pl-ent\">roku</span>:\n    <span class=\"pl-c\"><span class=\"pl-c\">#</span> Only needed the first time, to sideload Castor's channel (see below).</span>\n    <span class=\"pl-ent\">password</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;dev-web-server-password&gt;<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">Sideloading the channel uses Roku's developer web server, which you turn on by hand once (there is no remote API for it):</p>\n<ol dir=\"auto\">\n<li>On the Roku remote press <strong>Home x3, Up x2, Right, Left, Right, Left, Right</strong>.</li>\n<li>Enable developer mode and set a <strong>web-server password</strong> (the device reboots).</li>\n<li>Put that password in <code>device.roku.password</code> (keep it in a git-ignored <code>config.local.yaml</code>, or set <code>CASTOR_DEVICE__ROKU__PASSWORD</code>).</li>\n</ol>\n<p dir=\"auto\">On the first cast Castor sideloads its channel automatically; later casts reuse it. If you publish the channel to your account instead, set <code>device.roku.app_id</code> to its numeric id (no dev mode or password needed).</p>\n<blockquote>\n<p dir=\"auto\">[!NOTE]\nRoku's live playback is a sliding-window HLS stream and stays roughly 30 s behind the live edge, so expect a longer start delay and more latency than DLNA.</p>\n</blockquote>\n</details>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Supported devices</h2></div>\n<p dir=\"auto\">Run <code>castor scan</code> to list what is on your network.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Protocol</th>\n<th>Works with</th>\n<th>Status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>DLNA / UPnP</strong> (<code>MediaRenderer:1</code>)</td>\n<td>Virtually every smart TV from the last decade (Samsung, LG, Sony Bravia, Panasonic Viera, Philips, Hisense, TCL, VIZIO, Sharp), plus networked players like Kodi, VLC, and Plex</td>\n<td>Tested on Samsung</td>\n</tr>\n<tr>\n<td><strong>Chromecast</strong></td>\n<td>Google Cast devices</td>\n<td>Experimental, untested (contributions welcome)</td>\n</tr>\n<tr>\n<td><strong>Roku</strong></td>\n<td>Roku TVs and streaming players (via a sideloaded channel over ECP)</td>\n<td>Experimental, untested (contributions welcome)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Docker (optional)</h2></div>\n<p dir=\"auto\">The prebuilt <code>ghcr.io/stupside/castor</code> image bundles Chrome, ffmpeg, and ffprobe, so you install nothing by hand. Run it on a <strong>Linux host on the same LAN as your TV</strong>.</p>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\"><code>--network host</code> is required: device discovery (SSDP multicast) and the TV streaming back from Castor both need the container on your real LAN. On Docker Desktop (macOS/Windows) that flag is a no-op, so the container never reaches your TV and <code>scan</code> finds nothing. Use the <a href=\"#homebrew-macos\">native binary</a> there instead.</p>\n</div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Discover devices (no config needed)\ndocker run --rm --network host ghcr.io/stupside/castor:latest scan\n\n# Cast, passing the Intel GPU through for hardware transcoding\ndocker run --rm --network host --device /dev/dri \\\n  -v &quot;$PWD/config.yaml:/config.yaml&quot; \\\n  -v castor-cache:/root/.cache \\\n  ghcr.io/stupside/castor:latest \\\n  cast player https://example.com/watch/some-video\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Discover devices (no config needed)</span>\ndocker run --rm --network host ghcr.io/stupside/castor:latest scan\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Cast, passing the Intel GPU through for hardware transcoding</span>\ndocker run --rm --network host --device /dev/dri \\\n  -v <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$PWD</span>/config.yaml:/config.yaml<span class=\"pl-pds\">\"</span></span> \\\n  -v castor-cache:/root/.cache \\\n  ghcr.io/stupside/castor:latest \\\n  cast player https://example.com/watch/some-video</pre></div>\n<p dir=\"auto\"><code>--device /dev/dri</code> hands the container your Intel GPU for VA-API hardware H.264 encoding; without it (or on a non-Intel host) Castor falls back to software <code>libx264</code>. Either way, when your TV already accepts the source video Castor stream-copies it and skips encoding entirely.</p>\n<p dir=\"auto\">Run commands from the directory holding your <a href=\"https://github.com/stupside/castor/blob/main/config.yaml\"><code>config.yaml</code></a> (mounted at <code>/config.yaml</code>). The <code>castor-cache</code> volume persists the auto-downloaded whisper models.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tag</th>\n<th>Build</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>:latest</code></td>\n<td>Latest stable release</td>\n</tr>\n<tr>\n<td><code>:canary</code></td>\n<td>Latest preview build</td>\n</tr>\n<tr>\n<td><code>:v1.7.0</code></td>\n<td>A specific pinned version</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Purpose and disclaimer</h2></div>\n<p dir=\"auto\">Castor is a general-purpose caster, not a service tied to any particular site.</p>\n<ul dir=\"auto\">\n<li><strong>It hosts nothing.</strong> No bundled video, catalog, or sources: Castor casts only a page, stream URL, or source you supply and are authorized to use, much like a Chromecast.</li>\n<li><strong>It does not touch DRM.</strong> Castor does not decrypt or circumvent DRM, and cannot cast DRM-protected services.</li>\n<li><strong>Using it lawfully is your responsibility.</strong> Whether a site's terms of use and your local law allow what you do with Castor is on you. Do not use it to infringe copyright.</li>\n</ul>\n<p dir=\"auto\">Castor is provided as-is for lawful, personal, and educational use.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/stupside/castor/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/castor.svg\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/castor.svg\" alt=\"Castor\" width=\"200\" style=\"max-width: 100%;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://trendshift.io/repositories/86848?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-86848\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/0137330046cba1727cbcd369b39a51b3952bbc354464a2113e959f2a1925c0a5/68747470733a2f2f7472656e6473686966742e696f2f6170692f62616467652f7472656e6473686966742f7265706f7369746f726965732f38363834382f6461696c793f6c616e67756167653d476f\" alt=\"stupside%2Fcastor | Trendshift\" width=\"250\" height=\"55\" data-canonical-src=\"https://trendshift.io/api/badge/trendshift/repositories/86848/daily?language=Go\" style=\"max-width: 100%; height: auto; max-height: 55px;; aspect-ratio: 250 / 55; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/stupside/castor/releases/latest\">\n    <img src=\"https://camo.githubusercontent.com/3a1161db28aec96f742ff94a1368515c6b73cbf32b726b7ac44f12833ea6493a/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f762f72656c656173652f73747570736964652f636173746f723f7374796c653d666c61742d737175617265\" alt=\"Latest Release\" data-canonical-src=\"https://img.shields.io/github/v/release/stupside/castor?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://pkg.go.dev/github.com/stupside/castor\" rel=\"nofollow\">\n    <img src=\"https://camo.githubusercontent.com/2add8726aa27d4f34f60d26e014b823117ff9690749e9bf7f7ef0c181432c7f4/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f476f2d5265666572656e63652d3030414444383f7374796c653d666c61742d737175617265266c6f676f3d676f\" alt=\"Go Reference\" data-canonical-src=\"https://img.shields.io/badge/Go-Reference-00ADD8?style=flat-square&amp;logo=go\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/homebrew-tap/blob/main/Casks/castor.rb\">\n    <img src=\"https://camo.githubusercontent.com/475fc040ef9170faf1cb81315e26a454ea8ff1940b3b9ed1879a0097b5326c87/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f486f6d65627265772d417661696c61626c652d4642423034303f7374796c653d666c61742d737175617265266c6f676f3d686f6d6562726577\" alt=\"Homebrew\" data-canonical-src=\"https://img.shields.io/badge/Homebrew-Available-FBB040?style=flat-square&amp;logo=homebrew\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/blob/main/LICENSE\">\n    <img src=\"https://camo.githubusercontent.com/df31b8f1c93a01c82e31cd0bc04913857c4ce5c82ccb33afa351a706cec35c55/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f73747570736964652f636173746f723f7374796c653d666c61742d737175617265\" alt=\"License\" data-canonical-src=\"https://img.shields.io/github/license/stupside/castor?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n  <a href=\"https://github.com/stupside/castor/actions\">\n    <img src=\"https://camo.githubusercontent.com/970118313ba9758db5fac9560426f22a1924af2fdb390ca673eed3403f035a92/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f73747570736964652f636173746f722f636f6e74696e756f75732d696e746567726174696f6e2e796d6c3f7374796c653d666c61742d737175617265\" alt=\"Build Status\" data-canonical-src=\"https://img.shields.io/github/actions/workflow/status/stupside/castor/continuous-integration.yml?style=flat-square\" style=\"max-width: 100%;\">\n  </a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Castor</h1></div>\n<p dir=\"auto\">Smart TVs won't cast arbitrary web video, and screen mirroring is laggy and drops resolution. Castor casts the real stream instead, at full quality, from your terminal.</p>\n<p dir=\"auto\">Point Castor at a web page you are watching, or at a direct stream URL, and it finds the video, extracts the stream, transcodes it for your TV, and casts in real time. It can also resolve an IMDB/TMDB id against sources you configure yourself, and burn in auto-generated subtitles.</p>\n<p dir=\"auto\">To extract, it launches headless Chrome and watches network traffic over the Chrome DevTools Protocol, then runs a short action pipeline to start playback: click the page, navigate into the largest iframe, and click again as a fallback. This works on pages that allow automated playback, and won't work everywhere.</p>\n<p dir=\"auto\"><em>A general-purpose casting tool: it casts only what you point it at. See <a href=\"#purpose-and-disclaimer\">Purpose and disclaimer</a>.</em></p>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/screen-selection.png\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/screen-selection.png\" alt=\"Browsing titles in the castor TUI\" width=\"640\" style=\"max-width: 100%;\"></a>\n  <br>\n  <sub><em>Run <code>castor cast</code> to browse titles and cast, without leaving the terminal.</em></sub>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<p dir=\"auto\">Run Castor as a <strong>native binary</strong> (recommended): it runs on your machine, so it shares your TV's network, which device discovery needs. The binary shells out to three tools that must be on your <code>PATH</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tool</th>\n<th>Version</th>\n<th>Used for</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Chrome / Chromium</strong></td>\n<td>Any recent</td>\n<td>Headless stream extraction</td>\n</tr>\n<tr>\n<td><strong>ffmpeg</strong></td>\n<td>7.1+</td>\n<td>Transcoding (and stream copy)</td>\n</tr>\n<tr>\n<td><strong>ffprobe</strong></td>\n<td>7.1+</td>\n<td>Source format detection</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">ffmpeg and ffprobe must be <strong>7.1 or newer</strong>: Castor uses flags (<code>-readrate_initial_burst</code>, stricter HLS extension handling) that older builds reject. The <a href=\"#docker-optional\">Docker image</a> bundles a suitable build (Linux only).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Homebrew (macOS)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install --cask stupside/tap/castor\"><pre>brew install --cask stupside/tap/castor</pre></div>\n<details>\n<summary><b>Build from source</b> (needs Go 1.26+ and cmake)</summary>\n<p dir=\"auto\">The whisper.cpp bindings are cgo and link a locally built <code>libwhisper.a</code>, so clone with submodules and build with <code>make</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/stupside/castor.git\ncd castor\nmake          # builds libwhisper.a, then the castor binary\"><pre>git clone --recurse-submodules https://github.com/stupside/castor.git\n<span class=\"pl-c1\">cd</span> castor\nmake          <span class=\"pl-c\"><span class=\"pl-c\">#</span> builds libwhisper.a, then the castor binary</span></pre></div>\n<p dir=\"auto\"><code>go install</code> won't work: the vendored whisper.cpp bindings come in through a local <code>replace</code> and need that prebuilt static lib.</p>\n</details>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<p dir=\"auto\">Tell Castor which TV to use: find its name with <code>castor scan</code> and put it in <code>config.yaml</code>.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room TV&quot;   # exact name from `castor scan`\n  type: dlna\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room TV<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> exact name from `castor scan`</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">dlna</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Can't discover the device? Pin it by address</h3></div>\n<p dir=\"auto\">If <code>castor scan</code> finds nothing, point Castor straight at the device by IP and it skips discovery:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room TV&quot;   # now just a label\n  type: dlna\n  host: 192.168.0.3        # the device's LAN IP\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room TV<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> now just a label</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">dlna</span>\n  <span class=\"pl-ent\">host</span>: <span class=\"pl-s\">192.168.0.3        </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> the device's LAN IP</span></pre></div>\n<p dir=\"auto\">Discovery uses SSDP/mDNS <strong>multicast</strong>, which doesn't cross VLANs/subnets and is blocked on Android/Termux (you'll see <code>netlinkrib: permission denied</code>). A pinned <code>host</code> reaches the device by <strong>unicast</strong> instead, so it works across those networks and skips the discovery wait on every cast.</p>\n<ul dir=\"auto\">\n<li><strong>DLNA</strong> <code>host</code> is the device IP; Castor asks it for its description over a single unicast request. If your TV doesn't answer that, set <code>host</code> to its full description URL instead (e.g. <code>http://192.168.0.3:9197/dmr</code>).</li>\n<li><strong>Chromecast / Roku</strong> <code>host</code> is the device IP.</li>\n</ul>\n<blockquote>\n<p dir=\"auto\">On Android/Termux, also leave <code>network.interface</code> empty (the default): pinning one needs the same blocked interface lookup.</p>\n</blockquote>\n<p dir=\"auto\">Now cast a page you are watching, or a stream URL you have:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"castor cast player https://example.com/watch/some-video\"><pre>castor cast player https://example.com/watch/some-video</pre></div>\n<p dir=\"auto\">For the interactive browser, which searches titles and casts them for you, add a TMDB key and a source (see <a href=\"#configuration\">Configuration</a>), then run <code>castor cast</code>:</p>\n<p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/stupside/castor/blob/main/github/images/screen-devices.png\"><img src=\"https://raw.githubusercontent.com/stupside/castor/main/github/images/screen-devices.png\" alt=\"Selecting a cast target in the castor TUI\" width=\"640\" style=\"max-width: 100%;\"></a>\n</p>\n<p dir=\"auto\">The commands you'll use most (run <code>castor --help</code> for all flags):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Command</th>\n<th>What it does</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>castor scan</code></td>\n<td>List cast targets on your network</td>\n</tr>\n<tr>\n<td><code>castor cast</code></td>\n<td>Browse titles and cast, interactively (needs a TMDB key)</td>\n</tr>\n<tr>\n<td><code>castor cast player &lt;url&gt;</code></td>\n<td>Cast a web page that has an embedded video player</td>\n</tr>\n<tr>\n<td><code>castor cast url &lt;url&gt;</code></td>\n<td>Cast a direct stream or video URL</td>\n</tr>\n<tr>\n<td><code>castor cast movie &lt;id&gt;</code></td>\n<td>Resolve a movie id against your sources and cast</td>\n</tr>\n<tr>\n<td><code>castor cast episode &lt;id&gt; --season N --episode N</code></td>\n<td>Resolve a TV episode and cast</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Configuration</h2></div>\n<p dir=\"auto\">Castor reads <code>config.yaml</code> from the working directory (or <code>--config &lt;path&gt;</code>). <strong>The only required key is the <code>device</code></strong> shown in <a href=\"#quick-start\">Quick start</a>; everything else (timeouts, probing, capture, transcoding, network interface, Chrome discovery) has working defaults.</p>\n<div class=\"markdown-alert markdown-alert-tip\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-light-bulb mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z\"></path></svg>Tip</p><p dir=\"auto\">Keep secrets like your TMDB key out of the committed file: put them in a git-ignored <code>config.local.yaml</code> that overlays <code>config.yaml</code>, or in <code>CASTOR_SECTION__FIELD</code> environment variables. See <a href=\"https://github.com/stupside/castor/blob/main/SECURITY.md\">SECURITY.md</a>.</p>\n</div>\n<p dir=\"auto\">Everything below is optional.</p>\n<details>\n<summary><b>Sources</b>: resolve movie / episode ids against sites you configure</summary>\n<p dir=\"auto\"><code>cast movie</code>, <code>cast episode</code>, and the interactive browser resolve a title id against sources you configure. Castor bundles none, so add your own (sites you are authorized to use). There is no catalog and no lookup: Castor substitutes the id into the <code>templates</code> you write, prefixes each of your <code>proxies</code>, and opens the resulting page, then extracts the stream exactly like <code>cast player</code>. For example, <code>castor cast movie tt12300742</code> opens <code>https://your-source.example/embed/movie/tt12300742</code>.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sources:\n  - proxies: [&quot;https://your-source.example&quot;]   # base URLs, tried in order\n    templates:\n      movie: &quot;/embed/movie/{itemID}&quot;\n      episode: &quot;/embed/tv/{itemID}/{season}-{episode}&quot;\"><pre><span class=\"pl-ent\">sources</span>:\n  - <span class=\"pl-ent\">proxies</span>: <span class=\"pl-s\">[\"https://your-source.example\"]   </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> base URLs, tried in order</span>\n    <span class=\"pl-ent\">templates</span>:\n      <span class=\"pl-ent\">movie</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/embed/movie/{itemID}<span class=\"pl-pds\">\"</span></span>\n      <span class=\"pl-ent\">episode</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/embed/tv/{itemID}/{season}-{episode}<span class=\"pl-pds\">\"</span></span></pre></div>\n</details>\n<details>\n<summary><b>Cast</b>: force a local relay with <code>delivery</code></summary>\n<p dir=\"auto\">Castor decides per source whether the device fetches the stream itself or Castor relays it: a source that only answers with the headers Castor captured is always relayed, since a device is handed the URL and none of those headers. A few sources look fetchable and are refused anyway, typically an HLS playlist whose segments are served under a disguised extension (<code>.jpg</code> with <code>image/jpeg</code>), which Castor reads fine but a Chromecast rejects, showing the idle Cast icon. Nothing in the stream reveals this, so <code>delivery: serve</code> is how you say it.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cast:\n  delivery: serve   # always relay; &quot;auto&quot; (the default) decides per source\"><pre><span class=\"pl-ent\">cast</span>:\n  <span class=\"pl-ent\">delivery</span>: <span class=\"pl-s\">serve   </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> always relay; \"auto\" (the default) decides per source</span></pre></div>\n<p dir=\"auto\">Relaying spends this machine's bandwidth and CPU on every cast, so try it as a one-off first: <code>CASTOR_CAST__DELIVERY=serve castor cast url &lt;url&gt;</code>. Any key works that way, e.g. <code>CASTOR_RESOLVER__MAX_HEIGHT=720</code>.</p>\n</details>\n<details>\n<summary><b>Resolver</b>: cap resolution with <code>max_height</code></summary>\n<p dir=\"auto\">Source selection and stream probing. All options have sensible defaults; you normally only set <code>max_height</code> to your TV's vertical resolution, which caps both the selected stream and the encoder output.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"resolver:\n  # The tallest video to cast. Source selection prefers the largest stream no\n  # taller than this, and the encoder scales its output down to it. Defaults to\n  # 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass\n  # 4K through, or lower it to save bandwidth.\n  max_height: 2160\n  # hls_timeout: 30s\n  # probe_timeout: 30s\n  # probe_max_concurrency: 2\n  # ffprobe_path: ffprobe\"><pre><span class=\"pl-ent\">resolver</span>:\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> The tallest video to cast. Source selection prefers the largest stream no</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> taller than this, and the encoder scales its output down to it. Defaults to</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> 1080; raise it to your TV's native height (e.g. 2160 for a 4K panel) to pass</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> 4K through, or lower it to save bandwidth.</span>\n  <span class=\"pl-ent\">max_height</span>: <span class=\"pl-c1\">2160</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> hls_timeout: 30s</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> probe_timeout: 30s</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> probe_max_concurrency: 2</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> ffprobe_path: ffprobe</span></pre></div>\n</details>\n<details>\n<summary><b>TMDB</b>: API key for the interactive browser</summary>\n<p dir=\"auto\">The interactive browser (<code>castor cast</code>) uses a TMDB API key to search titles; direct commands like <code>cast movie &lt;id&gt;</code> do not need it. Get a free key from <a href=\"https://www.themoviedb.org/settings/api\" rel=\"nofollow\">themoviedb.org</a> and keep it in <code>config.local.yaml</code>:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"tmdb:\n  api_key: &quot;&lt;KEY&gt;&quot;\"><pre><span class=\"pl-ent\">tmdb</span>:\n  <span class=\"pl-ent\">api_key</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;KEY&gt;<span class=\"pl-pds\">\"</span></span></pre></div>\n</details>\n<details>\n<summary><b>Subtitles</b>: auto-transcribe with whisper and burn in (off by default)</summary>\n<p dir=\"auto\">Auto-generated subtitles, transcribed with whisper and burned into the video:</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"whisper:\n  enable: true             # off by default\n  # language: &quot;fr&quot;         # default: English\n  # model_path: &quot;&quot;         # default: ggml-tiny.en (~75 MB, auto-downloaded)\"><pre><span class=\"pl-ent\">whisper</span>:\n  <span class=\"pl-ent\">enable</span>: <span class=\"pl-s\">true             </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> off by default</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> language: \"fr\"         # default: English</span>\n  <span class=\"pl-c\"><span class=\"pl-c\">#</span> model_path: \"\"         # default: ggml-tiny.en (~75 MB, auto-downloaded)</span></pre></div>\n</details>\n<details>\n<summary><b>Roku</b>: cast to a Roku TV or player (one-time Developer Mode setup)</summary>\n<p dir=\"auto\">Roku devices are not DLNA renderers, so Castor reaches them over Roku's ECP (External Control Protocol). Roku has no supported way to play an arbitrary URL from a preinstalled app, so Castor ships a tiny channel of its own and plays through it. A source Roku already accepts (HLS, MP4, MKV) is passed straight through; anything else is remuxed to live HLS on the fly.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"device:\n  name: &quot;Living Room&quot;   # the Roku's name, from `castor scan`\n  type: roku\n  roku:\n    # Only needed the first time, to sideload Castor's channel (see below).\n    password: &quot;&lt;dev-web-server-password&gt;&quot;\"><pre><span class=\"pl-ent\">device</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Living Room<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> the Roku's name, from `castor scan`</span>\n  <span class=\"pl-ent\">type</span>: <span class=\"pl-s\">roku</span>\n  <span class=\"pl-ent\">roku</span>:\n    <span class=\"pl-c\"><span class=\"pl-c\">#</span> Only needed the first time, to sideload Castor's channel (see below).</span>\n    <span class=\"pl-ent\">password</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;dev-web-server-password&gt;<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">Sideloading the channel uses Roku's developer web server, which you turn on by hand once (there is no remote API for it):</p>\n<ol dir=\"auto\">\n<li>On the Roku remote press <strong>Home x3, Up x2, Right, Left, Right, Left, Right</strong>.</li>\n<li>Enable developer mode and set a <strong>web-server password</strong> (the device reboots).</li>\n<li>Put that password in <code>device.roku.password</code> (keep it in a git-ignored <code>config.local.yaml</code>, or set <code>CASTOR_DEVICE__ROKU__PASSWORD</code>).</li>\n</ol>\n<p dir=\"auto\">On the first cast Castor sideloads its channel automatically; later casts reuse it. If you publish the channel to your account instead, set <code>device.roku.app_id</code> to its numeric id (no dev mode or password needed).</p>\n<blockquote>\n<p dir=\"auto\">[!NOTE]\nRoku's live playback is a sliding-window HLS stream and stays roughly 30 s behind the live edge, so expect a longer start delay and more latency than DLNA.</p>\n</blockquote>\n</details>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Supported devices</h2></div>\n<p dir=\"auto\">Run <code>castor scan</code> to list what is on your network.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Protocol</th>\n<th>Works with</th>\n<th>Status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>DLNA / UPnP</strong> (<code>MediaRenderer:1</code>)</td>\n<td>Virtually every smart TV from the last decade (Samsung, LG, Sony Bravia, Panasonic Viera, Philips, Hisense, TCL, VIZIO, Sharp), plus networked players like Kodi, VLC, and Plex</td>\n<td>Tested on Samsung</td>\n</tr>\n<tr>\n<td><strong>Chromecast</strong></td>\n<td>Google Cast devices</td>\n<td>Experimental, untested (contributions welcome)</td>\n</tr>\n<tr>\n<td><strong>Roku</strong></td>\n<td>Roku TVs and streaming players (via a sideloaded channel over ECP)</td>\n<td>Experimental, untested (contributions welcome)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Docker (optional)</h2></div>\n<p dir=\"auto\">The prebuilt <code>ghcr.io/stupside/castor</code> image bundles Chrome, ffmpeg, and ffprobe, so you install nothing by hand. Run it on a <strong>Linux host on the same LAN as your TV</strong>.</p>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\"><code>--network host</code> is required: device discovery (SSDP multicast) and the TV streaming back from Castor both need the container on your real LAN. On Docker Desktop (macOS/Windows) that flag is a no-op, so the container never reaches your TV and <code>scan</code> finds nothing. Use the <a href=\"#homebrew-macos\">native binary</a> there instead.</p>\n</div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Discover devices (no config needed)\ndocker run --rm --network host ghcr.io/stupside/castor:latest scan\n\n# Cast, passing the Intel GPU through for hardware transcoding\ndocker run --rm --network host --device /dev/dri \\\n  -v &quot;$PWD/config.yaml:/config.yaml&quot; \\\n  -v castor-cache:/root/.cache \\\n  ghcr.io/stupside/castor:latest \\\n  cast player https://example.com/watch/some-video\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Discover devices (no config needed)</span>\ndocker run --rm --network host ghcr.io/stupside/castor:latest scan\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Cast, passing the Intel GPU through for hardware transcoding</span>\ndocker run --rm --network host --device /dev/dri \\\n  -v <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$PWD</span>/config.yaml:/config.yaml<span class=\"pl-pds\">\"</span></span> \\\n  -v castor-cache:/root/.cache \\\n  ghcr.io/stupside/castor:latest \\\n  cast player https://example.com/watch/some-video</pre></div>\n<p dir=\"auto\"><code>--device /dev/dri</code> hands the container your Intel GPU for VA-API hardware H.264 encoding; without it (or on a non-Intel host) Castor falls back to software <code>libx264</code>. Either way, when your TV already accepts the source video Castor stream-copies it and skips encoding entirely.</p>\n<p dir=\"auto\">Run commands from the directory holding your <a href=\"https://github.com/stupside/castor/blob/main/config.yaml\"><code>config.yaml</code></a> (mounted at <code>/config.yaml</code>). The <code>castor-cache</code> volume persists the auto-downloaded whisper models.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Tag</th>\n<th>Build</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>:latest</code></td>\n<td>Latest stable release</td>\n</tr>\n<tr>\n<td><code>:canary</code></td>\n<td>Latest preview build</td>\n</tr>\n<tr>\n<td><code>:v1.7.0</code></td>\n<td>A specific pinned version</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Purpose and disclaimer</h2></div>\n<p dir=\"auto\">Castor is a general-purpose caster, not a service tied to any particular site.</p>\n<ul dir=\"auto\">\n<li><strong>It hosts nothing.</strong> No bundled video, catalog, or sources: Castor casts only a page, stream URL, or source you supply and are authorized to use, much like a Chromecast.</li>\n<li><strong>It does not touch DRM.</strong> Castor does not decrypt or circumvent DRM, and cannot cast DRM-protected services.</li>\n<li><strong>Using it lawfully is your responsibility.</strong> Whether a site's terms of use and your local law allow what you do with Castor is on you. Do not use it to infringe copyright.</li>\n</ul>\n<p dir=\"auto\">Castor is provided as-is for lawful, personal, and educational use.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/stupside/castor/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>.</p>\n</article></div>",
   "releases": [
     {
       "name": "v1.8.1",
@@ -139,8 +144,8 @@
       "publishedAt": "2026-07-27T20:45:10Z",
       "prerelease": false,
       "body": "## [1.8.1](https://github.com/stupside/castor/compare/v1.8.0...v1.8.1) (2026-07-27)\n\n\n### Bug Fixes\n\n* **ffmpeg:** pass -nostats to the puller invocation ([5fb1650](https://github.com/stupside/castor/commit/5fb165033857fa7e15033150e952f31cbd233723))\n* **resolve:** tiebreak equal-bandwidth candidates by height ([3a25c70](https://github.com/stupside/castor/commit/3a25c70173ec67c143e427a6fe72d6e43327e222))",
-      "downloads": 54,
-      "reactions": 0
+      "downloads": 119,
+      "reactions": 1
     },
     {
       "name": "v1.8.0",
@@ -149,8 +154,8 @@
       "publishedAt": "2026-07-27T20:30:06Z",
       "prerelease": false,
       "body": "## [1.8.0](https://github.com/stupside/castor/compare/v1.7.1...v1.8.0) (2026-07-27)\n\n\n### Features\n\n* add Roku cast target ([#50](https://github.com/stupside/castor/issues/50)) ([f109d47](https://github.com/stupside/castor/commit/f109d47c061ea9a2fe2bff31ab8885967fecfde9))\n* **cast:** surround audio and compiler-isolated device strategies ([6434ba6](https://github.com/stupside/castor/commit/6434ba659b2cfb77e0003194dd129a83c20c77d8))\n* **device:** connect by pinned host, skipping discovery ([dd876cd](https://github.com/stupside/castor/commit/dd876cde770c5501128d2b5b723cb79b6e1bd142)), closes [#24](https://github.com/stupside/castor/issues/24)\n* **extract:** disable site isolation to capture cross-origin iframe requests ([bd32c0e](https://github.com/stupside/castor/commit/bd32c0e1d14257cda5aa6cd2d8e6f23aadb62901))\n\n\n### Bug Fixes\n\n* **cmd:** propagate picked device's type and host, not just name ([3af67b9](https://github.com/stupside/castor/commit/3af67b90e246f018ca424cf8a828d1c19cc90ace))\n* **device:** derive each family's SelfFetch from its own selfFetches() ([857ac35](https://github.com/stupside/castor/commit/857ac354d6b92e3d6594da05bb946bd3fc13f0b8))\n* **device:** retry DLNA SetAV",
-      "downloads": 16,
-      "reactions": 0
+      "downloads": 18,
+      "reactions": 1
     },
     {
       "name": "v1.7.1",
@@ -159,7 +164,7 @@
       "publishedAt": "2026-07-22T15:32:16Z",
       "prerelease": false,
       "body": "## [1.7.1](https://github.com/stupside/castor/compare/v1.7.0...v1.7.1) (2026-07-22)\n\n\n### Bug Fixes\n\n* **docker:** hw capable ffmpeg with good flag support ([#43](https://github.com/stupside/castor/issues/43)) ([44460a9](https://github.com/stupside/castor/commit/44460a9768fff628996906a521565ed2b872bd69))\n\n\n### Documentation\n\n* add Trendshift badge ([016a64a](https://github.com/stupside/castor/commit/016a64afabcd34dc7c9420050d77aec17192ad53))\n* restructure installation, configuration, and docker sections ([8ecabb2](https://github.com/stupside/castor/commit/8ecabb22112cbc0dd670277e8e621f7a973cef24))",
-      "downloads": 215,
+      "downloads": 220,
       "reactions": 2
     },
     {
@@ -186,10 +191,6 @@
   "firstCommitAt": "2026-02-13T00:58:29Z",
   "contributorCount": 5,
   "commitActivity": [
-    {
-      "week": "2025-08-02",
-      "commits": 0
-    },
     {
       "week": "2025-08-09",
       "commits": 0
@@ -393,37 +394,13 @@
     {
       "week": "2026-07-26",
       "commits": 14
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 7
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-02",
-      "count": 0
-    },
-    {
-      "date": "2025-08-03",
-      "count": 0
-    },
-    {
-      "date": "2025-08-04",
-      "count": 0
-    },
-    {
-      "date": "2025-08-05",
-      "count": 0
-    },
-    {
-      "date": "2025-08-06",
-      "count": 0
-    },
-    {
-      "date": "2025-08-07",
-      "count": 0
-    },
-    {
-      "date": "2025-08-08",
-      "count": 0
-    },
     {
       "date": "2025-08-09",
       "count": 0
@@ -1851,9 +1828,48 @@
     {
       "date": "2026-08-01",
       "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 7
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
     }
   ],
   "recentIssues": [
+    {
+      "number": 56,
+      "title": "Served remux fails: AAC stream-copy from HLS to MP4 needs -bsf:a aac_adtstoasc",
+      "url": "https://github.com/stupside/castor/issues/56",
+      "createdAt": "2026-08-04T04:20:57Z",
+      "comments": 1,
+      "labels": [
+        "bug"
+      ],
+      "author": "MiguelGalp"
+    },
     {
       "number": 41,
       "title": "Castor does not exit after TV stopped playing",
@@ -2101,7 +2117,7 @@
     {
       "day": 1,
       "hour": 22,
-      "commits": 8
+      "commits": 15
     },
     {
       "day": 1,
@@ -2710,11 +2726,67 @@
     }
   ],
   "participation": {
-    "all": 146,
-    "owner": 135,
+    "all": 153,
+    "owner": 142,
     "community": 11
   },
   "recentCommits": [
+    {
+      "sha": "07905aa",
+      "message": "test(pipeline): cast a demuxed source end to end",
+      "url": "https://github.com/stupside/castor/commit/07905aa992046c947d2425998550a147c3721487",
+      "date": "2026-08-03T20:36:48Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "a70b814",
+      "message": "feat(resolve): keep the chosen variant's audio rendition",
+      "url": "https://github.com/stupside/castor/commit/a70b814c9e2300a3b95c7179000565c291682470",
+      "date": "2026-08-03T20:36:45Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "2333d0f",
+      "message": "feat(ffmpeg): read a demuxed program as two inputs",
+      "url": "https://github.com/stupside/castor/commit/2333d0f3f027928be826115649fb7151e463e034",
+      "date": "2026-08-03T20:36:28Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "279407f",
+      "message": "feat(media): let one program span two renditions",
+      "url": "https://github.com/stupside/castor/commit/279407f795dd13f7a801207cf111e17bd60fe846",
+      "date": "2026-08-03T20:36:18Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "6bb905e",
+      "message": "fix(resolve): never cast a variant that carries no video",
+      "url": "https://github.com/stupside/castor/commit/6bb905e02997a163408763d85e89cf35c9103db1",
+      "date": "2026-08-03T20:35:56Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "e714185",
+      "message": "refactor(resolve): decode HLS playlists with a spec parser",
+      "url": "https://github.com/stupside/castor/commit/e714185aaa29a6f7242c6e73d44d80ae5c19dfa8",
+      "date": "2026-08-03T20:35:15Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
+    {
+      "sha": "f2fe1e1",
+      "message": "fix(cast): serve sources that need request headers (#54)",
+      "url": "https://github.com/stupside/castor/commit/f2fe1e11624150052b0d5cc0dad21c60ab9bde1c",
+      "date": "2026-08-03T20:20:51Z",
+      "author": "stupside",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
+    },
     {
       "sha": "2f736b7",
       "message": "chore(main): release 1.8.1 (#51)",
@@ -2736,62 +2808,6 @@
       "message": "fix(resolve): tiebreak equal-bandwidth candidates by height",
       "url": "https://github.com/stupside/castor/commit/3a25c70173ec67c143e427a6fe72d6e43327e222",
       "date": "2026-07-27T20:42:09Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "4cda4ad",
-      "message": "chore(main): release 1.8.0 (#47)",
-      "url": "https://github.com/stupside/castor/commit/4cda4add84db5810bd78d92137e44c44e405436a",
-      "date": "2026-07-27T20:29:55Z",
-      "author": "github-actions[bot]",
-      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
-    },
-    {
-      "sha": "6130364",
-      "message": "fix(device): retry DLNA SetAVTransportURI/Play through transient 705 Transport is locked",
-      "url": "https://github.com/stupside/castor/commit/61303645ae996b1148a60736ba542fc822c26566",
-      "date": "2026-07-27T19:46:33Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "eaaae7c",
-      "message": "docs(media): correct ProbeInfo's blanket unknown-value doc",
-      "url": "https://github.com/stupside/castor/commit/eaaae7cfaaa8e3a4109ed92c76bf144ef71a3a87",
-      "date": "2026-07-26T19:00:34Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "42dde0b",
-      "message": "fix(media): normalize BitDepths nil-vs-empty handling to match Profiles",
-      "url": "https://github.com/stupside/castor/commit/42dde0bc812b449e3d9ddbdf199b1ee24c9d0674",
-      "date": "2026-07-26T19:00:28Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "faf9e25",
-      "message": "fix(ffmpeg): reject subtitle burn-in without a video encoder",
-      "url": "https://github.com/stupside/castor/commit/faf9e25f7f9d4567bed313f94c549d431b43a11d",
-      "date": "2026-07-26T19:00:23Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "857ac35",
-      "message": "fix(device): derive each family's SelfFetch from its own selfFetches()",
-      "url": "https://github.com/stupside/castor/commit/857ac354d6b92e3d6594da05bb946bd3fc13f0b8",
-      "date": "2026-07-26T19:00:11Z",
-      "author": "stupside",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
-    },
-    {
-      "sha": "3af67b9",
-      "message": "fix(cmd): propagate picked device's type and host, not just name",
-      "url": "https://github.com/stupside/castor/commit/3af67b90e246f018ca424cf8a828d1c19cc90ace",
-      "date": "2026-07-26T19:00:05Z",
       "author": "stupside",
       "avatarUrl": "https://avatars.githubusercontent.com/u/41454550?v=4"
     }
@@ -2872,7 +2888,7 @@
     {
       "name": "config.yaml",
       "type": "file",
-      "size": 2949,
+      "size": 3516,
       "url": "https://github.com/stupside/castor/blob/main/config.yaml"
     },
     {
@@ -2896,13 +2912,13 @@
     {
       "name": "go.mod",
       "type": "file",
-      "size": 3846,
+      "size": 3878,
       "url": "https://github.com/stupside/castor/blob/main/go.mod"
     },
     {
       "name": "go.sum",
       "type": "file",
-      "size": 20983,
+      "size": 21148,
       "url": "https://github.com/stupside/castor/blob/main/go.sum"
     },
     {
@@ -2926,7 +2942,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 13156,
+      "size": 14112,
       "url": "https://github.com/stupside/castor/blob/main/README.md"
     },
     {
@@ -2943,6 +2959,24 @@
     }
   ],
   "recentPulls": [
+    {
+      "number": 55,
+      "title": "chore(main): release 1.9.0",
+      "url": "https://github.com/stupside/castor/pull/55",
+      "state": "open",
+      "updatedAt": "2026-08-03T20:37:49Z",
+      "author": "github-actions[bot]",
+      "draft": false
+    },
+    {
+      "number": 54,
+      "title": "fix(cast): serve sources that need request headers",
+      "url": "https://github.com/stupside/castor/pull/54",
+      "state": "merged",
+      "updatedAt": "2026-08-03T20:20:55Z",
+      "author": "stupside",
+      "draft": false
+    },
     {
       "number": 51,
       "title": "chore(main): release 1.8.1",
@@ -2996,24 +3030,6 @@
       "updatedAt": "2026-07-22T17:45:17Z",
       "author": "AlexArtaud-Dev",
       "draft": false
-    },
-    {
-      "number": 45,
-      "title": "chore(main): release 1.7.1",
-      "url": "https://github.com/stupside/castor/pull/45",
-      "state": "merged",
-      "updatedAt": "2026-07-22T15:32:17Z",
-      "author": "github-actions[bot]",
-      "draft": false
-    },
-    {
-      "number": 43,
-      "title": "fix(docker): hw capable ffmpeg with good flag support",
-      "url": "https://github.com/stupside/castor/pull/43",
-      "state": "merged",
-      "updatedAt": "2026-07-22T15:28:46Z",
-      "author": "stupside",
-      "draft": false
     }
   ],
   "manifestDependencies": {
@@ -3060,6 +3076,10 @@
         "version": "v2.5.0"
       },
       {
+        "name": "github.com/grafov/m3u8",
+        "version": "v0.12.1"
+      },
+      {
         "name": "github.com/huin/goupnp",
         "version": "v1.3.0"
       },
@@ -3096,7 +3116,7 @@
         "version": "v0.22.0"
       }
     ],
-    "total": 19
+    "total": 20
   },
   "branchCount": 2,
   "tagCount": 20,
@@ -3109,23 +3129,37 @@
   },
   "workflowRuns": [
     {
-      "name": "continuous-delivery",
+      "name": "canary-release",
       "status": "success",
-      "url": "https://github.com/stupside/castor/actions/runs/30303910192",
+      "url": "https://github.com/stupside/castor/actions/runs/30851102204",
       "branch": "main",
-      "updatedAt": "2026-07-27T20:50:20Z"
+      "updatedAt": "2026-08-03T20:43:11Z"
     },
     {
       "name": "continuous-integration",
       "status": "success",
-      "url": "https://github.com/stupside/castor/actions/runs/30303766080",
+      "url": "https://github.com/stupside/castor/actions/runs/30851071563",
       "branch": "release-please--branches--main--components--castor",
-      "updatedAt": "2026-07-27T20:44:45Z"
+      "updatedAt": "2026-08-03T20:39:26Z"
+    },
+    {
+      "name": "Graph Update: go_modules in /. #1503407987",
+      "status": "success",
+      "url": "https://github.com/stupside/castor/actions/runs/30851044507",
+      "branch": "main",
+      "updatedAt": "2026-08-03T20:38:07Z"
+    },
+    {
+      "name": "continuous-delivery",
+      "status": "success",
+      "url": "https://github.com/stupside/castor/actions/runs/30851043645",
+      "branch": "main",
+      "updatedAt": "2026-08-03T20:37:52Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 1,
-  "openPRs": 1,
+  "openIssuesOnly": 2,
+  "openPRs": 2,
   "releaseCount": 19,
   "discussionsEnabled": true,
   "discussionCount": 1,
@@ -3138,8 +3172,8 @@
       "category": "Q&A"
     }
   ],
-  "closedIssues": 13,
-  "mergedPRs": 19,
+  "closedIssues": 14,
+  "mergedPRs": 20,
   "environmentCount": 0,
   "isFork": false,
   "isInOrganization": false,
@@ -3277,7 +3311,7 @@
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-29T19:42:32.528Z",
+  "factsUpdatedAt": "2026-08-07T18:46:50.355Z",
   "aiSummary": {
     "oneLiner": "A fast, modern build system and task runner for monorepos.",
     "whatItDoes": "Castor is a build system designed specifically to handle the complexities of large monorepos. It intelligently caches build artifacts and only rebuilds what has changed, drastically reducing CI times. The tool supports polyglot environments, managing dependencies across different languages and package managers seamlessly. It aims to provide the performance of Bazel with the simplicity of traditional task runners.",
