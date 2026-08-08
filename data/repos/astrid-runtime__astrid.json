@@ -33,7 +33,7 @@
     },
     {
       "date": "2026-08-08",
-      "stars": 10303,
+      "stars": 10300,
       "forks": 133
     }
   ],
@@ -59,7 +59,7 @@
     "wasm",
     "webassembly"
   ],
-  "stars": 10303,
+  "stars": 10300,
   "forks": 133,
   "watchers": 22,
   "openIssues": 157,
@@ -67,10 +67,10 @@
   "pushedAt": "2026-08-07T18:48:19Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-08T05:38:52.038Z",
+  "updatedAt": "2026-08-08T22:22:44.971Z",
   "languages": {
-    "Rust": 9322220,
-    "Python": 271972,
+    "Rust": 10862983,
+    "Python": 377738,
     "Shell": 245385,
     "Dockerfile": 4705
   },
@@ -79,7 +79,7 @@
       "login": "joshuajbouw",
       "url": "https://github.com/joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4",
-      "contributions": 511
+      "contributions": 535
     },
     {
       "login": "Copilot",
@@ -100,9 +100,9 @@
       "contributions": 3
     }
   ],
-  "commitCount": 520,
+  "commitCount": 544,
   "readmeExcerpt": "# Astrid\n\n**A portable, capability-secure operating system for composable software.**\n\n\n\n\n\n\n\n\n---\n\nAstrid treats a component the way an operating system treats a process. Every\nability is a sealed WebAssembly **capsule**: it can be composed with other\ncapsules, granted only explicit authority, and replaced without expanding its\nreach. Astrid is independent of any particular product, model provider, agent\nloop, user interface, or distribution.\n\nThe kernel underneath is small and deliberately dumb. It routes events,\nenforces capabilities, runs the sandbox, and records the audit trail; it holds\nno model, tool schema, or business logic. A jailbreak, poisoned tool, or plain\nbug still cannot read a file, reach a network, or spawn a process outside its\ngrant. Authority is a capability the kernel enforces, not an instruction the\nmodel is trusted to follow.\n\n## Quick start\n\n```bash\nbrew tap astrid-runtime/tap && brew install astrid\nastrid init --distro @yourorg/your-distro\nastrid start\nastrid status\nastrid capsule list\n```\n\nAstrid Runtime does not select or bundle a product distro. Choose a distro you\ntrust and pass its name, repository, local `Distro.toml`, or signed `.shuttle`\narchive explicitly with `--distro`. Operators running an uncomposed runtime can\nskip `init` and start the daemon directly.\n\nStart with [the Book](https://github.com/astrid-runtime/book) for the\narchitecture or the [Contributor Handbook](https://github.com/astrid-runtime/handbook)\nto contribute.\n\n## Why Astrid exists\n\nAgent frameworks put trust in the prompt. Astrid puts it in the runtime. An agent is untrusted code\nexecuting on your machine with access to your files, your network, and your credentials. Telling it\nto behave is not a security boundary. An OS-grade boundary is.\n\n- **Cryptographic capability model.** Every file path, network host, and tool is a signed ed25519\n  grant scoped to a resource pattern, principal-bound, expiry-checked, and globally revocable. No\n  grant, no access.\n- **WASM sandbox with no ambient authority.** Capsules run in Wasmtime with no syscalls, no file\n  descriptors, and no host memory. Every external effect is a capability-checked host call over a\n  WIT-typed ABI.\n- **The kernel is dumb.** It instantiates an event bus, loads capsules, and routes IPC bytes under a\n  capability ACL. It has no LLM handles, no conversation state, and no tool registry. All\n  intelligence lives in capsules, so a capsule bug cannot corrupt shared kernel state.\n- **Per-principal everything.** Each identity gets isolated capsule access, KV data, secrets, home\n  directory, quotas, and audit chain. One principal can never read another's namespace, and it fails\n  closed if the caller cannot be resolved.\n- **Signed, hash-linked audit chain.** Each entry seals the hash of the one before it and is signed.\n  Break the chain and the tampering shows.\n- **Live capsule lifecycle.** Install, upgrade, and remove capsules on a running daemon. No restart.\n\n## How it works\n\nFrontends (the CLI, the HTTP gateway, Discord, and so on) are **uplinks**: protocol clients that\nconnect to the daemon over a Unix domain socket and speak in IPC events. There is no `Frontend`\ntrait. An uplink publishes events and receives responses like any other bus participant.\n\n```mermaid\nflowchart TB\n    CLI[CLI] -->|IPC events over Unix socket| Kernel\n    HTTP[HTTP gateway] -->|IPC events| Kernel\n    Discord[Discord] -->|IPC events| Kernel\n    Uplinks[Other uplinks] -->|IPC events| Kernel\n\n    subgraph Runtime[Astrid]\n        Kernel[Kernel: astrid-daemon<br/>dumb event router<br/>event bus - capability ACL - audit chain - Wasmtime sandbox]\n        Capsules[WASM Component capsules: wasm32-unknown-unknown<br/>providers - orchestrators - tools - fs - http - sessions - registry - identity]\n    end\n\n    Kernel -->|capability-checked host calls<br/>astrid:* WIT ABI| Capsules\n```\n\nCapsules communicate exclusively through the bus. Each declares what it needs and what it provides\nin a `Capsule.toml` manifest with typed `[imports]`/`[exports]` tables; the kernel resolves the\ndependency graph by topological sort and boots capsules in order. Tools are an IPC convention, not a\nkernel concept: a tool capsule intercepts `tool.v1.execute.<name>`, and the kernel never sees a tool\nschema.\n\nThe host ABI is the WebAssembly component model with versioned `astrid:*` WIT packages:\n`fs`, `io`, `kv`, `ipc`, `net`, `http`, `sys`, `process`, `approval`, `identity`, `elicit`, and\n`uplink`. Guests import only what their manifest allows, and every call is capability-gated at the\nboundary.\n\n## The security model\n\nAstrid's security is decomposed. There is no single gate every action funnels through. A capsule has\nno ambient authority, and authorization is enforced by independent, per-area mechanisms, each\nfail-closed and each enforced where the effect actually happens.\n\n```mermaid\nflowchart TB\n    Action[A capsule action] --> Sandbox[WASM sandbox<br/>no syscalls, file descriptors, or host memory<br/>external resources are capability-checked host calls]\n    Action --> Manifest[Manifest gate<br/>declared file, network, and process allow-list<br/>empty is deny-all; path traversal and SSRF defenses]\n    Action --> IPC[IPC ACL<br/>declared publish and subscribe topics only<br/>per-principal routing]\n    Action --> Capability[Capability token<br/>ed25519, principal-bound, scoped, expiring, revocable<br/>per-device tokens can be subset-scoped]\n    Action --> Approval[Approval gate<br/>once - session - always - deny<br/>allow always mints a token; local egress elicits consent]\n    Action --> OS[OS sandbox<br/>bwrap on Linux - seatbelt on macOS for native subprocesses]\n    Action --> Audit[Audit chain<br/>signed, hash-linked JSONL decisions and calls<br/>split per principal and independently verifiable]\n```\n\nThese mechanisms are real and independently tested. There is no unified interceptor orchestrating\nthem. The [five-layer gate](https://github.com/astrid-runtime/book) chapter of The Astrid Book walks\neach layer against the source.\n\n## Install\n\n**Homebrew (macOS and Linux):**\n\n```bash\nbrew tap astrid-runtime/tap\nbrew install astrid\n```\n\n**From crates.io (requires Rust 1.95+):**\n\n```bash\ncargo install astrid\n```\n\n**From source:**\n\n```bash\ngit clone https://github.com/astrid-runtime/astrid\ncd astrid && cargo build --release   # binary at ./target/release/astrid\n```\n\nAstrid installs four binaries that work together. You only ever invoke `astrid`; it starts and\nmanages the rest.\n\n| Binary | Role |\n|---|---|\n| `astrid` | CLI uplink. Connects to the daemon over the Unix socket. TUI, headless mode, capsule and agent management. |\n| `astrid-daemon` | The kernel process. Loads capsules, routes IPC, enforces capabilities, runs the sandbox. |\n| `astrid-build` | Capsule compiler and packager. Builds to `wasm32-unknown-unknown`. |\n| `astrid-emit` | Stdio-to-bus bridge for external hook producers. |\n\n## Initial setup\n\n`astrid init --distro <source>` fetches a *distro* (a curated capsule bundle), presents any selection\ngroups declared by that distro, and prompts for its required configuration. Secrets are stored per\nprincipal in the secret store, never passed on the command line. `init` writes a `Distro.lock`\npinning every capsule by BLAKE3 hash, so the same explicit distro input reproduces the same fleet.\n\n```bash\nastrid init --distro @yourorg/your-distro          # repository distro\nastrid init --distro ./Distro.toml                  # local manifest\nastrid init --distro ./bundle.shuttle --offline     # signed bundle, no network\nastrid init --distro @yourorg/your-distro --yes     # non-interactive defaults\n```\n\nWhen a distro includes an LLM provider, onboarding can discover that provider's live model list from\nits `/v1/models` endpoint. If the distro also includes an agent loop, confirm that it is ready before\nstarting a session:\n\n```bash\nastrid doctor    # daemon up? capsules ready? an LLM available?\nastrid chat      # interactive session; the daemon auto-starts on first use\nastrid models    # list the current provider's models (a registry-capsule verb)\n```\n\n### Headless and scripting\n\n```bash\nastrid -p \"summarize the git log\"                    # single prompt, prints and exits\ngit diff HEAD~1 | astrid -p \"write a commit message\" # stdin is appended to the prompt\nastrid -p \"fix all failing tests\" --yes              # auto-approve tool requests\nastrid -p \"continue\" --session \"$SID\"                # resume by id or name\n```\n\n### Daemon lifecycle\n\n```bash\nastrid start     # persistent daemon (survives terminal close)\nastrid status    # PID, uptime, connected clients, loaded capsules\nastrid ps        # loaded capsules and their lifecycle state\nastrid stop      # graceful shutdown\nastrid update    # authenticate, verify, and install the latest release\n```\n\n## Per-principal isolation\n\nEach principal (agent identity) is a fully isolated tenant: its own capsule access, KV namespace,\nsecrets, home directory, quotas, and audit chain. New principals inherit nothing by default.\n\n```bash\nastrid agent create ci-bot                     # clean-slate, least-privilege agent\nastrid agent create staging --clone production # full profile + state replica\nastrid agent modify ci-bot \\\n  --add-capsule astrid-capsule-fs              # grant access to a capsule's tools\nastrid caps show ci-bot                        # inspect capability grants\nastrid quota set -a ci-bot --memory 128MB      # per-principal resource limits\nastrid pair-device issue --scope use-only      # scope a device token to a subset\n```\n\nCapsule access is enforced kernel-side at dispatch. A principal can only invoke capsules explicitly\ngranted to it, and two principals installing the same capsule bytes share one content-addressed\non-disk artifact while getting separate in-memory runtime instances.\n\n## Write a capsule\n\nA capsule is a WASM process described by a manifest. The scaffold generates a first-try-compiling\nproject targeting `wasm32-unknown-unknown`, plus an `AUTHORING.md` guide.\n\n```bash\nastrid capsule new my-capsule    # scaffold Capsule.toml, Cargo.toml, src/lib.rs, .cargo/config.toml\ncd my-capsule\nastrid capsule build             # compile and package\nastrid capsule install .         # hot-loaded into the running daemon, no restart\n```\n\nCapsule authors depend on [`astrid-sdk`](https://github.com/astrid-runtime/sdk-rust), which mirrors\nthe `std` module layout (`fs`, `net`, `process`, `env`, `time`, `log`) and adds Astrid modules\n(`ipc`, `kv`, `http`, `hooks`, `uplink`, `identity`, `approval`). The `#[capsule]` proc macro\ngenerates the WASM ABI boilerplate: exports, serialization, and dispatch for tools, commands, hooks,\nand lifecycle entry points.\n\n```rust\nuse astrid_sdk::prelude::*;\n\n#[derive(Default)]\nstruct Weather;\n\n#[capsule]\nimpl Weather {\n    #[astrid::tool]\n    fn forecast(&self, args: ForecastArgs) -> Result<Forecast, SysError> {\n        let key = env::var(\"WEATHER_API_KEY\")?;\n        let body = http::get(&format!(\"https://api.example.com/wx?q={}\", args.city))?;\n        Ok(serde_json::from_slice(&body)?)\n    }\n}\n```\n\nBuilding capsules is a first-class workflow in Astrid. The Forge (`astrid capsule new` plus authoring\ntools and runtime-served guidance) is the on-ramp; the direction is an agent that writes, builds, and\ninstalls its own capsules within the capability sandbox.\n\nReproducible builds and deterministic tests are consumers of\n[Muninn's verified computation memory](docs/astrid-forge-muninn.md): complete source and toolchain\nclosures become derivation inputs, so an unchanged fleet build is a verified lookup while install,\nsigning, and publication remain fresh authorized effects.\n\n### Live capsule lifecycle\n\n```bash\nastrid capsule install @org/capsule-name   # install and hot-load\nastrid capsule update my-capsule           # hot-swap the running instance\nastrid capsule remove my-capsule           # live-unload, no restart\nastrid capsule list --verbose              # installed capsules with capability metadata\nastrid capsu",
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Astrid</h1></div>\n<p dir=\"auto\"><strong>A portable, capability-secure operating system for composable software.</strong></p>\n<p dir=\"auto\"><a href=\"https://github.com/astrid-runtime/astrid/actions/workflows/ci.yml\"><img src=\"https://github.com/astrid-runtime/astrid/actions/workflows/ci.yml/badge.svg\" alt=\"CI\" style=\"max-width: 100%;\"></a>\n<a href=\"https://github.com/astrid-runtime/astrid/actions/workflows/codeql.yml\"><img src=\"https://github.com/astrid-runtime/astrid/actions/workflows/codeql.yml/badge.svg\" alt=\"CodeQL\" style=\"max-width: 100%;\"></a>\n<a href=\"#license\"><img src=\"https://camo.githubusercontent.com/f39131127545ad7907bcecba201dabc10b0b32199c4a45b16a35959a3eb21da4/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542532304f522532304170616368652d2d322e302d626c75652e737667\" alt=\"License: MIT OR Apache-2.0\" data-canonical-src=\"https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.rust-lang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/d930c8bcb9762c49d97a8dc348decf251a230d464815e63b7a509fb515b7e22f/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4d5352562d312e39352d626c7565\" alt=\"MSRV\" data-canonical-src=\"https://img.shields.io/badge/MSRV-1.95-blue\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.rust-lang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8e7bd89c0b70015134c8908682fd91c7b8153f94efa4470252b495d6f1ff295d/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f527573742d323032345f65646974696f6e2d6f72616e6765\" alt=\"Rust 2024\" data-canonical-src=\"https://img.shields.io/badge/Rust-2024_edition-orange\" style=\"max-width: 100%;\"></a>\n<a href=\"https://github.com/astrid-runtime/book\"><img src=\"https://camo.githubusercontent.com/77aa55169b8df7a8bbda3917a6e3c7efbb91ee221578e39989e1415a02c5652a/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f646f63732d5468655f4173747269645f426f6f6b2d384132424532\" alt=\"The Astrid Book\" data-canonical-src=\"https://img.shields.io/badge/docs-The_Astrid_Book-8A2BE2\" style=\"max-width: 100%;\"></a></p>\n<hr>\n<p dir=\"auto\">Astrid treats a component the way an operating system treats a process. Every\nability is a sealed WebAssembly <strong>capsule</strong>: it can be composed with other\ncapsules, granted only explicit authority, and replaced without expanding its\nreach. Astrid is independent of any particular product, model provider, agent\nloop, user interface, or distribution.</p>\n<p dir=\"auto\">The kernel underneath is small and deliberately dumb. It routes events,\nenforces capabilities, runs the sandbox, and records the audit trail; it holds\nno model, tool schema, or business logic. A jailbreak, poisoned tool, or plain\nbug still cannot read a file, reach a network, or spawn a process outside its\ngrant. Authority is a capability the kernel enforces, not an instruction the\nmodel is trusted to follow.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew tap astrid-runtime/tap &amp;&amp; brew install astrid\nastrid init --distro @yourorg/your-distro\nastrid start\nastrid status\nastrid capsule list\"><pre>brew tap astrid-runtime/tap <span class=\"pl-k\">&amp;&amp;</span> brew install astrid\nastrid init --distro @yourorg/your-distro\nastrid start\nastrid status\nastrid capsule list</pre></div>\n<p dir=\"auto\">Astrid Runtime does not select or bundle a product distro. Choose a distro you\ntrust and pass its name, repository, local <code>Distro.toml</code>, or signed <code>.shuttle</code>\narchive explicitly with <code>--distro</code>. Operators running an uncomposed runtime can\nskip <code>init</code> and start the daemon directly.</p>\n<p dir=\"auto\">Start with <a href=\"https://github.com/astrid-runtime/book\">the Book</a> for the\narchitecture or the <a href=\"https://github.com/astrid-runtime/handbook\">Contributor Handbook</a>\nto contribute.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why Astrid exists</h2></div>\n<p dir=\"auto\">Agent frameworks put trust in the prompt. Astrid puts it in the runtime. An agent is untrusted code\nexecuting on your machine with access to your files, your network, and your credentials. Telling it\nto behave is not a security boundary. An OS-grade boundary is.</p>\n<ul dir=\"auto\">\n<li><strong>Cryptographic capability model.</strong> Every file path, network host, and tool is a signed ed25519\ngrant scoped to a resource pattern, principal-bound, expiry-checked, and globally revocable. No\ngrant, no access.</li>\n<li><strong>WASM sandbox with no ambient authority.</strong> Capsules run in Wasmtime with no syscalls, no file\ndescriptors, and no host memory. Every external effect is a capability-checked host call over a\nWIT-typed ABI.</li>\n<li><strong>The kernel is dumb.</strong> It instantiates an event bus, loads capsules, and routes IPC bytes under a\ncapability ACL. It has no LLM handles, no conversation state, and no tool registry. All\nintelligence lives in capsules, so a capsule bug cannot corrupt shared kernel state.</li>\n<li><strong>Per-principal everything.</strong> Each identity gets isolated capsule access, KV data, secrets, home\ndirectory, quotas, and audit chain. One principal can never read another's namespace, and it fails\nclosed if the caller cannot be resolved.</li>\n<li><strong>Signed, hash-linked audit chain.</strong> Each entry seals the hash of the one before it and is signed.\nBreak the chain and the tampering shows.</li>\n<li><strong>Live capsule lifecycle.</strong> Install, upgrade, and remove capsules on a running daemon. No restart.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">Frontends (the CLI, the HTTP gateway, Discord, and so on) are <strong>uplinks</strong>: protocol clients that\nconnect to the daemon over a Unix domain socket and speak in IPC events. There is no <code>Frontend</code>\ntrait. An uplink publishes events and receives responses like any other bus participant.</p>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"5f544128-6c19-4ce9-90eb-f724a585bd20\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TB\\n    CLI[CLI] --&amp;gt;|IPC events over Unix socket| Kernel\\n    HTTP[HTTP gateway] --&amp;gt;|IPC events| Kernel\\n    Discord[Discord] --&amp;gt;|IPC events| Kernel\\n    Uplinks[Other uplinks] --&amp;gt;|IPC events| Kernel\\n\\n    subgraph Runtime[Astrid]\\n        Kernel[Kernel: astrid-daemon&amp;lt;br/&amp;gt;dumb event router&amp;lt;br/&amp;gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&amp;lt;br/&amp;gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\\n    end\\n\\n    Kernel --&amp;gt;|capability-checked host calls&amp;lt;br/&amp;gt;astrid:* WIT ABI| Capsules\\n&quot;}\" data-plain=\"flowchart TB\n    CLI[CLI] --&gt;|IPC events over Unix socket| Kernel\n    HTTP[HTTP gateway] --&gt;|IPC events| Kernel\n    Discord[Discord] --&gt;|IPC events| Kernel\n    Uplinks[Other uplinks] --&gt;|IPC events| Kernel\n\n    subgraph Runtime[Astrid]\n        Kernel[Kernel: astrid-daemon&lt;br/&gt;dumb event router&lt;br/&gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&lt;br/&gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\n    end\n\n    Kernel --&gt;|capability-checked host calls&lt;br/&gt;astrid:* WIT ABI| Capsules\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TB\n    CLI[CLI] --&gt;|IPC events over Unix socket| Kernel\n    HTTP[HTTP gateway] --&gt;|IPC events| Kernel\n    Discord[Discord] --&gt;|IPC events| Kernel\n    Uplinks[Other uplinks] --&gt;|IPC events| Kernel\n\n    subgraph Runtime[Astrid]\n        Kernel[Kernel: astrid-daemon&lt;br/&gt;dumb event router&lt;br/&gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&lt;br/&gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\n    end\n\n    Kernel --&gt;|capability-checked host calls&lt;br/&gt;astrid:* WIT ABI| Capsules\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Capsules communicate exclusively through the bus. Each declares what it needs and what it provides\nin a <code>Capsule.toml</code> manifest with typed <code>[imports]</code>/<code>[exports]</code> tables; the kernel resolves the\ndependency graph by topological sort and boots capsules in order. Tools are an IPC convention, not a\nkernel concept: a tool capsule intercepts <code>tool.v1.execute.&lt;name&gt;</code>, and the kernel never sees a tool\nschema.</p>\n<p dir=\"auto\">The host ABI is the WebAssembly component model with versioned <code>astrid:*</code> WIT packages:\n<code>fs</code>, <code>io</code>, <code>kv</code>, <code>ipc</code>, <code>net</code>, <code>http</code>, <code>sys</code>, <code>process</code>, <code>approval</code>, <code>identity</code>, <code>elicit</code>, and\n<code>uplink</code>. Guests import only what their manifest allows, and every call is capability-gated at the\nboundary.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">The security model</h2></div>\n<p dir=\"auto\">Astrid's security is decomposed. There is no single gate every action funnels through. A capsule has\nno ambient authority, and authorization is enforced by independent, per-area mechanisms, each\nfail-closed and each enforced where the effect actually happens.</p>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"7314d3d9-ede3-4773-9acf-eb93e5a4752b\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TB\\n    Action[A capsule action] --&amp;gt; Sandbox[WASM sandbox&amp;lt;br/&amp;gt;no syscalls, file descriptors, or host memory&amp;lt;br/&amp;gt;external resources are capability-checked host calls]\\n    Action --&amp;gt; Manifest[Manifest gate&amp;lt;br/&amp;gt;declared file, network, and process allow-list&amp;lt;br/&amp;gt;empty is deny-all; path traversal and SSRF defenses]\\n    Action --&amp;gt; IPC[IPC ACL&amp;lt;br/&amp;gt;declared publish and subscribe topics only&amp;lt;br/&amp;gt;per-principal routing]\\n    Action --&amp;gt; Capability[Capability token&amp;lt;br/&amp;gt;ed25519, principal-bound, scoped, expiring, revocable&amp;lt;br/&amp;gt;per-device tokens can be subset-scoped]\\n    Action --&amp;gt; Approval[Approval gate&amp;lt;br/&amp;gt;once - session - always - deny&amp;lt;br/&amp;gt;allow always mints a token; local egress elicits consent]\\n    Action --&amp;gt; OS[OS sandbox&amp;lt;br/&amp;gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\\n    Action --&amp;gt; Audit[Audit chain&amp;lt;br/&amp;gt;signed, hash-linked JSONL decisions and calls&amp;lt;br/&amp;gt;split per principal and independently verifiable]\\n&quot;}\" data-plain=\"flowchart TB\n    Action[A capsule action] --&gt; Sandbox[WASM sandbox&lt;br/&gt;no syscalls, file descriptors, or host memory&lt;br/&gt;external resources are capability-checked host calls]\n    Action --&gt; Manifest[Manifest gate&lt;br/&gt;declared file, network, and process allow-list&lt;br/&gt;empty is deny-all; path traversal and SSRF defenses]\n    Action --&gt; IPC[IPC ACL&lt;br/&gt;declared publish and subscribe topics only&lt;br/&gt;per-principal routing]\n    Action --&gt; Capability[Capability token&lt;br/&gt;ed25519, principal-bound, scoped, expiring, revocable&lt;br/&gt;per-device tokens can be subset-scoped]\n    Action --&gt; Approval[Approval gate&lt;br/&gt;once - session - always - deny&lt;br/&gt;allow always mints a token; local egress elicits consent]\n    Action --&gt; OS[OS sandbox&lt;br/&gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\n    Action --&gt; Audit[Audit chain&lt;br/&gt;signed, hash-linked JSONL decisions and calls&lt;br/&gt;split per principal and independently verifiable]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TB\n    Action[A capsule action] --&gt; Sandbox[WASM sandbox&lt;br/&gt;no syscalls, file descriptors, or host memory&lt;br/&gt;external resources are capability-checked host calls]\n    Action --&gt; Manifest[Manifest gate&lt;br/&gt;declared file, network, and process allow-list&lt;br/&gt;empty is deny-all; path traversal and SSRF defenses]\n    Action --&gt; IPC[IPC ACL&lt;br/&gt;declared publish and subscribe topics only&lt;br/&gt;per-principal routing]\n    Action --&gt; Capability[Capability token&lt;br/&gt;ed25519, principal-bound, scoped, expiring, revocable&lt;br/&gt;per-device tokens can be subset-scoped]\n    Action --&gt; Approval[Approval gate&lt;br/&gt;once - session - always - deny&lt;br/&gt;allow always mints a token; local egress elicits consent]\n    Action --&gt; OS[OS sandbox&lt;br/&gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\n    Action --&gt; Audit[Audit chain&lt;br/&gt;signed, hash-linked JSONL decisions and calls&lt;br/&gt;split per principal and independently verifiable]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">These mechanisms are real and independently tested. There is no unified interceptor orchestrating\nthem. The <a href=\"https://github.com/astrid-runtime/book\">five-layer gate</a> chapter of The Astrid Book walks\neach layer against the source.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<p dir=\"auto\"><strong>Homebrew (macOS and Linux):</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew tap astrid-runtime/tap\nbrew install astrid\"><pre>brew tap astrid-runtime/tap\nbrew install astrid</pre></div>\n<p dir=\"auto\"><strong>From crates.io (requires Rust 1.95+):</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo install astrid\"><pre>cargo install astrid</pre></div>\n<p dir=\"auto\"><strong>From source:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/astrid-runtime/astrid\ncd astrid &amp;&amp; cargo build --release   # binary at ./target/release/astrid\"><pre>git clone https://github.com/astrid-runtime/astrid\n<span class=\"pl-c1\">cd</span> astrid <span class=\"pl-k\">&amp;&amp;</span> cargo build --release   <span class=\"pl-c\"><span class=\"pl-c\">#</span> binary at ./target/release/astrid</span></pre></div>\n<p dir=\"auto\">Astrid installs four binaries that work together. You only ever invoke <code>astrid</code>; it starts and\nmanages the rest.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Binary</th>\n<th>Role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>astrid</code></td>\n<td>CLI uplink. Connects to the daemon over the Unix socket. TUI, headless mode, capsule and agent management.</td>\n</tr>\n<tr>\n<td><code>astrid-daemon</code></td>\n<td>The kernel process. Loads capsules, routes IPC, enforces capabilities, runs the sandbox.</td>\n</tr>\n<tr>\n<td><code>astrid-build</code></td>\n<td>Capsule compiler and packager. Builds to <code>wasm32-unknown-unknown</code>.</td>\n</tr>\n<tr>\n<td><code>astrid-emit</code></td>\n<td>Stdio-to-bus bridge for external hook producers.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Initial setup</h2></div>\n<p dir=\"auto\"><code>astrid init --distro &lt;source&gt;</code> fetches a <em>distro</em> (a curated capsule bundle), presents any selection\ngroups declared by that distro, and prompts for its required configuration. Secrets are stored per\nprincipal in the secret store, never passed on the command line. <code>init</code> writes a <code>Distro.lock</code>\npinning every capsule by BLAKE3 hash, so the same explicit distro input reproduces the same fleet.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid init --distro @yourorg/your-distro          # repository distro\nastrid init --distro ./Distro.toml                  # local manifest\nastrid init --distro ./bundle.shuttle --offline     # signed bundle, no network\nastrid init --distro @yourorg/your-distro --yes     # non-interactive defaults\"><pre>astrid init --distro @yourorg/your-distro          <span class=\"pl-c\"><span class=\"pl-c\">#</span> repository distro</span>\nastrid init --distro ./Distro.toml                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> local manifest</span>\nastrid init --distro ./bundle.shuttle --offline     <span class=\"pl-c\"><span class=\"pl-c\">#</span> signed bundle, no network</span>\nastrid init --distro @yourorg/your-distro --yes     <span class=\"pl-c\"><span class=\"pl-c\">#</span> non-interactive defaults</span></pre></div>\n<p dir=\"auto\">When a distro includes an LLM provider, onboarding can discover that provider's live model list from\nits <code>/v1/models</code> endpoint. If the distro also includes an agent loop, confirm that it is ready before\nstarting a session:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid doctor    # daemon up? capsules ready? an LLM available?\nastrid chat      # interactive session; the daemon auto-starts on first use\nastrid models    # list the current provider's models (a registry-capsule verb)\"><pre>astrid doctor    <span class=\"pl-c\"><span class=\"pl-c\">#</span> daemon up? capsules ready? an LLM available?</span>\nastrid chat      <span class=\"pl-c\"><span class=\"pl-c\">#</span> interactive session; the daemon auto-starts on first use</span>\nastrid models    <span class=\"pl-c\"><span class=\"pl-c\">#</span> list the current provider's models (a registry-capsule verb)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Headless and scripting</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid -p &quot;summarize the git log&quot;                    # single prompt, prints and exits\ngit diff HEAD~1 | astrid -p &quot;write a commit message&quot; # stdin is appended to the prompt\nastrid -p &quot;fix all failing tests&quot; --yes              # auto-approve tool requests\nastrid -p &quot;continue&quot; --session &quot;$SID&quot;                # resume by id or name\"><pre>astrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>summarize the git log<span class=\"pl-pds\">\"</span></span>                    <span class=\"pl-c\"><span class=\"pl-c\">#</span> single prompt, prints and exits</span>\ngit diff HEAD~1 <span class=\"pl-k\">|</span> astrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>write a commit message<span class=\"pl-pds\">\"</span></span> <span class=\"pl-c\"><span class=\"pl-c\">#</span> stdin is appended to the prompt</span>\nastrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>fix all failing tests<span class=\"pl-pds\">\"</span></span> --yes              <span class=\"pl-c\"><span class=\"pl-c\">#</span> auto-approve tool requests</span>\nastrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>continue<span class=\"pl-pds\">\"</span></span> --session <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$SID</span><span class=\"pl-pds\">\"</span></span>                <span class=\"pl-c\"><span class=\"pl-c\">#</span> resume by id or name</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Daemon lifecycle</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid start     # persistent daemon (survives terminal close)\nastrid status    # PID, uptime, connected clients, loaded capsules\nastrid ps        # loaded capsules and their lifecycle state\nastrid stop      # graceful shutdown\nastrid update    # authenticate, verify, and install the latest release\"><pre>astrid start     <span class=\"pl-c\"><span class=\"pl-c\">#</span> persistent daemon (survives terminal close)</span>\nastrid status    <span class=\"pl-c\"><span class=\"pl-c\">#</span> PID, uptime, connected clients, loaded capsules</span>\nastrid ps        <span class=\"pl-c\"><span class=\"pl-c\">#</span> loaded capsules and their lifecycle state</span>\nastrid stop      <span class=\"pl-c\"><span class=\"pl-c\">#</span> graceful shutdown</span>\nastrid update    <span class=\"pl-c\"><span class=\"pl-c\">#</span> authenticate, verify, and install the latest release</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Per-principal isolation</h2></div>\n<p dir=\"auto\">Each principal (agent identity) is a fully isolated tenant: its own capsule access, KV namespace,\nsecrets, home directory, quotas, and audit chain. New principals inherit nothing by default.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid agent create ci-bot                     # clean-slate, least-privilege agent\nastrid agent create staging --clone production # full profile + state replica\nastrid agent modify ci-bot \\\n  --add-capsule astrid-capsule-fs              # grant access to a capsule's tools\nastrid caps show ci-bot                        # inspect capability grants\nastrid quota set -a ci-bot --memory 128MB      # per-principal resource limits\nastrid pair-device issue --scope use-only      # scope a device token to a subset\"><pre>astrid agent create ci-bot                     <span class=\"pl-c\"><span class=\"pl-c\">#</span> clean-slate, least-privilege agent</span>\nastrid agent create staging --clone production <span class=\"pl-c\"><span class=\"pl-c\">#</span> full profile + state replica</span>\nastrid agent modify ci-bot \\\n  --add-capsule astrid-capsule-fs              <span class=\"pl-c\"><span class=\"pl-c\">#</span> grant access to a capsule's tools</span>\nastrid caps show ci-bot                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> inspect capability grants</span>\nastrid quota <span class=\"pl-c1\">set</span> -a ci-bot --memory 128MB      <span class=\"pl-c\"><span class=\"pl-c\">#</span> per-principal resource limits</span>\nastrid pair-device issue --scope use-only      <span class=\"pl-c\"><span class=\"pl-c\">#</span> scope a device token to a subset</span></pre></div>\n<p dir=\"auto\">Capsule access is enforced kernel-side at dispatch. A principal can only invoke capsules explicitly\ngranted to it, and two principals installing the same capsule bytes share one content-addressed\non-disk artifact while getting separate in-memory runtime instances.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Write a capsule</h2></div>\n<p dir=\"auto\">A capsule is a WASM process described by a manifest. The scaffold generates a first-try-compiling\nproject targeting <code>wasm32-unknown-unknown</code>, plus an <code>AUTHORING.md</code> guide.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid capsule new my-capsule    # scaffold Capsule.toml, Cargo.toml, src/lib.rs, .cargo/config.toml\ncd my-capsule\nastrid capsule build             # compile and package\nastrid capsule install .         # hot-loaded into the running daemon, no restart\"><pre>astrid capsule new my-capsule    <span class=\"pl-c\"><span class=\"pl-c\">#</span> scaffold Capsule.toml, Cargo.toml, src/lib.rs, .cargo/config.toml</span>\n<span class=\"pl-c1\">cd</span> my-capsule\nastrid capsule build             <span class=\"pl-c\"><span class=\"pl-c\">#</span> compile and package</span>\nastrid capsule install <span class=\"pl-c1\">.</span>         <span class=\"pl-c\"><span class=\"pl-c\">#</span> hot-loaded into the running daemon, no restart</span></pre></div>\n<p dir=\"auto\">Capsule authors depend on <a href=\"https://github.com/astrid-runtime/sdk-rust\"><code>astrid-sdk</code></a>, which mirrors\nthe <code>std</code> module layout (<code>fs</code>, <code>net</code>, <code>process</code>, <code>env</code>, <code>time</code>, <code>log</code>) and adds Astrid modules\n(<code>ipc</code>, <code>kv</code>, <code>http</code>, <code>hooks</code>, <code>uplink</code>, <code>identity</code>, <code>approval</code>). The <code>#[capsule]</code> proc macro\ngenerates the WASM ABI boilerplate: exports, serialization, and dispatch for tools, commands, hooks,\nand lifecycle entry points.</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use astrid_sdk::prelude::*;\n\n#[derive(Default)]\nstruct Weather;\n\n#[capsule]\nimpl Weather {\n    #[astrid::tool]\n    fn forecast(&amp;self, args: ForecastArgs) -&gt; Result&lt;Forecast, SysError&gt; {\n        let key = env::var(&quot;WEATHER_API_KEY&quot;)?;\n        let body = http::get(&amp;format!(&quot;https://api.example.com/wx?q={}&quot;, args.city))?;\n        Ok(serde_json::from_slice(&amp;body)?)\n    }\n}\"><pre><span class=\"pl-k\">use</span> astrid_sdk<span class=\"pl-kos\">::</span>prelude<span class=\"pl-kos\">::</span><span class=\"pl-c1\">*</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>derive<span class=\"pl-kos\">(</span><span class=\"pl-v\">Default</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">]</span></span>\n<span class=\"pl-k\">struct</span> <span class=\"pl-smi\">Weather</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>capsule<span class=\"pl-kos\">]</span></span>\n<span class=\"pl-k\">impl</span> <span class=\"pl-smi\">Weather</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>astrid<span class=\"pl-kos\">::</span>tool<span class=\"pl-kos\">]</span></span>\n    <span class=\"pl-k\">fn</span> <span class=\"pl-en\">forecast</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-smi\">self</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">args</span><span class=\"pl-kos\">:</span> <span class=\"pl-smi\">ForecastArgs</span><span class=\"pl-kos\">)</span> -&gt; <span class=\"pl-smi\">Result</span><span class=\"pl-kos\">&lt;</span><span class=\"pl-smi\">Forecast</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">SysError</span><span class=\"pl-kos\">&gt;</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-k\">let</span> key = env<span class=\"pl-kos\">::</span><span class=\"pl-en\">var</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"WEATHER_API_KEY\"</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n        <span class=\"pl-k\">let</span> body = http<span class=\"pl-kos\">::</span><span class=\"pl-en\">get</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-en\">format</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"https://api.example.com/wx?q={}\"</span><span class=\"pl-kos\">,</span> args<span class=\"pl-kos\">.</span>city<span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n        <span class=\"pl-en\">Ok</span><span class=\"pl-kos\">(</span>serde_json<span class=\"pl-kos\">::</span><span class=\"pl-en\">from_slice</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>body<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">)</span>\n    <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Building capsules is a first-class workflow in Astrid. The Forge (<code>astrid capsule new</code> plus authoring\ntools and runtime-served guidance) is the on-ramp; the direction is an agent that writes, builds, and\ninstalls its own capsules within the capability sandbox.</p>\n<p dir=\"auto\">Reproducible builds and deterministic tests are consumers of\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-forge-muninn.md\">Muninn's verified computation memory</a>: complete source and toolchain\nclosures become derivation inputs, so an unchanged fleet build is a verified lookup while install,\nsigning, and publication remain fresh authorized effects.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Live capsule lifecycle</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid capsule install @org/capsule-name   # install and hot-load\nastrid capsule update my-capsule           # hot-swap the running instance\nastrid capsule remove my-capsule           # live-unload, no restart\nastrid capsule list --verbose              # installed capsules with capability metadata\nastrid capsule tree                        # imports/exports dependency graph\"><pre>astrid capsule install @org/capsule-name   <span class=\"pl-c\"><span class=\"pl-c\">#</span> install and hot-load</span>\nastrid capsule update my-capsule           <span class=\"pl-c\"><span class=\"pl-c\">#</span> hot-swap the running instance</span>\nastrid capsule remove my-capsule           <span class=\"pl-c\"><span class=\"pl-c\">#</span> live-unload, no restart</span>\nastrid capsule list --verbose              <span class=\"pl-c\"><span class=\"pl-c\">#</span> installed capsules with capability metadata</span>\nastrid capsule tree                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> imports/exports dependency graph</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What's new in 0.9</h2></div>\n<p dir=\"auto\">Five bodies of work plus a security-hardening pass. See <a href=\"https://github.com/astrid-runtime/astrid/blob/main/CHANGELOG.md\">CHANGELOG.md</a> for the full\nlist.</p>\n<ul dir=\"auto\">\n<li><strong>Live capsule lifecycle.</strong> Hot-load on install, hot-swap on upgrade, live-unload on remove, all\nwithout a daemon restart.</li>\n<li><strong>Per-principal isolation, hardened end-to-end.</strong> Principal-view-aware capsule loading with\ncontent-addressed artifact reuse, kernel-side tool-surface access enforcement, and per-device\ncapability scope threaded through the HTTP gateway.</li>\n<li><strong>LLM provider and model binding.</strong> Multi-provider onboarding with live model discovery, plus\ngateway routes and <code>astrid models</code> / <code>astrid doctor</code> for per-principal model management and\nloop-readiness checks.</li>\n<li><strong>Conversation threads over the HTTP gateway.</strong> List, fetch, update, delete, and full-text search\nthreads, plus a per-principal live conversation feed with cross-principal isolation enforced at the\nbus.</li>\n<li><strong><code>astrid:http@1.1.0</code> and operator-configurable limits.</strong> Per-request timeouts, redirect policy,\nbody caps, <code>https-only</code>, and subresource integrity; seven previously-hardcoded ceilings become\noperator knobs.</li>\n<li><strong>Security.</strong> Local-egress consent (transport-origin marker, runtime elicitation, per-capsule and\nper-principal grants), an SSRF airlock that closes IP-literal and redirect bypasses, and a hardened\nsupply-chain path (Sigstore attestation, CodeQL, pinned Action SHAs, least-privilege tokens).</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<ul dir=\"auto\">\n<li><strong><a href=\"https://github.com/astrid-runtime/book\">The Astrid Book</a></strong> is the canonical reference: the\nkernel, the capsule model, the host ABI, the bus, and the security model, grounded in the source\nwith file and line anchors. Start with <a href=\"https://github.com/astrid-runtime/book\">Getting Started</a>\nto go from nothing to a working agent in a few minutes.</li>\n<li><strong>Operator guides</strong> live in <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/\"><code>docs/</code></a>: the <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/config.md\">unified config schema</a>,\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/models.md\">LLM model selection</a>, <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/distro-signing.md\">distro signing</a>, the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/gateway-deployment.md\">gateway deployment runbook</a>, and\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/gateway-client.md\">generating a gateway client</a>. Architecture programs include\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-conservation-of-computation.md\">conservation of computation</a>,\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-muninn.md\">Muninn</a>, <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-huginn.md\">Huginn</a>, and the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-refinery.md\">Refinery</a>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --workspace\ncargo test --workspace -- --quiet\ncargo clippy --workspace --all-features -- -D warnings\ncargo fmt --all -- --check\"><pre>cargo build --workspace\ncargo <span class=\"pl-c1\">test</span> --workspace -- --quiet\ncargo clippy --workspace --all-features -- -D warnings\ncargo fmt --all -- --check</pre></div>\n<p dir=\"auto\">All crates enforce <code>#![deny(unsafe_code)]</code> except <code>astrid-sys</code> and <code>astrid-sdk</code>, where WASM FFI\nrequires it. Clippy runs at pedantic level and integer-overflow arithmetic is a lint error. Release\nbinaries for macOS and GNU/musl Linux (x86_64 and aarch64) are built on tag push and signed with keyless\nSigstore. Self-managed updates authenticate the exact archive and its pinned Astrid release-workflow\nidentity before independently checking the BLAKE3 manifest and extracting any bytes. Homebrew and\nCargo remain responsible for updates they install; signed SHA-256 manifests remain available for\ntheir compatibility requirements. GitHub build-provenance attestations are published as additional\nevidence and are not substituted for the updater's release-archive signature. See the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/self-update-security.md\">self-update security model</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Contributions are welcome. Astrid uses a tiered contributor system that protects security-critical\ncode while keeping the door open to new contributors. Every pull request must be linked to a GitHub\nissue. See <a href=\"https://github.com/astrid-runtime/astrid/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a> for the issue-first workflow and tier descriptions.</p>\n<p dir=\"auto\">Changes to any contract surface (the host ABI, the IPC protocol, the capability model, the manifest\nschema, or the SDK public API) go through the RFC process in the\n<a href=\"https://github.com/astrid-runtime/rfcs\">RFCs repository</a> before implementation.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Dual-licensed under <a href=\"https://github.com/astrid-runtime/astrid/blob/main/LICENSE-MIT\">MIT</a> and <a href=\"https://github.com/astrid-runtime/astrid/blob/main/LICENSE-APACHE\">Apache 2.0</a>, at your option.</p>\n<p dir=\"auto\">Copyright (c) 2025-2026 Joshua J. Bouw and Unicity Labs.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Astrid</h1></div>\n<p dir=\"auto\"><strong>A portable, capability-secure operating system for composable software.</strong></p>\n<p dir=\"auto\"><a href=\"https://github.com/astrid-runtime/astrid/actions/workflows/ci.yml\"><img src=\"https://github.com/astrid-runtime/astrid/actions/workflows/ci.yml/badge.svg\" alt=\"CI\" style=\"max-width: 100%;\"></a>\n<a href=\"https://github.com/astrid-runtime/astrid/actions/workflows/codeql.yml\"><img src=\"https://github.com/astrid-runtime/astrid/actions/workflows/codeql.yml/badge.svg\" alt=\"CodeQL\" style=\"max-width: 100%;\"></a>\n<a href=\"#license\"><img src=\"https://camo.githubusercontent.com/f39131127545ad7907bcecba201dabc10b0b32199c4a45b16a35959a3eb21da4/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542532304f522532304170616368652d2d322e302d626c75652e737667\" alt=\"License: MIT OR Apache-2.0\" data-canonical-src=\"https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.rust-lang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/d930c8bcb9762c49d97a8dc348decf251a230d464815e63b7a509fb515b7e22f/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4d5352562d312e39352d626c7565\" alt=\"MSRV\" data-canonical-src=\"https://img.shields.io/badge/MSRV-1.95-blue\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.rust-lang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8e7bd89c0b70015134c8908682fd91c7b8153f94efa4470252b495d6f1ff295d/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f527573742d323032345f65646974696f6e2d6f72616e6765\" alt=\"Rust 2024\" data-canonical-src=\"https://img.shields.io/badge/Rust-2024_edition-orange\" style=\"max-width: 100%;\"></a>\n<a href=\"https://github.com/astrid-runtime/book\"><img src=\"https://camo.githubusercontent.com/77aa55169b8df7a8bbda3917a6e3c7efbb91ee221578e39989e1415a02c5652a/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f646f63732d5468655f4173747269645f426f6f6b2d384132424532\" alt=\"The Astrid Book\" data-canonical-src=\"https://img.shields.io/badge/docs-The_Astrid_Book-8A2BE2\" style=\"max-width: 100%;\"></a></p>\n<hr>\n<p dir=\"auto\">Astrid treats a component the way an operating system treats a process. Every\nability is a sealed WebAssembly <strong>capsule</strong>: it can be composed with other\ncapsules, granted only explicit authority, and replaced without expanding its\nreach. Astrid is independent of any particular product, model provider, agent\nloop, user interface, or distribution.</p>\n<p dir=\"auto\">The kernel underneath is small and deliberately dumb. It routes events,\nenforces capabilities, runs the sandbox, and records the audit trail; it holds\nno model, tool schema, or business logic. A jailbreak, poisoned tool, or plain\nbug still cannot read a file, reach a network, or spawn a process outside its\ngrant. Authority is a capability the kernel enforces, not an instruction the\nmodel is trusted to follow.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew tap astrid-runtime/tap &amp;&amp; brew install astrid\nastrid init --distro @yourorg/your-distro\nastrid start\nastrid status\nastrid capsule list\"><pre>brew tap astrid-runtime/tap <span class=\"pl-k\">&amp;&amp;</span> brew install astrid\nastrid init --distro @yourorg/your-distro\nastrid start\nastrid status\nastrid capsule list</pre></div>\n<p dir=\"auto\">Astrid Runtime does not select or bundle a product distro. Choose a distro you\ntrust and pass its name, repository, local <code>Distro.toml</code>, or signed <code>.shuttle</code>\narchive explicitly with <code>--distro</code>. Operators running an uncomposed runtime can\nskip <code>init</code> and start the daemon directly.</p>\n<p dir=\"auto\">Start with <a href=\"https://github.com/astrid-runtime/book\">the Book</a> for the\narchitecture or the <a href=\"https://github.com/astrid-runtime/handbook\">Contributor Handbook</a>\nto contribute.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why Astrid exists</h2></div>\n<p dir=\"auto\">Agent frameworks put trust in the prompt. Astrid puts it in the runtime. An agent is untrusted code\nexecuting on your machine with access to your files, your network, and your credentials. Telling it\nto behave is not a security boundary. An OS-grade boundary is.</p>\n<ul dir=\"auto\">\n<li><strong>Cryptographic capability model.</strong> Every file path, network host, and tool is a signed ed25519\ngrant scoped to a resource pattern, principal-bound, expiry-checked, and globally revocable. No\ngrant, no access.</li>\n<li><strong>WASM sandbox with no ambient authority.</strong> Capsules run in Wasmtime with no syscalls, no file\ndescriptors, and no host memory. Every external effect is a capability-checked host call over a\nWIT-typed ABI.</li>\n<li><strong>The kernel is dumb.</strong> It instantiates an event bus, loads capsules, and routes IPC bytes under a\ncapability ACL. It has no LLM handles, no conversation state, and no tool registry. All\nintelligence lives in capsules, so a capsule bug cannot corrupt shared kernel state.</li>\n<li><strong>Per-principal everything.</strong> Each identity gets isolated capsule access, KV data, secrets, home\ndirectory, quotas, and audit chain. One principal can never read another's namespace, and it fails\nclosed if the caller cannot be resolved.</li>\n<li><strong>Signed, hash-linked audit chain.</strong> Each entry seals the hash of the one before it and is signed.\nBreak the chain and the tampering shows.</li>\n<li><strong>Live capsule lifecycle.</strong> Install, upgrade, and remove capsules on a running daemon. No restart.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">Frontends (the CLI, the HTTP gateway, Discord, and so on) are <strong>uplinks</strong>: protocol clients that\nconnect to the daemon over a Unix domain socket and speak in IPC events. There is no <code>Frontend</code>\ntrait. An uplink publishes events and receives responses like any other bus participant.</p>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"435d3b2b-bcc9-4f35-ac71-270a669405bf\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TB\\n    CLI[CLI] --&amp;gt;|IPC events over Unix socket| Kernel\\n    HTTP[HTTP gateway] --&amp;gt;|IPC events| Kernel\\n    Discord[Discord] --&amp;gt;|IPC events| Kernel\\n    Uplinks[Other uplinks] --&amp;gt;|IPC events| Kernel\\n\\n    subgraph Runtime[Astrid]\\n        Kernel[Kernel: astrid-daemon&amp;lt;br/&amp;gt;dumb event router&amp;lt;br/&amp;gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&amp;lt;br/&amp;gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\\n    end\\n\\n    Kernel --&amp;gt;|capability-checked host calls&amp;lt;br/&amp;gt;astrid:* WIT ABI| Capsules\\n&quot;}\" data-plain=\"flowchart TB\n    CLI[CLI] --&gt;|IPC events over Unix socket| Kernel\n    HTTP[HTTP gateway] --&gt;|IPC events| Kernel\n    Discord[Discord] --&gt;|IPC events| Kernel\n    Uplinks[Other uplinks] --&gt;|IPC events| Kernel\n\n    subgraph Runtime[Astrid]\n        Kernel[Kernel: astrid-daemon&lt;br/&gt;dumb event router&lt;br/&gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&lt;br/&gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\n    end\n\n    Kernel --&gt;|capability-checked host calls&lt;br/&gt;astrid:* WIT ABI| Capsules\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TB\n    CLI[CLI] --&gt;|IPC events over Unix socket| Kernel\n    HTTP[HTTP gateway] --&gt;|IPC events| Kernel\n    Discord[Discord] --&gt;|IPC events| Kernel\n    Uplinks[Other uplinks] --&gt;|IPC events| Kernel\n\n    subgraph Runtime[Astrid]\n        Kernel[Kernel: astrid-daemon&lt;br/&gt;dumb event router&lt;br/&gt;event bus - capability ACL - audit chain - Wasmtime sandbox]\n        Capsules[WASM Component capsules: wasm32-unknown-unknown&lt;br/&gt;providers - orchestrators - tools - fs - http - sessions - registry - identity]\n    end\n\n    Kernel --&gt;|capability-checked host calls&lt;br/&gt;astrid:* WIT ABI| Capsules\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">Capsules communicate exclusively through the bus. Each declares what it needs and what it provides\nin a <code>Capsule.toml</code> manifest with typed <code>[imports]</code>/<code>[exports]</code> tables; the kernel resolves the\ndependency graph by topological sort and boots capsules in order. Tools are an IPC convention, not a\nkernel concept: a tool capsule intercepts <code>tool.v1.execute.&lt;name&gt;</code>, and the kernel never sees a tool\nschema.</p>\n<p dir=\"auto\">The host ABI is the WebAssembly component model with versioned <code>astrid:*</code> WIT packages:\n<code>fs</code>, <code>io</code>, <code>kv</code>, <code>ipc</code>, <code>net</code>, <code>http</code>, <code>sys</code>, <code>process</code>, <code>approval</code>, <code>identity</code>, <code>elicit</code>, and\n<code>uplink</code>. Guests import only what their manifest allows, and every call is capability-gated at the\nboundary.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">The security model</h2></div>\n<p dir=\"auto\">Astrid's security is decomposed. There is no single gate every action funnels through. A capsule has\nno ambient authority, and authorization is enforced by independent, per-area mechanisms, each\nfail-closed and each enforced where the effect actually happens.</p>\n<section class=\"js-render-needs-enrichment render-needs-enrichment position-relative\" data-identity=\"8e238c98-96c3-48de-9627-52d09daf051b\" data-host=\"https://viewscreen.githubusercontent.com\" data-src=\"https://viewscreen.githubusercontent.com/markdown/mermaid?docs_host=https%3A%2F%2Fdocs.github.com\" data-type=\"mermaid\" aria-label=\"mermaid rendered output container\">\n  <div class=\"js-render-enrichment-target\" data-json=\"{&quot;data&quot;:&quot;flowchart TB\\n    Action[A capsule action] --&amp;gt; Sandbox[WASM sandbox&amp;lt;br/&amp;gt;no syscalls, file descriptors, or host memory&amp;lt;br/&amp;gt;external resources are capability-checked host calls]\\n    Action --&amp;gt; Manifest[Manifest gate&amp;lt;br/&amp;gt;declared file, network, and process allow-list&amp;lt;br/&amp;gt;empty is deny-all; path traversal and SSRF defenses]\\n    Action --&amp;gt; IPC[IPC ACL&amp;lt;br/&amp;gt;declared publish and subscribe topics only&amp;lt;br/&amp;gt;per-principal routing]\\n    Action --&amp;gt; Capability[Capability token&amp;lt;br/&amp;gt;ed25519, principal-bound, scoped, expiring, revocable&amp;lt;br/&amp;gt;per-device tokens can be subset-scoped]\\n    Action --&amp;gt; Approval[Approval gate&amp;lt;br/&amp;gt;once - session - always - deny&amp;lt;br/&amp;gt;allow always mints a token; local egress elicits consent]\\n    Action --&amp;gt; OS[OS sandbox&amp;lt;br/&amp;gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\\n    Action --&amp;gt; Audit[Audit chain&amp;lt;br/&amp;gt;signed, hash-linked JSONL decisions and calls&amp;lt;br/&amp;gt;split per principal and independently verifiable]\\n&quot;}\" data-plain=\"flowchart TB\n    Action[A capsule action] --&gt; Sandbox[WASM sandbox&lt;br/&gt;no syscalls, file descriptors, or host memory&lt;br/&gt;external resources are capability-checked host calls]\n    Action --&gt; Manifest[Manifest gate&lt;br/&gt;declared file, network, and process allow-list&lt;br/&gt;empty is deny-all; path traversal and SSRF defenses]\n    Action --&gt; IPC[IPC ACL&lt;br/&gt;declared publish and subscribe topics only&lt;br/&gt;per-principal routing]\n    Action --&gt; Capability[Capability token&lt;br/&gt;ed25519, principal-bound, scoped, expiring, revocable&lt;br/&gt;per-device tokens can be subset-scoped]\n    Action --&gt; Approval[Approval gate&lt;br/&gt;once - session - always - deny&lt;br/&gt;allow always mints a token; local egress elicits consent]\n    Action --&gt; OS[OS sandbox&lt;br/&gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\n    Action --&gt; Audit[Audit chain&lt;br/&gt;signed, hash-linked JSONL decisions and calls&lt;br/&gt;split per principal and independently verifiable]\n\" dir=\"auto\">\n    <div class=\"render-plaintext-hidden\" dir=\"auto\">\n      <pre lang=\"mermaid\" aria-label=\"Raw mermaid code\">flowchart TB\n    Action[A capsule action] --&gt; Sandbox[WASM sandbox&lt;br/&gt;no syscalls, file descriptors, or host memory&lt;br/&gt;external resources are capability-checked host calls]\n    Action --&gt; Manifest[Manifest gate&lt;br/&gt;declared file, network, and process allow-list&lt;br/&gt;empty is deny-all; path traversal and SSRF defenses]\n    Action --&gt; IPC[IPC ACL&lt;br/&gt;declared publish and subscribe topics only&lt;br/&gt;per-principal routing]\n    Action --&gt; Capability[Capability token&lt;br/&gt;ed25519, principal-bound, scoped, expiring, revocable&lt;br/&gt;per-device tokens can be subset-scoped]\n    Action --&gt; Approval[Approval gate&lt;br/&gt;once - session - always - deny&lt;br/&gt;allow always mints a token; local egress elicits consent]\n    Action --&gt; OS[OS sandbox&lt;br/&gt;bwrap on Linux - seatbelt on macOS for native subprocesses]\n    Action --&gt; Audit[Audit chain&lt;br/&gt;signed, hash-linked JSONL decisions and calls&lt;br/&gt;split per principal and independently verifiable]\n</pre>\n    </div>\n  </div>\n  <span class=\"js-render-enrichment-loader d-flex flex-justify-center flex-items-center width-full\" style=\"min-height:100px\" role=\"presentation\">\n    <span data-view-component=\"true\">\n  <svg style=\"box-sizing: content-box; color: var(--color-icon-primary);\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\" data-view-component=\"true\" class=\"octospinner mx-auto tmp-mx-auto anim-rotate\">\n    <circle cx=\"8\" cy=\"8\" r=\"7\" stroke=\"currentColor\" stroke-opacity=\"0.25\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" fill=\"none\"></circle>\n    <path d=\"M15 8a7.002 7.002 0 00-7-7\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" vector-effect=\"non-scaling-stroke\"></path>\n</svg>    <span class=\"sr-only\">Loading</span>\n</span>\n  </span>\n</section>\n\n<p dir=\"auto\">These mechanisms are real and independently tested. There is no unified interceptor orchestrating\nthem. The <a href=\"https://github.com/astrid-runtime/book\">five-layer gate</a> chapter of The Astrid Book walks\neach layer against the source.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<p dir=\"auto\"><strong>Homebrew (macOS and Linux):</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew tap astrid-runtime/tap\nbrew install astrid\"><pre>brew tap astrid-runtime/tap\nbrew install astrid</pre></div>\n<p dir=\"auto\"><strong>From crates.io (requires Rust 1.95+):</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo install astrid\"><pre>cargo install astrid</pre></div>\n<p dir=\"auto\"><strong>From source:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/astrid-runtime/astrid\ncd astrid &amp;&amp; cargo build --release   # binary at ./target/release/astrid\"><pre>git clone https://github.com/astrid-runtime/astrid\n<span class=\"pl-c1\">cd</span> astrid <span class=\"pl-k\">&amp;&amp;</span> cargo build --release   <span class=\"pl-c\"><span class=\"pl-c\">#</span> binary at ./target/release/astrid</span></pre></div>\n<p dir=\"auto\">Astrid installs four binaries that work together. You only ever invoke <code>astrid</code>; it starts and\nmanages the rest.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Binary</th>\n<th>Role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>astrid</code></td>\n<td>CLI uplink. Connects to the daemon over the Unix socket. TUI, headless mode, capsule and agent management.</td>\n</tr>\n<tr>\n<td><code>astrid-daemon</code></td>\n<td>The kernel process. Loads capsules, routes IPC, enforces capabilities, runs the sandbox.</td>\n</tr>\n<tr>\n<td><code>astrid-build</code></td>\n<td>Capsule compiler and packager. Builds to <code>wasm32-unknown-unknown</code>.</td>\n</tr>\n<tr>\n<td><code>astrid-emit</code></td>\n<td>Stdio-to-bus bridge for external hook producers.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Initial setup</h2></div>\n<p dir=\"auto\"><code>astrid init --distro &lt;source&gt;</code> fetches a <em>distro</em> (a curated capsule bundle), presents any selection\ngroups declared by that distro, and prompts for its required configuration. Secrets are stored per\nprincipal in the secret store, never passed on the command line. <code>init</code> writes a <code>Distro.lock</code>\npinning every capsule by BLAKE3 hash, so the same explicit distro input reproduces the same fleet.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid init --distro @yourorg/your-distro          # repository distro\nastrid init --distro ./Distro.toml                  # local manifest\nastrid init --distro ./bundle.shuttle --offline     # signed bundle, no network\nastrid init --distro @yourorg/your-distro --yes     # non-interactive defaults\"><pre>astrid init --distro @yourorg/your-distro          <span class=\"pl-c\"><span class=\"pl-c\">#</span> repository distro</span>\nastrid init --distro ./Distro.toml                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> local manifest</span>\nastrid init --distro ./bundle.shuttle --offline     <span class=\"pl-c\"><span class=\"pl-c\">#</span> signed bundle, no network</span>\nastrid init --distro @yourorg/your-distro --yes     <span class=\"pl-c\"><span class=\"pl-c\">#</span> non-interactive defaults</span></pre></div>\n<p dir=\"auto\">When a distro includes an LLM provider, onboarding can discover that provider's live model list from\nits <code>/v1/models</code> endpoint. If the distro also includes an agent loop, confirm that it is ready before\nstarting a session:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid doctor    # daemon up? capsules ready? an LLM available?\nastrid chat      # interactive session; the daemon auto-starts on first use\nastrid models    # list the current provider's models (a registry-capsule verb)\"><pre>astrid doctor    <span class=\"pl-c\"><span class=\"pl-c\">#</span> daemon up? capsules ready? an LLM available?</span>\nastrid chat      <span class=\"pl-c\"><span class=\"pl-c\">#</span> interactive session; the daemon auto-starts on first use</span>\nastrid models    <span class=\"pl-c\"><span class=\"pl-c\">#</span> list the current provider's models (a registry-capsule verb)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Headless and scripting</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid -p &quot;summarize the git log&quot;                    # single prompt, prints and exits\ngit diff HEAD~1 | astrid -p &quot;write a commit message&quot; # stdin is appended to the prompt\nastrid -p &quot;fix all failing tests&quot; --yes              # auto-approve tool requests\nastrid -p &quot;continue&quot; --session &quot;$SID&quot;                # resume by id or name\"><pre>astrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>summarize the git log<span class=\"pl-pds\">\"</span></span>                    <span class=\"pl-c\"><span class=\"pl-c\">#</span> single prompt, prints and exits</span>\ngit diff HEAD~1 <span class=\"pl-k\">|</span> astrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>write a commit message<span class=\"pl-pds\">\"</span></span> <span class=\"pl-c\"><span class=\"pl-c\">#</span> stdin is appended to the prompt</span>\nastrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>fix all failing tests<span class=\"pl-pds\">\"</span></span> --yes              <span class=\"pl-c\"><span class=\"pl-c\">#</span> auto-approve tool requests</span>\nastrid -p <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>continue<span class=\"pl-pds\">\"</span></span> --session <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$SID</span><span class=\"pl-pds\">\"</span></span>                <span class=\"pl-c\"><span class=\"pl-c\">#</span> resume by id or name</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Daemon lifecycle</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid start     # persistent daemon (survives terminal close)\nastrid status    # PID, uptime, connected clients, loaded capsules\nastrid ps        # loaded capsules and their lifecycle state\nastrid stop      # graceful shutdown\nastrid update    # authenticate, verify, and install the latest release\"><pre>astrid start     <span class=\"pl-c\"><span class=\"pl-c\">#</span> persistent daemon (survives terminal close)</span>\nastrid status    <span class=\"pl-c\"><span class=\"pl-c\">#</span> PID, uptime, connected clients, loaded capsules</span>\nastrid ps        <span class=\"pl-c\"><span class=\"pl-c\">#</span> loaded capsules and their lifecycle state</span>\nastrid stop      <span class=\"pl-c\"><span class=\"pl-c\">#</span> graceful shutdown</span>\nastrid update    <span class=\"pl-c\"><span class=\"pl-c\">#</span> authenticate, verify, and install the latest release</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Per-principal isolation</h2></div>\n<p dir=\"auto\">Each principal (agent identity) is a fully isolated tenant: its own capsule access, KV namespace,\nsecrets, home directory, quotas, and audit chain. New principals inherit nothing by default.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid agent create ci-bot                     # clean-slate, least-privilege agent\nastrid agent create staging --clone production # full profile + state replica\nastrid agent modify ci-bot \\\n  --add-capsule astrid-capsule-fs              # grant access to a capsule's tools\nastrid caps show ci-bot                        # inspect capability grants\nastrid quota set -a ci-bot --memory 128MB      # per-principal resource limits\nastrid pair-device issue --scope use-only      # scope a device token to a subset\"><pre>astrid agent create ci-bot                     <span class=\"pl-c\"><span class=\"pl-c\">#</span> clean-slate, least-privilege agent</span>\nastrid agent create staging --clone production <span class=\"pl-c\"><span class=\"pl-c\">#</span> full profile + state replica</span>\nastrid agent modify ci-bot \\\n  --add-capsule astrid-capsule-fs              <span class=\"pl-c\"><span class=\"pl-c\">#</span> grant access to a capsule's tools</span>\nastrid caps show ci-bot                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> inspect capability grants</span>\nastrid quota <span class=\"pl-c1\">set</span> -a ci-bot --memory 128MB      <span class=\"pl-c\"><span class=\"pl-c\">#</span> per-principal resource limits</span>\nastrid pair-device issue --scope use-only      <span class=\"pl-c\"><span class=\"pl-c\">#</span> scope a device token to a subset</span></pre></div>\n<p dir=\"auto\">Capsule access is enforced kernel-side at dispatch. A principal can only invoke capsules explicitly\ngranted to it, and two principals installing the same capsule bytes share one content-addressed\non-disk artifact while getting separate in-memory runtime instances.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Write a capsule</h2></div>\n<p dir=\"auto\">A capsule is a WASM process described by a manifest. The scaffold generates a first-try-compiling\nproject targeting <code>wasm32-unknown-unknown</code>, plus an <code>AUTHORING.md</code> guide.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid capsule new my-capsule    # scaffold Capsule.toml, Cargo.toml, src/lib.rs, .cargo/config.toml\ncd my-capsule\nastrid capsule build             # compile and package\nastrid capsule install .         # hot-loaded into the running daemon, no restart\"><pre>astrid capsule new my-capsule    <span class=\"pl-c\"><span class=\"pl-c\">#</span> scaffold Capsule.toml, Cargo.toml, src/lib.rs, .cargo/config.toml</span>\n<span class=\"pl-c1\">cd</span> my-capsule\nastrid capsule build             <span class=\"pl-c\"><span class=\"pl-c\">#</span> compile and package</span>\nastrid capsule install <span class=\"pl-c1\">.</span>         <span class=\"pl-c\"><span class=\"pl-c\">#</span> hot-loaded into the running daemon, no restart</span></pre></div>\n<p dir=\"auto\">Capsule authors depend on <a href=\"https://github.com/astrid-runtime/sdk-rust\"><code>astrid-sdk</code></a>, which mirrors\nthe <code>std</code> module layout (<code>fs</code>, <code>net</code>, <code>process</code>, <code>env</code>, <code>time</code>, <code>log</code>) and adds Astrid modules\n(<code>ipc</code>, <code>kv</code>, <code>http</code>, <code>hooks</code>, <code>uplink</code>, <code>identity</code>, <code>approval</code>). The <code>#[capsule]</code> proc macro\ngenerates the WASM ABI boilerplate: exports, serialization, and dispatch for tools, commands, hooks,\nand lifecycle entry points.</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use astrid_sdk::prelude::*;\n\n#[derive(Default)]\nstruct Weather;\n\n#[capsule]\nimpl Weather {\n    #[astrid::tool]\n    fn forecast(&amp;self, args: ForecastArgs) -&gt; Result&lt;Forecast, SysError&gt; {\n        let key = env::var(&quot;WEATHER_API_KEY&quot;)?;\n        let body = http::get(&amp;format!(&quot;https://api.example.com/wx?q={}&quot;, args.city))?;\n        Ok(serde_json::from_slice(&amp;body)?)\n    }\n}\"><pre><span class=\"pl-k\">use</span> astrid_sdk<span class=\"pl-kos\">::</span>prelude<span class=\"pl-kos\">::</span><span class=\"pl-c1\">*</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>derive<span class=\"pl-kos\">(</span><span class=\"pl-v\">Default</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">]</span></span>\n<span class=\"pl-k\">struct</span> <span class=\"pl-smi\">Weather</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>capsule<span class=\"pl-kos\">]</span></span>\n<span class=\"pl-k\">impl</span> <span class=\"pl-smi\">Weather</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">#<span class=\"pl-kos\">[</span>astrid<span class=\"pl-kos\">::</span>tool<span class=\"pl-kos\">]</span></span>\n    <span class=\"pl-k\">fn</span> <span class=\"pl-en\">forecast</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-smi\">self</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">args</span><span class=\"pl-kos\">:</span> <span class=\"pl-smi\">ForecastArgs</span><span class=\"pl-kos\">)</span> -&gt; <span class=\"pl-smi\">Result</span><span class=\"pl-kos\">&lt;</span><span class=\"pl-smi\">Forecast</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">SysError</span><span class=\"pl-kos\">&gt;</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-k\">let</span> key = env<span class=\"pl-kos\">::</span><span class=\"pl-en\">var</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"WEATHER_API_KEY\"</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n        <span class=\"pl-k\">let</span> body = http<span class=\"pl-kos\">::</span><span class=\"pl-en\">get</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-en\">format</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"https://api.example.com/wx?q={}\"</span><span class=\"pl-kos\">,</span> args<span class=\"pl-kos\">.</span>city<span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n        <span class=\"pl-en\">Ok</span><span class=\"pl-kos\">(</span>serde_json<span class=\"pl-kos\">::</span><span class=\"pl-en\">from_slice</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>body<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">)</span>\n    <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Building capsules is a first-class workflow in Astrid. The Forge (<code>astrid capsule new</code> plus authoring\ntools and runtime-served guidance) is the on-ramp; the direction is an agent that writes, builds, and\ninstalls its own capsules within the capability sandbox.</p>\n<p dir=\"auto\">Reproducible builds and deterministic tests are consumers of\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-forge-muninn.md\">Muninn's verified computation memory</a>: complete source and toolchain\nclosures become derivation inputs, so an unchanged fleet build is a verified lookup while install,\nsigning, and publication remain fresh authorized effects.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Live capsule lifecycle</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid capsule install @org/capsule-name   # install and hot-load\nastrid capsule update my-capsule           # hot-swap the running instance\nastrid capsule remove my-capsule           # live-unload, no restart\nastrid capsule list --verbose              # installed capsules with capability metadata\nastrid capsule tree                        # imports/exports dependency graph\"><pre>astrid capsule install @org/capsule-name   <span class=\"pl-c\"><span class=\"pl-c\">#</span> install and hot-load</span>\nastrid capsule update my-capsule           <span class=\"pl-c\"><span class=\"pl-c\">#</span> hot-swap the running instance</span>\nastrid capsule remove my-capsule           <span class=\"pl-c\"><span class=\"pl-c\">#</span> live-unload, no restart</span>\nastrid capsule list --verbose              <span class=\"pl-c\"><span class=\"pl-c\">#</span> installed capsules with capability metadata</span>\nastrid capsule tree                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> imports/exports dependency graph</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What's new in 0.9</h2></div>\n<p dir=\"auto\">Five bodies of work plus a security-hardening pass. See <a href=\"https://github.com/astrid-runtime/astrid/blob/main/CHANGELOG.md\">CHANGELOG.md</a> for the full\nlist.</p>\n<ul dir=\"auto\">\n<li><strong>Live capsule lifecycle.</strong> Hot-load on install, hot-swap on upgrade, live-unload on remove, all\nwithout a daemon restart.</li>\n<li><strong>Per-principal isolation, hardened end-to-end.</strong> Principal-view-aware capsule loading with\ncontent-addressed artifact reuse, kernel-side tool-surface access enforcement, and per-device\ncapability scope threaded through the HTTP gateway.</li>\n<li><strong>LLM provider and model binding.</strong> Multi-provider onboarding with live model discovery, plus\ngateway routes and <code>astrid models</code> / <code>astrid doctor</code> for per-principal model management and\nloop-readiness checks.</li>\n<li><strong>Conversation threads over the HTTP gateway.</strong> List, fetch, update, delete, and full-text search\nthreads, plus a per-principal live conversation feed with cross-principal isolation enforced at the\nbus.</li>\n<li><strong><code>astrid:http@1.1.0</code> and operator-configurable limits.</strong> Per-request timeouts, redirect policy,\nbody caps, <code>https-only</code>, and subresource integrity; seven previously-hardcoded ceilings become\noperator knobs.</li>\n<li><strong>Security.</strong> Local-egress consent (transport-origin marker, runtime elicitation, per-capsule and\nper-principal grants), an SSRF airlock that closes IP-literal and redirect bypasses, and a hardened\nsupply-chain path (Sigstore attestation, CodeQL, pinned Action SHAs, least-privilege tokens).</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<ul dir=\"auto\">\n<li><strong><a href=\"https://github.com/astrid-runtime/book\">The Astrid Book</a></strong> is the canonical reference: the\nkernel, the capsule model, the host ABI, the bus, and the security model, grounded in the source\nwith file and line anchors. Start with <a href=\"https://github.com/astrid-runtime/book\">Getting Started</a>\nto go from nothing to a working agent in a few minutes.</li>\n<li><strong>Operator guides</strong> live in <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/\"><code>docs/</code></a>: the <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/config.md\">unified config schema</a>,\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/models.md\">LLM model selection</a>, <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/distro-signing.md\">distro signing</a>, the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/gateway-deployment.md\">gateway deployment runbook</a>, and\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/gateway-client.md\">generating a gateway client</a>. Architecture programs include\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-conservation-of-computation.md\">conservation of computation</a>,\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-muninn.md\">Muninn</a>, <a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-huginn.md\">Huginn</a>, and the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/astrid-refinery.md\">Refinery</a>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --workspace\ncargo test --workspace -- --quiet\ncargo clippy --workspace --all-features -- -D warnings\ncargo fmt --all -- --check\"><pre>cargo build --workspace\ncargo <span class=\"pl-c1\">test</span> --workspace -- --quiet\ncargo clippy --workspace --all-features -- -D warnings\ncargo fmt --all -- --check</pre></div>\n<p dir=\"auto\">All crates enforce <code>#![deny(unsafe_code)]</code> except <code>astrid-sys</code> and <code>astrid-sdk</code>, where WASM FFI\nrequires it. Clippy runs at pedantic level and integer-overflow arithmetic is a lint error. Release\nbinaries for macOS and GNU/musl Linux (x86_64 and aarch64) are built on tag push and signed with keyless\nSigstore. Self-managed updates authenticate the exact archive and its pinned Astrid release-workflow\nidentity before independently checking the BLAKE3 manifest and extracting any bytes. Homebrew and\nCargo remain responsible for updates they install; signed SHA-256 manifests remain available for\ntheir compatibility requirements. GitHub build-provenance attestations are published as additional\nevidence and are not substituted for the updater's release-archive signature. See the\n<a href=\"https://github.com/astrid-runtime/astrid/blob/main/docs/self-update-security.md\">self-update security model</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Contributions are welcome. Astrid uses a tiered contributor system that protects security-critical\ncode while keeping the door open to new contributors. Every pull request must be linked to a GitHub\nissue. See <a href=\"https://github.com/astrid-runtime/astrid/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a> for the issue-first workflow and tier descriptions.</p>\n<p dir=\"auto\">Changes to any contract surface (the host ABI, the IPC protocol, the capability model, the manifest\nschema, or the SDK public API) go through the RFC process in the\n<a href=\"https://github.com/astrid-runtime/rfcs\">RFCs repository</a> before implementation.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Dual-licensed under <a href=\"https://github.com/astrid-runtime/astrid/blob/main/LICENSE-MIT\">MIT</a> and <a href=\"https://github.com/astrid-runtime/astrid/blob/main/LICENSE-APACHE\">Apache 2.0</a>, at your option.</p>\n<p dir=\"auto\">Copyright (c) 2025-2026 Joshua J. Bouw and Unicity Labs.</p>\n</article></div>",
   "contributorCount": 4,
   "releases": [
     {
@@ -112,7 +112,7 @@
       "publishedAt": "2026-07-20T12:18:00Z",
       "prerelease": false,
       "body": "\n### Removed\n\n- **Capsule manifests no longer embed the agent-specific `[[skill]]`\n  protocol.** Skills remain a user-space concern that agent runtimes can\n  discover over IPC or advertise through product registries without teaching\n  the Astrid kernel or generic capsule archive about an AI workflow format.\n  Builders still preserve files under `assets/` and legacy `skills/` as opaque,\n  symlink-free capsule data without generating manifest metadata.\n\n### Fixed\n\n- **`astrid capsule check` no longer treats embedded Rust examples as live\n  tools.** The scanner now parses Rust attributes instead of matching source\n  text, so scaffold templates and documentation strings cannot create phantom\n  unrouted-tool failures.\n- **Interrupted immutable-release drafts recover without replacing uploaded\n  assets.** Release uploads are sequential, and reruns authenticate every\n  existing payload and signature before adding only the missing files. Closes\n  #1285.\n\n\n## Install\n\n**From source (requires Rust 1.95+):**\n```\ncargo install astrid\n```\n\n**Pre-built binaries:**\nDownload the archive for your platform, extract, and add to PATH:\n```\ntar xzf astrid-*-$(uname -m)-*.tar.gz\nsudo mv astrid-*/astrid a",
-      "downloads": 1809,
+      "downloads": 2489,
       "reactions": 1
     },
     {
@@ -122,7 +122,7 @@
       "publishedAt": "2026-07-19T17:21:45Z",
       "prerelease": false,
       "body": "\n### Fixed\n\n- **`astrid mcp serve` now waits for the authenticated principal's broker to\n  answer before exposing MCP stdio.** Non-default capsule views intentionally\n  warm after global daemon readiness; an immediate client `tools/list` could\n  previously publish before the broker subscribed, lose the non-durable bus\n  request, and hang for the full 55-second reply deadline. Startup now proves\n  the generic broker path with an idempotent `tools/list` probe and reissues it\n  when the principal's `capsules_loaded` signal arrives, without hardcoding a\n  product capsule name.\n\n\n## Install\n\n**From source (requires Rust 1.95+):**\n```\ncargo install astrid\n```\n\n**Pre-built binaries:**\nDownload the archive for your platform, extract, and add to PATH:\n```\ntar xzf astrid-*-$(uname -m)-*.tar.gz\nsudo mv astrid-*/astrid astrid-*/astrid-daemon astrid-*/astrid-build astrid-*/astrid-emit /usr/local/bin/\n```\n\nAstrid Runtime does not bundle a product distro. To compose it with a\ndistro you trust, run:\n```\nastrid init --distro <name, @org/repo, path, or .shuttle>\n```\n\n---\n\n**With many thanks from the following Astrinauts** 🚀\n\n- Joshua J. Bouw\n",
-      "downloads": 55,
+      "downloads": 57,
       "reactions": 1
     },
     {
@@ -152,14 +152,14 @@
       "publishedAt": "2026-07-17T06:22:28Z",
       "prerelease": true,
       "body": "Signed mutable channel pointer; immutable generations are retained as assets.",
-      "downloads": 2919,
+      "downloads": 5002,
       "reactions": 0
     }
   ],
   "participation": {
-    "all": 518,
+    "all": 544,
     "owner": 0,
-    "community": 518
+    "community": 544
   },
   "punchCard": [
     {
@@ -320,7 +320,7 @@
     {
       "day": 1,
       "hour": 7,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 1,
@@ -330,7 +330,7 @@
     {
       "day": 1,
       "hour": 9,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 1,
@@ -355,7 +355,7 @@
     {
       "day": 1,
       "hour": 14,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 1,
@@ -365,7 +365,7 @@
     {
       "day": 1,
       "hour": 16,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 1,
@@ -390,7 +390,7 @@
     {
       "day": 1,
       "hour": 21,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 1,
@@ -495,7 +495,7 @@
     {
       "day": 2,
       "hour": 18,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 2,
@@ -515,12 +515,12 @@
     {
       "day": 2,
       "hour": 22,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 2,
       "hour": 23,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 3,
@@ -540,7 +540,7 @@
     {
       "day": 3,
       "hour": 3,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 3,
@@ -595,7 +595,7 @@
     {
       "day": 3,
       "hour": 14,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 3,
@@ -625,7 +625,7 @@
     {
       "day": 3,
       "hour": 20,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 3,
@@ -635,7 +635,7 @@
     {
       "day": 3,
       "hour": 22,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 3,
@@ -655,7 +655,7 @@
     {
       "day": 4,
       "hour": 2,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 4,
@@ -665,12 +665,12 @@
     {
       "day": 4,
       "hour": 4,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 4,
       "hour": 5,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 4,
@@ -775,12 +775,12 @@
     {
       "day": 5,
       "hour": 2,
-      "commits": 10
+      "commits": 11
     },
     {
       "day": 5,
       "hour": 3,
-      "commits": 10
+      "commits": 11
     },
     {
       "day": 5,
@@ -795,7 +795,7 @@
     {
       "day": 5,
       "hour": 6,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 5,
@@ -875,7 +875,7 @@
     {
       "day": 5,
       "hour": 22,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 5,
@@ -885,7 +885,7 @@
     {
       "day": 6,
       "hour": 0,
-      "commits": 5
+      "commits": 6
     },
     {
       "day": 6,
@@ -895,17 +895,17 @@
     {
       "day": 6,
       "hour": 2,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 6,
       "hour": 3,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 6,
       "hour": 4,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -915,7 +915,7 @@
     {
       "day": 6,
       "hour": 6,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 6,
@@ -1006,6 +1006,24 @@
   "firstCommitAt": "2026-02-11T11:30:13Z",
   "recentIssues": [
     {
+      "number": 1467,
+      "title": "storage: adopt sealed staging files as contiguous representations",
+      "url": "https://github.com/astrid-runtime/astrid/issues/1467",
+      "createdAt": "2026-08-06T01:51:27Z",
+      "comments": 0,
+      "labels": [],
+      "author": "joshuajbouw"
+    },
+    {
+      "number": 1454,
+      "title": "Run-loop + ipc::recv: should a run loop's own storage always resolve to the owner (not the last publisher)?",
+      "url": "https://github.com/astrid-runtime/astrid/issues/1454",
+      "createdAt": "2026-08-04T23:14:13Z",
+      "comments": 0,
+      "labels": [],
+      "author": "jvsteiner"
+    },
+    {
       "number": 1406,
       "title": "feat(kernel): add principal-scoped dynamic capability namespaces",
       "url": "https://github.com/astrid-runtime/astrid/issues/1406",
@@ -1014,15 +1032,6 @@
       "labels": [
         "feat"
       ],
-      "author": "joshuajbouw"
-    },
-    {
-      "number": 1402,
-      "title": "storage: batch durable seals through an intent journal",
-      "url": "https://github.com/astrid-runtime/astrid/issues/1402",
-      "createdAt": "2026-07-28T02:34:54Z",
-      "comments": 1,
-      "labels": [],
       "author": "joshuajbouw"
     },
     {
@@ -1035,185 +1044,180 @@
       "author": "joshuajbouw"
     },
     {
-      "number": 1399,
-      "title": "storage: add cached positional reads and open content handles",
-      "url": "https://github.com/astrid-runtime/astrid/issues/1399",
-      "createdAt": "2026-07-27T20:13:03Z",
-      "comments": 8,
+      "number": 1392,
+      "title": "storage: make bulk content ingest read-bound and delta-proportional",
+      "url": "https://github.com/astrid-runtime/astrid/issues/1392",
+      "createdAt": "2026-07-26T21:57:15Z",
+      "comments": 11,
       "labels": [],
       "author": "joshuajbouw"
     },
     {
-      "number": 1396,
-      "title": "storage: define the multi-representation ObjectId/BlobId seam",
-      "url": "https://github.com/astrid-runtime/astrid/issues/1396",
-      "createdAt": "2026-07-27T14:06:14Z",
-      "comments": 1,
-      "labels": [],
-      "author": "joshuajbouw"
-    },
-    {
-      "number": 1393,
-      "title": "storage: exhaustively replay every durable write prefix",
-      "url": "https://github.com/astrid-runtime/astrid/issues/1393",
-      "createdAt": "2026-07-26T21:57:19Z",
-      "comments": 0,
-      "labels": [],
+      "number": 1391,
+      "title": "storage: filesystem projection of principal roots (reflink, verifiable, one-way)",
+      "url": "https://github.com/astrid-runtime/astrid/issues/1391",
+      "createdAt": "2026-07-26T15:38:01Z",
+      "comments": 5,
+      "labels": [
+        "feat",
+        "area/storage",
+        "needs-design"
+      ],
       "author": "joshuajbouw"
     }
   ],
   "recentCommits": [
     {
-      "sha": "e5a4e72",
-      "message": "feat(storage): freeze FastCDC format one (#1418)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/e5a4e724e0a981f15d7b0be0177bfdd06247340c",
-      "date": "2026-07-30T12:50:28Z",
+      "sha": "4611227",
+      "message": "feat(identity): add user and fleet ownership (#1470)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/4611227a412e5c375c9c93f8b6a8bac5ece386dc",
+      "date": "2026-08-07T18:48:18Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "a0cb631",
-      "message": "test(storage): gate format-one chunker with measured evidence (#1416)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/a0cb631f24aa6dce6dc51d02be329694e4afd8ca",
-      "date": "2026-07-30T02:29:17Z",
+      "sha": "433dde1",
+      "message": "perf(storage): reuse staged closure evidence (#1466)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/433dde1d437f7f05614a83d5d0fbf1122b2131c6",
+      "date": "2026-08-06T01:42:20Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "e02463f",
-      "message": "perf(storage): establish reproducible I/O performance gates (#1414)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/e02463f1cea774ea92acec6b701f48ddd8edc3ed",
-      "date": "2026-07-29T14:38:53Z",
+      "sha": "8791311",
+      "message": "perf(storage): pipeline bounded bulk admission (#1464)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/879131141a4a8926a0b5f17feac7ca10655fbdff",
+      "date": "2026-08-06T00:34:53Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "d9a1463",
-      "message": "storage: replace flat content catalog with path-copy tree (#1412)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/d9a1463a308ef46d84cedcc28063f67ccc324126",
-      "date": "2026-07-29T02:09:24Z",
+      "sha": "279c934",
+      "message": "storage: move bulk arena admission work off lock (#1462)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/279c9342b06696253427377ee6d5e248151c419e",
+      "date": "2026-08-05T22:05:53Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "049b138",
-      "message": "fix(storage): preserve bootstrap roots during compaction (#1411)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/049b138beb6c19cd56fb48b307f762af174f4152",
-      "date": "2026-07-29T00:41:57Z",
+      "sha": "3d61052",
+      "message": "storage: make bulk source re-ingest delta-proportional (#1460)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/3d61052b68d3a071b73fd51c1dcf3a5e8963d5a7",
+      "date": "2026-08-05T18:59:12Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "81887f7",
-      "message": "docs(storage): freeze GC fact snapshot identity (#1410)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/81887f738d33f53b54caa4c3100fb4b7dd8a802f",
-      "date": "2026-07-28T22:18:59Z",
+      "sha": "4cef411",
+      "message": "feat(storage): add dense canonical physical maps (#1458)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/4cef41133e0257c4487689cb6c94ac0237db2fe4",
+      "date": "2026-08-05T16:31:46Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "c695e98",
-      "message": "feat(storage): bound durable-store growth with audited compaction (#1407)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/c695e9820a09e43179cf4030f601ff4a4a41b6b4",
-      "date": "2026-07-28T20:06:44Z",
+      "sha": "b5f13f1",
+      "message": "feat(storage): activate authoritative physical representation catalogues (#1456)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/b5f13f11b331dc6a8fdaa28eeb9774391452194a",
+      "date": "2026-08-05T10:10:41Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "0bf7aae",
-      "message": "feat(storage): conserve deterministic computation in format v1 (#1404)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/0bf7aae4e04dcf1f6b84cdfcadf3bd5f7b5dd56b",
-      "date": "2026-07-28T15:24:44Z",
+      "sha": "7388704",
+      "message": "chore(maintenance): enforce DCO and contribution safeguards (#1453)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/738870473f41d41fc522b0014963159d829e2b1c",
+      "date": "2026-08-04T23:55:09Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "756ab50",
-      "message": "feat(storage): add crash-recoverable native write staging (#1395)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/756ab50ccf4c70415c4098ad9f41f13e211626b2",
-      "date": "2026-07-27T18:36:56Z",
+      "sha": "94e7cea",
+      "message": "fix(storage)!: remove unused SurrealDB dependency graph (#1449)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/94e7cea7420bd2bdd215d569f3516f4d7326b061",
+      "date": "2026-08-04T19:50:15Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     },
     {
-      "sha": "afd081f",
-      "message": "feat(storage): add canonical principal content DAGs (#1390)",
-      "url": "https://github.com/astrid-runtime/astrid/commit/afd081f523183793107b39f4c4c53a199d23c137",
-      "date": "2026-07-27T18:16:39Z",
+      "sha": "291770d",
+      "message": "feat(storage): add the canonical physical representation model (#1447)",
+      "url": "https://github.com/astrid-runtime/astrid/commit/291770dd49ddd1986ee8378208efaf2d8a4e4ec4",
+      "date": "2026-08-04T18:17:21Z",
       "author": "joshuajbouw",
       "avatarUrl": "https://avatars.githubusercontent.com/u/9986166?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 1418,
-      "title": "feat(storage): freeze FastCDC format one",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1418",
+      "number": 1470,
+      "title": "feat(identity): add user and fleet ownership",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1470",
       "state": "merged",
-      "updatedAt": "2026-07-30T12:50:30Z",
+      "updatedAt": "2026-08-07T18:48:19Z",
       "author": "joshuajbouw",
       "draft": false
     },
     {
-      "number": 1417,
-      "title": "chore(deps): bump the rust-dependencies group across 1 directory with 33 updates",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1417",
+      "number": 1468,
+      "title": "feat(storage): adopt staged files as contiguous representations",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1468",
       "state": "open",
-      "updatedAt": "2026-07-30T02:55:42Z",
-      "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 1415,
-      "title": "chore(deps): bump the rust-dependencies group across 1 directory with 32 updates",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1415",
-      "state": "closed",
-      "updatedAt": "2026-07-30T02:54:29Z",
-      "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 1416,
-      "title": "test(storage): gate format-one chunker with measured evidence",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1416",
-      "state": "merged",
-      "updatedAt": "2026-07-30T02:29:20Z",
+      "updatedAt": "2026-08-06T19:06:03Z",
       "author": "joshuajbouw",
       "draft": false
     },
     {
-      "number": 1397,
+      "number": 1332,
+      "title": "chore(deps): bump the github-actions group across 1 directory with 9 updates",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1332",
+      "state": "open",
+      "updatedAt": "2026-08-06T15:44:17Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 1451,
       "title": "chore(deps): bump the rust-dependencies group across 1 directory with 31 updates",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1397",
-      "state": "closed",
-      "updatedAt": "2026-07-29T14:57:13Z",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1451",
+      "state": "open",
+      "updatedAt": "2026-08-06T15:34:17Z",
       "author": "dependabot[bot]",
       "draft": false
     },
     {
-      "number": 1414,
-      "title": "perf(storage): establish reproducible I/O performance gates",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1414",
+      "number": 1466,
+      "title": "perf(storage): reuse staged closure evidence",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1466",
       "state": "merged",
-      "updatedAt": "2026-07-29T14:38:55Z",
+      "updatedAt": "2026-08-06T01:42:23Z",
       "author": "joshuajbouw",
       "draft": false
     },
     {
-      "number": 1412,
-      "title": "storage: replace flat content catalog with path-copy tree",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1412",
+      "number": 1464,
+      "title": "perf(storage): pipeline bounded bulk admission",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1464",
       "state": "merged",
-      "updatedAt": "2026-07-29T02:09:27Z",
+      "updatedAt": "2026-08-06T00:34:55Z",
       "author": "joshuajbouw",
       "draft": false
     },
     {
-      "number": 1411,
-      "title": "fix(storage): preserve bootstrap roots during compaction",
-      "url": "https://github.com/astrid-runtime/astrid/pull/1411",
+      "number": 1462,
+      "title": "storage: move bulk arena admission work off lock",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1462",
       "state": "merged",
-      "updatedAt": "2026-07-29T00:41:58Z",
+      "updatedAt": "2026-08-05T22:05:56Z",
+      "author": "joshuajbouw",
+      "draft": false
+    },
+    {
+      "number": 1460,
+      "title": "storage: make bulk source re-ingest delta-proportional",
+      "url": "https://github.com/astrid-runtime/astrid/pull/1460",
+      "state": "merged",
+      "updatedAt": "2026-08-05T18:59:15Z",
       "author": "joshuajbouw",
       "draft": false
     }
@@ -1306,19 +1310,19 @@
     {
       "name": "Cargo.lock",
       "type": "file",
-      "size": 262086,
+      "size": 214278,
       "url": "https://github.com/astrid-runtime/astrid/blob/main/Cargo.lock"
     },
     {
       "name": "Cargo.toml",
       "type": "file",
-      "size": 13747,
+      "size": 13810,
       "url": "https://github.com/astrid-runtime/astrid/blob/main/Cargo.toml"
     },
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 430419,
+      "size": 446866,
       "url": "https://github.com/astrid-runtime/astrid/blob/main/CHANGELOG.md"
     },
     {
@@ -1330,7 +1334,7 @@
     {
       "name": "CONTRIBUTING.md",
       "type": "file",
-      "size": 4157,
+      "size": 6720,
       "url": "https://github.com/astrid-runtime/astrid/blob/main/CONTRIBUTING.md"
     },
     {
@@ -1378,49 +1382,49 @@
   ],
   "workflowRuns": [
     {
-      "name": "Runtime E2E",
-      "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30544253288",
+      "name": "Schedule Astrid nightly",
+      "status": "skipped",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31235698914",
       "branch": "main",
-      "updatedAt": "2026-07-30T13:08:41Z"
-    },
-    {
-      "name": "Scorecard supply-chain security",
-      "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30544253213",
-      "branch": "main",
-      "updatedAt": "2026-07-30T12:51:27Z"
+      "updatedAt": "2026-08-08T02:45:46Z"
     },
     {
       "name": "CodeQL",
       "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30544253156",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31208636428",
       "branch": "main",
-      "updatedAt": "2026-07-30T12:53:26Z"
+      "updatedAt": "2026-08-07T18:51:30Z"
+    },
+    {
+      "name": "Windows local transport",
+      "status": "success",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31208636083",
+      "branch": "main",
+      "updatedAt": "2026-08-07T19:03:20Z"
+    },
+    {
+      "name": "Runtime E2E",
+      "status": "success",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31208635666",
+      "branch": "main",
+      "updatedAt": "2026-08-07T19:03:48Z"
+    },
+    {
+      "name": "Scorecard supply-chain security",
+      "status": "success",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31208635472",
+      "branch": "main",
+      "updatedAt": "2026-08-07T18:48:59Z"
     },
     {
       "name": "CI",
       "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30544253154",
+      "url": "https://github.com/astrid-runtime/astrid/actions/runs/31208635277",
       "branch": "main",
-      "updatedAt": "2026-07-30T13:15:20Z"
-    },
-    {
-      "name": "Running Copilot Code Review",
-      "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30542236004",
-      "branch": "feat/storage-freeze-fastcdc-format",
-      "updatedAt": "2026-07-30T12:30:02Z"
-    },
-    {
-      "name": "PR Checks",
-      "status": "success",
-      "url": "https://github.com/astrid-runtime/astrid/actions/runs/30542227457",
-      "branch": "feat/storage-freeze-fastcdc-format",
-      "updatedAt": "2026-07-30T12:26:48Z"
+      "updatedAt": "2026-08-07T19:11:57Z"
     }
   ],
-  "branchCount": 130,
+  "branchCount": 142,
   "tagCount": 21,
   "community": {
     "healthPercentage": 87,
@@ -1430,7 +1434,7 @@
     "hasPullRequestTemplate": true
   },
   "fundingLinks": [],
-  "openIssuesOnly": 143,
+  "openIssuesOnly": 139,
   "openPRs": 18,
   "releaseCount": 20,
   "discussionsEnabled": true,
@@ -1458,8 +1462,8 @@
       "category": "Announcements"
     }
   ],
-  "closedIssues": 712,
-  "mergedPRs": 502,
+  "closedIssues": 736,
+  "mergedPRs": 526,
   "environmentCount": 5,
   "isFork": false,
   "isInOrganization": true,
@@ -1592,12 +1596,17 @@
     },
     {
       "week": "2026-07-26",
-      "additions": 54902,
-      "deletions": 6326
+      "additions": 77483,
+      "deletions": 9811
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 45392,
+      "deletions": 6954
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-30T13:46:24.194Z",
+  "factsUpdatedAt": "2026-08-08T22:22:48.455Z",
   "aiSummary": {
     "oneLiner": "A highly isolated, WebAssembly-based agent runtime designed for multi-tenant, zero-trust AI workloads.",
     "whatItDoes": "Astrid functions as an operating system kernel for AI agents. Rather than running agent code directly on the host, it orchestrates stateless 'capsules' compiled to WebAssembly (WASM). These capsules run inside Wasmtime sandboxes with no syscalls, no file descriptors, and no host memory access by default. The core daemon acts merely as a dumb event router enforcing a strict capability-based IPC bus. It guarantees strong tenant isolation via a per-principal design where agents get separate KV namespaces, secret stores, quotas, and cryptographically signed audit chains. This architecture ensures that compromised tools or prompt injection attacks cannot access the host machine or read data from other agents running on the same daemon.",
@@ -1638,5 +1647,1673 @@
     "category": "systems",
     "source": "jules",
     "version": 3
-  }
+  },
+  "commitActivity": [
+    {
+      "week": "2025-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 16
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 53
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 22
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 15
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 64
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 44
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 25
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 6
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 2
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 18
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 21
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 22
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 13
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 30
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 41
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 32
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 16
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 24
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 36
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 21
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 16
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-09",
+      "count": 0
+    },
+    {
+      "date": "2025-08-10",
+      "count": 0
+    },
+    {
+      "date": "2025-08-11",
+      "count": 0
+    },
+    {
+      "date": "2025-08-12",
+      "count": 0
+    },
+    {
+      "date": "2025-08-13",
+      "count": 0
+    },
+    {
+      "date": "2025-08-14",
+      "count": 0
+    },
+    {
+      "date": "2025-08-15",
+      "count": 0
+    },
+    {
+      "date": "2025-08-16",
+      "count": 0
+    },
+    {
+      "date": "2025-08-17",
+      "count": 0
+    },
+    {
+      "date": "2025-08-18",
+      "count": 0
+    },
+    {
+      "date": "2025-08-19",
+      "count": 0
+    },
+    {
+      "date": "2025-08-20",
+      "count": 0
+    },
+    {
+      "date": "2025-08-21",
+      "count": 0
+    },
+    {
+      "date": "2025-08-22",
+      "count": 0
+    },
+    {
+      "date": "2025-08-23",
+      "count": 0
+    },
+    {
+      "date": "2025-08-24",
+      "count": 0
+    },
+    {
+      "date": "2025-08-25",
+      "count": 0
+    },
+    {
+      "date": "2025-08-26",
+      "count": 0
+    },
+    {
+      "date": "2025-08-27",
+      "count": 0
+    },
+    {
+      "date": "2025-08-28",
+      "count": 0
+    },
+    {
+      "date": "2025-08-29",
+      "count": 0
+    },
+    {
+      "date": "2025-08-30",
+      "count": 0
+    },
+    {
+      "date": "2025-08-31",
+      "count": 0
+    },
+    {
+      "date": "2025-09-01",
+      "count": 0
+    },
+    {
+      "date": "2025-09-02",
+      "count": 0
+    },
+    {
+      "date": "2025-09-03",
+      "count": 0
+    },
+    {
+      "date": "2025-09-04",
+      "count": 0
+    },
+    {
+      "date": "2025-09-05",
+      "count": 0
+    },
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 7
+    },
+    {
+      "date": "2026-02-12",
+      "count": 3
+    },
+    {
+      "date": "2026-02-13",
+      "count": 3
+    },
+    {
+      "date": "2026-02-14",
+      "count": 3
+    },
+    {
+      "date": "2026-02-15",
+      "count": 1
+    },
+    {
+      "date": "2026-02-16",
+      "count": 10
+    },
+    {
+      "date": "2026-02-17",
+      "count": 9
+    },
+    {
+      "date": "2026-02-18",
+      "count": 14
+    },
+    {
+      "date": "2026-02-19",
+      "count": 4
+    },
+    {
+      "date": "2026-02-20",
+      "count": 4
+    },
+    {
+      "date": "2026-02-21",
+      "count": 11
+    },
+    {
+      "date": "2026-02-22",
+      "count": 9
+    },
+    {
+      "date": "2026-02-23",
+      "count": 8
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 2
+    },
+    {
+      "date": "2026-02-26",
+      "count": 1
+    },
+    {
+      "date": "2026-02-27",
+      "count": 1
+    },
+    {
+      "date": "2026-02-28",
+      "count": 1
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 2
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 7
+    },
+    {
+      "date": "2026-03-07",
+      "count": 6
+    },
+    {
+      "date": "2026-03-08",
+      "count": 2
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 2
+    },
+    {
+      "date": "2026-03-11",
+      "count": 8
+    },
+    {
+      "date": "2026-03-12",
+      "count": 11
+    },
+    {
+      "date": "2026-03-13",
+      "count": 21
+    },
+    {
+      "date": "2026-03-14",
+      "count": 20
+    },
+    {
+      "date": "2026-03-15",
+      "count": 12
+    },
+    {
+      "date": "2026-03-16",
+      "count": 3
+    },
+    {
+      "date": "2026-03-17",
+      "count": 6
+    },
+    {
+      "date": "2026-03-18",
+      "count": 5
+    },
+    {
+      "date": "2026-03-19",
+      "count": 3
+    },
+    {
+      "date": "2026-03-20",
+      "count": 7
+    },
+    {
+      "date": "2026-03-21",
+      "count": 8
+    },
+    {
+      "date": "2026-03-22",
+      "count": 5
+    },
+    {
+      "date": "2026-03-23",
+      "count": 5
+    },
+    {
+      "date": "2026-03-24",
+      "count": 5
+    },
+    {
+      "date": "2026-03-25",
+      "count": 6
+    },
+    {
+      "date": "2026-03-26",
+      "count": 3
+    },
+    {
+      "date": "2026-03-27",
+      "count": 1
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 3
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 1
+    },
+    {
+      "date": "2026-04-22",
+      "count": 2
+    },
+    {
+      "date": "2026-04-23",
+      "count": 2
+    },
+    {
+      "date": "2026-04-24",
+      "count": 1
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 1
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 1
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 7
+    },
+    {
+      "date": "2026-05-15",
+      "count": 11
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 1
+    },
+    {
+      "date": "2026-05-19",
+      "count": 2
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 6
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 3
+    },
+    {
+      "date": "2026-05-29",
+      "count": 12
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 2
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 2
+    },
+    {
+      "date": "2026-06-05",
+      "count": 15
+    },
+    {
+      "date": "2026-06-06",
+      "count": 3
+    },
+    {
+      "date": "2026-06-07",
+      "count": 2
+    },
+    {
+      "date": "2026-06-08",
+      "count": 4
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 4
+    },
+    {
+      "date": "2026-06-11",
+      "count": 3
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 4
+    },
+    {
+      "date": "2026-06-16",
+      "count": 14
+    },
+    {
+      "date": "2026-06-17",
+      "count": 6
+    },
+    {
+      "date": "2026-06-18",
+      "count": 2
+    },
+    {
+      "date": "2026-06-19",
+      "count": 4
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 5
+    },
+    {
+      "date": "2026-06-23",
+      "count": 11
+    },
+    {
+      "date": "2026-06-24",
+      "count": 22
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 3
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-01",
+      "count": 2
+    },
+    {
+      "date": "2026-07-02",
+      "count": 9
+    },
+    {
+      "date": "2026-07-03",
+      "count": 11
+    },
+    {
+      "date": "2026-07-04",
+      "count": 8
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 1
+    },
+    {
+      "date": "2026-07-07",
+      "count": 1
+    },
+    {
+      "date": "2026-07-08",
+      "count": 7
+    },
+    {
+      "date": "2026-07-09",
+      "count": 1
+    },
+    {
+      "date": "2026-07-10",
+      "count": 6
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 4
+    },
+    {
+      "date": "2026-07-14",
+      "count": 4
+    },
+    {
+      "date": "2026-07-15",
+      "count": 10
+    },
+    {
+      "date": "2026-07-16",
+      "count": 1
+    },
+    {
+      "date": "2026-07-17",
+      "count": 5
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 3
+    },
+    {
+      "date": "2026-07-20",
+      "count": 8
+    },
+    {
+      "date": "2026-07-21",
+      "count": 5
+    },
+    {
+      "date": "2026-07-22",
+      "count": 1
+    },
+    {
+      "date": "2026-07-23",
+      "count": 4
+    },
+    {
+      "date": "2026-07-24",
+      "count": 14
+    },
+    {
+      "date": "2026-07-25",
+      "count": 1
+    },
+    {
+      "date": "2026-07-26",
+      "count": 1
+    },
+    {
+      "date": "2026-07-27",
+      "count": 4
+    },
+    {
+      "date": "2026-07-28",
+      "count": 1
+    },
+    {
+      "date": "2026-07-29",
+      "count": 5
+    },
+    {
+      "date": "2026-07-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-31",
+      "count": 3
+    },
+    {
+      "date": "2026-08-01",
+      "count": 5
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 5
+    },
+    {
+      "date": "2026-08-04",
+      "count": 3
+    },
+    {
+      "date": "2026-08-05",
+      "count": 4
+    },
+    {
+      "date": "2026-08-06",
+      "count": 3
+    },
+    {
+      "date": "2026-08-07",
+      "count": 1
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    }
+  ]
 }
