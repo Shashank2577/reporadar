@@ -35,6 +35,11 @@
       "date": "2026-08-08",
       "stars": 1462,
       "forks": 49
+    },
+    {
+      "date": "2026-08-09",
+      "stars": 1462,
+      "forks": 49
     }
   ],
   "trendingHistory": [
@@ -77,15 +82,15 @@
   "stars": 1462,
   "forks": 49,
   "watchers": 8,
-  "openIssues": 15,
+  "openIssues": 16,
   "createdAt": "2026-06-24T15:11:27Z",
-  "pushedAt": "2026-08-07T00:35:20Z",
+  "pushedAt": "2026-08-08T23:25:47Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-08T11:23:04.839Z",
-  "commitCount": 249,
+  "updatedAt": "2026-08-09T07:17:38.017Z",
+  "commitCount": 255,
   "languages": {
-    "Rust": 908054,
+    "Rust": 905824,
     "C": 59981,
     "Makefile": 4145,
     "CMake": 1892,
@@ -96,7 +101,7 @@
       "login": "Kronos3",
       "url": "https://github.com/Kronos3",
       "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4",
-      "contributions": 227
+      "contributions": 228
     },
     {
       "login": "h313",
@@ -108,7 +113,13 @@
       "login": "cole-wilson",
       "url": "https://github.com/cole-wilson",
       "avatarUrl": "https://avatars.githubusercontent.com/u/49500253?v=4",
-      "contributions": 4
+      "contributions": 6
+    },
+    {
+      "login": "kadircanyildirm-crypto",
+      "url": "https://github.com/kadircanyildirm-crypto",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/252162627?v=4",
+      "contributions": 3
     },
     {
       "login": "niooss-ledger",
@@ -145,16 +156,20 @@
       "url": "https://github.com/TaKO8Ki",
       "avatarUrl": "https://avatars.githubusercontent.com/u/41065217?v=4",
       "contributions": 1
-    },
-    {
-      "login": "Anantdadhich",
-      "url": "https://github.com/Anantdadhich",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/132841356?v=4",
-      "contributions": 1
     }
   ],
-  "readmeExcerpt": "<h1 align=\"center\">SpaceWasm</h2>\n\n<p align=\"center\">\n<img src=\"docs/logo.svg\" width=\"150\" height=\"150\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml\"><img src=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml/badge.svg\" /></a>\n  <a href=\"https://codecov.io/gh/nasa/spacewasm\"><img src=\"https://codecov.io/gh/nasa/spacewasm/graph/badge.svg?token=3EddiLtM36\"/></a>\n  <a href=\"#license\"><img src=\"https://img.shields.io/badge/license-Apache%202.0-blue\" alt=\"license\" /></a>\n</p>\n\nSpaceWasm is an implementation of the [Wasm 1.0](https://webassembly.github.io/spec/versions/core/WebAssembly-1.0.pdf)\nspecification meant to interpret Wasm binary on-board spacecraft. It is developed at [NASA JPL](https://www.jpl.nasa.gov).\n\n## Rationale\n\n1. **Sequencing**: High-level spacecraft activities are typically encoded outside of the embedded flight-software in a command sequence.\nThese activities can include anything from driving the Mars rover and operating its arm, to checking temperature ranges are nominal.\nHistorically, the form and capability of sequences has varied from mission to mission, resulting in assorted/fragmented implementations.\nSpaceWasm implements an industry standard, providing consolidation.\n\n2. **Sandboxing**: The cost and time of flight-software development is high due to its constrained requirements and scope. Validating a new flight-software capability\noften involves validating interactions with the entire system. This extends the V&V timeline and increases competition for testbed resources, which makes it hard to\nget new autonomy software into flight. WebAssembly gives the opportunity for untrusted or low-trust executables to make their way on-board in a\nway that flight-software can restrict access and compute time as well as monitor health and safety.\n\n3. **Portability**: WebAssembly provides well-defined interfaces and sandboxing that make transferring to another platform trivial.\n\n4. **Tooling**: Standardizing to WebAssembly opens doors into a wide community of rich tooling and research!\n\n## Overview\n\nThis software comes with two major components:\n\n1. Decoder/Validator:\n\n   Reads the Wasm binary in [chunks](#streaming) and decodes it to an executable form. The decoder will use a fixed\n   amount of memory and can be measured per-Wasm binary using the `spacewasm-check` executable on the ground.\n\n   WebAssembly is validated during the decoding process and does not require another pass of the bytecode.\n\n2. Interpreter:\n\n   A Wasm interpreter that can operate on linear memory and interface with\n   hooks from the [embedding](#embedding).\n\nSpaceWasm does not execute direct WebAssembly bytecode. Wasm bytecode is meant to be small and structured in a way to\nvalidate easily. These properties however make it slow to execute in-place. During the decoding process of Wasm\ninstructions, SpaceWasm converts bytecode into another intermediate representation (IR) which includes properties better\nsuited for interpretation. Read more about the IR in the [specification](docs/ir.md).\n\n## Requirements\n\nThe requirements of SpaceWasm are levied from similar work produced by [DLR](https://github.com/DLR-FT/wasm-interpreter).\n\nSee [requirements](./docs/REQUIREMENTS.md).\n\n## Embedding\n\nEmbedding the interpreter refers to instantiating it and providing implementations for the functions that are imported\ninto the module. Typically, the set of functions imported by the module are fixed and should be specified at compile\ntime both for the Wasm module and the embedder.\n\n## Dynamic Allocation\n\nSpaceWasm has a unique dynamic memory allocation model. All of its design choices stem from requirements levied by common\nflight-software standards. Dynamic allocation follows the following rules:\n\n1. All allocations occur over a discrete number of fixed size blocks called _pages_. These pages are distinct from Wasm's linear memory pages.\n2. Deallocation cannot precede allocation.\n3. Sub-regions inside pages cannot grow or shrink, sizes should be fixed ahead of time.\n4. Memory usage must be deterministic.\n5. Any allocation failures must _not_ result in panic.\n\nThe standard Rust [allocation](https://doc.rust-lang.org/alloc/) does not meet these constraints even with custom\nallocators. To that end, SpaceWasm provides its own data structures that guarantee these properties. You will find these\ndata-structures contain the only usage of `unsafe` Rust semantics.\n\n> [!NOTE]\n> These limitations are only enforced on the implementation of the interpreter and _not_ on the Wasm bytecode it is made to interpret.\n\nWasm linear memory pages are allocated outside of dynamic memory pages.\n\n## Streaming\n\n_Peak_ memory usage is often an important constraint on small systems found on spacecraft. Many Wasm interpreters\nrequire the Wasm binary to be given in one linear blob to the interpreter. This is typically fine for systems where the\nsame regions of memory may be reused for different purposes. Flight software on spacecraft generally assign fixed\nportions of memory for certain purposes. Therefore, requiring the entire Wasm binary to fit into a single chunk of\nmemory is not feasible.\n\nSpaceWasm is highly optimized to reduce peak memory usage and not require deallocation after allocation required for\nstreaming. To this end, there are certain [constraints](#interpreter-limitations) imposed on the WebAssembly\nspecification.\n\nSpaceWasm supports decoding and compiling Wasm binary in a single pass via a streaming mechanism. Chunks of the Wasm\nbinary may be provided to the interpreter as they are read/requested from the filesystem. The stream must provide chunks\nsynchronously.\n\n\n## WASI 0.1 Support\nThe [`spacewasi`](crates/spacewasi#readme) crate provides a binary which can run arbitrary WASM modules that adhere to the WASI 0.1 (`wasip1`) spec in a sandboxed environment. Command line flags are available to mount host directories and environment variables:\n\n```bash\n# compile example from crates/spacewasi/tests/wasm/\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n# convert module to MVP compatible file\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe!\n```\n\nFor more information about this command and basic WASI compilation, see [`spacewasi/README.md`](crates/spacewasi/README.md).\n\n## Interpreter Limitations\n\nThis Wasm interpreter imposes additional constraints beyond the WebAssembly 1.0 specification to support\nresource-constrained spacecraft environments.\n\nSee our [IR SPEC](./src/SPEC.md) for the full list of limitations.\n\nThese constraints enable deterministic memory usage and efficient execution in resource-constrained environments while\nmaintaining compatibility with most standard WebAssembly modules.\n\n### Limits for Wasm Module Producers\n\nBecause SpaceWasm compiles bytecode into a fixed-width IR that is typically larger than the original bytecode, the\npractical ceiling on raw module size is bounded by the IR code-page limit above (~8 GiB of IR). This is far larger than\nany module expected on flight hardware; the binding constraint in practice is the peak memory configured for the\n[streaming](#streaming) decoder, which is measured per-module on the ground with `spacewasm-check`.\n\n> [!NOTE]\n> `spacewasm-check` has not been developed yet. A similar tool can be found in `spacewasm-std`.\n\nHere are a couple of limitations that may be relevant to developers of Wasm modules.\n\n| Limit               | Value               | Notes                                                                                                                                                                                                                                                         |\n| ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Wasm page size      | 64 KiB / 1 B        | [Custom-Page-Sizes proposal](https://github.com/WebAssembly/custom-page-sizes) is supported                                                                                                                                                                   |\n| Linear memory pages | 4 GiB               | Per the Wasm 1.0 spec. A module declaring more (or a `max` above this) is rejected. Note that the embedding will definitely limit this but it is dependent on how the interpreter is deployed.                                                                |\n| IR Code             | 8 GiB               | Compiled IR, not raw bytecode. This limit is across all modules in the store. The IR / Bytecode ratio is printed in `spacewasm-std` as the \"compilation ratio\". It is difficult to estimate this upfront because it varies on the types of instructions used. |\n| Function parameters | 255 32-bit words    | Per function.                                                                                                                                                                                                                                                 |\n| Local variables     | 65,535 32-bit words | Per function.                                                                                                                                                                                                                                                 |\n\n## Benchmarking\n\nSpaceWasm is tested against the Coremark benchmark to trace performance regression.\nSee [coremark](crates/spacewasm_std/benches)\nfor more information.\n\n## Testing\n\n### Unit & Integration Tests\n\n```bash\ncargo test\n```\n\nThe unit tests check for regressions on the `unsafe` container abstractions provided by SpaceWasm due to unique `alloc`\nusage. There are also simple unit tests that cover all Wasm instructions without needing full WAST execution.\n\nThe integration tests are spectests from the Wasm 1.0 MVP suite\nwhich was curated in https://github.com/WasmEdge/wasmedge-spectest.\nThese tests validate the integrity of the Wasm interpreter against\nthe specification.\n\n### Fuzzing\n\nSpaceWasm includes a comprehensive fuzzing infrastructure using libfuzzer\nand [wasm-smith](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-smith).\n\n```bash\n# Run fuzzer\nmake fuzz\n\n# Analyze crashes with execution traces\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx\n```\n\n## Feature Support Matrix\n\nBelow is a table of the implemented and planned WebAssembly proposals with links to their tracking issue / implementation pull-request.\n\n| Feature                                                                                                      | Status                                                 |\n| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |\n| [Wasm MVP](https://www.w3.org/TR/2019/REC-wasm-core-1-20191205/)                                             | All Versions                                           |\n| [Mutable globals](https://github.com/WebAssembly/mutable-global)                                             | All Versions                                           |\n| [Custom page sizes](https://github.com/WebAssembly/custom-page-sizes)                                        | [≥0.2.0](https://github.com/nasa/spacewasm/pull/84)    |\n| [Bulk memory operations](https://github.com/WebAssembly/bulk-memory-operations)                              | [Planned](https://github.com/nasa/spacewasm/issues/54) |\n| [Sign-extension operators](https://github.com/WebAssembly/sign-extension-ops)                                | [Planned](https://github.com/nasa/spacewasm/issues/55) |\n| [Non-trapping float-to-int conversion",
+  "readmeExcerpt": "<h1 align=\"center\">SpaceWasm</h2>\n\n<p align=\"center\">\n<img src=\"docs/logo.svg\" width=\"150\" height=\"150\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml\"><img src=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml/badge.svg\" /></a>\n  <a href=\"https://codecov.io/gh/nasa/spacewasm\"><img src=\"https://codecov.io/gh/nasa/spacewasm/graph/badge.svg?token=3EddiLtM36\"/></a>\n  <a href=\"#license\"><img src=\"https://img.shields.io/badge/license-Apache%202.0-blue\" alt=\"license\" /></a>\n</p>\n\nSpaceWasm is an implementation of the [Wasm 1.0](https://webassembly.github.io/spec/versions/core/WebAssembly-1.0.pdf)\nspecification meant to interpret Wasm binary on-board spacecraft. It is developed at [NASA JPL](https://www.jpl.nasa.gov).\n\n## Rationale\n\n1. **Sequencing**: High-level spacecraft activities are typically encoded outside of the embedded flight-software in a command sequence.\nThese activities can include anything from driving the Mars rover and operating its arm, to checking temperature ranges are nominal.\nHistorically, the form and capability of sequences has varied from mission to mission, resulting in assorted/fragmented implementations.\nSpaceWasm implements an industry standard, providing consolidation.\n\n2. **Sandboxing**: The cost and time of flight-software development is high due to its constrained requirements and scope. Validating a new flight-software capability\noften involves validating interactions with the entire system. This extends the V&V timeline and increases competition for testbed resources, which makes it hard to\nget new autonomy software into flight. WebAssembly gives the opportunity for untrusted or low-trust executables to make their way on-board in a\nway that flight-software can restrict access and compute time as well as monitor health and safety.\n\n3. **Portability**: WebAssembly provides well-defined interfaces and sandboxing that make transferring to another platform trivial.\n\n4. **Tooling**: Standardizing to WebAssembly opens doors into a wide community of rich tooling and research!\n\n## Overview\n\nThis software comes with two major components:\n\n1. Decoder/Validator:\n\n   Reads the Wasm binary in [chunks](#streaming) and decodes it to an executable form. The decoder will use a fixed\n   amount of memory and can be measured per-Wasm binary using the `spacewasm-check` executable on the ground.\n\n   WebAssembly is validated during the decoding process and does not require another pass of the bytecode.\n\n2. Interpreter:\n\n   A Wasm interpreter that can operate on linear memory and interface with\n   hooks from the [embedding](#embedding).\n\nSpaceWasm does not execute direct WebAssembly bytecode. Wasm bytecode is meant to be small and structured in a way to\nvalidate easily. These properties however make it slow to execute in-place. During the decoding process of Wasm\ninstructions, SpaceWasm converts bytecode into another intermediate representation (IR) which includes properties better\nsuited for interpretation. Read more about the IR in the [specification](docs/ir.md).\n\n## Requirements\n\nThe requirements of SpaceWasm are levied from similar work produced by [DLR](https://github.com/DLR-FT/wasm-interpreter).\n\nSee [requirements](./docs/REQUIREMENTS.md).\n\n## Embedding\n\nEmbedding the interpreter refers to instantiating it and providing implementations for the functions that are imported\ninto the module. Typically, the set of functions imported by the module are fixed and should be specified at compile\ntime both for the Wasm module and the embedder.\n\n## Dynamic Allocation\n\nSpaceWasm has a unique dynamic memory allocation model. All of its design choices stem from requirements levied by common\nflight-software standards. Dynamic allocation follows the following rules:\n\n1. All allocations occur over a discrete number of fixed size blocks called _pages_. These pages are distinct from Wasm's linear memory pages.\n2. Deallocation cannot precede allocation.\n3. Sub-regions inside pages cannot grow or shrink, sizes should be fixed ahead of time.\n4. Memory usage must be deterministic.\n5. Any allocation failures must _not_ result in panic.\n\nThe standard Rust [allocation](https://doc.rust-lang.org/alloc/) does not meet these constraints even with custom\nallocators. To that end, SpaceWasm provides its own data structures that guarantee these properties. You will find these\ndata-structures contain the only usage of `unsafe` Rust semantics.\n\n> [!NOTE]\n> These limitations are only enforced on the implementation of the interpreter and _not_ on the Wasm bytecode it is made to interpret.\n\nWasm linear memory pages are allocated outside of dynamic memory pages.\n\n## Streaming\n\n_Peak_ memory usage is often an important constraint on small systems found on spacecraft. Many Wasm interpreters\nrequire the Wasm binary to be given in one linear blob to the interpreter. This is typically fine for systems where the\nsame regions of memory may be reused for different purposes. Flight software on spacecraft generally assign fixed\nportions of memory for certain purposes. Therefore, requiring the entire Wasm binary to fit into a single chunk of\nmemory is not feasible.\n\nSpaceWasm is highly optimized to reduce peak memory usage and not require deallocation after allocation required for\nstreaming. To this end, there are certain [constraints](#interpreter-limitations) imposed on the WebAssembly\nspecification.\n\nSpaceWasm supports decoding and compiling Wasm binary in a single pass via a streaming mechanism. Chunks of the Wasm\nbinary may be provided to the interpreter as they are read/requested from the filesystem. The stream must provide chunks\nsynchronously.\n\n\n## WASI 0.1 Support\nThe [`spacewasi`](crates/spacewasi#readme) crate provides a binary which can run arbitrary WASM modules that adhere to the WASI 0.1 (`wasip1`) spec in a sandboxed environment. Command line flags are available to mount host directories and environment variables:\n\n```bash\n# compile example from crates/spacewasi/tests/wasm/\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n# convert module to MVP compatible file\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe!\n```\n\nFor more information about this command and basic WASI compilation, see [`spacewasi/README.md`](crates/spacewasi/README.md).\n\n## Interpreter Limitations\n\nThis Wasm interpreter imposes additional constraints beyond the WebAssembly 1.0 specification to support\nresource-constrained spacecraft environments.\n\nSee our [IR SPEC](./docs/ir.md#limitations) for the full list of limitations.\n\nThese constraints enable deterministic memory usage and efficient execution in resource-constrained environments while\nmaintaining compatibility with most standard WebAssembly modules.\n\n### Limits for Wasm Module Producers\n\nBecause SpaceWasm compiles bytecode into a fixed-width IR that is typically larger than the original bytecode, the\npractical ceiling on raw module size is bounded by the IR code-page limit above (~8 GiB of IR). This is far larger than\nany module expected on flight hardware; the binding constraint in practice is the peak memory configured for the\n[streaming](#streaming) decoder, which is measured per-module on the ground with `spacewasm-check`.\n\n> [!NOTE]\n> `spacewasm-check` has not been developed yet. A similar tool can be found in `spacewasm-std`.\n\nHere are a couple of limitations that may be relevant to developers of Wasm modules.\n\n| Limit               | Value               | Notes                                                                                                                                                                                                                                                         |\n| ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Wasm page size      | 64 KiB / 1 B        | [Custom-Page-Sizes proposal](https://github.com/WebAssembly/custom-page-sizes) is supported                                                                                                                                                                   |\n| Linear memory pages | 4 GiB               | Per the Wasm 1.0 spec. A module declaring more (or a `max` above this) is rejected. Note that the embedding will definitely limit this but it is dependent on how the interpreter is deployed.                                                                |\n| IR Code             | 8 GiB               | Compiled IR, not raw bytecode. This limit is across all modules in the store. The IR / Bytecode ratio is printed in `spacewasm-std` as the \"compilation ratio\". It is difficult to estimate this upfront because it varies on the types of instructions used. |\n| Function parameters | 255 32-bit words    | Per function.                                                                                                                                                                                                                                                 |\n| Local variables     | 65,535 32-bit words | Per function.                                                                                                                                                                                                                                                 |\n\n## Benchmarking\n\nSpaceWasm is tested against the Coremark benchmark to trace performance regression.\nSee [coremark](crates/spacewasm_std/benches)\nfor more information.\n\n## Testing\n\n### Unit & Integration Tests\n\n```bash\ncargo test\n```\n\nThe unit tests check for regressions on the `unsafe` container abstractions provided by SpaceWasm due to unique `alloc`\nusage. There are also simple unit tests that cover all Wasm instructions without needing full WAST execution.\n\nThe integration tests are spectests from the Wasm 1.0 MVP suite\nwhich was curated in https://github.com/WasmEdge/wasmedge-spectest.\nThese tests validate the integrity of the Wasm interpreter against\nthe specification.\n\n### Fuzzing\n\nSpaceWasm includes a comprehensive fuzzing infrastructure using libfuzzer\nand [wasm-smith](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-smith).\n\n```bash\n# Run fuzzer\nmake fuzz\n\n# Analyze crashes with execution traces\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx\n```\n\n## Feature Support Matrix\n\nBelow is a table of the implemented and planned WebAssembly proposals with links to their tracking issue / implementation pull-request.\n\n| Feature                                                                                                      | Status                                                 |\n| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |\n| [Wasm MVP](https://www.w3.org/TR/2019/REC-wasm-core-1-20191205/)                                             | All Versions                                           |\n| [Mutable globals](https://github.com/WebAssembly/mutable-global)                                             | All Versions                                           |\n| [Custom page sizes](https://github.com/WebAssembly/custom-page-sizes)                                        | [≥0.2.0](https://github.com/nasa/spacewasm/pull/84)    |\n| [Bulk memory operations](https://github.com/WebAssembly/bulk-memory-operations)                              | [Planned](https://github.com/nasa/spacewasm/issues/54) |\n| [Sign-extension operators](https://github.com/WebAssembly/sign-extension-ops)                                | [Planned](https://github.com/nasa/spacewasm/issues/55) |\n| [Non-trapping float-to-int",
   "releases": [
+    {
+      "name": "v0.5.2",
+      "tag": "v0.5.2",
+      "url": "https://github.com/nasa/spacewasm/releases/tag/v0.5.2",
+      "publishedAt": "2026-08-05T14:57:53Z",
+      "prerelease": true,
+      "body": "## What's Changed\r\n* Track SPACEWASM_CONFIG changes in the c_api build script by @kadircanyildirm-crypto in https://github.com/nasa/spacewasm/pull/152\r\n* Fix the broken IR spec link in README by @kadircanyildirm-crypto in https://github.com/nasa/spacewasm/pull/154\r\n* Silence the stray debug print in fd_fdstat_set_rights by @kadircanyildirm-crypto in https://github.com/nasa/spacewasm/pull/153\r\n* Fix unchecked OOB & incorrect if-without-else by @Kronos3 in https://github.com/nasa/spacewasm/pull/156\r\n\r\n## New Contributors\r\n* @kadircanyildirm-crypto made their first contribution in https://github.com/nasa/spacewasm/pull/152\r\n\r\n**Full Changelog**: https://github.com/nasa/spacewasm/compare/v0.5.1...v0.5.2",
+      "downloads": 0,
+      "reactions": 0
+    },
     {
       "name": "v0.5.1",
       "tag": "v0.5.1",
@@ -194,21 +209,31 @@
       "body": "## What's Changed\r\n* More descriptive allocation error for guest memory by @Kronos3 in https://github.com/nasa/spacewasm/pull/138\r\n\r\n\r\n**Full Changelog**: https://github.com/nasa/spacewasm/compare/v0.4.3...v0.4.4\n\n## What's Changed\n* More descriptive allocation error for guest memory by @Kronos3 in https://github.com/nasa/spacewasm/pull/138\n\n\n**Full Changelog**: https://github.com/nasa/spacewasm/compare/v0.4.3...v0.4.4",
       "downloads": 0,
       "reactions": 0
-    },
-    {
-      "name": "v0.4.3",
-      "tag": "v0.4.3",
-      "url": "https://github.com/nasa/spacewasm/releases/tag/v0.4.3",
-      "publishedAt": "2026-07-27T22:23:40Z",
-      "prerelease": true,
-      "body": "## What's Changed\r\n* C api host return none by @Kronos3 in https://github.com/nasa/spacewasm/pull/137\r\n\r\n\r\n**Full Changelog**: https://github.com/nasa/spacewasm/compare/v0.4.2...v0.4.3\n\n## What's Changed\n* C api host return none by @Kronos3 in https://github.com/nasa/spacewasm/pull/137\n\n\n**Full Changelog**: https://github.com/nasa/spacewasm/compare/v0.4.2...v0.4.3",
-      "downloads": 0,
-      "reactions": 0
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 align=\"center\" class=\"heading-element\" dir=\"auto\">SpaceWasm</h1></div>\n<p align=\"center\" dir=\"auto\">\n<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/nasa/spacewasm/blob/main/docs/logo.svg\"><img src=\"https://raw.githubusercontent.com/nasa/spacewasm/main/docs/logo.svg\" width=\"150\" height=\"150\" style=\"max-width: 100%; height: auto; max-height: 150px;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml\"><img src=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml/badge.svg\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://codecov.io/gh/nasa/spacewasm\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/a741c4ee7bada7379452ee35d8441c2b5b5598dacfdd94fdde569499f2e3d4d1/68747470733a2f2f636f6465636f762e696f2f67682f6e6173612f73706163657761736d2f67726170682f62616467652e7376673f746f6b656e3d33456464694c744d3336\" data-canonical-src=\"https://codecov.io/gh/nasa/spacewasm/graph/badge.svg?token=3EddiLtM36\" style=\"max-width: 100%;\"></a>\n  <a href=\"#license\"><img src=\"https://camo.githubusercontent.com/39a434c39c97856247fc55ebc90e8cc1cb9871558a37bf1bf83cbaca3be89d69/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d417061636865253230322e302d626c7565\" alt=\"license\" data-canonical-src=\"https://img.shields.io/badge/license-Apache%202.0-blue\" style=\"max-width: 100%;\"></a>\n</p>\n<p dir=\"auto\">SpaceWasm is an implementation of the <a href=\"https://webassembly.github.io/spec/versions/core/WebAssembly-1.0.pdf\" rel=\"nofollow\">Wasm 1.0</a>\nspecification meant to interpret Wasm binary on-board spacecraft. It is developed at <a href=\"https://www.jpl.nasa.gov\" rel=\"nofollow\">NASA JPL</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rationale</h2></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Sequencing</strong>: High-level spacecraft activities are typically encoded outside of the embedded flight-software in a command sequence.\nThese activities can include anything from driving the Mars rover and operating its arm, to checking temperature ranges are nominal.\nHistorically, the form and capability of sequences has varied from mission to mission, resulting in assorted/fragmented implementations.\nSpaceWasm implements an industry standard, providing consolidation.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Sandboxing</strong>: The cost and time of flight-software development is high due to its constrained requirements and scope. Validating a new flight-software capability\noften involves validating interactions with the entire system. This extends the V&amp;V timeline and increases competition for testbed resources, which makes it hard to\nget new autonomy software into flight. WebAssembly gives the opportunity for untrusted or low-trust executables to make their way on-board in a\nway that flight-software can restrict access and compute time as well as monitor health and safety.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Portability</strong>: WebAssembly provides well-defined interfaces and sandboxing that make transferring to another platform trivial.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Tooling</strong>: Standardizing to WebAssembly opens doors into a wide community of rich tooling and research!</p>\n</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Overview</h2></div>\n<p dir=\"auto\">This software comes with two major components:</p>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\">Decoder/Validator:</p>\n<p dir=\"auto\">Reads the Wasm binary in <a href=\"#streaming\">chunks</a> and decodes it to an executable form. The decoder will use a fixed\namount of memory and can be measured per-Wasm binary using the <code>spacewasm-check</code> executable on the ground.</p>\n<p dir=\"auto\">WebAssembly is validated during the decoding process and does not require another pass of the bytecode.</p>\n</li>\n<li>\n<p dir=\"auto\">Interpreter:</p>\n<p dir=\"auto\">A Wasm interpreter that can operate on linear memory and interface with\nhooks from the <a href=\"#embedding\">embedding</a>.</p>\n</li>\n</ol>\n<p dir=\"auto\">SpaceWasm does not execute direct WebAssembly bytecode. Wasm bytecode is meant to be small and structured in a way to\nvalidate easily. These properties however make it slow to execute in-place. During the decoding process of Wasm\ninstructions, SpaceWasm converts bytecode into another intermediate representation (IR) which includes properties better\nsuited for interpretation. Read more about the IR in the <a href=\"https://github.com/nasa/spacewasm/blob/main/docs/ir.md\">specification</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Requirements</h2></div>\n<p dir=\"auto\">The requirements of SpaceWasm are levied from similar work produced by <a href=\"https://github.com/DLR-FT/wasm-interpreter\">DLR</a>.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/nasa/spacewasm/blob/main/docs/REQUIREMENTS.md\">requirements</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Embedding</h2></div>\n<p dir=\"auto\">Embedding the interpreter refers to instantiating it and providing implementations for the functions that are imported\ninto the module. Typically, the set of functions imported by the module are fixed and should be specified at compile\ntime both for the Wasm module and the embedder.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Dynamic Allocation</h2></div>\n<p dir=\"auto\">SpaceWasm has a unique dynamic memory allocation model. All of its design choices stem from requirements levied by common\nflight-software standards. Dynamic allocation follows the following rules:</p>\n<ol dir=\"auto\">\n<li>All allocations occur over a discrete number of fixed size blocks called <em>pages</em>. These pages are distinct from Wasm's linear memory pages.</li>\n<li>Deallocation cannot precede allocation.</li>\n<li>Sub-regions inside pages cannot grow or shrink, sizes should be fixed ahead of time.</li>\n<li>Memory usage must be deterministic.</li>\n<li>Any allocation failures must <em>not</em> result in panic.</li>\n</ol>\n<p dir=\"auto\">The standard Rust <a href=\"https://doc.rust-lang.org/alloc/\" rel=\"nofollow\">allocation</a> does not meet these constraints even with custom\nallocators. To that end, SpaceWasm provides its own data structures that guarantee these properties. You will find these\ndata-structures contain the only usage of <code>unsafe</code> Rust semantics.</p>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">These limitations are only enforced on the implementation of the interpreter and <em>not</em> on the Wasm bytecode it is made to interpret.</p>\n</div>\n<p dir=\"auto\">Wasm linear memory pages are allocated outside of dynamic memory pages.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Streaming</h2></div>\n<p dir=\"auto\"><em>Peak</em> memory usage is often an important constraint on small systems found on spacecraft. Many Wasm interpreters\nrequire the Wasm binary to be given in one linear blob to the interpreter. This is typically fine for systems where the\nsame regions of memory may be reused for different purposes. Flight software on spacecraft generally assign fixed\nportions of memory for certain purposes. Therefore, requiring the entire Wasm binary to fit into a single chunk of\nmemory is not feasible.</p>\n<p dir=\"auto\">SpaceWasm is highly optimized to reduce peak memory usage and not require deallocation after allocation required for\nstreaming. To this end, there are certain <a href=\"#interpreter-limitations\">constraints</a> imposed on the WebAssembly\nspecification.</p>\n<p dir=\"auto\">SpaceWasm supports decoding and compiling Wasm binary in a single pass via a streaming mechanism. Chunks of the Wasm\nbinary may be provided to the interpreter as they are read/requested from the filesystem. The stream must provide chunks\nsynchronously.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">WASI 0.1 Support</h2></div>\n<p dir=\"auto\">The <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasi#readme\"><code>spacewasi</code></a> crate provides a binary which can run arbitrary WASM modules that adhere to the WASI 0.1 (<code>wasip1</code>) spec in a sandboxed environment. Command line flags are available to mount host directories and environment variables:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# compile example from crates/spacewasi/tests/wasm/\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n# convert module to MVP compatible file\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe!\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> compile example from crates/spacewasi/tests/wasm/</span>\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> convert module to MVP compatible file</span>\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe<span class=\"pl-k\">!</span></pre></div>\n<p dir=\"auto\">For more information about this command and basic WASI compilation, see <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasi/README.md\"><code>spacewasi/README.md</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Interpreter Limitations</h2></div>\n<p dir=\"auto\">This Wasm interpreter imposes additional constraints beyond the WebAssembly 1.0 specification to support\nresource-constrained spacecraft environments.</p>\n<p dir=\"auto\">See our <a href=\"https://github.com/nasa/spacewasm/blob/main/src/SPEC.md\">IR SPEC</a> for the full list of limitations.</p>\n<p dir=\"auto\">These constraints enable deterministic memory usage and efficient execution in resource-constrained environments while\nmaintaining compatibility with most standard WebAssembly modules.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Limits for Wasm Module Producers</h3></div>\n<p dir=\"auto\">Because SpaceWasm compiles bytecode into a fixed-width IR that is typically larger than the original bytecode, the\npractical ceiling on raw module size is bounded by the IR code-page limit above (~8 GiB of IR). This is far larger than\nany module expected on flight hardware; the binding constraint in practice is the peak memory configured for the\n<a href=\"#streaming\">streaming</a> decoder, which is measured per-module on the ground with <code>spacewasm-check</code>.</p>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\"><code>spacewasm-check</code> has not been developed yet. A similar tool can be found in <code>spacewasm-std</code>.</p>\n</div>\n<p dir=\"auto\">Here are a couple of limitations that may be relevant to developers of Wasm modules.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Limit</th>\n<th>Value</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Wasm page size</td>\n<td>64 KiB / 1 B</td>\n<td><a href=\"https://github.com/WebAssembly/custom-page-sizes\">Custom-Page-Sizes proposal</a> is supported</td>\n</tr>\n<tr>\n<td>Linear memory pages</td>\n<td>4 GiB</td>\n<td>Per the Wasm 1.0 spec. A module declaring more (or a <code>max</code> above this) is rejected. Note that the embedding will definitely limit this but it is dependent on how the interpreter is deployed.</td>\n</tr>\n<tr>\n<td>IR Code</td>\n<td>8 GiB</td>\n<td>Compiled IR, not raw bytecode. This limit is across all modules in the store. The IR / Bytecode ratio is printed in <code>spacewasm-std</code> as the \"compilation ratio\". It is difficult to estimate this upfront because it varies on the types of instructions used.</td>\n</tr>\n<tr>\n<td>Function parameters</td>\n<td>255 32-bit words</td>\n<td>Per function.</td>\n</tr>\n<tr>\n<td>Local variables</td>\n<td>65,535 32-bit words</td>\n<td>Per function.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Benchmarking</h2></div>\n<p dir=\"auto\">SpaceWasm is tested against the Coremark benchmark to trace performance regression.\nSee <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasm_std/benches\">coremark</a>\nfor more information.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Unit &amp; Integration Tests</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test\"><pre>cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">The unit tests check for regressions on the <code>unsafe</code> container abstractions provided by SpaceWasm due to unique <code>alloc</code>\nusage. There are also simple unit tests that cover all Wasm instructions without needing full WAST execution.</p>\n<p dir=\"auto\">The integration tests are spectests from the Wasm 1.0 MVP suite\nwhich was curated in <a href=\"https://github.com/WasmEdge/wasmedge-spectest\">https://github.com/WasmEdge/wasmedge-spectest</a>.\nThese tests validate the integrity of the Wasm interpreter against\nthe specification.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Fuzzing</h3></div>\n<p dir=\"auto\">SpaceWasm includes a comprehensive fuzzing infrastructure using libfuzzer\nand <a href=\"https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-smith\">wasm-smith</a>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Run fuzzer\nmake fuzz\n\n# Analyze crashes with execution traces\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Run fuzzer</span>\nmake fuzz\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Analyze crashes with execution traces</span>\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Feature Support Matrix</h2></div>\n<p dir=\"auto\">Below is a table of the implemented and planned WebAssembly proposals with links to their tracking issue / implementation pull-request.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://www.w3.org/TR/2019/REC-wasm-core-1-20191205/\" rel=\"nofollow\">Wasm MVP</a></td>\n<td>All Versions</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/mutable-global\">Mutable globals</a></td>\n<td>All Versions</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/custom-page-sizes\">Custom page sizes</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/pull/84\" data-hovercard-type=\"pull_request\" data-hovercard-url=\"/nasa/spacewasm/pull/84/hovercard\">≥0.2.0</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/bulk-memory-operations\">Bulk memory operations</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/54\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/54/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/sign-extension-ops\">Sign-extension operators</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/55\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/55/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/nontrapping-float-to-int-conversions\">Non-trapping float-to-int conversions</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/56\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/56/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/multi-value\">Multi-value</a></td>\n<td>Under Consideration</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/multi-memory\">Multiple memories</a></td>\n<td>Under Consideration</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Currently, all other proposals are not implemented, planned or considered.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits &amp; Acknowledgments</h2></div>\n<p dir=\"auto\">Portions of this project are adapted from the open-source projects:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/rust-lang/rust\">rust-lang/rust</a>, which is dual-licensed under MIT OR Apache License 2.0.</li>\n<li><a href=\"https://github.com/DLR-FT/wasm-interpreter\">DLR-FT/wasm-interpreter</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/bytecodealliance/wasmtime\">Wasmtime</a>, which is licensed under the Apache License 2.0 with LLVM-exception.</li>\n<li><a href=\"https://github.com/webassembly/wabt\">WABT</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/WasmEdge/wasmedge-spectest\">wasmedge-spectest</a>, which is licensed under MIT.</li>\n<li><a href=\"https://github.com/WebAssembly/testsuite\">WebAssembly Testsuite</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/eembc/coremark\">Coremark</a>, which is licensed under the COREMARK ACCEPTABLE USE AGREEMENT.</li>\n<li><a href=\"https://github.com/wasm3/wasm-coremark\">Wasm Coremark</a>, which provides no upstream license file; the wrapped CoreMark payload is governed by the COREMARK ACCEPTABLE USE AGREEMENT.</li>\n</ul>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 align=\"center\" class=\"heading-element\" dir=\"auto\">SpaceWasm</h1></div>\n<p align=\"center\" dir=\"auto\">\n<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/nasa/spacewasm/blob/main/docs/logo.svg\"><img src=\"https://raw.githubusercontent.com/nasa/spacewasm/main/docs/logo.svg\" width=\"150\" height=\"150\" style=\"max-width: 100%; height: auto; max-height: 150px;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml\"><img src=\"https://github.com/nasa/spacewasm/actions/workflows/ci.yml/badge.svg\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://codecov.io/gh/nasa/spacewasm\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/a741c4ee7bada7379452ee35d8441c2b5b5598dacfdd94fdde569499f2e3d4d1/68747470733a2f2f636f6465636f762e696f2f67682f6e6173612f73706163657761736d2f67726170682f62616467652e7376673f746f6b656e3d33456464694c744d3336\" data-canonical-src=\"https://codecov.io/gh/nasa/spacewasm/graph/badge.svg?token=3EddiLtM36\" style=\"max-width: 100%;\"></a>\n  <a href=\"#license\"><img src=\"https://camo.githubusercontent.com/39a434c39c97856247fc55ebc90e8cc1cb9871558a37bf1bf83cbaca3be89d69/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d417061636865253230322e302d626c7565\" alt=\"license\" data-canonical-src=\"https://img.shields.io/badge/license-Apache%202.0-blue\" style=\"max-width: 100%;\"></a>\n</p>\n<p dir=\"auto\">SpaceWasm is an implementation of the <a href=\"https://webassembly.github.io/spec/versions/core/WebAssembly-1.0.pdf\" rel=\"nofollow\">Wasm 1.0</a>\nspecification meant to interpret Wasm binary on-board spacecraft. It is developed at <a href=\"https://www.jpl.nasa.gov\" rel=\"nofollow\">NASA JPL</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rationale</h2></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Sequencing</strong>: High-level spacecraft activities are typically encoded outside of the embedded flight-software in a command sequence.\nThese activities can include anything from driving the Mars rover and operating its arm, to checking temperature ranges are nominal.\nHistorically, the form and capability of sequences has varied from mission to mission, resulting in assorted/fragmented implementations.\nSpaceWasm implements an industry standard, providing consolidation.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Sandboxing</strong>: The cost and time of flight-software development is high due to its constrained requirements and scope. Validating a new flight-software capability\noften involves validating interactions with the entire system. This extends the V&amp;V timeline and increases competition for testbed resources, which makes it hard to\nget new autonomy software into flight. WebAssembly gives the opportunity for untrusted or low-trust executables to make their way on-board in a\nway that flight-software can restrict access and compute time as well as monitor health and safety.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Portability</strong>: WebAssembly provides well-defined interfaces and sandboxing that make transferring to another platform trivial.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Tooling</strong>: Standardizing to WebAssembly opens doors into a wide community of rich tooling and research!</p>\n</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Overview</h2></div>\n<p dir=\"auto\">This software comes with two major components:</p>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\">Decoder/Validator:</p>\n<p dir=\"auto\">Reads the Wasm binary in <a href=\"#streaming\">chunks</a> and decodes it to an executable form. The decoder will use a fixed\namount of memory and can be measured per-Wasm binary using the <code>spacewasm-check</code> executable on the ground.</p>\n<p dir=\"auto\">WebAssembly is validated during the decoding process and does not require another pass of the bytecode.</p>\n</li>\n<li>\n<p dir=\"auto\">Interpreter:</p>\n<p dir=\"auto\">A Wasm interpreter that can operate on linear memory and interface with\nhooks from the <a href=\"#embedding\">embedding</a>.</p>\n</li>\n</ol>\n<p dir=\"auto\">SpaceWasm does not execute direct WebAssembly bytecode. Wasm bytecode is meant to be small and structured in a way to\nvalidate easily. These properties however make it slow to execute in-place. During the decoding process of Wasm\ninstructions, SpaceWasm converts bytecode into another intermediate representation (IR) which includes properties better\nsuited for interpretation. Read more about the IR in the <a href=\"https://github.com/nasa/spacewasm/blob/main/docs/ir.md\">specification</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Requirements</h2></div>\n<p dir=\"auto\">The requirements of SpaceWasm are levied from similar work produced by <a href=\"https://github.com/DLR-FT/wasm-interpreter\">DLR</a>.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/nasa/spacewasm/blob/main/docs/REQUIREMENTS.md\">requirements</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Embedding</h2></div>\n<p dir=\"auto\">Embedding the interpreter refers to instantiating it and providing implementations for the functions that are imported\ninto the module. Typically, the set of functions imported by the module are fixed and should be specified at compile\ntime both for the Wasm module and the embedder.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Dynamic Allocation</h2></div>\n<p dir=\"auto\">SpaceWasm has a unique dynamic memory allocation model. All of its design choices stem from requirements levied by common\nflight-software standards. Dynamic allocation follows the following rules:</p>\n<ol dir=\"auto\">\n<li>All allocations occur over a discrete number of fixed size blocks called <em>pages</em>. These pages are distinct from Wasm's linear memory pages.</li>\n<li>Deallocation cannot precede allocation.</li>\n<li>Sub-regions inside pages cannot grow or shrink, sizes should be fixed ahead of time.</li>\n<li>Memory usage must be deterministic.</li>\n<li>Any allocation failures must <em>not</em> result in panic.</li>\n</ol>\n<p dir=\"auto\">The standard Rust <a href=\"https://doc.rust-lang.org/alloc/\" rel=\"nofollow\">allocation</a> does not meet these constraints even with custom\nallocators. To that end, SpaceWasm provides its own data structures that guarantee these properties. You will find these\ndata-structures contain the only usage of <code>unsafe</code> Rust semantics.</p>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">These limitations are only enforced on the implementation of the interpreter and <em>not</em> on the Wasm bytecode it is made to interpret.</p>\n</div>\n<p dir=\"auto\">Wasm linear memory pages are allocated outside of dynamic memory pages.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Streaming</h2></div>\n<p dir=\"auto\"><em>Peak</em> memory usage is often an important constraint on small systems found on spacecraft. Many Wasm interpreters\nrequire the Wasm binary to be given in one linear blob to the interpreter. This is typically fine for systems where the\nsame regions of memory may be reused for different purposes. Flight software on spacecraft generally assign fixed\nportions of memory for certain purposes. Therefore, requiring the entire Wasm binary to fit into a single chunk of\nmemory is not feasible.</p>\n<p dir=\"auto\">SpaceWasm is highly optimized to reduce peak memory usage and not require deallocation after allocation required for\nstreaming. To this end, there are certain <a href=\"#interpreter-limitations\">constraints</a> imposed on the WebAssembly\nspecification.</p>\n<p dir=\"auto\">SpaceWasm supports decoding and compiling Wasm binary in a single pass via a streaming mechanism. Chunks of the Wasm\nbinary may be provided to the interpreter as they are read/requested from the filesystem. The stream must provide chunks\nsynchronously.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">WASI 0.1 Support</h2></div>\n<p dir=\"auto\">The <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasi#readme\"><code>spacewasi</code></a> crate provides a binary which can run arbitrary WASM modules that adhere to the WASI 0.1 (<code>wasip1</code>) spec in a sandboxed environment. Command line flags are available to mount host directories and environment variables:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# compile example from crates/spacewasi/tests/wasm/\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n# convert module to MVP compatible file\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe!\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> compile example from crates/spacewasi/tests/wasm/</span>\n$ clang --target=wasm32-wasip1 -mcpu=mvp hello_universe.c -o hello_universe.wasm\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> convert module to MVP compatible file</span>\n$ crates/spacewasi/scripts/wasm2mvp.sh hello_universe.wasm\n\n$ spacewasi hello_universe.wasm\nhello universe<span class=\"pl-k\">!</span></pre></div>\n<p dir=\"auto\">For more information about this command and basic WASI compilation, see <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasi/README.md\"><code>spacewasi/README.md</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Interpreter Limitations</h2></div>\n<p dir=\"auto\">This Wasm interpreter imposes additional constraints beyond the WebAssembly 1.0 specification to support\nresource-constrained spacecraft environments.</p>\n<p dir=\"auto\">See our <a href=\"https://github.com/nasa/spacewasm/blob/main/docs/ir.md#limitations\">IR SPEC</a> for the full list of limitations.</p>\n<p dir=\"auto\">These constraints enable deterministic memory usage and efficient execution in resource-constrained environments while\nmaintaining compatibility with most standard WebAssembly modules.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Limits for Wasm Module Producers</h3></div>\n<p dir=\"auto\">Because SpaceWasm compiles bytecode into a fixed-width IR that is typically larger than the original bytecode, the\npractical ceiling on raw module size is bounded by the IR code-page limit above (~8 GiB of IR). This is far larger than\nany module expected on flight hardware; the binding constraint in practice is the peak memory configured for the\n<a href=\"#streaming\">streaming</a> decoder, which is measured per-module on the ground with <code>spacewasm-check</code>.</p>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\"><code>spacewasm-check</code> has not been developed yet. A similar tool can be found in <code>spacewasm-std</code>.</p>\n</div>\n<p dir=\"auto\">Here are a couple of limitations that may be relevant to developers of Wasm modules.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Limit</th>\n<th>Value</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Wasm page size</td>\n<td>64 KiB / 1 B</td>\n<td><a href=\"https://github.com/WebAssembly/custom-page-sizes\">Custom-Page-Sizes proposal</a> is supported</td>\n</tr>\n<tr>\n<td>Linear memory pages</td>\n<td>4 GiB</td>\n<td>Per the Wasm 1.0 spec. A module declaring more (or a <code>max</code> above this) is rejected. Note that the embedding will definitely limit this but it is dependent on how the interpreter is deployed.</td>\n</tr>\n<tr>\n<td>IR Code</td>\n<td>8 GiB</td>\n<td>Compiled IR, not raw bytecode. This limit is across all modules in the store. The IR / Bytecode ratio is printed in <code>spacewasm-std</code> as the \"compilation ratio\". It is difficult to estimate this upfront because it varies on the types of instructions used.</td>\n</tr>\n<tr>\n<td>Function parameters</td>\n<td>255 32-bit words</td>\n<td>Per function.</td>\n</tr>\n<tr>\n<td>Local variables</td>\n<td>65,535 32-bit words</td>\n<td>Per function.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Benchmarking</h2></div>\n<p dir=\"auto\">SpaceWasm is tested against the Coremark benchmark to trace performance regression.\nSee <a href=\"https://github.com/nasa/spacewasm/blob/main/crates/spacewasm_std/benches\">coremark</a>\nfor more information.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Unit &amp; Integration Tests</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test\"><pre>cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">The unit tests check for regressions on the <code>unsafe</code> container abstractions provided by SpaceWasm due to unique <code>alloc</code>\nusage. There are also simple unit tests that cover all Wasm instructions without needing full WAST execution.</p>\n<p dir=\"auto\">The integration tests are spectests from the Wasm 1.0 MVP suite\nwhich was curated in <a href=\"https://github.com/WasmEdge/wasmedge-spectest\">https://github.com/WasmEdge/wasmedge-spectest</a>.\nThese tests validate the integrity of the Wasm interpreter against\nthe specification.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Fuzzing</h3></div>\n<p dir=\"auto\">SpaceWasm includes a comprehensive fuzzing infrastructure using libfuzzer\nand <a href=\"https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-smith\">wasm-smith</a>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Run fuzzer\nmake fuzz\n\n# Analyze crashes with execution traces\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Run fuzzer</span>\nmake fuzz\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Analyze crashes with execution traces</span>\nmake trace CRASH=fuzz/artifacts/no_traps/crash-xxx</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Feature Support Matrix</h2></div>\n<p dir=\"auto\">Below is a table of the implemented and planned WebAssembly proposals with links to their tracking issue / implementation pull-request.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://www.w3.org/TR/2019/REC-wasm-core-1-20191205/\" rel=\"nofollow\">Wasm MVP</a></td>\n<td>All Versions</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/mutable-global\">Mutable globals</a></td>\n<td>All Versions</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/custom-page-sizes\">Custom page sizes</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/pull/84\" data-hovercard-type=\"pull_request\" data-hovercard-url=\"/nasa/spacewasm/pull/84/hovercard\">≥0.2.0</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/bulk-memory-operations\">Bulk memory operations</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/54\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/54/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/sign-extension-ops\">Sign-extension operators</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/55\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/55/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/nontrapping-float-to-int-conversions\">Non-trapping float-to-int conversions</a></td>\n<td><a href=\"https://github.com/nasa/spacewasm/issues/56\" data-hovercard-type=\"issue\" data-hovercard-url=\"/nasa/spacewasm/issues/56/hovercard\">Planned</a></td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/multi-value\">Multi-value</a></td>\n<td>Under Consideration</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/WebAssembly/multi-memory\">Multiple memories</a></td>\n<td>Under Consideration</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Currently, all other proposals are not implemented, planned or considered.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits &amp; Acknowledgments</h2></div>\n<p dir=\"auto\">Portions of this project are adapted from the open-source projects:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/rust-lang/rust\">rust-lang/rust</a>, which is dual-licensed under MIT OR Apache License 2.0.</li>\n<li><a href=\"https://github.com/DLR-FT/wasm-interpreter\">DLR-FT/wasm-interpreter</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/bytecodealliance/wasmtime\">Wasmtime</a>, which is licensed under the Apache License 2.0 with LLVM-exception.</li>\n<li><a href=\"https://github.com/webassembly/wabt\">WABT</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/WasmEdge/wasmedge-spectest\">wasmedge-spectest</a>, which is licensed under MIT.</li>\n<li><a href=\"https://github.com/WebAssembly/testsuite\">WebAssembly Testsuite</a>, which is licensed under the Apache License 2.0.</li>\n<li><a href=\"https://github.com/eembc/coremark\">Coremark</a>, which is licensed under the COREMARK ACCEPTABLE USE AGREEMENT.</li>\n<li><a href=\"https://github.com/wasm3/wasm-coremark\">Wasm Coremark</a>, which provides no upstream license file; the wrapped CoreMark payload is governed by the COREMARK ACCEPTABLE USE AGREEMENT.</li>\n</ul>\n</article></div>",
   "firstCommitAt": "2026-04-07T22:36:22Z",
   "recentIssues": [
+    {
+      "number": 158,
+      "title": "Malformed module panics the decoder on 32-bit targets: unbounded vector length reaches Layout::array(..).unwrap()",
+      "url": "https://github.com/nasa/spacewasm/issues/158",
+      "createdAt": "2026-08-05T16:33:27Z",
+      "comments": 0,
+      "labels": [],
+      "author": "kadircanyildirm-crypto"
+    },
+    {
+      "number": 157,
+      "title": "Run Miri under integration tests",
+      "url": "https://github.com/nasa/spacewasm/issues/157",
+      "createdAt": "2026-08-05T14:55:03Z",
+      "comments": 0,
+      "labels": [
+        "CI"
+      ],
+      "author": "Kronos3"
+    },
     {
       "number": 148,
       "title": "Add a CI job covering the CMake integration",
@@ -251,38 +276,14 @@
         "Post-v1.0"
       ],
       "author": "Kronos3"
-    },
-    {
-      "number": 60,
-      "title": "Integrate Kani into Code Coverage CI",
-      "url": "https://github.com/nasa/spacewasm/issues/60",
-      "createdAt": "2026-07-11T16:38:13Z",
-      "comments": 1,
-      "labels": [
-        "CI",
-        "Formal Verification"
-      ],
-      "author": "Kronos3"
-    },
-    {
-      "number": 56,
-      "title": "Non-trapping float-to-int Conversions",
-      "url": "https://github.com/nasa/spacewasm/issues/56",
-      "createdAt": "2026-07-10T23:24:07Z",
-      "comments": 0,
-      "labels": [
-        "WebAssembly Proposal",
-        "Post-v1.0"
-      ],
-      "author": "Kronos3"
     }
   ],
-  "contributorCount": 12,
+  "contributorCount": 13,
   "punchCard": [
     {
       "day": 0,
       "hour": 0,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 0,
@@ -677,7 +678,7 @@
     {
       "day": 3,
       "hour": 7,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -692,7 +693,7 @@
     {
       "day": 3,
       "hour": 10,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 3,
@@ -847,7 +848,7 @@
     {
       "day": 4,
       "hour": 17,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 4,
@@ -1092,7 +1093,7 @@
     {
       "day": 6,
       "hour": 18,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
@@ -1102,7 +1103,7 @@
     {
       "day": 6,
       "hour": 20,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 6,
@@ -1121,11 +1122,59 @@
     }
   ],
   "participation": {
-    "all": 249,
+    "all": 255,
     "owner": 0,
-    "community": 249
+    "community": 255
   },
   "recentCommits": [
+    {
+      "sha": "42781cb",
+      "message": "remove unused headers in spacewasm.h (#160)",
+      "url": "https://github.com/nasa/spacewasm/commit/42781cbeb7c35c810a60e1cec69578834df52480",
+      "date": "2026-08-07T00:35:19Z",
+      "author": "cole-wilson",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/49500253?v=4"
+    },
+    {
+      "sha": "839feec",
+      "message": "remove commented eprintlns (#159)",
+      "url": "https://github.com/nasa/spacewasm/commit/839feec79fcd7137e2e5f1a19922127f97d6d1d8",
+      "date": "2026-08-05T17:37:25Z",
+      "author": "cole-wilson",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/49500253?v=4"
+    },
+    {
+      "sha": "096c71c",
+      "message": "Fix unchecked OOB & incorrect if-without-else (#156)",
+      "url": "https://github.com/nasa/spacewasm/commit/096c71cfa8fd60bed739a0b16ee111233ce03077",
+      "date": "2026-08-05T14:56:49Z",
+      "author": "Kronos3",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4"
+    },
+    {
+      "sha": "1cba094",
+      "message": "Silence the stray debug print in fd_fdstat_set_rights (#153)",
+      "url": "https://github.com/nasa/spacewasm/commit/1cba09421e19e386796e8bead1dd61f96d503d65",
+      "date": "2026-08-01T21:15:45Z",
+      "author": "kadircanyildirm-crypto",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/252162627?v=4"
+    },
+    {
+      "sha": "627ea46",
+      "message": "Fix the broken IR spec link in README (#154)",
+      "url": "https://github.com/nasa/spacewasm/commit/627ea46c2f596f573be72cb1d0ccd5cbab5a1718",
+      "date": "2026-08-01T17:20:47Z",
+      "author": "kadircanyildirm-crypto",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/252162627?v=4"
+    },
+    {
+      "sha": "a22e4ed",
+      "message": "Track SPACEWASM_CONFIG changes in the c_api build script (#152)",
+      "url": "https://github.com/nasa/spacewasm/commit/a22e4ed734eaee42ac37c610c1429c2d4cbb51ac",
+      "date": "2026-08-01T15:16:00Z",
+      "author": "kadircanyildirm-crypto",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/252162627?v=4"
+    },
     {
       "sha": "23a1db2",
       "message": "Check allocation constraints during spectest (#151)",
@@ -1157,109 +1206,43 @@
       "date": "2026-07-30T01:06:28Z",
       "author": "arthurianresolve",
       "avatarUrl": "https://avatars.githubusercontent.com/u/268402532?v=4"
-    },
-    {
-      "sha": "79e7be1",
-      "message": "Add Miri job to CI workflow (#145)",
-      "url": "https://github.com/nasa/spacewasm/commit/79e7be11deef263d00882585bcfefd2978f7d5b9",
-      "date": "2026-07-29T20:33:03Z",
-      "author": "h313",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/6867813?v=4"
-    },
-    {
-      "sha": "225984a",
-      "message": "Add accessor to inner allocator for PageAllocator (#147)",
-      "url": "https://github.com/nasa/spacewasm/commit/225984af50f13d022d2997443035d1c9c6a9d3f2",
-      "date": "2026-07-29T20:32:05Z",
-      "author": "Kronos3",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4"
-    },
-    {
-      "sha": "eec06f6",
-      "message": "Refactor PageAllocator to be impl generic (#146)",
-      "url": "https://github.com/nasa/spacewasm/commit/eec06f68b7b6d22fe0b7aa5a79108fee4af166a9",
-      "date": "2026-07-29T19:42:04Z",
-      "author": "Kronos3",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4"
-    },
-    {
-      "sha": "0cbb521",
-      "message": "Add CMakeLists.txt for spacewasm_c_api (#130)",
-      "url": "https://github.com/nasa/spacewasm/commit/0cbb52111694f917b5b30bf7c512ca195fab5a4b",
-      "date": "2026-07-29T14:36:59Z",
-      "author": "h313",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/6867813?v=4"
-    },
-    {
-      "sha": "8abced5",
-      "message": "Make Engine::push_module fallible (#143)",
-      "url": "https://github.com/nasa/spacewasm/commit/8abced5ac9b6f674c4d863c7fcea8a23e69c9b8e",
-      "date": "2026-07-28T02:52:01Z",
-      "author": "Kronos3",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4"
-    },
-    {
-      "sha": "4a6374e",
-      "message": "More descriptive allocation error for guest memory (#138)",
-      "url": "https://github.com/nasa/spacewasm/commit/4a6374efef75828be22c9abcfa18bdcef0659b27",
-      "date": "2026-07-27T22:48:37Z",
-      "author": "Kronos3",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/15131751?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 124,
-      "title": "Reduce CoreMark benchmark noise in CI",
-      "url": "https://github.com/nasa/spacewasm/pull/124",
+      "number": 161,
+      "title": "Run integration tests with Miri",
+      "url": "https://github.com/nasa/spacewasm/pull/161",
       "state": "open",
-      "updatedAt": "2026-07-30T21:24:52Z",
-      "author": "suthat",
-      "draft": false
+      "updatedAt": "2026-08-08T23:40:40Z",
+      "author": "h313",
+      "draft": true
     },
     {
-      "number": 136,
-      "title": "Handle zero-page memories without allocating",
-      "url": "https://github.com/nasa/spacewasm/pull/136",
+      "number": 160,
+      "title": "remove unused headers in spacewasm.h",
+      "url": "https://github.com/nasa/spacewasm/pull/160",
       "state": "merged",
-      "updatedAt": "2026-07-30T19:54:41Z",
-      "author": "arthurianresolve",
-      "draft": false
-    },
-    {
-      "number": 151,
-      "title": "Check allocation constraints during spectest",
-      "url": "https://github.com/nasa/spacewasm/pull/151",
-      "state": "merged",
-      "updatedAt": "2026-07-30T15:02:03Z",
-      "author": "Kronos3",
-      "draft": false
-    },
-    {
-      "number": 149,
-      "title": "Remove page allocator cache",
-      "url": "https://github.com/nasa/spacewasm/pull/149",
-      "state": "merged",
-      "updatedAt": "2026-07-30T14:39:04Z",
-      "author": "Kronos3",
-      "draft": false
-    },
-    {
-      "number": 139,
-      "title": "Add raw terminal mode to `spacewasi`",
-      "url": "https://github.com/nasa/spacewasm/pull/139",
-      "state": "merged",
-      "updatedAt": "2026-07-30T04:54:10Z",
+      "updatedAt": "2026-08-07T00:35:21Z",
       "author": "cole-wilson",
       "draft": false
     },
     {
-      "number": 145,
-      "title": "Add Miri job to CI workflow",
-      "url": "https://github.com/nasa/spacewasm/pull/145",
+      "number": 159,
+      "title": "Remove commented `eprintln`s in spacewasi crate",
+      "url": "https://github.com/nasa/spacewasm/pull/159",
       "state": "merged",
-      "updatedAt": "2026-07-29T20:33:05Z",
-      "author": "h313",
+      "updatedAt": "2026-08-05T17:37:29Z",
+      "author": "cole-wilson",
+      "draft": false
+    },
+    {
+      "number": 156,
+      "title": "Fix unchecked OOB & incorrect if-without-else",
+      "url": "https://github.com/nasa/spacewasm/pull/156",
+      "state": "merged",
+      "updatedAt": "2026-08-05T14:56:57Z",
+      "author": "Kronos3",
       "draft": false
     },
     {
@@ -1267,17 +1250,35 @@
       "title": "Add accessor to inner allocator for PageAllocator",
       "url": "https://github.com/nasa/spacewasm/pull/147",
       "state": "merged",
-      "updatedAt": "2026-07-29T20:32:08Z",
+      "updatedAt": "2026-08-05T13:48:15Z",
       "author": "Kronos3",
       "draft": false
     },
     {
-      "number": 146,
-      "title": "Refactor PageAllocator to be impl generic",
-      "url": "https://github.com/nasa/spacewasm/pull/146",
+      "number": 124,
+      "title": "Reduce CoreMark benchmark noise in CI",
+      "url": "https://github.com/nasa/spacewasm/pull/124",
+      "state": "open",
+      "updatedAt": "2026-08-04T07:34:36Z",
+      "author": "suthat",
+      "draft": false
+    },
+    {
+      "number": 155,
+      "title": "Add a CI job covering the CMake integration",
+      "url": "https://github.com/nasa/spacewasm/pull/155",
+      "state": "open",
+      "updatedAt": "2026-08-02T10:56:16Z",
+      "author": "kadircanyildirm-crypto",
+      "draft": false
+    },
+    {
+      "number": 153,
+      "title": "Silence the stray debug print in fd_fdstat_set_rights",
+      "url": "https://github.com/nasa/spacewasm/pull/153",
       "state": "merged",
-      "updatedAt": "2026-07-29T19:46:31Z",
-      "author": "Kronos3",
+      "updatedAt": "2026-08-01T21:15:46Z",
+      "author": "kadircanyildirm-crypto",
       "draft": false
     }
   ],
@@ -1369,7 +1370,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 13615,
+      "size": 13626,
       "url": "https://github.com/nasa/spacewasm/blob/main/README.md"
     },
     {
@@ -1381,50 +1382,36 @@
   ],
   "workflowRuns": [
     {
-      "name": "Release",
-      "status": "success",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30555437191",
-      "branch": "v0.5.1",
-      "updatedAt": "2026-07-30T15:23:34Z"
-    },
-    {
       "name": "PR Comments",
-      "status": "skipped",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30554982760",
+      "status": "success",
+      "url": "https://github.com/nasa/spacewasm/actions/runs/31284503023",
       "branch": "main",
-      "updatedAt": "2026-07-30T15:05:48Z"
+      "updatedAt": "2026-08-08T23:40:44Z"
     },
     {
       "name": "CI",
       "status": "success",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30554673950",
-      "branch": "main",
-      "updatedAt": "2026-07-30T15:05:44Z"
+      "url": "https://github.com/nasa/spacewasm/actions/runs/31283951964",
+      "branch": "miri-integration-tests",
+      "updatedAt": "2026-08-08T23:40:31Z"
     },
     {
-      "name": "Push on main",
+      "name": "PR #161",
       "status": "success",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30554672808",
-      "branch": "main",
-      "updatedAt": "2026-07-30T15:04:21Z"
+      "url": "https://github.com/nasa/spacewasm/actions/runs/31283950563",
+      "branch": "refs/pull/161/head",
+      "updatedAt": "2026-08-08T23:27:38Z"
     },
     {
       "name": "Welcome new contributors",
       "status": "success",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30552824317",
-      "branch": "check-alloc-order",
-      "updatedAt": "2026-07-30T14:40:25Z"
-    },
-    {
-      "name": "PR #151",
-      "status": "success",
-      "url": "https://github.com/nasa/spacewasm/actions/runs/30552821866",
-      "branch": "refs/pull/151/head",
-      "updatedAt": "2026-07-30T14:42:39Z"
+      "url": "https://github.com/nasa/spacewasm/actions/runs/31278698492",
+      "branch": "miri-integration-tests",
+      "updatedAt": "2026-08-08T21:11:16Z"
     }
   ],
-  "branchCount": 4,
-  "tagCount": 16,
+  "branchCount": 6,
+  "tagCount": 17,
   "manifestDependencies": {
     "manifest": "Cargo.toml",
     "dependencies": [
@@ -1443,14 +1430,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 10,
-  "openPRs": 2,
-  "releaseCount": 16,
+  "openIssuesOnly": 12,
+  "openPRs": 4,
+  "releaseCount": 17,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
   "closedIssues": 26,
-  "mergedPRs": 98,
+  "mergedPRs": 104,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": true,
@@ -1458,14 +1445,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-08-03",
-      "commits": 0
-    },
-    {
-      "week": "2025-08-10",
-      "commits": 0
-    },
     {
       "week": "2025-08-17",
       "commits": 0
@@ -1664,66 +1643,18 @@
     },
     {
       "week": "2026-07-26",
-      "commits": 16
+      "commits": 18
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 4
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-03",
-      "count": 0
-    },
-    {
-      "date": "2025-08-04",
-      "count": 0
-    },
-    {
-      "date": "2025-08-05",
-      "count": 0
-    },
-    {
-      "date": "2025-08-06",
-      "count": 0
-    },
-    {
-      "date": "2025-08-07",
-      "count": 0
-    },
-    {
-      "date": "2025-08-08",
-      "count": 0
-    },
-    {
-      "date": "2025-08-09",
-      "count": 0
-    },
-    {
-      "date": "2025-08-10",
-      "count": 0
-    },
-    {
-      "date": "2025-08-11",
-      "count": 0
-    },
-    {
-      "date": "2025-08-12",
-      "count": 0
-    },
-    {
-      "date": "2025-08-13",
-      "count": 0
-    },
-    {
-      "date": "2025-08-14",
-      "count": 0
-    },
-    {
-      "date": "2025-08-15",
-      "count": 0
-    },
-    {
-      "date": "2025-08-16",
-      "count": 0
-    },
     {
       "date": "2025-08-17",
       "count": 0
@@ -3122,11 +3053,67 @@
     },
     {
       "date": "2026-08-01",
+      "count": 2
+    },
+    {
+      "date": "2026-08-02",
+      "count": 1
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 2
+    },
+    {
+      "date": "2026-08-06",
+      "count": 1
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
       "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-31T00:09:52.802Z",
+  "factsUpdatedAt": "2026-08-09T07:17:49.874Z",
   "aiSummary": {
     "source": "jules",
     "version": 3,
