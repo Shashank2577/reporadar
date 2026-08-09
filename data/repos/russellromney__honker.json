@@ -40,6 +40,11 @@
       "date": "2026-08-08",
       "stars": 2994,
       "forks": 74
+    },
+    {
+      "date": "2026-08-09",
+      "stars": 2998,
+      "forks": 74
     }
   ],
   "trendingHistory": [
@@ -107,7 +112,7 @@
   "license": "Other",
   "language": "Python",
   "topics": [],
-  "stars": 2994,
+  "stars": 2998,
   "forks": 74,
   "watchers": 9,
   "openIssues": 3,
@@ -115,13 +120,25 @@
   "pushedAt": "2026-08-01T15:04:22Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-08T13:40:56.932Z",
+  "updatedAt": "2026-08-09T08:35:21.211Z",
   "contributors": [
     {
       "login": "russellromney",
       "url": "https://github.com/russellromney",
       "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4",
-      "contributions": 341
+      "contributions": 348
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 7
+    },
+    {
+      "login": "jjshanks",
+      "url": "https://github.com/jjshanks",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/62661?v=4",
+      "contributions": 5
     },
     {
       "login": "cllns",
@@ -136,9 +153,15 @@
       "contributions": 2
     },
     {
-      "login": "jjshanks",
-      "url": "https://github.com/jjshanks",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/62661?v=4",
+      "login": "claude",
+      "url": "https://github.com/claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "fix2015",
+      "url": "https://github.com/fix2015",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/3988392?v=4",
       "contributions": 1
     },
     {
@@ -149,24 +172,24 @@
     }
   ],
   "languages": {
-    "Python": 476286,
-    "Rust": 405206,
-    "JavaScript": 175842,
-    "C#": 161296,
+    "Python": 485594,
+    "Rust": 440801,
+    "JavaScript": 177825,
+    "C#": 162861,
     "Go": 99881,
-    "Elixir": 95922,
+    "Elixir": 95934,
     "C++": 91642,
     "Ruby": 88841,
-    "TypeScript": 88608,
-    "Shell": 40667,
+    "TypeScript": 88602,
+    "Shell": 40662,
     "Zig": 26414,
-    "Makefile": 4809
+    "Makefile": 5860
   },
   "readmeExcerpt": "<h1 align=\"center\">\n  <img src=\"assets/honker-logo.png\" width=\"120\" alt=\"\" /><br/>honker\n</h1>\n\n`honker` is a SQLite extension + language bindings that add\nPostgres-style `NOTIFY`/`LISTEN` semantics to SQLite, with built-in\ndurable pub/sub, task queue, and event streams, without client polling\nor a daemon/broker. Any language that can\n`SELECT load_extension('honker')` gets the same features.\n\n`honker` replaces queue-table polling with a single-digit-microsecond\n`PRAGMA data_version` read. The default watcher checks every 1 ms,\ngiving push-like semantics and single-digit-millisecond cross-process\ndelivery; raise the watcher interval when lower idle CPU matters more\nthan lowest-latency wakeups.\n\nIf SQLite is your primary datastore, the queue should live in the same\nfile. `INSERT INTO orders` and `queue.enqueue(...)` can commit in the\nsame transaction. Rollback drops both.\n\nSee [honker.dev](https://honker.dev) for guides and API details, and\n[Binding support](BINDINGS.md) for what each binding supports.\n\n[Simon Willison highlighted honker](https://simonwillison.net/2026/Apr/24/honker/)\nas a SQLite implementation of the transactional outbox pattern.\n\n> Alpha software. Better than experimental, not beta-quality yet.\n\n## Quick Start\n\n```bash\npip install honker\n```\n\n```python\nimport honker\n\ndb = honker.open(\"app.db\")\nemails = db.queue(\"emails\")\n\nwith db.transaction() as tx:\n    tx.execute(\"INSERT INTO orders (user_id) VALUES (?)\", [42])\n    emails.enqueue({\"to\": \"alice@example.com\"}, tx=tx)\n\nasync for job in emails.claim(\"worker-1\"):\n    send_email(job.payload)\n    job.ack()\n```\n\nThe enqueue is atomic with the order insert. A worker in another process\nwakes when the transaction commits.\n\n## What It Does\n\n- Notify/listen across processes on one SQLite `.db` file\n- Durable at-least-once queues with retries, delayed jobs, priority,\n  visibility timeouts, dead-letter rows, and task result storage\n- Durable streams with per-consumer offsets\n- Time-trigger scheduling with cron and `@every <duration>` expressions\n- Named locks, rate limits, and transactional outbox helpers\n- SQL functions through a SQLite loadable extension\n- Thin bindings for Python, Node.js, Rust, Go, Ruby, Bun, Elixir, C++,\n  .NET / C#, Java/JVM, and Kotlin\n\nDeliberately not included: workflow DAGs, task chains/groups/chords,\nmulti-writer replication, or distributed locking across machines.\n\n## Why\n\nSQLite is increasingly the database for shipped projects. Those projects\neventually need pub/sub and a task queue. The usual answer is \"add Redis\n+ Celery.\" That works, but it introduces a second datastore with its own\nbackup story, a dual-write problem between your business table and the\nqueue, and a broker to run.\n\nHonker takes the approach that if SQLite is the primary datastore, the\nqueue should live in the same file. The queue is just rows in a table\nwith a partial index. Every binding uses the same schema and extension,\nso one language can enqueue work and another can claim it.\n\n## Design\n\nHonker is built around three pieces:\n\n- ephemeral pub/sub with `notify()` / `listen()`\n- durable streams with per-consumer offsets\n- at-least-once queues with visibility timeouts and retries\n\nAll three are INSERTs inside your transaction. Put `queue.enqueue(...)`,\n`stream.publish(...)`, or `notify(...)` beside the write that created the\nwork. Commit lands both rows. Rollback drops both rows.\n\nSQLite has no server-side push channel, so honker uses a shared watcher.\nThe stable backend reads `PRAGMA data_version` every millisecond; when\nthe counter changes, listeners re-read indexed SQLite state.\n\nIf you use your app's existing SQLite file, honker wakes workers on\nevery commit to that file. Most wakes will not find work for a given\nqueue or channel. That overtriggering is on purpose: one indexed SELECT\nis cheap, while a missed wake is a correctness bug. The stable semantics\nare:\n\n- wake on committed updates\n- ignore rolled-back work\n- re-read SQLite state after every wake\n- use file-backed SQLite databases, not `:memory:`\n\nOptional source-build backends also exist for kernel file events and WAL\nshared-memory reads. See [Binding support](BINDINGS.md) for which\nbindings expose backend options and what CI proves.\n\nHonker is single-machine and file-backed. SQLite's locking model is\ndesigned for one host writing one database file; two servers writing the\nsame `.db` over NFS is not a Honker deployment strategy.\n\n## Prior Art\n\n[`pg_notify`](https://www.postgresql.org/docs/current/sql-notify.html)\ngives Postgres fast triggers, but no retry or visibility timeout.\n[pg-boss](https://github.com/timgit/pg-boss) and\n[Oban](https://hexdocs.pm/oban/) are the Postgres-side gold standards\nwe're chasing on SQLite. [Huey](https://github.com/coleifer/huey) is an\nexcellent SQLite-backed Python task queue. If you already run Postgres,\nuse the Postgres tools, as they are excellent.\n\nThe transactional outbox idea also owes a lot to Brandur Leach's\n[Transactionally Staged Job Drains in Postgres](https://brandur.org/job-drain):\nwrite the job row in the same transaction as the business row, then let\na worker deliver it after commit.\n\n## Bindings\n\n| Ecosystem | Package / path | Notes |\n| --- | --- | --- |\n| Python | `pip install honker` | Batteries-included package; includes the Python API and loadable extension in release wheels |\n| Node.js | `npm install @russellthehippo/honker-node` | Native Node binding |\n| Ruby | `gem install honker` | Native gem with precompiled platforms where available |\n| .NET / C# | `dotnet add package Honker` | NuGet package with bundled runtime assets |\n| Rust | `honker`, `honker-core`, `honker-extension` | Core engine and Rust wrapper |\n| Elixir | Hex package `honker` | Extension-backed Elixir binding |\n| Go, Bun, C++, JVM, Kotlin | in `packages/` | Maintained in-tree bindings |\n| SQLite | `honker-extension` | Loadable extension for any SQLite 3.9+ client |\n\nThe detailed parity table lives in [BINDINGS.md](BINDINGS.md).\nLanguage-specific install and API notes live in each package README.\n\n## SQL Extension\n\nAny SQLite client that can load extensions can use honker directly:\n\n```sql\n.load ./libhonker_ext\nSELECT honker_bootstrap();\nINSERT INTO _honker_live (queue, payload) VALUES ('emails', '{\"to\":\"alice\"}');\nSELECT honker_claim_batch('emails', 'worker-1', 32, 300);    -- JSON array\nSELECT honker_ack_batch('[1,2,3]', 'worker-1');              -- DELETEs; returns count\nSELECT honker_sweep_expired('emails');                       -- count moved to dead\nSELECT honker_lock_acquire('backup', 'me', 60);              -- 1 = got it, 0 = held\nSELECT honker_lock_release('backup', 'me');                  -- 1 = released\nSELECT honker_rate_limit_try('api', 10, 60);                 -- 1 = under, 0 = at limit\nSELECT honker_rate_limit_sweep(3600);                        -- drop windows >1h old\nSELECT honker_cron_next_after('0 3 * * *', unixepoch());     -- 5-field cron\nSELECT honker_cron_next_after('*/2 * * * * *', unixepoch()); -- 6-field cron\nSELECT honker_cron_next_after('@every 5s', unixepoch());     -- interval schedule\nSELECT honker_scheduler_register('nightly', 'backups',\n  '0 3 * * *', '\"go\"', 0, NULL);                             -- periodic task\nSELECT honker_scheduler_tick(unixepoch());                   -- JSON: fires due\nSELECT honker_scheduler_soonest();                           -- min next_fire_at\nSELECT honker_queue_next_claim_at('emails');                 -- next run/reclaim deadline\nSELECT honker_stream_publish('orders', 'k', '{\"id\":42}');    -- returns offset\nSELECT honker_stream_read_since('orders', 0, 1000);          -- JSON array\nSELECT honker_stream_save_offset('worker', 'orders', 42);    -- monotonic upsert\nSELECT honker_stream_get_offset('worker', 'orders');         -- offset or 0\nSELECT honker_result_save(42, '{\"ok\":true}', 3600);          -- save w/ 1h TTL\nSELECT honker_result_get(42);                                -- value or NULL\nSELECT honker_result_sweep();                                -- prune expired\nSELECT notify('orders', '{\"id\":42}');\nSELECT honker_enqueue('emails', '{\"to\":\"alice@example.com\"}', NULL, NULL, 0, 3, NULL);\n```\n\nThe extension shares tables with the language bindings, so a Python\nworker can claim jobs written by SQL, Node, Ruby, Go, or any other\nbinding.\n\n## Architecture\n\n- One `PRAGMA data_version` watcher per `Database`; the default\n  Rust-backed watcher cadence is 1 ms and can be raised\n- Counter change fans out a wake to each listener/worker/subscriber\n- Subscribers re-read SQLite state with indexed SELECTs\n- 100 subscribers still share one watcher\n- Idle listeners run zero queue/notification SELECTs\n\nQueue claim is one `UPDATE ... RETURNING` through a partial index:\n`(queue, priority DESC, run_at, id) WHERE state IN ('pending','processing')`.\nAck is one `DELETE`. Retry-exhausted jobs move to `_honker_dead`, so\nclaim speed depends on pending/processing jobs, not old queue history.\n\nThe language bindings default to WAL because it gives concurrent readers\nwith one writer and efficient fsync batching. Other journal modes still\nwork. Correctness and cross-process wake do not depend on WAL; the wake\npath is SQLite's own `data_version` counter.\n\n## ORMs And Frameworks\n\nHonker does not ship framework plugins. Load the extension on your\nframework or ORM connection, run `honker_bootstrap()`, and call SQL\nfunctions inside the ORM's transaction.\n\nThat works with SQLAlchemy, SQLModel, Django, Drizzle, Kysely, sqlx,\nGORM, ActiveRecord, Ecto, Hibernate, jOOQ, MyBatis, and Exposed. See the\nORM guide at [honker.dev/guides/orm](https://honker.dev/guides/orm/).\n\n## Performance\n\nOn a modern laptop, honker handles thousands of messages per second.\nCross-process wake latency is set by the watcher cadence, which defaults\nto 1 ms. Measure\non your hardware with:\n\n```bash\npython bench/wake_latency_bench.py --samples 500\npython bench/real_bench.py --workers 4 --enqueuers 2 --seconds 15\n```\n\n## Development\n\n```bash\nmake test              # Rust + Python + Node fast path\nmake test-all          # broader suite, including slower tests\nmake build             # build Python package + loadable extension\ncargo build --release -p honker-extension\n```\n\nRepo layout:\n\n```text\nhonker-core/          # shared Rust engine\nhonker-extension/     # SQLite loadable extension\npackages/             # language bindings\ntests/                # cross-package integration tests\nbench/                # benchmarks\n```\n\n## Docs\n\n- [Binding support](BINDINGS.md)\n- [Python examples](packages/honker/examples/README.md)\n- [Benchmarks](bench/README.md)\n- [Roadmap](ROADMAP.md)\n- [Changelog](CHANGELOG.md)\n- [honker.dev](https://honker.dev)\n\n## License\n\nApache-2.0 OR MIT. See [LICENSE](LICENSE).\n",
-  "commitCount": 348,
+  "commitCount": 368,
   "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 align=\"center\" class=\"heading-element\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/russellromney/honker/blob/main/assets/honker-logo.png\"><img src=\"https://raw.githubusercontent.com/russellromney/honker/main/assets/honker-logo.png\" width=\"120\" alt=\"\" style=\"max-width: 100%;\"></a><br>honker\n</h1></div>\n<p dir=\"auto\"><code>honker</code> is a SQLite extension + language bindings that add\nPostgres-style <code>NOTIFY</code>/<code>LISTEN</code> semantics to SQLite, with built-in\ndurable pub/sub, task queue, and event streams, without client polling\nor a daemon/broker. Any language that can\n<code>SELECT load_extension('honker')</code> gets the same features.</p>\n<p dir=\"auto\"><code>honker</code> replaces queue-table polling with a single-digit-microsecond\n<code>PRAGMA data_version</code> read. The default watcher checks every 1 ms,\ngiving push-like semantics and single-digit-millisecond cross-process\ndelivery; raise the watcher interval when lower idle CPU matters more\nthan lowest-latency wakeups.</p>\n<p dir=\"auto\">If SQLite is your primary datastore, the queue should live in the same\nfile. <code>INSERT INTO orders</code> and <code>queue.enqueue(...)</code> can commit in the\nsame transaction. Rollback drops both.</p>\n<p dir=\"auto\">See <a href=\"https://honker.dev\" rel=\"nofollow\">honker.dev</a> for guides and API details, and\n<a href=\"https://github.com/russellromney/honker/blob/main/BINDINGS.md\">Binding support</a> for what each binding supports.</p>\n<p dir=\"auto\"><a href=\"https://simonwillison.net/2026/Apr/24/honker/\" rel=\"nofollow\">Simon Willison highlighted honker</a>\nas a SQLite implementation of the transactional outbox pattern.</p>\n<blockquote>\n<p dir=\"auto\">Alpha software. Better than experimental, not beta-quality yet.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install honker\"><pre>pip install honker</pre></div>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import honker\n\ndb = honker.open(&quot;app.db&quot;)\nemails = db.queue(&quot;emails&quot;)\n\nwith db.transaction() as tx:\n    tx.execute(&quot;INSERT INTO orders (user_id) VALUES (?)&quot;, [42])\n    emails.enqueue({&quot;to&quot;: &quot;alice@example.com&quot;}, tx=tx)\n\nasync for job in emails.claim(&quot;worker-1&quot;):\n    send_email(job.payload)\n    job.ack()\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">honker</span>\n\n<span class=\"pl-s1\">db</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">honker</span>.<span class=\"pl-c1\">open</span>(<span class=\"pl-s\">\"app.db\"</span>)\n<span class=\"pl-s1\">emails</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">db</span>.<span class=\"pl-c1\">queue</span>(<span class=\"pl-s\">\"emails\"</span>)\n\n<span class=\"pl-k\">with</span> <span class=\"pl-s1\">db</span>.<span class=\"pl-c1\">transaction</span>() <span class=\"pl-k\">as</span> <span class=\"pl-s1\">tx</span>:\n    <span class=\"pl-s1\">tx</span>.<span class=\"pl-c1\">execute</span>(<span class=\"pl-s\">\"INSERT INTO orders (user_id) VALUES (?)\"</span>, [<span class=\"pl-c1\">42</span>])\n    <span class=\"pl-s1\">emails</span>.<span class=\"pl-c1\">enqueue</span>({<span class=\"pl-s\">\"to\"</span>: <span class=\"pl-s\">\"alice@example.com\"</span>}, <span class=\"pl-s1\">tx</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">tx</span>)\n\n<span class=\"pl-k\">async</span> <span class=\"pl-k\">for</span> <span class=\"pl-s1\">job</span> <span class=\"pl-c1\">in</span> <span class=\"pl-s1\">emails</span>.<span class=\"pl-c1\">claim</span>(<span class=\"pl-s\">\"worker-1\"</span>):\n    <span class=\"pl-en\">send_email</span>(<span class=\"pl-s1\">job</span>.<span class=\"pl-c1\">payload</span>)\n    <span class=\"pl-s1\">job</span>.<span class=\"pl-c1\">ack</span>()</pre></div>\n<p dir=\"auto\">The enqueue is atomic with the order insert. A worker in another process\nwakes when the transaction commits.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What It Does</h2></div>\n<ul dir=\"auto\">\n<li>Notify/listen across processes on one SQLite <code>.db</code> file</li>\n<li>Durable at-least-once queues with retries, delayed jobs, priority,\nvisibility timeouts, dead-letter rows, and task result storage</li>\n<li>Durable streams with per-consumer offsets</li>\n<li>Time-trigger scheduling with cron and <code>@every &lt;duration&gt;</code> expressions</li>\n<li>Named locks, rate limits, and transactional outbox helpers</li>\n<li>SQL functions through a SQLite loadable extension</li>\n<li>Thin bindings for Python, Node.js, Rust, Go, Ruby, Bun, Elixir, C++,\n.NET / C#, Java/JVM, and Kotlin</li>\n</ul>\n<p dir=\"auto\">Deliberately not included: workflow DAGs, task chains/groups/chords,\nmulti-writer replication, or distributed locking across machines.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why</h2></div>\n<p dir=\"auto\">SQLite is increasingly the database for shipped projects. Those projects\neventually need pub/sub and a task queue. The usual answer is \"add Redis</p>\n<ul dir=\"auto\">\n<li>Celery.\" That works, but it introduces a second datastore with its own\nbackup story, a dual-write problem between your business table and the\nqueue, and a broker to run.</li>\n</ul>\n<p dir=\"auto\">Honker takes the approach that if SQLite is the primary datastore, the\nqueue should live in the same file. The queue is just rows in a table\nwith a partial index. Every binding uses the same schema and extension,\nso one language can enqueue work and another can claim it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design</h2></div>\n<p dir=\"auto\">Honker is built around three pieces:</p>\n<ul dir=\"auto\">\n<li>ephemeral pub/sub with <code>notify()</code> / <code>listen()</code></li>\n<li>durable streams with per-consumer offsets</li>\n<li>at-least-once queues with visibility timeouts and retries</li>\n</ul>\n<p dir=\"auto\">All three are INSERTs inside your transaction. Put <code>queue.enqueue(...)</code>,\n<code>stream.publish(...)</code>, or <code>notify(...)</code> beside the write that created the\nwork. Commit lands both rows. Rollback drops both rows.</p>\n<p dir=\"auto\">SQLite has no server-side push channel, so honker uses a shared watcher.\nThe stable backend reads <code>PRAGMA data_version</code> every millisecond; when\nthe counter changes, listeners re-read indexed SQLite state.</p>\n<p dir=\"auto\">If you use your app's existing SQLite file, honker wakes workers on\nevery commit to that file. Most wakes will not find work for a given\nqueue or channel. That overtriggering is on purpose: one indexed SELECT\nis cheap, while a missed wake is a correctness bug. The stable semantics\nare:</p>\n<ul dir=\"auto\">\n<li>wake on committed updates</li>\n<li>ignore rolled-back work</li>\n<li>re-read SQLite state after every wake</li>\n<li>use file-backed SQLite databases, not <code>:memory:</code></li>\n</ul>\n<p dir=\"auto\">Optional source-build backends also exist for kernel file events and WAL\nshared-memory reads. See <a href=\"https://github.com/russellromney/honker/blob/main/BINDINGS.md\">Binding support</a> for which\nbindings expose backend options and what CI proves.</p>\n<p dir=\"auto\">Honker is single-machine and file-backed. SQLite's locking model is\ndesigned for one host writing one database file; two servers writing the\nsame <code>.db</code> over NFS is not a Honker deployment strategy.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Prior Art</h2></div>\n<p dir=\"auto\"><a href=\"https://www.postgresql.org/docs/current/sql-notify.html\" rel=\"nofollow\"><code>pg_notify</code></a>\ngives Postgres fast triggers, but no retry or visibility timeout.\n<a href=\"https://github.com/timgit/pg-boss\">pg-boss</a> and\n<a href=\"https://hexdocs.pm/oban/\" rel=\"nofollow\">Oban</a> are the Postgres-side gold standards\nwe're chasing on SQLite. <a href=\"https://github.com/coleifer/huey\">Huey</a> is an\nexcellent SQLite-backed Python task queue. If you already run Postgres,\nuse the Postgres tools, as they are excellent.</p>\n<p dir=\"auto\">The transactional outbox idea also owes a lot to Brandur Leach's\n<a href=\"https://brandur.org/job-drain\" rel=\"nofollow\">Transactionally Staged Job Drains in Postgres</a>:\nwrite the job row in the same transaction as the business row, then let\na worker deliver it after commit.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Bindings</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Ecosystem</th>\n<th>Package / path</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Python</td>\n<td><code>pip install honker</code></td>\n<td>Batteries-included package; includes the Python API and loadable extension in release wheels</td>\n</tr>\n<tr>\n<td>Node.js</td>\n<td><code>npm install @russellthehippo/honker-node</code></td>\n<td>Native Node binding</td>\n</tr>\n<tr>\n<td>Ruby</td>\n<td><code>gem install honker</code></td>\n<td>Native gem with precompiled platforms where available</td>\n</tr>\n<tr>\n<td>.NET / C#</td>\n<td><code>dotnet add package Honker</code></td>\n<td>NuGet package with bundled runtime assets</td>\n</tr>\n<tr>\n<td>Rust</td>\n<td><code>honker</code>, <code>honker-core</code>, <code>honker-extension</code></td>\n<td>Core engine and Rust wrapper</td>\n</tr>\n<tr>\n<td>Elixir</td>\n<td>Hex package <code>honker</code></td>\n<td>Extension-backed Elixir binding</td>\n</tr>\n<tr>\n<td>Go, Bun, C++, JVM, Kotlin</td>\n<td>in <code>packages/</code></td>\n<td>Maintained in-tree bindings</td>\n</tr>\n<tr>\n<td>SQLite</td>\n<td><code>honker-extension</code></td>\n<td>Loadable extension for any SQLite 3.9+ client</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The detailed parity table lives in <a href=\"https://github.com/russellromney/honker/blob/main/BINDINGS.md\">BINDINGS.md</a>.\nLanguage-specific install and API notes live in each package README.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">SQL Extension</h2></div>\n<p dir=\"auto\">Any SQLite client that can load extensions can use honker directly:</p>\n<div class=\"highlight highlight-source-sql notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\".load ./libhonker_ext\nSELECT honker_bootstrap();\nINSERT INTO _honker_live (queue, payload) VALUES ('emails', '{&quot;to&quot;:&quot;alice&quot;}');\nSELECT honker_claim_batch('emails', 'worker-1', 32, 300);    -- JSON array\nSELECT honker_ack_batch('[1,2,3]', 'worker-1');              -- DELETEs; returns count\nSELECT honker_sweep_expired('emails');                       -- count moved to dead\nSELECT honker_lock_acquire('backup', 'me', 60);              -- 1 = got it, 0 = held\nSELECT honker_lock_release('backup', 'me');                  -- 1 = released\nSELECT honker_rate_limit_try('api', 10, 60);                 -- 1 = under, 0 = at limit\nSELECT honker_rate_limit_sweep(3600);                        -- drop windows &gt;1h old\nSELECT honker_cron_next_after('0 3 * * *', unixepoch());     -- 5-field cron\nSELECT honker_cron_next_after('*/2 * * * * *', unixepoch()); -- 6-field cron\nSELECT honker_cron_next_after('@every 5s', unixepoch());     -- interval schedule\nSELECT honker_scheduler_register('nightly', 'backups',\n  '0 3 * * *', '&quot;go&quot;', 0, NULL);                             -- periodic task\nSELECT honker_scheduler_tick(unixepoch());                   -- JSON: fires due\nSELECT honker_scheduler_soonest();                           -- min next_fire_at\nSELECT honker_queue_next_claim_at('emails');                 -- next run/reclaim deadline\nSELECT honker_stream_publish('orders', 'k', '{&quot;id&quot;:42}');    -- returns offset\nSELECT honker_stream_read_since('orders', 0, 1000);          -- JSON array\nSELECT honker_stream_save_offset('worker', 'orders', 42);    -- monotonic upsert\nSELECT honker_stream_get_offset('worker', 'orders');         -- offset or 0\nSELECT honker_result_save(42, '{&quot;ok&quot;:true}', 3600);          -- save w/ 1h TTL\nSELECT honker_result_get(42);                                -- value or NULL\nSELECT honker_result_sweep();                                -- prune expired\nSELECT notify('orders', '{&quot;id&quot;:42}');\nSELECT honker_enqueue('emails', '{&quot;to&quot;:&quot;alice@example.com&quot;}', NULL, NULL, 0, 3, NULL);\"><pre>.load .<span class=\"pl-k\">/</span>libhonker_ext\n<span class=\"pl-k\">SELECT</span> honker_bootstrap();\n<span class=\"pl-k\">INSERT INTO</span> _honker_live (queue, payload) <span class=\"pl-k\">VALUES</span> (<span class=\"pl-s\"><span class=\"pl-pds\">'</span>emails<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"to\":\"alice\"}<span class=\"pl-pds\">'</span></span>);\n<span class=\"pl-k\">SELECT</span> honker_claim_batch(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>emails<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>worker-1<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">32</span>, <span class=\"pl-c1\">300</span>);    <span class=\"pl-c\"><span class=\"pl-c\">--</span> JSON array</span>\n<span class=\"pl-k\">SELECT</span> honker_ack_batch(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>[1,2,3]<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>worker-1<span class=\"pl-pds\">'</span></span>);              <span class=\"pl-c\"><span class=\"pl-c\">--</span> DELETEs; returns count</span>\n<span class=\"pl-k\">SELECT</span> honker_sweep_expired(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>emails<span class=\"pl-pds\">'</span></span>);                       <span class=\"pl-c\"><span class=\"pl-c\">--</span> count moved to dead</span>\n<span class=\"pl-k\">SELECT</span> honker_lock_acquire(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>backup<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>me<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">60</span>);              <span class=\"pl-c\"><span class=\"pl-c\">--</span> 1 = got it, 0 = held</span>\n<span class=\"pl-k\">SELECT</span> honker_lock_release(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>backup<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>me<span class=\"pl-pds\">'</span></span>);                  <span class=\"pl-c\"><span class=\"pl-c\">--</span> 1 = released</span>\n<span class=\"pl-k\">SELECT</span> honker_rate_limit_try(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>api<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">10</span>, <span class=\"pl-c1\">60</span>);                 <span class=\"pl-c\"><span class=\"pl-c\">--</span> 1 = under, 0 = at limit</span>\n<span class=\"pl-k\">SELECT</span> honker_rate_limit_sweep(<span class=\"pl-c1\">3600</span>);                        <span class=\"pl-c\"><span class=\"pl-c\">--</span> drop windows &gt;1h old</span>\n<span class=\"pl-k\">SELECT</span> honker_cron_next_after(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>0 3 * * *<span class=\"pl-pds\">'</span></span>, unixepoch());     <span class=\"pl-c\"><span class=\"pl-c\">--</span> 5-field cron</span>\n<span class=\"pl-k\">SELECT</span> honker_cron_next_after(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>*/2 * * * * *<span class=\"pl-pds\">'</span></span>, unixepoch()); <span class=\"pl-c\"><span class=\"pl-c\">--</span> 6-field cron</span>\n<span class=\"pl-k\">SELECT</span> honker_cron_next_after(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>@every 5s<span class=\"pl-pds\">'</span></span>, unixepoch());     <span class=\"pl-c\"><span class=\"pl-c\">--</span> interval schedule</span>\n<span class=\"pl-k\">SELECT</span> honker_scheduler_register(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>nightly<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>backups<span class=\"pl-pds\">'</span></span>,\n  <span class=\"pl-s\"><span class=\"pl-pds\">'</span>0 3 * * *<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>\"go\"<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">0</span>, <span class=\"pl-k\">NULL</span>);                             <span class=\"pl-c\"><span class=\"pl-c\">--</span> periodic task</span>\n<span class=\"pl-k\">SELECT</span> honker_scheduler_tick(unixepoch());                   <span class=\"pl-c\"><span class=\"pl-c\">--</span> JSON: fires due</span>\n<span class=\"pl-k\">SELECT</span> honker_scheduler_soonest();                           <span class=\"pl-c\"><span class=\"pl-c\">--</span> min next_fire_at</span>\n<span class=\"pl-k\">SELECT</span> honker_queue_next_claim_at(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>emails<span class=\"pl-pds\">'</span></span>);                 <span class=\"pl-c\"><span class=\"pl-c\">--</span> next run/reclaim deadline</span>\n<span class=\"pl-k\">SELECT</span> honker_stream_publish(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>orders<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>k<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"id\":42}<span class=\"pl-pds\">'</span></span>);    <span class=\"pl-c\"><span class=\"pl-c\">--</span> returns offset</span>\n<span class=\"pl-k\">SELECT</span> honker_stream_read_since(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>orders<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">0</span>, <span class=\"pl-c1\">1000</span>);          <span class=\"pl-c\"><span class=\"pl-c\">--</span> JSON array</span>\n<span class=\"pl-k\">SELECT</span> honker_stream_save_offset(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>worker<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>orders<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">42</span>);    <span class=\"pl-c\"><span class=\"pl-c\">--</span> monotonic upsert</span>\n<span class=\"pl-k\">SELECT</span> honker_stream_get_offset(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>worker<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>orders<span class=\"pl-pds\">'</span></span>);         <span class=\"pl-c\"><span class=\"pl-c\">--</span> offset or 0</span>\n<span class=\"pl-k\">SELECT</span> honker_result_save(<span class=\"pl-c1\">42</span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"ok\":true}<span class=\"pl-pds\">'</span></span>, <span class=\"pl-c1\">3600</span>);          <span class=\"pl-c\"><span class=\"pl-c\">--</span> save w/ 1h TTL</span>\n<span class=\"pl-k\">SELECT</span> honker_result_get(<span class=\"pl-c1\">42</span>);                                <span class=\"pl-c\"><span class=\"pl-c\">--</span> value or NULL</span>\n<span class=\"pl-k\">SELECT</span> honker_result_sweep();                                <span class=\"pl-c\"><span class=\"pl-c\">--</span> prune expired</span>\n<span class=\"pl-k\">SELECT</span> notify(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>orders<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"id\":42}<span class=\"pl-pds\">'</span></span>);\n<span class=\"pl-k\">SELECT</span> honker_enqueue(<span class=\"pl-s\"><span class=\"pl-pds\">'</span>emails<span class=\"pl-pds\">'</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"to\":\"alice@example.com\"}<span class=\"pl-pds\">'</span></span>, <span class=\"pl-k\">NULL</span>, <span class=\"pl-k\">NULL</span>, <span class=\"pl-c1\">0</span>, <span class=\"pl-c1\">3</span>, <span class=\"pl-k\">NULL</span>);</pre></div>\n<p dir=\"auto\">The extension shares tables with the language bindings, so a Python\nworker can claim jobs written by SQL, Node, Ruby, Go, or any other\nbinding.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture</h2></div>\n<ul dir=\"auto\">\n<li>One <code>PRAGMA data_version</code> watcher per <code>Database</code>; the default\nRust-backed watcher cadence is 1 ms and can be raised</li>\n<li>Counter change fans out a wake to each listener/worker/subscriber</li>\n<li>Subscribers re-read SQLite state with indexed SELECTs</li>\n<li>100 subscribers still share one watcher</li>\n<li>Idle listeners run zero queue/notification SELECTs</li>\n</ul>\n<p dir=\"auto\">Queue claim is one <code>UPDATE ... RETURNING</code> through a partial index:\n<code>(queue, priority DESC, run_at, id) WHERE state IN ('pending','processing')</code>.\nAck is one <code>DELETE</code>. Retry-exhausted jobs move to <code>_honker_dead</code>, so\nclaim speed depends on pending/processing jobs, not old queue history.</p>\n<p dir=\"auto\">The language bindings default to WAL because it gives concurrent readers\nwith one writer and efficient fsync batching. Other journal modes still\nwork. Correctness and cross-process wake do not depend on WAL; the wake\npath is SQLite's own <code>data_version</code> counter.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">ORMs And Frameworks</h2></div>\n<p dir=\"auto\">Honker does not ship framework plugins. Load the extension on your\nframework or ORM connection, run <code>honker_bootstrap()</code>, and call SQL\nfunctions inside the ORM's transaction.</p>\n<p dir=\"auto\">That works with SQLAlchemy, SQLModel, Django, Drizzle, Kysely, sqlx,\nGORM, ActiveRecord, Ecto, Hibernate, jOOQ, MyBatis, and Exposed. See the\nORM guide at <a href=\"https://honker.dev/guides/orm/\" rel=\"nofollow\">honker.dev/guides/orm</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Performance</h2></div>\n<p dir=\"auto\">On a modern laptop, honker handles thousands of messages per second.\nCross-process wake latency is set by the watcher cadence, which defaults\nto 1 ms. Measure\non your hardware with:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python bench/wake_latency_bench.py --samples 500\npython bench/real_bench.py --workers 4 --enqueuers 2 --seconds 15\"><pre>python bench/wake_latency_bench.py --samples 500\npython bench/real_bench.py --workers 4 --enqueuers 2 --seconds 15</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make test              # Rust + Python + Node fast path\nmake test-all          # broader suite, including slower tests\nmake build             # build Python package + loadable extension\ncargo build --release -p honker-extension\"><pre>make <span class=\"pl-c1\">test</span>              <span class=\"pl-c\"><span class=\"pl-c\">#</span> Rust + Python + Node fast path</span>\nmake test-all          <span class=\"pl-c\"><span class=\"pl-c\">#</span> broader suite, including slower tests</span>\nmake build             <span class=\"pl-c\"><span class=\"pl-c\">#</span> build Python package + loadable extension</span>\ncargo build --release -p honker-extension</pre></div>\n<p dir=\"auto\">Repo layout:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"honker-core/          # shared Rust engine\nhonker-extension/     # SQLite loadable extension\npackages/             # language bindings\ntests/                # cross-package integration tests\nbench/                # benchmarks\"><pre lang=\"text\" class=\"notranslate\"><code>honker-core/          # shared Rust engine\nhonker-extension/     # SQLite loadable extension\npackages/             # language bindings\ntests/                # cross-package integration tests\nbench/                # benchmarks\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Docs</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/russellromney/honker/blob/main/BINDINGS.md\">Binding support</a></li>\n<li><a href=\"https://github.com/russellromney/honker/blob/main/packages/honker/examples/README.md\">Python examples</a></li>\n<li><a href=\"https://github.com/russellromney/honker/blob/main/bench/README.md\">Benchmarks</a></li>\n<li><a href=\"https://github.com/russellromney/honker/blob/main/ROADMAP.md\">Roadmap</a></li>\n<li><a href=\"https://github.com/russellromney/honker/blob/main/CHANGELOG.md\">Changelog</a></li>\n<li><a href=\"https://honker.dev\" rel=\"nofollow\">honker.dev</a></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Apache-2.0 OR MIT. See <a href=\"https://github.com/russellromney/honker/blob/main/LICENSE\">LICENSE</a>.</p>\n</article></div>",
   "releases": [],
-  "contributorCount": 5,
+  "contributorCount": 8,
   "firstCommitAt": "2026-04-18T20:53:32Z",
   "punchCard": [
     {
@@ -317,7 +340,7 @@
     {
       "day": 1,
       "hour": 5,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 1,
@@ -337,7 +360,7 @@
     {
       "day": 1,
       "hour": 9,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 1,
@@ -777,7 +800,7 @@
     {
       "day": 5,
       "hour": 1,
-      "commits": 0
+      "commits": 3
     },
     {
       "day": 5,
@@ -817,7 +840,7 @@
     {
       "day": 5,
       "hour": 9,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 5,
@@ -842,7 +865,7 @@
     {
       "day": 5,
       "hour": 14,
-      "commits": 1
+      "commits": 5
     },
     {
       "day": 5,
@@ -972,12 +995,12 @@
     {
       "day": 6,
       "hour": 16,
-      "commits": 7
+      "commits": 15
     },
     {
       "day": 6,
       "hour": 17,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 6,
@@ -1012,15 +1035,6 @@
   ],
   "recentIssues": [
     {
-      "number": 80,
-      "title": "kernel-watcher (macOS): kqueue close() drops SQLite's POSIX locks, causing SIGBUS in worker processes",
-      "url": "https://github.com/russellromney/honker/issues/80",
-      "createdAt": "2026-07-27T15:32:39Z",
-      "comments": 0,
-      "labels": [],
-      "author": "jjshanks"
-    },
-    {
       "number": 59,
       "title": "Native Turso (Rust rewrite) integration: wake path + pgmicro LISTEN/NOTIFY",
       "url": "https://github.com/russellromney/honker/issues/59",
@@ -1051,163 +1065,163 @@
     }
   ],
   "participation": {
-    "all": 348,
-    "owner": 341,
-    "community": 7
+    "all": 368,
+    "owner": 348,
+    "community": 20
   },
   "recentCommits": [
     {
-      "sha": "e971601",
-      "message": "site: update submodule to honker-site@d53398b",
-      "url": "https://github.com/russellromney/honker/commit/e9716010c9e8f01f9e6e5469cc211541a9de55c8",
-      "date": "2026-07-25T09:41:45Z",
+      "sha": "54af9ac",
+      "message": "fix: preserve SQLite POSIX locks in watcher backends (#96)",
+      "url": "https://github.com/russellromney/honker/commit/54af9ac5077103cb223268eb6135fd9880ebca1d",
+      "date": "2026-08-01T15:04:21Z",
       "author": "russellromney",
       "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
     },
     {
-      "sha": "252ce56",
-      "message": "release: bump honker-node to 0.4.5, honker-bun to 0.4.1",
-      "url": "https://github.com/russellromney/honker/commit/252ce567c756b441f3883584f33b2ab3de9ec30b",
-      "date": "2026-07-25T09:29:08Z",
+      "sha": "2e263e6",
+      "message": "deps: upgrade rusqlite across all Rust packages (#95)",
+      "url": "https://github.com/russellromney/honker/commit/2e263e6e9bac26f3d3bb50aaf396db432ec93d6b",
+      "date": "2026-08-01T14:48:49Z",
       "author": "russellromney",
       "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
     },
     {
-      "sha": "ce6da75",
-      "message": "Merge pull request #75 from russellromney/fix/bun-resume-and-node-death-msg",
-      "url": "https://github.com/russellromney/honker/commit/ce6da75e85c79b6d80c15d0646f51393f114e5da",
-      "date": "2026-07-25T09:28:17Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "392ad0f",
+      "message": "deps: bump notify from 6.1.1 to 8.2.0 (#88)",
+      "url": "https://github.com/russellromney/honker/commit/392ad0f3c29045009819e9b0e3e3babd8cc793b9",
+      "date": "2026-08-01T14:46:18Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "2c2fdfb",
-      "message": "fix(node): reject dead update waits with a 'watcher died' message",
-      "url": "https://github.com/russellromney/honker/commit/2c2fdfb107327e7366a5370752c71d0d11139332",
-      "date": "2026-07-25T09:19:39Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "5c34fa3",
+      "message": "deps: bump the cargo-minor-patch group with 5 updates (#87)",
+      "url": "https://github.com/russellromney/honker/commit/5c34fa351242d34affaf5994d4a2e5674441a6bd",
+      "date": "2026-08-01T14:34:52Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "fe0663c",
-      "message": "fix(bun): save stream offset before yield, not after",
-      "url": "https://github.com/russellromney/honker/commit/fe0663cf7d004abe698e1a5740831fcc904f9972",
-      "date": "2026-07-25T09:19:39Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "c7d19ec",
+      "message": "deps: bump the maven group across 2 directories with 8 updates (#94)",
+      "url": "https://github.com/russellromney/honker/commit/c7d19ecdb92b4d599c4cf28743205301264218d8",
+      "date": "2026-08-01T14:24:28Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "3bab6c5",
-      "message": "site: update submodule to honker-site@2b760af",
-      "url": "https://github.com/russellromney/honker/commit/3bab6c5273107a04fc02fea8d9d99be95057d337",
-      "date": "2026-07-22T02:19:47Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "fff9b81",
+      "message": "deps: bump github.com/mattn/go-sqlite3 (#93)",
+      "url": "https://github.com/russellromney/honker/commit/fff9b815280fa6642bd07b3c6dd988f0b84b5f3a",
+      "date": "2026-08-01T14:24:24Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "b9db2d8",
-      "message": "release: bump honker-node to 0.4.4",
-      "url": "https://github.com/russellromney/honker/commit/b9db2d876fb2f71ae2888fdb93e9778fc9a405e9",
-      "date": "2026-07-21T23:16:06Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "349eb53",
+      "message": "deps: bump the mix group across 1 directory with 2 updates (#92)",
+      "url": "https://github.com/russellromney/honker/commit/349eb53b2cf36719899909a218255b2e8a650acb",
+      "date": "2026-08-01T14:24:20Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "dae5c7d",
-      "message": "Merge pull request #74 from russellromney/fix/node-dead-watcher-null-poll-hang",
-      "url": "https://github.com/russellromney/honker/commit/dae5c7d93fc0ffb4caeaf9176fa7be5090580127",
-      "date": "2026-07-21T23:15:54Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "bc90069",
+      "message": "ci: bump the actions group with 9 updates (#91)",
+      "url": "https://github.com/russellromney/honker/commit/bc90069ec767b35b634a6434ce4aa78aacc38386",
+      "date": "2026-08-01T14:24:15Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "f6c0810",
-      "message": "fix(node): degrade event-only waits to poll cadence on dead watcher",
-      "url": "https://github.com/russellromney/honker/commit/f6c08108c4d7b0167315bc28306052b44e22eda8",
-      "date": "2026-07-21T23:07:15Z",
-      "author": "russellromney",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
+      "sha": "d5bab3e",
+      "message": "deps: bump the binding-cargo group across 1 directory with 2 updates (#90)",
+      "url": "https://github.com/russellromney/honker/commit/d5bab3e9bf6fe2021591855ed268ddfded9dcd53",
+      "date": "2026-08-01T14:24:11Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
     },
     {
-      "sha": "d69d418",
-      "message": "release: bump honker-node to 0.4.3",
-      "url": "https://github.com/russellromney/honker/commit/d69d4183384c29de1db389fafc9edb4a14267b24",
-      "date": "2026-07-21T22:56:07Z",
+      "sha": "9ed5b74",
+      "message": "docs: correct binding and release coverage claims (#85)",
+      "url": "https://github.com/russellromney/honker/commit/9ed5b743fad32496db2f769dec8d8a591f719f1a",
+      "date": "2026-07-31T12:44:30Z",
       "author": "russellromney",
       "avatarUrl": "https://avatars.githubusercontent.com/u/22407809?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 78,
-      "title": "ci: add lint gate, dependabot, aggregate status check, lockfile pinning",
-      "url": "https://github.com/russellromney/honker/pull/78",
-      "state": "open",
-      "updatedAt": "2026-07-27T17:17:20Z",
-      "author": "jjshanks",
-      "draft": false
-    },
-    {
-      "number": 81,
-      "title": "fix: prevent TOCTOU race in prune_notifications max_keep logic",
-      "url": "https://github.com/russellromney/honker/pull/81",
-      "state": "open",
-      "updatedAt": "2026-07-27T17:00:05Z",
-      "author": "fix2015",
-      "draft": false
-    },
-    {
-      "number": 79,
-      "title": "docs: reconcile ROADMAP with shipped state",
-      "url": "https://github.com/russellromney/honker/pull/79",
-      "state": "open",
-      "updatedAt": "2026-07-27T16:08:36Z",
-      "author": "jjshanks",
-      "draft": false
-    },
-    {
-      "number": 77,
-      "title": "docs: add examples READMEs for bun, elixir, go, rust, ruby bindings",
-      "url": "https://github.com/russellromney/honker/pull/77",
-      "state": "open",
-      "updatedAt": "2026-07-27T16:04:49Z",
-      "author": "jjshanks",
-      "draft": false
-    },
-    {
-      "number": 76,
-      "title": "Move demo.py into the Python examples as quickstart.py",
-      "url": "https://github.com/russellromney/honker/pull/76",
-      "state": "open",
-      "updatedAt": "2026-07-27T05:04:43Z",
-      "author": "jjshanks",
-      "draft": false
-    },
-    {
-      "number": 75,
-      "title": "fix(bun,node): stream resume off-by-one; 'watcher died' rejection message",
-      "url": "https://github.com/russellromney/honker/pull/75",
+      "number": 96,
+      "title": "fix: preserve SQLite POSIX locks in watcher backends",
+      "url": "https://github.com/russellromney/honker/pull/96",
       "state": "merged",
-      "updatedAt": "2026-07-25T09:28:18Z",
+      "updatedAt": "2026-08-01T15:04:23Z",
       "author": "russellromney",
       "draft": false
     },
     {
-      "number": 74,
-      "title": "fix(node): degrade event-only waits to poll cadence on dead watcher",
-      "url": "https://github.com/russellromney/honker/pull/74",
+      "number": 95,
+      "title": "deps: upgrade rusqlite across all Rust packages",
+      "url": "https://github.com/russellromney/honker/pull/95",
       "state": "merged",
-      "updatedAt": "2026-07-21T23:15:54Z",
+      "updatedAt": "2026-08-01T14:48:49Z",
       "author": "russellromney",
       "draft": false
     },
     {
-      "number": 73,
-      "title": "fix(node): remove abort listeners after races; degrade on watcher death",
-      "url": "https://github.com/russellromney/honker/pull/73",
+      "number": 88,
+      "title": "deps: bump notify from 6.1.1 to 8.2.0",
+      "url": "https://github.com/russellromney/honker/pull/88",
       "state": "merged",
-      "updatedAt": "2026-07-21T22:55:55Z",
-      "author": "russellromney",
+      "updatedAt": "2026-08-01T14:46:24Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 89,
+      "title": "deps: bump rusqlite from 0.39.0 to 0.40.1",
+      "url": "https://github.com/russellromney/honker/pull/89",
+      "state": "closed",
+      "updatedAt": "2026-08-01T14:37:40Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 87,
+      "title": "deps: bump the cargo-minor-patch group with 5 updates",
+      "url": "https://github.com/russellromney/honker/pull/87",
+      "state": "merged",
+      "updatedAt": "2026-08-01T14:34:54Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 94,
+      "title": "deps: bump the maven group across 2 directories with 8 updates",
+      "url": "https://github.com/russellromney/honker/pull/94",
+      "state": "merged",
+      "updatedAt": "2026-08-01T14:24:30Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 93,
+      "title": "deps: bump github.com/mattn/go-sqlite3 from 1.14.24 to 1.14.48 in /packages/honker-go in the gomod group across 1 directory",
+      "url": "https://github.com/russellromney/honker/pull/93",
+      "state": "merged",
+      "updatedAt": "2026-08-01T14:24:26Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 92,
+      "title": "deps: bump the mix group across 1 directory with 2 updates",
+      "url": "https://github.com/russellromney/honker/pull/92",
+      "state": "merged",
+      "updatedAt": "2026-08-01T14:24:22Z",
+      "author": "dependabot[bot]",
       "draft": false
     }
   ],
@@ -1229,12 +1243,6 @@
       "type": "dir",
       "size": 0,
       "url": "https://github.com/russellromney/honker/tree/main/bench"
-    },
-    {
-      "name": "examples",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/russellromney/honker/tree/main/examples"
     },
     {
       "name": "honker-core",
@@ -1275,7 +1283,7 @@
     {
       "name": ".gitignore",
       "type": "file",
-      "size": 566,
+      "size": 862,
       "url": "https://github.com/russellromney/honker/blob/main/.gitignore"
     },
     {
@@ -1299,25 +1307,25 @@
     {
       "name": "Cargo.lock",
       "type": "file",
-      "size": 25483,
+      "size": 22452,
       "url": "https://github.com/russellromney/honker/blob/main/Cargo.lock"
     },
     {
       "name": "Cargo.toml",
       "type": "file",
-      "size": 535,
+      "size": 1437,
       "url": "https://github.com/russellromney/honker/blob/main/Cargo.toml"
     },
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 57872,
+      "size": 62613,
       "url": "https://github.com/russellromney/honker/blob/main/CHANGELOG.md"
     },
     {
       "name": "CONTRIBUTING.md",
       "type": "file",
-      "size": 1639,
+      "size": 2442,
       "url": "https://github.com/russellromney/honker/blob/main/CONTRIBUTING.md"
     },
     {
@@ -1341,7 +1349,7 @@
     {
       "name": "Makefile",
       "type": "file",
-      "size": 4809,
+      "size": 5860,
       "url": "https://github.com/russellromney/honker/blob/main/Makefile"
     },
     {
@@ -1359,7 +1367,7 @@
     {
       "name": "ROADMAP.md",
       "type": "file",
-      "size": 30118,
+      "size": 30087,
       "url": "https://github.com/russellromney/honker/blob/main/ROADMAP.md"
     },
     {
@@ -1375,29 +1383,50 @@
       "url": "https://github.com/russellromney/honker/blob/main/uv.lock"
     }
   ],
-  "branchCount": 26,
+  "branchCount": 31,
   "tagCount": 37,
   "workflowRuns": [
     {
       "name": "Proof · scary nightly",
       "status": "success",
-      "url": "https://github.com/russellromney/honker/actions/runs/30441778927",
+      "url": "https://github.com/russellromney/honker/actions/runs/31162039601",
       "branch": "main",
-      "updatedAt": "2026-07-29T10:00:21Z"
+      "updatedAt": "2026-08-07T08:33:39Z"
     },
     {
-      "name": "CI",
+      "name": "cargo in /. - Update #1501169400",
       "status": "success",
-      "url": "https://github.com/russellromney/honker/actions/runs/30288585136",
-      "branch": "claude/ci-best-practices-review-ji5fek",
-      "updatedAt": "2026-07-27T17:24:44Z"
+      "url": "https://github.com/russellromney/honker/actions/runs/30778810899",
+      "branch": "main",
+      "updatedAt": "2026-08-03T02:14:59Z"
+    },
+    {
+      "name": "github_actions in /. - Update #1501169245",
+      "status": "success",
+      "url": "https://github.com/russellromney/honker/actions/runs/30778810443",
+      "branch": "main",
+      "updatedAt": "2026-08-03T02:16:49Z"
+    },
+    {
+      "name": "Proof · registry install gauntlet",
+      "status": "success",
+      "url": "https://github.com/russellromney/honker/actions/runs/30743518320",
+      "branch": "main",
+      "updatedAt": "2026-08-02T10:23:44Z"
+    },
+    {
+      "name": "Proof · packaged installs",
+      "status": "success",
+      "url": "https://github.com/russellromney/honker/actions/runs/30743150811",
+      "branch": "main",
+      "updatedAt": "2026-08-02T10:10:04Z"
     },
     {
       "name": "zizmor · workflow lint",
       "status": "success",
-      "url": "https://github.com/russellromney/honker/actions/runs/30288585133",
-      "branch": "claude/ci-best-practices-review-ji5fek",
-      "updatedAt": "2026-07-27T17:17:42Z"
+      "url": "https://github.com/russellromney/honker/actions/runs/30705114230",
+      "branch": "main",
+      "updatedAt": "2026-08-01T15:04:43Z"
     }
   ],
   "community": {
@@ -1408,14 +1437,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 4,
-  "openPRs": 5,
+  "openIssuesOnly": 3,
+  "openPRs": 0,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 20,
-  "mergedPRs": 46,
+  "closedIssues": 22,
+  "mergedPRs": 64,
   "environmentCount": 0,
   "isFork": false,
   "isInOrganization": false,
@@ -1423,14 +1452,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-08-03",
-      "commits": 0
-    },
-    {
-      "week": "2025-08-10",
-      "commits": 0
-    },
     {
       "week": "2025-08-17",
       "commits": 0
@@ -1629,66 +1650,18 @@
     },
     {
       "week": "2026-07-26",
+      "commits": 19
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
       "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-03",
-      "count": 0
-    },
-    {
-      "date": "2025-08-04",
-      "count": 0
-    },
-    {
-      "date": "2025-08-05",
-      "count": 0
-    },
-    {
-      "date": "2025-08-06",
-      "count": 0
-    },
-    {
-      "date": "2025-08-07",
-      "count": 0
-    },
-    {
-      "date": "2025-08-08",
-      "count": 0
-    },
-    {
-      "date": "2025-08-09",
-      "count": 0
-    },
-    {
-      "date": "2025-08-10",
-      "count": 0
-    },
-    {
-      "date": "2025-08-11",
-      "count": 0
-    },
-    {
-      "date": "2025-08-12",
-      "count": 0
-    },
-    {
-      "date": "2025-08-13",
-      "count": 0
-    },
-    {
-      "date": "2025-08-14",
-      "count": 0
-    },
-    {
-      "date": "2025-08-15",
-      "count": 0
-    },
-    {
-      "date": "2025-08-16",
-      "count": 0
-    },
     {
       "date": "2025-08-17",
       "count": 0
@@ -3067,7 +3040,7 @@
     },
     {
       "date": "2026-07-27",
-      "count": 0
+      "count": 2
     },
     {
       "date": "2026-07-28",
@@ -3083,15 +3056,71 @@
     },
     {
       "date": "2026-07-31",
-      "count": 0
+      "count": 8
     },
     {
       "date": "2026-08-01",
+      "count": 9
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
       "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-07-29T19:06:00.867Z",
+  "factsUpdatedAt": "2026-08-09T08:35:24.476Z",
   "aiSummary": {
     "oneLiner": "A SQLite extension bringing durable pub/sub, task queues, and Postgres-style NOTIFY/LISTEN semantics.",
     "whatItDoes": "honker is an extension and set of language bindings for SQLite that introduces robust asynchronous messaging capabilities. It adds Postgres-style `NOTIFY` and `LISTEN` semantics, enabling real-time event streaming and pub/sub patterns directly within a SQLite database. Unlike traditional polling solutions, it uses highly efficient `PRAGMA data_version` reads to eliminate polling overhead and avoid the need for a separate broker daemon. This allows applications using SQLite to implement durable task queues and event-driven architectures effortlessly. It brings enterprise-grade messaging features to the simplicity of a local SQLite file.",
@@ -3133,5 +3162,97 @@
     "category": "data",
     "source": "jules",
     "version": 3
-  }
+  },
+  "codeFrequency": [
+    {
+      "week": "2026-04-12",
+      "additions": 10997,
+      "deletions": 1943
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 39878,
+      "deletions": 35152
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 36972,
+      "deletions": 6124
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 24231,
+      "deletions": 2540
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 1546,
+      "deletions": 90
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 212,
+      "deletions": 18
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 1048,
+      "deletions": 896
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 54,
+      "deletions": 7
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 3915,
+      "deletions": 1273
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 1031,
+      "deletions": 488
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 4395,
+      "deletions": 907
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 0,
+      "deletions": 0
+    }
+  ]
 }
