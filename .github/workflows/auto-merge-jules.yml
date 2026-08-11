@@ -53,10 +53,10 @@ jobs:
           fi
 
       - name: Wait for checks, then merge
-        if: steps.scope.outputs.content_only == 'true'
+        if: steps.scope.outputs.content_only == 'true' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           # Excludes the "automerge" check itself -- this job IS that check,
           # so while it's running gh pr checks always reports it "pending",
@@ -92,6 +92,51 @@ jobs:
           echo "::error::Checks did not finish within 15 minutes -- leaving PR #$PR open for manual review."
           gh pr comment "$PR" --body "Checks didn't finish within the auto-merge workflow's 15-minute window, so this PR was left open. A maintainer needs to review and merge it manually."
           exit 1
+
+      # Manual/sweeper recovery path (workflow_dispatch with pr_number) --
+      # deliberately does NOT poll gh pr checks for "build" the way the
+      # normal path above does. Confirmed live on PR #93: a build triggered
+      # this way DOES run and DOES get linked to the PR via the check-runs
+      # API's own pull_requests field, but never surfaces in the PR's
+      # statusCheckRollup that gh pr checks reads (a GitHub-side gap between
+      # the two, not something under this workflow's control) -- so that
+      # poll would just spin for the full 15 minutes and never see it.
+      # Building it directly here and merging on that result sidesteps the
+      # gap entirely instead of depending on GitHub to surface it.
+      - name: Set up Node (manual/sweeper recovery only)
+        if: steps.scope.outputs.content_only == 'true' && github.event_name == 'workflow_dispatch'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build directly and merge (manual/sweeper recovery)
+        if: steps.scope.outputs.content_only == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.inputs.pr_number }}
+        run: |
+          branch=$(gh pr view "$PR" --json headRefName --jq .headRefName)
+          git fetch origin "$branch"
+          git checkout "$branch"
+
+          vercel_state=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name == "Vercel")] | if length == 0 then "missing" else .[0].bucket end')
+          if [ "$vercel_state" = "fail" ]; then
+            echo "::error::Vercel check failed on PR #$PR -- leaving it open for manual review."
+            gh pr comment "$PR" --body "Vercel's check failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
+            exit 1
+          fi
+
+          echo "Running the build directly against $branch (bypassing PR check-rollup)."
+          if npm ci && npm run build; then
+            echo "Build passed -- merging."
+            gh pr ready "$PR" || true
+            gh pr merge "$PR" --squash --delete-branch
+          else
+            echo "::error::Build failed on PR #$PR -- leaving it open for manual review."
+            gh pr comment "$PR" --body "The build failed when this PR's auto-merge was manually retried, so it was not merged. A maintainer needs to review it."
+            exit 1
+          fi
 
       - name: Flag for manual review
         if: steps.scope.outputs.content_only == 'false'
