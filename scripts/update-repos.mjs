@@ -263,6 +263,21 @@ async function updateRepo(fullName, trendingEntry, date) {
     return false;
   }
 
+  // GitHub's full_name reflects the owner/repo's CURRENT casing, which
+  // changes if the owner renames (even a case-only rename, e.g. a GitHub
+  // username lowercased after the fact). We've hit this multiple times:
+  // the profile keeps loading and updating fine under its old filename,
+  // but the moment some *other* caller looks this repo up by its new
+  // casing (e.g. the tracked-repo rotation, which reads it back from
+  // profile.id), that lookup misses the old file on a case-sensitive
+  // filesystem and creates a second one -- a permanent, silently
+  // duplicated repo. Migrating the file here, the moment the rename is
+  // first observed, is what actually stops it recurring.
+  const finalFile = path.join(REPO_DIR, `${repoSlug(r.full_name)}.json`);
+  if (finalFile !== file && fs.existsSync(file)) {
+    fs.rmSync(file);
+  }
+
   Object.assign(profile, {
     id: r.full_name,
     owner: r.owner?.login,
@@ -312,7 +327,7 @@ async function updateRepo(fullName, trendingEntry, date) {
   }
 
   fs.mkdirSync(REPO_DIR, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(profile, null, 2));
+  fs.writeFileSync(finalFile, JSON.stringify(profile, null, 2));
   return true;
 }
 
