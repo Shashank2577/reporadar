@@ -1,0 +1,64 @@
+name: Sweep stuck PRs
+
+# GitHub Actions occasionally never creates a check-suite at all for a new
+# PR or a push to an existing PR branch -- confirmed live multiple times
+# (PRs #26, #54, #63, #93, #101, #103): Vercel's own integration fires
+# normally, but no github-actions check-suite appears for the same commit.
+# Root cause not identified; this is a self-healing net rather than a fix.
+# Without it, an affected PR just sits open indefinitely -- CI never runs,
+# auto-merge-jules.yml never even gets the chance to try, and nothing
+# resurfaces it until a human happens to notice (observed: PRs #93/#101/#103
+# sat for 3-4 days before anyone caught it).
+#
+# Runs a couple hours offset from jules-deep-enrichment.yml's schedule so a
+# brand-new PR has had a real chance for normal CI to fire before this
+# treats it as stuck.
+
+on:
+  schedule:
+    - cron: "20 */2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find and re-trigger PRs missing a build check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prs=$(gh pr list --state open --json number,createdAt,headRefName --jq '.[]')
+          if [ -z "$prs" ]; then
+            echo "No open PRs."
+            exit 0
+          fi
+
+          now=$(date -u +%s)
+          echo "$prs" | jq -c '.' | while read -r pr; do
+            n=$(echo "$pr" | jq -r '.number')
+            branch=$(echo "$pr" | jq -r '.headRefName')
+            created=$(date -u -d "$(echo "$pr" | jq -r '.createdAt')" +%s)
+            age=$(( (now - created) / 60 ))
+
+            # Give normal CI at least 10 minutes before treating a PR as stuck.
+            if [ "$age" -lt 10 ]; then
+              echo "PR #$n: only ${age}m old, skipping this round."
+              continue
+            fi
+
+            has_build=$(gh pr checks "$n" --json name --jq 'any(.[]; .name == "build")' 2>/dev/null || echo "false")
+            if [ "$has_build" = "true" ]; then
+              echo "PR #$n: build check present, fine."
+              continue
+            fi
+
+            echo "PR #$n (branch $branch, ${age}m old): no build check -- re-triggering CI and auto-merge."
+            gh workflow run ci.yml --ref "$branch" || echo "::warning::Failed to dispatch ci.yml for PR #$n"
+            sleep 2
+            gh workflow run auto-merge-jules.yml -f pr_number="$n" || echo "::warning::Failed to dispatch auto-merge-jules.yml for PR #$n"
+          done
