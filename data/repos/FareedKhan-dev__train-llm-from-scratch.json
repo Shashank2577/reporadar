@@ -75,6 +75,11 @@
       "date": "2026-08-14",
       "stars": 9093,
       "forks": 1256
+    },
+    {
+      "date": "2026-08-15",
+      "stars": 9104,
+      "forks": 1258
     }
   ],
   "trendingHistory": [
@@ -108,15 +113,15 @@
     "training",
     "transformers"
   ],
-  "stars": 9093,
-  "forks": 1256,
+  "stars": 9104,
+  "forks": 1258,
   "watchers": 69,
   "openIssues": 6,
   "createdAt": "2025-01-12T04:03:05Z",
   "pushedAt": "2026-06-24T18:58:50Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-14T15:44:58.034Z",
+  "updatedAt": "2026-08-15T10:16:53.192Z",
   "contributors": [
     {
       "login": "FareedKhan-dev",
@@ -190,6 +195,15 @@
   "readmeExcerpt": "\n\n<div align=\"center\">\n\n\n# Train LLM From Scratch\n\n   \n\n**I am Looking for a PhD position in AI**. [GitHub](https://github.com/FareedKhan-dev)\n\n</div>\n\nI implemented a transformer model from scratch using PyTorch, based on the paper [Attention is All You Need](https://arxiv.org/abs/1706.03762). You can use my scripts to train your own **billion** or **million** parameter LLM using a single GPU.\n\nThis started as a pretraining tutorial. It now goes all the way from raw text to an aligned, reasoning style model, with every algorithm hand written in plain PyTorch (no `trl`, no `peft`, no `transformers`). The whole journey is one idea repeated: turn text into numbers, predict the next token, then keep changing the data and the loss until the model does what we want.\n\n\n\nHere is the path we will walk, end to end:\n\n```\nraw text  ->  tokens  ->  a Transformer  ->  next-token loss  ->  a base model\nbase model  ->  SFT  ->  Reward Model  ->  {PPO, DPO}  ->  GRPO  ->  evaluation and chat\n```\n\nBelow is the output of a trained 13 million parameter LLM, just so you can see where the small end of this starts:\n\n```\nIn ***1978, The park was returned to the factory-plate that\nthe public share to the lower of the electronic fence that\nfollow from the Station's cities. The Canal of ancient Western\nnations were confined to the city spot. The villages were directly\nlinked to cities in China that revolt that the US budget and in\nOdambinais is uncertain and fortune established in rural areas.\n```\n\n\n## Table of Contents\n- [Who this is for](#who-this-is-for)\n- [Prerequisites and Training Time](#prerequisites-and-training-time)\n- [Setup](#setup)\n- [Code Structure](#code-structure)\n- [Step 1: Preparing the Data](#step-1-preparing-the-data)\n- [Step 2: The Model, Built From Small Pieces](#step-2-the-model-built-from-small-pieces)\n  - [Multi Layer Perceptron (MLP)](#multi-layer-perceptron-mlp)\n  - [Single Head Attention](#single-head-attention)\n  - [Multi Head Attention](#multi-head-attention)\n  - [The Transformer Block](#the-transformer-block)\n  - [The Full Transformer](#the-full-transformer)\n- [Step 3: Pretraining the Base Model](#step-3-pretraining-the-base-model)\n- [Step 4: Generating Text](#step-4-generating-text)\n- [Step 5: Post-Training, Turning a Base Model Into an Assistant](#step-5-post-training-turning-a-base-model-into-an-assistant)\n  - [SFT (Supervised Fine-Tuning)](#sft-supervised-fine-tuning)\n  - [The Reward Model](#the-reward-model)\n  - [DPO, ORPO and KTO](#dpo-orpo-and-kto)\n  - [PPO](#ppo)\n  - [GRPO / RLVR](#grpo--rlvr)\n- [Step 6: Evaluation](#step-6-evaluation)\n- [Step 7: Talking to the Model](#step-7-talking-to-the-model)\n- [The Streamlit Control Panel](#the-streamlit-control-panel)\n- [The Documentation Site](#the-documentation-site)\n- [Run the Whole Thing](#run-the-whole-thing)\n- [What's Next](#whats-next)\n\n## Who this is for\n\nI tried to write this so one page works for very different readers:\n\n- If you are a **student**, read top to bottom. Every block of code comes after a plain explanation of what it does and why, and most blocks are followed by the output you should expect.\n- If you are a **developer**, the commands and file paths are all here. You can copy, run, and read the referenced source files directly.\n- If you are a **researcher**, the post-training half is the interesting part: SFT, a Bradley-Terry reward model, PPO with GAE, DPO/ORPO/KTO, and GRPO, all from scratch on the same small Transformer, trained on real public datasets.\n\nEvery diagram in this README is colored the same way, so the colors mean something:\n\n- green is raw data\n- teal is stored, tokenized data on disk\n- blue is a plain processing step\n- yellow is the model or a training step\n- orange is the reinforcement learning and reward parts\n- red is a loss\n- grey is a saved checkpoint\n- purple is the final output or evaluation\n\n## Prerequisites and Training Time\n\nYou need a basic understanding of object oriented programming, neural networks, and PyTorch. Below are some resources to help you get started:\n\n| Topic               | Video Link                                                |\n|---------------------|-----------------------------------------------------------|\n| OOP                 | [OOP Video](https://www.youtube.com/watch?v=Ej_02ICOIgs) |\n| Neural Network      | [Neural Network Video](https://www.youtube.com/watch?v=Jy4wM2X21u0) |\n| Pytorch             | [Pytorch Video](https://www.youtube.com/watch?v=V_xro1bcAuA) |\n\nYou will need a GPU to train. A free Colab or Kaggle T4 is enough for the 13 million parameter model, but it will not fit a billion parameter model. Here is a rough guide:\n\n| GPU Name                 | Memory | 2B LLM Training | 13M LLM Training | Max Practical LLM Size (Training) |\n|--------------------------|--------|-----------------|------------------|-----------------------------------|\n| NVIDIA A100              | 40 GB  | ✔               | ✔                | ~6B to 8B                          |\n| NVIDIA V100              | 16 GB  | ✘               | ✔                | ~2B                               |\n| NVIDIA RTX 4090          | 24 GB  | ✔               | ✔                | ~4B                               |\n| NVIDIA RTX 5090          | 32 GB  | ✔               | ✔                | 13M verified, larger configs TBD  |\n| NVIDIA RTX 3090          | 24 GB  | ✔               | ✔                | ~3.5B to 4B                        |\n| NVIDIA RTX 4080          | 16 GB  | ✘               | ✔                | ~2B                               |\n| NVIDIA RTX 4060          | 8 GB   | ✘               | ✔                | ~1B                               |\n| Tesla T4                 | 16 GB  | ✘               | ✔                | ~1.5B to 2B                        |\n\nIf a large config runs out of memory, the pretraining script has opt-in flags (`--amp`, `--grad-checkpointing`, `--grad-accum`) that bring the memory down a lot. More on those later.\n\n## Setup\n\nClone the repository and install it in editable mode. The editable install puts `config`, `src`, `data_loader`, and `ui` on your import path, so you do not need to set `PYTHONPATH` by hand anymore:\n\n```bash\ngit clone https://github.com/FareedKhan-dev/train-llm-from-scratch.git\ncd train-llm-from-scratch\npip install -e .\n```\n\nThere are optional extras for the parts you want:\n\n```bash\npip install -e \".[train]\"   # datasets + wandb, for downloading data and logging\npip install -e \".[ui]\"      # streamlit + pandas + altair, for the control panel\npip install -e \".[docs]\"    # mkdocs, for the documentation site\npip install -e \".[all]\"     # everything\n```\n\nThere are two config systems, and it helps to know which is which from the start:\n\n- `config/config.py` is the original, simple config for the legacy pretraining script `scripts/train_transformer.py`. It is plain Python constants.\n- `config/post_training_config.py` plus the JSON files in `configs/` drive everything else (pretraining the bigger base, SFT, reward, DPO, PPO, GRPO). You edit a small JSON file per stage, and any field can also be overridden on the command line, for example `--lr 2e-5 --batch_size 16`.\n\nFor fast checks there is a tiny `configs/smoke/` variant of every stage that shrinks the model so a full run finishes in seconds on a CPU or a single GPU.\n\n## Code Structure\n\n```bash\ntrain-llm-from-scratch/\n├── src/\n│   ├── models/                  # the Transformer, built from small pieces\n│   │   ├── mlp.py               # the feed-forward block\n│   │   ├── attention.py         # single head and multi head attention\n│   │   ├── transformer_block.py # one block: attention + MLP + residuals\n│   │   └── transformer.py       # the full model: embeddings + blocks + lm_head\n│   └── post_training/           # SFT, reward model, PPO, DPO, GRPO, eval, inference\n├── config/\n│   ├── config.py                # legacy pretraining config (plain constants)\n│   ├── post_training_config.py  # dataclasses for every post-training stage\n│   └── loader.py                # merges defaults < base.json < stage.json < CLI\n├── configs/                     # editable JSON, one file per stage (+ smoke/)\n├── data_loader/                 # batch iterators for each kind of data\n├── scripts/                     # every runnable step lives here\n├── ui/                          # the Streamlit control panel\n├── docs/                        # the MkDocs site (theory + diagrams)\n├── images/                      # the diagrams in this README (+ the generator)\n└── pyproject.toml               # pip install -e .\n```\n\n## Step 1: Preparing the Data\n\nA model only ever sees integers. So the first job is always the same: take text, turn it into token ids, and store those ids on disk in a format that is fast to read during training. We do this four times, once for each kind of training we will do later.\n\n\n\nThe four streams are:\n\n1. **Pretraining text** from [The Pile](https://huggingface.co/datasets/monology/pile-uncopyrighted), stored as a flat array of token ids in an HDF5 file.\n2. **Instruction data** (Alpaca, Dolly, GSM8K) for SFT, packed into fixed length rows with a mask that says which tokens are the assistant's answer.\n3. **Preference pairs** (Anthropic HH-RLHF, UltraFeedback) for the reward model and DPO, stored as `{prompt, chosen, rejected}`.\n4. **RL prompts** (GSM8K and a small arithmetic warm-up) for PPO and GRPO, stored as `{prompt, gold}`.\n\n### Tokenization\n\nWe use the `r50k_base` tokenizer from OpenAI's `tiktoken`, the same one GPT-3 used. Text becomes a list of integers, and we append a special `<|endoftext|>` token (id 50256) at the end of every document so the model learns where one piece of text stops and the next begins.\n\n\n\nFor the legacy path, download a slice of The Pile and tokenize it into HDF5:\n\n```bash\npython scripts/data_download.py            # downloads the validation file + 1 training shard\npython scripts/data_preprocess.py          # tokenizes to data/train/pile_train.h5 and data/val/pile_dev.h5\n```\n\nThe newer, faster path streams and batch-encodes the same data straight into a flat token array:\n\n```bash\npython scripts/prepare_pretrain_data.py --split val   --out data/pile_dev.h5\npython scripts/prepare_pretrain_data.py --split train --num_shards 1 --out data/pile_train.h5\n```\n\nOnce tokenized, the data is just a long line of integers. Here is a real peek at the validation file I prepared for this README (8.76 million tokens), the first ten ids, and what they decode back to:\n\n```python\n#### OUTPUT ####\ndtype: int32 | shape: (8762951,) | total tokens: 8762951\nfirst 10 token ids: [18610, 286, 3993, 3081, 319, 4088, 11, 4640, 2163, 11]\ndecoded back to text:\n'Effect of sleep quality on memory, executive function, and language\n performance in patients with refractory focal epilepsy ...'\n```\n\nThat is the whole idea of tokenization in one output: text in, a flat array of integers out, and the integers decode straight back to the original words.\n\n### The chat format and loss mask\n\nFor everything after pretraining the model has to know who is talking. The `r50k_base` tokenizer has only one special token, so instead of inventing new ones we use plain text role markers that the model simply learns during SFT. A single turn looks like this (see `src/post_training/chat_template.py`):\n\n```\n<|user|>\n{user content}<|endoftext|><|assistant|>\n{assistant content}<|endoftext|>\n```\n\nFor math and reasoning we ask the assistant to show its work in a fixed structure, because the reinforcement learning reward later checks the number inside the answer tags:\n\n```\n<think>step by step reasoning ...</think><answer>42</answer>\n```\n\nThe important trick is the **loss mask**. When we encode a conversation we also build a 0/1 mask that is 1 only on the assistant tokens (and the `<|endoftext|>` that ends the turn). That way SFT trains the model to write answers, not to parrot the prompt back. Here is the exact code that builds the ids and the aligned mask:\n\n```python\ndef encode_chat(messages, add_generation_prompt=False):\n  ",
   "contributorCount": 12,
   "recentIssues": [
+    {
+      "number": 38,
+      "title": "Feature Request: Add a CPU-Friendly \"Train an LLM from Scratch\" Learning Path for Students",
+      "url": "https://github.com/FareedKhan-dev/train-llm-from-scratch/issues/38",
+      "createdAt": "2026-08-10T18:01:15Z",
+      "comments": 0,
+      "labels": [],
+      "author": "RihanMujawar"
+    },
     {
       "number": 36,
       "title": "Bug: torch.compile + DDP causes _orig_mod. prefix leakage in checkpoint keys",
@@ -1153,6 +1167,15 @@
   ],
   "recentPulls": [
     {
+      "number": 39,
+      "title": "Add CPU-Friendly Student Mode for Training Tiny LLMs",
+      "url": "https://github.com/FareedKhan-dev/train-llm-from-scratch/pull/39",
+      "state": "open",
+      "updatedAt": "2026-08-12T16:53:19Z",
+      "author": "RihanMujawar",
+      "draft": false
+    },
+    {
       "number": 37,
       "title": "fix prefix leakage in checkpoint loading",
       "url": "https://github.com/FareedKhan-dev/train-llm-from-scratch/pull/37",
@@ -1213,15 +1236,6 @@
       "state": "closed",
       "updatedAt": "2026-06-16T05:18:45Z",
       "author": "XiaoBinGan",
-      "draft": false
-    },
-    {
-      "number": 29,
-      "title": "feat: opt-in AMP + gradient checkpointing + gradient accumulation; fix CPU contiguity (fixes #5)",
-      "url": "https://github.com/FareedKhan-dev/train-llm-from-scratch/pull/29",
-      "state": "merged",
-      "updatedAt": "2026-06-16T05:18:38Z",
-      "author": "FareedKhan-dev",
       "draft": false
     }
   ],
@@ -1414,8 +1428,8 @@
     "total": 7
   },
   "fundingLinks": [],
-  "openIssuesOnly": 3,
-  "openPRs": 1,
+  "openIssuesOnly": 4,
+  "openPRs": 2,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
@@ -3097,7 +3111,7 @@
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-08-06T16:11:42.352Z",
+  "factsUpdatedAt": "2026-08-15T10:17:04.891Z",
   "starHistory": {
     "points": [
       {
@@ -3419,5 +3433,267 @@
     "category": "ai-ml",
     "source": "jules",
     "version": 4
-  }
+  },
+  "codeFrequency": [
+    {
+      "week": "2025-08-17",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-08-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-08-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-09-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-09-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-09-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-09-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-09",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-16",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-04",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-11",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 11,
+      "deletions": 1
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 7365,
+      "deletions": 73
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 1381,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 731,
+      "deletions": 165
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 1016,
+      "deletions": 1116
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 0,
+      "deletions": 0
+    }
+  ]
 }
