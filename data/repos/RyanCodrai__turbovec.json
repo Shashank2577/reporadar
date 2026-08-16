@@ -75,6 +75,11 @@
       "date": "2026-08-15",
       "stars": 14779,
       "forks": 1325
+    },
+    {
+      "date": "2026-08-16",
+      "stars": 14789,
+      "forks": 1326
     }
   ],
   "trendingHistory": [
@@ -218,27 +223,29 @@
     "turboquant",
     "vector-search"
   ],
-  "stars": 14779,
-  "forks": 1325,
+  "stars": 14789,
+  "forks": 1326,
   "watchers": 64,
   "openIssues": 29,
   "createdAt": "2026-03-26T10:32:44Z",
   "pushedAt": "2026-08-10T21:50:12Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-15T13:26:14.259Z",
+  "updatedAt": "2026-08-16T07:26:30.572Z",
   "languages": {
-    "Rust": 1384552,
-    "Python": 1143996
+    "Rust": 1720126,
+    "Python": 1228805,
+    "C": 31510,
+    "Assembly": 4700
   },
-  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://img.shields.io/pypi/l/turbovec\" alt=\"License\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\"><img src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&color=blue\" alt=\"PyPI version\"></a>\n  <a href=\"https://crates.io/crates/turbovec\"><img src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&color=blue\" alt=\"crates.io version\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\"><img src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" alt=\"TurboQuant paper\"></a>\n</p>\n\n---\n\n**A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.**\n\nturbovec is a Rust vector index with Python bindings, built on Google Research's [**TurboQuant**](https://arxiv.org/abs/2504.19874) algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.\n\n- **Online ingest.** Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.\n- **Fast SIMD search.** Hand-written NEON (ARM) and AVX-512BW (x86) kernels beat FAISS IndexPQFastScan by 19–31% on ARM; on x86 they win the 4-bit configs and trail by a few percent on 2-bit.\n- **Incremental saves.** `sync(path)` persists just what changed since the last sync — one fsync per call, crash-safe at any byte, and a removal or a small append costs milliseconds however large the index. `write`/`load` stay for whole-file snapshots.\n- **Filter at search time.** Pass an id allowlist (or a slot bitmask) to `search()` and the kernel honours it directly. You always get up to `k` results from the allowed set — no over-fetching, no recall hit on selective filters.\n- **Pure local.** No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.\n\nBuilding RAG where privacy, memory, or latency matters? **You're in the right place.**\n\n## Python\n\n```bash\npip install turbovec\n```\n\n```python\nfrom turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(\"my_index.tv\")\nloaded = TurboQuantIndex.load(\"my_index.tv\")\n\nindex.sync(\"my_index.tv\")   # after more changes: durable incremental save\n```\n\n`vectors` and `query` are 2-D `float32` arrays of shape `(n, dim)` — other dtypes are rejected rather than silently converted, so cast with `np.asarray(x, dtype=np.float32)` first if needed.\n\nNeed stable ids that survive deletes? Use `IdMapIndex`:\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(\"my_index.tvim\")\nloaded = IdMapIndex.load(\"my_index.tvim\")\n\nindex.sync(\"my_index.tvim\")   # durable incremental save, ids included\n```\n\n### Hybrid retrieval (filtered search)\n\nRestrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(\"SELECT id FROM docs WHERE tenant=?\", (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\n```\n\nFiltering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.\n\nThe output length is `min(k, n_allowed)`, where `n_allowed` counts *distinct* allowed vectors — when fewer vectors are allowed than `k` you get exactly that many results rather than padded fallbacks.\n\nSee [`docs/api.md`](https://github.com/RyanCodrai/turbovec/blob/main/docs/api.md) for the full reference.\n\n### Framework integrations\n\nDrop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.\n\n- [LangChain](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/langchain.md) — `pip install turbovec[langchain]` · replaces `langchain_core.vectorstores.InMemoryVectorStore`\n- [LlamaIndex](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/llama_index.md) — `pip install turbovec[llama-index]` · replaces `llama_index.core.vector_stores.SimpleVectorStore`\n- [Haystack](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/haystack.md) — `pip install turbovec[haystack]` · replaces `haystack.document_stores.in_memory.InMemoryDocumentStore`\n- [Agno](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/agno.md) — `pip install turbovec[agno]` · replaces `agno.vectordb.lancedb.LanceDb`\n\n## Rust\n\n```bash\ncargo add turbovec\n```\n\n```rust\nuse turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&vectors);\nlet results = index.search(&queries, 10);\nindex.write(\"index.tv\").unwrap();\nlet loaded = TurboQuantIndex::load(\"index.tv\").unwrap();\n```\n\nFor stable external ids that survive deletes:\n\n```rust\nuse turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&vectors, &[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&queries, 10);\nindex.remove(1002);\nindex.write(\"index.tvim\").unwrap();\nlet loaded = IdMapIndex::load(\"index.tvim\").unwrap();\n```\n\n## Recall\n\nTurboQuant vs FAISS `IndexPQ` (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).\n\n\n\n\n\n\n\nAcross OpenAI d=1536 and d=3072, TurboQuant beats FAISS by 0.4–3.1 points at R@1 across 2-bit and 4-bit, and both reach 1.0 by k=8 (≥0.997 already at k=4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TurboQuant beats FAISS by 1.4 points at 4-bit and by 0.5 points at 2-bit at R@1, both tracking FAISS closely by k≈16.\n\n**A note on baselines.** We compare against FAISS `IndexPQ` (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the [TurboQuant paper](https://arxiv.org/abs/2504.19874) — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see [`turboquant-py`](https://pypi.org/project/turboquant-py/) at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands slightly ahead of FAISS at 2-bit and ahead at 4-bit; TQ+ calibration closes the low-dim gap the base algorithm leaves.\n\nFull results: [d=1536 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_2bit.json), [d=1536 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_4bit.json), [d=3072 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_2bit.json), [d=3072 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_4bit.json), [GloVe 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_2bit.json), [GloVe 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_4bit.json).\n\n## Compression\n\n\n\n## Search Speed\n\nAll benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.\n\n### ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)\n\n\n\n\n\nOn ARM, TurboQuant beats FAISS FastScan by 19–31% across every config.\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\nOn x86, TurboQuant wins the 4-bit configs by up to ~5% (d=3072 multi-threaded ties) and is modestly behind FAISS on 2-bit — most visibly d=1536 single-threaded (~8%), within a few percent on the rest — where FAISS's AVX-512 VBMI path has the edge on the short 2-bit accumulate loop.\n\n## Insertion & Removal Speed\n\nSame corpus as the search cells: 100K OpenAI vectors, median of 5 runs, fresh index per timed run. Insertion measures bulk `add()` into an empty index (one-time rotation/codebook init and TQ+ calibration fit included) and a warm 10K append with calibration frozen (the steady-state encode path), against FAISS `IndexPQFastScan` bulk add (training untimed). Removal measures per-op latency of `IdMapIndex.remove(id)` against raw `TurboQuantIndex.swap_remove` — both O(1) swap-and-pop; the gap is the id-map bookkeeping. Single-threaded cells pin `RAYON_NUM_THREADS=1`. Scripts: [`benchmarks/suite/`](https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/). On ARM the FAISS baseline is the generic aarch64 `faiss-cpu` wheel, so its insert figure partly reflects that wheel's PQ-training path on Axion (the previous ARM environment linked Apple's Accelerate BLAS instead), which is a build/BLAS difference rather than a like-for-like algorithmic gap.\n\n### ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)\n\n\n\n\n\n\n\nFull results: [d=1536 2-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_mt.json), [d=1536 4-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_mt.json), [d=3072 2-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_mt.json), [d=3072 4-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_mt.json), and the matching [`speed_remove_*`](https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/) files.\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\n\n\nFull results: [d=1536 2-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_mt.json), [d=1536 4-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_mt.json), [d=3072 2-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_mt.json), [d=3072 4-bit insert ST](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_st.json), [MT](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/re",
-  "commitCount": 335,
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://img.shields.io/pypi/l/turbovec\" alt=\"License\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\"><img src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&color=blue\" alt=\"PyPI version\"></a>\n  <a href=\"https://crates.io/crates/turbovec\"><img src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&color=blue\" alt=\"crates.io version\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\"><img src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" alt=\"TurboQuant paper\"></a>\n</p>\n\n---\n\n**A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.**\n\nturbovec is a Rust vector index with Python bindings, built on Google Research's [**TurboQuant**](https://arxiv.org/abs/2504.19874) algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.\n\n- **Online ingest.** Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.\n- **Fast SIMD search.** Hand-written kernels — NEON SDOT/SMMLA on ARM, AVX-512 VNNI and `vpermb` on x86, with AVX2 and scalar fallbacks — beat FAISS IndexPQFastScan in every measured config, averaging 3.4× at 4-bit and 23% at 2-bit across the eight cells of each width, on both architectures.\n- **Incremental saves.** `sync(path)` persists just what changed since the last sync — one fsync per call, crash-safe at any byte, and a removal or a small append costs milliseconds however large the index. `write`/`load` stay for whole-file snapshots.\n- **Filter at search time.** Pass an id allowlist (or a slot bitmask) to `search()` and the kernel honours it directly. You always get up to `k` results from the allowed set — no over-fetching, no recall hit on selective filters.\n- **Pure local.** No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.\n\nBuilding RAG where privacy, memory, or latency matters? **You're in the right place.**\n\n## Python\n\n```bash\npip install turbovec\n```\n\n```python\nfrom turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(\"my_index.tv\")\nloaded = TurboQuantIndex.load(\"my_index.tv\")\n\nindex.sync(\"my_index.tv\")   # after more changes: durable incremental save\n```\n\n`vectors` and `query` are 2-D `float32` arrays of shape `(n, dim)` — other dtypes are rejected rather than silently converted, so cast with `np.asarray(x, dtype=np.float32)` first if needed.\n\nNeed stable ids that survive deletes? Use `IdMapIndex`:\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(\"my_index.tvim\")\nloaded = IdMapIndex.load(\"my_index.tvim\")\n\nindex.sync(\"my_index.tvim\")   # durable incremental save, ids included\n```\n\n### Hybrid retrieval (filtered search)\n\nRestrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):\n\n```python\nimport numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(\"SELECT id FROM docs WHERE tenant=?\", (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\n```\n\nFiltering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.\n\nThe output length is `min(k, n_allowed)`, where `n_allowed` counts *distinct* allowed vectors — when fewer vectors are allowed than `k` you get exactly that many results rather than padded fallbacks.\n\nSee [`docs/api.md`](https://github.com/RyanCodrai/turbovec/blob/main/docs/api.md) for the full reference.\n\n### Framework integrations\n\nDrop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.\n\n- [LangChain](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/langchain.md) — `pip install turbovec[langchain]` · replaces `langchain_core.vectorstores.InMemoryVectorStore`\n- [LlamaIndex](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/llama_index.md) — `pip install turbovec[llama-index]` · replaces `llama_index.core.vector_stores.SimpleVectorStore`\n- [Haystack](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/haystack.md) — `pip install turbovec[haystack]` · replaces `haystack.document_stores.in_memory.InMemoryDocumentStore`\n- [Agno](https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/agno.md) — `pip install turbovec[agno]` · replaces `agno.vectordb.lancedb.LanceDb`\n\n## Rust\n\n```bash\ncargo add turbovec\n```\n\n```rust\nuse turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&vectors);\nlet results = index.search(&queries, 10);\nindex.write(\"index.tv\").unwrap();\nlet loaded = TurboQuantIndex::load(\"index.tv\").unwrap();\n```\n\nFor stable external ids that survive deletes:\n\n```rust\nuse turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&vectors, &[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&queries, 10);\nindex.remove(1002);\nindex.write(\"index.tvim\").unwrap();\nlet loaded = IdMapIndex::load(\"index.tvim\").unwrap();\n```\n\n## Recall\n\nTurboQuant vs FAISS `IndexPQ` (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).\n\n\n\n\n\n\n\nThe charts plot calibrated TurboQuant (TQ+). Across OpenAI d=1536 and d=3072, TQ+ beats FAISS at R@1 on three of four cells (by 0.9–2.9 points; d=1536 4-bit trails by 0.7), and both reach 1.0 by k=8 (≥0.997 already at k≤4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TQ+ lands ahead of FAISS at R@1 at both bit widths (+1.9 at 4-bit, +0.8 at 2-bit), with FAISS keeping a slim edge at 2-bit from k≈8. Uncalibrated numbers are in the JSONs (`tq_recalls`).\n\n**A note on baselines.** We compare against FAISS `IndexPQ` (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the [TurboQuant paper](https://arxiv.org/abs/2504.19874) — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see [`turboquant-py`](https://pypi.org/project/turboquant-py/) at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands ahead of FAISS at 4-bit but trails it at 2-bit; TQ+ calibration recovers the 2-bit deficit at R@1 (0.572 vs FAISS's 0.564), with FAISS keeping a slim edge at deeper k.\n\nFull results: [d=1536 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_2bit.json), [d=1536 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_4bit.json), [d=3072 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_2bit.json), [d=3072 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_4bit.json), [GloVe 2-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_2bit.json), [GloVe 4-bit](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_4bit.json).\n\n## Compression\n\n\n\n## Search Speed\n\nAll benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.\n\n### ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)\n\n\n\n\n\nOn ARM, TurboQuant beats FAISS FastScan in every config, averaging 3.5× at 4-bit (3.4–3.7× across cells — the SDOT/SMMLA dot-product kernels score the vector-major layout directly) and 26% at 2-bit (22–29%).\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\nOn x86, TurboQuant wins every config, averaging 3.4× at 4-bit (3.2–3.5× across cells — the AVX-512 VNNI dot-product kernel on the vector-major layout) and 20% at 2-bit (5–32%), where the `vpermb` LUT scan carries the short 2-bit accumulate loop.\n\n## Insertion & Removal Latency\n\nSame corpus as the search cells: 100K OpenAI vectors, median of 5 runs, timed loops including the Python-call overhead a caller actually pays per op. Insertion measures per-vector `add()` latency on a warm, populated index (built untimed) at n=1 — a single-vector `add()` — and n=100 — a 100-vector batch, showing how far batching amortizes the per-call overhead — against `add()` into the trained, populated FAISS `IndexPQFastScan` (training untimed). A single `add()` lands in 6.3–19.7 µs depending on the cell (7.6–13.9× faster than a FAISS single add), and a 100-vector batch amortizes TurboQuant to 4.6–16.3 µs/vector (4.6–15.1× faster than the same batch into FAISS). Removal measures per-op remove-by-id latency at n=1 (the steady per-op rate over 1000 removes) and n=100 (the first 100 removes on a fresh index): `IdMapIndex.remove(id)` — O(1) swap-and-pop plus the id-map bookkeeping — lands at 0.44–1.22 µs and 0.59–1.37 µs per op across the cells. The FAISS column is the same user-visible operation, `remove_ids` on an `IndexIDMap` over `IndexPQFastScan`, which repacks the stored codes on every call: 0.19–1.02 s per single remove at 100K, with cost doubling alongside code size — which is why the removal charts use a log-scale axis. Charts show the single-threaded cells (`RAYON_NUM_THREADS=1`); the `_mt` cells are measured too and match at n=1, since a single add is serial. Scripts: [`benchmarks/suite/`](https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/).\n\n### ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)\n\n\n\n\n\nFull results: [d=1536 2-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_st.json), [d=1536 4-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_st.json), [d=3072 2-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_st.json), [d=3072 4-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_st.json), and the matching [`speed_remove_*`](https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/) and `_mt` files.\n\n### x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)\n\n\n\n\n\nFull results: [d=1536 2-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_st.json), [d=1536 4-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_st.json), [d=3072 2-bit insert](https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_st.json), [d=3072 4-bit insert](https://github.com/RyanCodrai/turbovec/blob/main",
+  "commitCount": 355,
   "contributors": [
     {
       "login": "RyanCodrai",
       "url": "https://github.com/RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4",
-      "contributions": 318
+      "contributions": 338
     },
     {
       "login": "dependabot[bot]",
@@ -278,7 +285,7 @@
     }
   ],
   "releases": [],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\" style=\"max-width: 100%;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/caf6b784b3179786863dae677f066e65d7e15c9dcf1d084618796ef14bb2d8be/68747470733a2f2f696d672e736869656c64732e696f2f707970692f6c2f747572626f766563\" alt=\"License\" data-canonical-src=\"https://img.shields.io/pypi/l/turbovec\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/fbf0495c02790bbda88b64e34c56a0c2e2a8bca3e3b402815af5969199aa2155/68747470733a2f2f696d672e736869656c64732e696f2f707970692f762f747572626f7665633f6c6162656c3d7079706926636f6c6f723d626c7565\" alt=\"PyPI version\" data-canonical-src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://crates.io/crates/turbovec\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/7b670bfcb1974fa41e9ac4a6d4f796ecab90f85f840d010bdeeba6c5f1518a8a/68747470733a2f2f696d672e736869656c64732e696f2f6372617465732f762f747572626f7665633f6c6162656c3d6372617465732e696f26636f6c6f723d626c7565\" alt=\"crates.io version\" data-canonical-src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/de75e4b10bfe7ac9c06a92ac6ca7be20453daa45ea826b345cc545e37a0ab254/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f70617065722d61725869762d6233316231622e737667\" alt=\"TurboQuant paper\" data-canonical-src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" style=\"max-width: 100%;\"></a>\n</p>\n<hr>\n<p dir=\"auto\"><strong>A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.</strong></p>\n<p dir=\"auto\">turbovec is a Rust vector index with Python bindings, built on Google Research's <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><strong>TurboQuant</strong></a> algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.</p>\n<ul dir=\"auto\">\n<li><strong>Online ingest.</strong> Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.</li>\n<li><strong>Fast SIMD search.</strong> Hand-written NEON (ARM) and AVX-512BW (x86) kernels beat FAISS IndexPQFastScan by 19–31% on ARM; on x86 they win the 4-bit configs and trail by a few percent on 2-bit.</li>\n<li><strong>Incremental saves.</strong> <code>sync(path)</code> persists just what changed since the last sync — one fsync per call, crash-safe at any byte, and a removal or a small append costs milliseconds however large the index. <code>write</code>/<code>load</code> stay for whole-file snapshots.</li>\n<li><strong>Filter at search time.</strong> Pass an id allowlist (or a slot bitmask) to <code>search()</code> and the kernel honours it directly. You always get up to <code>k</code> results from the allowed set — no over-fetching, no recall hit on selective filters.</li>\n<li><strong>Pure local.</strong> No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.</li>\n</ul>\n<p dir=\"auto\">Building RAG where privacy, memory, or latency matters? <strong>You're in the right place.</strong></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Python</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install turbovec\"><pre>pip install turbovec</pre></div>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(&quot;my_index.tv&quot;)\nloaded = TurboQuantIndex.load(&quot;my_index.tv&quot;)\n\nindex.sync(&quot;my_index.tv&quot;)   # after more changes: durable incremental save\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">TurboQuantIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">TurboQuantIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">vectors</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">more_vectors</span>)\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">indices</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">TurboQuantIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">sync</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)   <span class=\"pl-c\"># after more changes: durable incremental save</span></pre></div>\n<p dir=\"auto\"><code>vectors</code> and <code>query</code> are 2-D <code>float32</code> arrays of shape <code>(n, dim)</code> — other dtypes are rejected rather than silently converted, so cast with <code>np.asarray(x, dtype=np.float32)</code> first if needed.</p>\n<p dir=\"auto\">Need stable ids that survive deletes? Use <code>IdMapIndex</code>:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(&quot;my_index.tvim&quot;)\nloaded = IdMapIndex.load(&quot;my_index.tvim&quot;)\n\nindex.sync(&quot;my_index.tvim&quot;)   # durable incremental save, ids included\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>([<span class=\"pl-c1\">1001</span>, <span class=\"pl-c1\">1002</span>, <span class=\"pl-c1\">1003</span>], <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>))\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)   <span class=\"pl-c\"># ids are your uint64 external ids</span>\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">remove</span>(<span class=\"pl-c1\">1002</span>)                         <span class=\"pl-c\"># O(1) by id</span>\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">IdMapIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">sync</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)   <span class=\"pl-c\"># durable incremental save, ids included</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Hybrid retrieval (filtered search)</h3></div>\n<p dir=\"auto\">Restrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(&quot;SELECT id FROM docs WHERE tenant=?&quot;, (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">idx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">ids</span>)\n\n<span class=\"pl-c\"># Stage 1: external system narrows to candidate ids.</span>\n<span class=\"pl-s1\">allowed</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>(<span class=\"pl-s1\">db</span>.<span class=\"pl-c1\">execute</span>(<span class=\"pl-s\">\"SELECT id FROM docs WHERE tenant=?\"</span>, (<span class=\"pl-s1\">t</span>,)).<span class=\"pl-c1\">fetchall</span>(),\n                   <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>)\n\n<span class=\"pl-c\"># Stage 2: dense rerank within the candidate set.</span>\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>, <span class=\"pl-s1\">allowlist</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">allowed</span>)</pre></div>\n<p dir=\"auto\">Filtering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.</p>\n<p dir=\"auto\">The output length is <code>min(k, n_allowed)</code>, where <code>n_allowed</code> counts <em>distinct</em> allowed vectors — when fewer vectors are allowed than <code>k</code> you get exactly that many results rather than padded fallbacks.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/api.md\"><code>docs/api.md</code></a> for the full reference.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Framework integrations</h3></div>\n<p dir=\"auto\">Drop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/langchain.md\">LangChain</a> — <code>pip install turbovec[langchain]</code> · replaces <code>langchain_core.vectorstores.InMemoryVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/llama_index.md\">LlamaIndex</a> — <code>pip install turbovec[llama-index]</code> · replaces <code>llama_index.core.vector_stores.SimpleVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/haystack.md\">Haystack</a> — <code>pip install turbovec[haystack]</code> · replaces <code>haystack.document_stores.in_memory.InMemoryDocumentStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/agno.md\">Agno</a> — <code>pip install turbovec[agno]</code> · replaces <code>agno.vectordb.lancedb.LanceDb</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rust</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo add turbovec\"><pre>cargo add turbovec</pre></div>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&amp;vectors);\nlet results = index.search(&amp;queries, 10);\nindex.write(&quot;index.tv&quot;).unwrap();\nlet loaded = TurboQuantIndex::load(&quot;index.tv&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">TurboQuantIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> results = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">For stable external ids that survive deletes:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&amp;vectors, &amp;[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&amp;queries, 10);\nindex.remove(1002);\nindex.write(&quot;index.tvim&quot;).unwrap();\nlet loaded = IdMapIndex::load(&quot;index.tvim&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">IdMapIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add_with_ids</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">1001</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1002</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1003</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>scores<span class=\"pl-kos\">,</span> ids<span class=\"pl-kos\">)</span> = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">remove</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1002</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Recall</h2></div>\n<p dir=\"auto\">TurboQuant vs FAISS <code>IndexPQ</code> (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_glove.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_glove.svg\" alt=\"Recall GloVe d=200\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d1536.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d1536.svg\" alt=\"Recall d=1536\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d3072.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d3072.svg\" alt=\"Recall d=3072\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Across OpenAI d=1536 and d=3072, TurboQuant beats FAISS by 0.4–3.1 points at R@1 across 2-bit and 4-bit, and both reach 1.0 by k=8 (≥0.997 already at k=4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TurboQuant beats FAISS by 1.4 points at 4-bit and by 0.5 points at 2-bit at R@1, both tracking FAISS closely by k≈16.</p>\n<p dir=\"auto\"><strong>A note on baselines.</strong> We compare against FAISS <code>IndexPQ</code> (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant paper</a> — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see <a href=\"https://pypi.org/project/turboquant-py/\" rel=\"nofollow\"><code>turboquant-py</code></a> at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands slightly ahead of FAISS at 2-bit and ahead at 4-bit; TQ+ calibration closes the low-dim gap the base algorithm leaves.</p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_2bit.json\">d=1536 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_4bit.json\">d=1536 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_2bit.json\">d=3072 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_4bit.json\">d=3072 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_2bit.json\">GloVe 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_4bit.json\">GloVe 4-bit</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Compression</h2></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/compression.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/compression.svg\" alt=\"Compression\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Search Speed</h2></div>\n<p dir=\"auto\">All benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_st.svg\" alt=\"ARM Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_mt.svg\" alt=\"ARM Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On ARM, TurboQuant beats FAISS FastScan by 19–31% across every config.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_st.svg\" alt=\"x86 Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_mt.svg\" alt=\"x86 Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On x86, TurboQuant wins the 4-bit configs by up to ~5% (d=3072 multi-threaded ties) and is modestly behind FAISS on 2-bit — most visibly d=1536 single-threaded (~8%), within a few percent on the rest — where FAISS's AVX-512 VBMI path has the edge on the short 2-bit accumulate loop.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Insertion &amp; Removal Speed</h2></div>\n<p dir=\"auto\">Same corpus as the search cells: 100K OpenAI vectors, median of 5 runs, fresh index per timed run. Insertion measures bulk <code>add()</code> into an empty index (one-time rotation/codebook init and TQ+ calibration fit included) and a warm 10K append with calibration frozen (the steady-state encode path), against FAISS <code>IndexPQFastScan</code> bulk add (training untimed). Removal measures per-op latency of <code>IdMapIndex.remove(id)</code> against raw <code>TurboQuantIndex.swap_remove</code> — both O(1) swap-and-pop; the gap is the id-map bookkeeping. Single-threaded cells pin <code>RAYON_NUM_THREADS=1</code>. Scripts: <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/\"><code>benchmarks/suite/</code></a>. On ARM the FAISS baseline is the generic aarch64 <code>faiss-cpu</code> wheel, so its insert figure partly reflects that wheel's PQ-training path on Axion (the previous ARM environment linked Apple's Accelerate BLAS instead), which is a build/BLAS difference rather than a like-for-like algorithmic gap.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_st.svg\" alt=\"ARM Insertion — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_mt.svg\" alt=\"ARM Insertion — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_remove_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_remove_st.svg\" alt=\"ARM Removal — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_st.json\">d=1536 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_st.json\">d=1536 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_st.json\">d=3072 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_st.json\">d=3072 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_mt.json\">MT</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/\"><code>speed_remove_*</code></a> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_st.svg\" alt=\"x86 Insertion — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_mt.svg\" alt=\"x86 Insertion — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_remove_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_remove_st.svg\" alt=\"x86 Removal — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_st.json\">d=1536 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_st.json\">d=1536 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_st.json\">d=3072 2-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_st.json\">d=3072 4-bit insert ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_mt.json\">MT</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/\"><code>speed_remove_*</code></a> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Save &amp; Load</h2></div>\n<p dir=\"auto\">Same corpus as the search cells: 100K OpenAI vectors, median of 5 runs. TurboQuant serializes to a single <code>.tv</code> file with an fsync + atomic rename; FAISS is <code>write_index</code> / <code>read_index</code> on the precision-matched <code>IndexPQFastScan</code> (sub-quantizer count matched to TurboQuant's bit rate, as in the search cells). <strong>Save (warm)</strong> is a write after a search has run, so the blocked layout cache is populated. <strong>Load → first search</strong> opens a fresh index and times the first query — separating bare deserialization (the page cache is warm throughout, so this is layout work, not cold-storage I/O) from the first-query cost. <strong>Round-trip</strong> chains the checkpoint/resume cycle an embedding store actually pays — mutate 1K vectors → save → reopen → serve the first query; FAISS has no measured equivalent for this path, so it is shown for TurboQuant only. On the smaller payloads the round-trip can come in <em>below</em> the isolated post-mutation (\"dirty\") write: the two are timed in separate suite steps, and at small file sizes the standalone <code>fsync</code> in the dirty-write step dominates and inflates it — a measurement artifact of the harness, not a repack win in the combined path. Single-threaded cells pin <code>RAYON_NUM_THREADS=1</code>. Scripts: <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/\"><code>benchmarks/suite/</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_st.svg\" alt=\"ARM Save/Load — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_mt.svg\" alt=\"ARM Save/Load — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_arm_st.json\">d=1536 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_arm_st.json\">d=1536 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_arm_st.json\">d=3072 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_arm_st.json\">d=3072 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_arm_mt.json\">MT</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_st.svg\" alt=\"x86 Save/Load — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_mt.svg\" alt=\"x86 Save/Load — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_x86_st.json\">d=1536 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_x86_st.json\">d=1536 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_x86_st.json\">d=3072 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_x86_st.json\">d=3072 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_x86_mt.json\">MT</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">Each vector is a direction on a high-dimensional hypersphere. TurboQuant compresses these directions using a simple insight: after applying a random rotation, every coordinate follows a known distribution -- regardless of the input data.</p>\n<p dir=\"auto\"><strong>1. Normalize.</strong> Strip the length (norm) from each vector and store it as a single float. Now every vector is a unit direction on the hypersphere.</p>\n<p dir=\"auto\"><strong>2. Random rotation.</strong> Multiply all vectors by the same random orthogonal matrix. After rotation, each coordinate independently follows a Beta distribution that converges to Gaussian N(0, 1/d) in high dimensions. This holds for any input data -- the rotation makes the coordinate distribution predictable.</p>\n<p dir=\"auto\"><strong>3. Per-coordinate calibration (TQ+).</strong> The Beta distribution from step 2 is asymptotic — at finite dimensions, individual coordinates drift from the canonical shape (especially low-bit and word-vector-style embeddings). TQ+ fits two scalars per coordinate — a shift and a scale — mapping each coordinate's empirical quantiles onto the codebook's outermost centroids. The probability level comes from the codebook, so it tracks the bit width (~0.933 at 2-bit, ~0.996 at 4-bit) rather than being fixed. The Lloyd-Max codebook then quantizes against the <em>target</em> distribution it was designed for. The fit is explicit: call <code>index.calibrate(sample)</code> once with a random, representative sample of your vectors (~1024 rows is enough — a draw of that size matches fitting on the whole corpus) before adding; afterwards the calibration is committed and reused by every add — no retraining, no rebuilds, no separate train phase. An index you never calibrate is plain TurboQuant. <code>index.calibration_state</code> reports <code>\"uncalibrated\"</code> or <code>\"calibrated\"</code>. Recall gain: up to +1.4pp at @1 on the cells that drift most (e.g. GloVe at 2-bit).</p>\n<p dir=\"auto\"><strong>4. Lloyd-Max scalar quantization.</strong> Since the distribution is known, we can precompute the optimal way to bucket each coordinate. For 2-bit, that's 4 buckets; for 4-bit, 16 buckets. The <a href=\"https://en.wikipedia.org/wiki/Lloyd%27s_algorithm\" rel=\"nofollow\">Lloyd-Max algorithm</a> finds bucket boundaries and centroids that minimize mean squared error. These are computed once from the math, not from the data.</p>\n<p dir=\"auto\"><strong>5. Bit-pack.</strong> Each coordinate is now a small integer (0-3 for 2-bit, 0-15 for 4-bit). Pack these tightly into bytes. A 1536-dim vector goes from 6,144 bytes (FP32) to 384 bytes (2-bit). That's 16x compression.</p>\n<p dir=\"auto\"><strong>6. Length-renormalized scoring.</strong> Scalar quantization systematically underestimates inner products — the reconstructed unit direction is a little shorter than the original. We compute one scalar per vector at encode time — the inner product of the rotated unit vector with its own centroid reconstruction — and store <code>||v|| / ⟨u, x̂⟩</code> alongside each compressed vector. The search kernel multiplies the per-candidate score by this scalar before heap insertion, turning the inner-product estimator from downward-biased into unbiased at zero search-time cost and zero extra storage. The recall gain shows up most at low bit widths, where the quantization shrinkage is largest.</p>\n<p dir=\"auto\">Encoding cost: one extra <code>d</code>-dimensional dot product per vector to compute <code>⟨u, x̂⟩</code>. On 1M vectors at d=1536 this is sub-second of additional encode time — a one-shot price paid at ingest, not at query.</p>\n<p dir=\"auto\"><strong>Search.</strong> Instead of decompressing every database vector, we rotate the query once into the same domain and score directly against the codebook values. The scoring kernel uses SIMD intrinsics (NEON on ARM; AVX-512BW on modern x86, falling back to AVX2, then to a scalar path on pre-AVX2 CPUs) with nibble-split lookup tables for maximum throughput.</p>\n<p dir=\"auto\">The Lloyd-Max codebook achieves distortion within a factor of 2.7x of the information-theoretic lower bound (Shannon's distortion-rate limit); the length-renormalization step removes the residual bias the Lloyd-Max codebook introduces on the inner-product estimator itself.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Python (via maturin)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install maturin\ncd turbovec-python\nmaturin build --release\npip install target/wheels/*.whl\"><pre>pip install maturin\n<span class=\"pl-c1\">cd</span> turbovec-python\nmaturin build --release\npip install target/wheels/<span class=\"pl-k\">*</span>.whl</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<p dir=\"auto\">All x86_64 builds target <code>x86-64-v2</code> (SSE4.2 baseline, Nehalem 2008+) via <code>.cargo/config.toml</code>, so any x86-64-v2 CPU can run the whole crate. The AVX-512 and AVX2 kernels are <code>#[target_feature]</code>-gated and selected at runtime via <code>is_x86_feature_detected!</code>, so they kick in on hardware that supports them regardless of the compile baseline; CPUs with neither run the scalar fallback.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running benchmarks</h2></div>\n<p dir=\"auto\">Download datasets:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/download_data.py all            # all datasets\npython3 benchmarks/download_data.py glove          # GloVe d=200\npython3 benchmarks/download_data.py openai-1536    # OpenAI DBpedia d=1536\npython3 benchmarks/download_data.py openai-3072    # OpenAI DBpedia d=3072\"><pre>python3 benchmarks/download_data.py all            <span class=\"pl-c\"><span class=\"pl-c\">#</span> all datasets</span>\npython3 benchmarks/download_data.py glove          <span class=\"pl-c\"><span class=\"pl-c\">#</span> GloVe d=200</span>\npython3 benchmarks/download_data.py openai-1536    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=1536</span>\npython3 benchmarks/download_data.py openai-3072    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=3072</span></pre></div>\n<p dir=\"auto\">Each benchmark is a self-contained script in <code>benchmarks/suite/</code>. Run any one individually:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py\"><pre>python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py</pre></div>\n<p dir=\"auto\">Run all benchmarks for a category:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"for f in benchmarks/suite/speed_*arm*.py; do python3 &quot;$f&quot;; done    # all ARM speed\nfor f in benchmarks/suite/speed_*x86*.py; do python3 &quot;$f&quot;; done    # all x86 speed\nfor f in benchmarks/suite/recall_*.py; do python3 &quot;$f&quot;; done       # all recall\npython3 benchmarks/suite/compression.py                            # compression\"><pre><span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>arm<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all ARM speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>x86<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all x86 speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/recall_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>       <span class=\"pl-c\"><span class=\"pl-c\">#</span> all recall</span>\npython3 benchmarks/suite/compression.py                            <span class=\"pl-c\"><span class=\"pl-c\">#</span> compression</span></pre></div>\n<p dir=\"auto\">Results are saved as JSON to <code>benchmarks/results/</code>. Regenerate charts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/create_diagrams.py\"><pre>python3 benchmarks/create_diagrams.py</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Quick harness for optimization work</h3></div>\n<p dir=\"auto\">The suite above is the source of every published number — real embeddings,\nFAISS comparator, fixed shapes, run on the two official environments. For the\ninner loop of an optimization pass there's also a Rust harness that reproduces\nthe four mutation metrics (cold bulk add, warm append, single add, remove) on\ndeterministic synthetic vectors, so a hypothesis can be measured in seconds on\nany machine with no dataset and no FAISS:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo run --release --example insert_bench -- --dim 1536 --bits 2\nRAYON_NUM_THREADS=1 cargo run --release --example insert_bench\"><pre>cargo run --release --example insert_bench -- --dim 1536 --bits 2\nRAYON_NUM_THREADS=1 cargo run --release --example insert_bench</pre></div>\n<p dir=\"auto\">It is a screening tool, not a source of published numbers.</p>\n<p dir=\"auto\"><code>examples/encode_hash</code> prints a per-stage hash of the encode pipeline for a\nfixed input; CI runs it on every OS in the matrix and fails if they disagree,\nwhich is how cross-platform byte identity of the encode is checked.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">References</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate</a> (ICLR 2026) -- the paper this implements</li>\n<li><a href=\"https://arxiv.org/abs/2405.12497\" rel=\"nofollow\">RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search</a> (SIGMOD 2024) -- the source of the per-vector length-renormalization correction adapted in step 5</li>\n<li><a href=\"https://github.com/facebookresearch/faiss/wiki/Fast-accumulation-of-PQ-and-AQ-codes-(FastScan)\">FAISS Fast accumulation of PQ and AQ codes</a> -- turbovec's x86 SIMD kernel adapts FastScan's pack layout, nibble-LUT scoring, and u16 accumulator strategy</li>\n</ul>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/header.png\" alt=\"turbovec — Google's TurboQuant for vector search\" width=\"100%\" style=\"max-width: 100%;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/caf6b784b3179786863dae677f066e65d7e15c9dcf1d084618796ef14bb2d8be/68747470733a2f2f696d672e736869656c64732e696f2f707970692f6c2f747572626f766563\" alt=\"License\" data-canonical-src=\"https://img.shields.io/pypi/l/turbovec\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://pypi.org/project/turbovec/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/fbf0495c02790bbda88b64e34c56a0c2e2a8bca3e3b402815af5969199aa2155/68747470733a2f2f696d672e736869656c64732e696f2f707970692f762f747572626f7665633f6c6162656c3d7079706926636f6c6f723d626c7565\" alt=\"PyPI version\" data-canonical-src=\"https://img.shields.io/pypi/v/turbovec?label=pypi&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://crates.io/crates/turbovec\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/7b670bfcb1974fa41e9ac4a6d4f796ecab90f85f840d010bdeeba6c5f1518a8a/68747470733a2f2f696d672e736869656c64732e696f2f6372617465732f762f747572626f7665633f6c6162656c3d6372617465732e696f26636f6c6f723d626c7565\" alt=\"crates.io version\" data-canonical-src=\"https://img.shields.io/crates/v/turbovec?label=crates.io&amp;color=blue\" style=\"max-width: 100%;\"></a>\n  <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/de75e4b10bfe7ac9c06a92ac6ca7be20453daa45ea826b345cc545e37a0ab254/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f70617065722d61725869762d6233316231622e737667\" alt=\"TurboQuant paper\" data-canonical-src=\"https://img.shields.io/badge/paper-arXiv-b31b1b.svg\" style=\"max-width: 100%;\"></a>\n</p>\n<hr>\n<p dir=\"auto\"><strong>A 10 million document corpus takes 31 GB of RAM as float32. turbovec fits it in 4 GB - and searches it faster than FAISS.</strong></p>\n<p dir=\"auto\">turbovec is a Rust vector index with Python bindings, built on Google Research's <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\"><strong>TurboQuant</strong></a> algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.</p>\n<ul dir=\"auto\">\n<li><strong>Online ingest.</strong> Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.</li>\n<li><strong>Fast SIMD search.</strong> Hand-written kernels — NEON SDOT/SMMLA on ARM, AVX-512 VNNI and <code>vpermb</code> on x86, with AVX2 and scalar fallbacks — beat FAISS IndexPQFastScan in every measured config, averaging 3.4× at 4-bit and 23% at 2-bit across the eight cells of each width, on both architectures.</li>\n<li><strong>Incremental saves.</strong> <code>sync(path)</code> persists just what changed since the last sync — one fsync per call, crash-safe at any byte, and a removal or a small append costs milliseconds however large the index. <code>write</code>/<code>load</code> stay for whole-file snapshots.</li>\n<li><strong>Filter at search time.</strong> Pass an id allowlist (or a slot bitmask) to <code>search()</code> and the kernel honours it directly. You always get up to <code>k</code> results from the allowed set — no over-fetching, no recall hit on selective filters.</li>\n<li><strong>Pure local.</strong> No managed service, no data leaving your machine or VPC. Pair with any open-source embedding model for a fully air-gapped RAG stack.</li>\n</ul>\n<p dir=\"auto\">Building RAG where privacy, memory, or latency matters? <strong>You're in the right place.</strong></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Python</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install turbovec\"><pre>pip install turbovec</pre></div>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from turbovec import TurboQuantIndex\n\nindex = TurboQuantIndex(dim=1536, bit_width=4)\nindex.add(vectors)\nindex.add(more_vectors)\n\nscores, indices = index.search(query, k=10)\n\nindex.write(&quot;my_index.tv&quot;)\nloaded = TurboQuantIndex.load(&quot;my_index.tv&quot;)\n\nindex.sync(&quot;my_index.tv&quot;)   # after more changes: durable incremental save\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">TurboQuantIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">TurboQuantIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">vectors</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add</span>(<span class=\"pl-s1\">more_vectors</span>)\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">indices</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">TurboQuantIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">sync</span>(<span class=\"pl-s\">\"my_index.tv\"</span>)   <span class=\"pl-c\"># after more changes: durable incremental save</span></pre></div>\n<p dir=\"auto\"><code>vectors</code> and <code>query</code> are 2-D <code>float32</code> arrays of shape <code>(n, dim)</code> — other dtypes are rejected rather than silently converted, so cast with <code>np.asarray(x, dtype=np.float32)</code> first if needed.</p>\n<p dir=\"auto\">Need stable ids that survive deletes? Use <code>IdMapIndex</code>:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nindex = IdMapIndex(dim=1536, bit_width=4)\nindex.add_with_ids(vectors, np.array([1001, 1002, 1003], dtype=np.uint64))\n\nscores, ids = index.search(query, k=10)   # ids are your uint64 external ids\nindex.remove(1002)                         # O(1) by id\n\nindex.write(&quot;my_index.tvim&quot;)\nloaded = IdMapIndex.load(&quot;my_index.tvim&quot;)\n\nindex.sync(&quot;my_index.tvim&quot;)   # durable incremental save, ids included\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">index</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>([<span class=\"pl-c1\">1001</span>, <span class=\"pl-c1\">1002</span>, <span class=\"pl-c1\">1003</span>], <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>))\n\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>)   <span class=\"pl-c\"># ids are your uint64 external ids</span>\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">remove</span>(<span class=\"pl-c1\">1002</span>)                         <span class=\"pl-c\"># O(1) by id</span>\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">write</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)\n<span class=\"pl-s1\">loaded</span> <span class=\"pl-c1\">=</span> <span class=\"pl-v\">IdMapIndex</span>.<span class=\"pl-c1\">load</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)\n\n<span class=\"pl-s1\">index</span>.<span class=\"pl-c1\">sync</span>(<span class=\"pl-s\">\"my_index.tvim\"</span>)   <span class=\"pl-c\"># durable incremental save, ids included</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Hybrid retrieval (filtered search)</h3></div>\n<p dir=\"auto\">Restrict results to a candidate set produced by another system (SQL, BM25, ACL, time window, …):</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import numpy as np\nfrom turbovec import IdMapIndex\n\nidx = IdMapIndex(dim=1536, bit_width=4)\nidx.add_with_ids(vectors, ids)\n\n# Stage 1: external system narrows to candidate ids.\nallowed = np.array(db.execute(&quot;SELECT id FROM docs WHERE tenant=?&quot;, (t,)).fetchall(),\n                   dtype=np.uint64)\n\n# Stage 2: dense rerank within the candidate set.\nscores, ids = idx.search(query, k=10, allowlist=allowed)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">numpy</span> <span class=\"pl-k\">as</span> <span class=\"pl-s1\">np</span>\n<span class=\"pl-k\">from</span> <span class=\"pl-s1\">turbovec</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">IdMapIndex</span>\n\n<span class=\"pl-s1\">idx</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">IdMapIndex</span>(<span class=\"pl-s1\">dim</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">1536</span>, <span class=\"pl-s1\">bit_width</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">4</span>)\n<span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">add_with_ids</span>(<span class=\"pl-s1\">vectors</span>, <span class=\"pl-s1\">ids</span>)\n\n<span class=\"pl-c\"># Stage 1: external system narrows to candidate ids.</span>\n<span class=\"pl-s1\">allowed</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">array</span>(<span class=\"pl-s1\">db</span>.<span class=\"pl-c1\">execute</span>(<span class=\"pl-s\">\"SELECT id FROM docs WHERE tenant=?\"</span>, (<span class=\"pl-s1\">t</span>,)).<span class=\"pl-c1\">fetchall</span>(),\n                   <span class=\"pl-s1\">dtype</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">np</span>.<span class=\"pl-c1\">uint64</span>)\n\n<span class=\"pl-c\"># Stage 2: dense rerank within the candidate set.</span>\n<span class=\"pl-s1\">scores</span>, <span class=\"pl-s1\">ids</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">idx</span>.<span class=\"pl-c1\">search</span>(<span class=\"pl-s1\">query</span>, <span class=\"pl-s1\">k</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">10</span>, <span class=\"pl-s1\">allowlist</span><span class=\"pl-c1\">=</span><span class=\"pl-s1\">allowed</span>)</pre></div>\n<p dir=\"auto\">Filtering happens inside the SIMD kernel at 32-vector block granularity: blocks with no allowed slots are short-circuited before any LUT lookup or scoring work, and individual non-allowed slots inside scored blocks are dropped at heap-insert. Selective allowlists (small fraction of the index allowed) therefore avoid most of the SIMD cost rather than paying it and discarding the result afterwards.</p>\n<p dir=\"auto\">The output length is <code>min(k, n_allowed)</code>, where <code>n_allowed</code> counts <em>distinct</em> allowed vectors — when fewer vectors are allowed than <code>k</code> you get exactly that many results rather than padded fallbacks.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/api.md\"><code>docs/api.md</code></a> for the full reference.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Framework integrations</h3></div>\n<p dir=\"auto\">Drop-in replacements for the in-tree reference vector / document stores in each framework. Same public surface, same persistence semantics, same retriever and pipeline wiring — swap the import and keep your pipeline.</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/langchain.md\">LangChain</a> — <code>pip install turbovec[langchain]</code> · replaces <code>langchain_core.vectorstores.InMemoryVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/llama_index.md\">LlamaIndex</a> — <code>pip install turbovec[llama-index]</code> · replaces <code>llama_index.core.vector_stores.SimpleVectorStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/haystack.md\">Haystack</a> — <code>pip install turbovec[haystack]</code> · replaces <code>haystack.document_stores.in_memory.InMemoryDocumentStore</code></li>\n<li><a href=\"https://github.com/RyanCodrai/turbovec/blob/main/docs/integrations/agno.md\">Agno</a> — <code>pip install turbovec[agno]</code> · replaces <code>agno.vectordb.lancedb.LanceDb</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Rust</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo add turbovec\"><pre>cargo add turbovec</pre></div>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::TurboQuantIndex;\n\nlet mut index = TurboQuantIndex::new(1536, 4).unwrap();\nindex.add(&amp;vectors);\nlet results = index.search(&amp;queries, 10);\nindex.write(&quot;index.tv&quot;).unwrap();\nlet loaded = TurboQuantIndex::load(&quot;index.tv&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">TurboQuantIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> results = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">TurboQuantIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tv\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">For stable external ids that survive deletes:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use turbovec::IdMapIndex;\n\nlet mut index = IdMapIndex::new(1536, 4).unwrap();\nindex.add_with_ids(&amp;vectors, &amp;[1001, 1002, 1003]).unwrap();\nlet (scores, ids) = index.search(&amp;queries, 10);\nindex.remove(1002);\nindex.write(&quot;index.tvim&quot;).unwrap();\nlet loaded = IdMapIndex::load(&quot;index.tvim&quot;).unwrap();\"><pre><span class=\"pl-k\">use</span> turbovec<span class=\"pl-kos\">::</span><span class=\"pl-v\">IdMapIndex</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> index = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1536</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">add_with_ids</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>vectors<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">1001</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1002</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1003</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>scores<span class=\"pl-kos\">,</span> ids<span class=\"pl-kos\">)</span> = index<span class=\"pl-kos\">.</span><span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>queries<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">10</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">remove</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1002</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nindex<span class=\"pl-kos\">.</span><span class=\"pl-en\">write</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> loaded = <span class=\"pl-smi\">IdMapIndex</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">load</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"index.tvim\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Recall</h2></div>\n<p dir=\"auto\">TurboQuant vs FAISS <code>IndexPQ</code> (LUT256, nbits=8) — the paper's Section 4.4 baseline. 100K vectors, k=64. FAISS PQ sub-quantizer counts sized to match TurboQuant's bit rate (m=d/4 at 2-bit, m=d/2 at 4-bit).</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_glove.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_glove.svg\" alt=\"Recall GloVe d=200\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d1536.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d1536.svg\" alt=\"Recall d=1536\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d3072.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/recall_d3072.svg\" alt=\"Recall d=3072\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">The charts plot calibrated TurboQuant (TQ+). Across OpenAI d=1536 and d=3072, TQ+ beats FAISS at R@1 on three of four cells (by 0.9–2.9 points; d=1536 4-bit trails by 0.7), and both reach 1.0 by k=8 (≥0.997 already at k≤4). GloVe d=200 is the harder regime — at low dim the asymptotic Beta assumption is looser. TQ+ lands ahead of FAISS at R@1 at both bit widths (+1.9 at 4-bit, +0.8 at 2-bit), with FAISS keeping a slim edge at 2-bit from k≈8. Uncalibrated numbers are in the JSONs (<code>tq_recalls</code>).</p>\n<p dir=\"auto\"><strong>A note on baselines.</strong> We compare against FAISS <code>IndexPQ</code> (LUT256, nbits=8, float32 LUT) because it's the default production-grade PQ most users would reach for. This is a stronger baseline than the custom u8-LUT PQ in the <a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant paper</a> — FAISS uses a higher-precision LUT at scoring time and k-means++ for codebook training. We reproduce the paper's TurboQuant numbers on OpenAI d=1536 / d=3072 and hit similar numbers to other community reference implementations on low-dim embeddings (see <a href=\"https://pypi.org/project/turboquant-py/\" rel=\"nofollow\"><code>turboquant-py</code></a> at d=384). On GloVe (d=200) — the low-dim regime where the asymptotic Beta assumption is loosest — TurboQuant lands ahead of FAISS at 4-bit but trails it at 2-bit; TQ+ calibration recovers the 2-bit deficit at R@1 (0.572 vs FAISS's 0.564), with FAISS keeping a slim edge at deeper k.</p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_2bit.json\">d=1536 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d1536_4bit.json\">d=1536 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_2bit.json\">d=3072 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_d3072_4bit.json\">d=3072 4-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_2bit.json\">GloVe 2-bit</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/recall_glove_4bit.json\">GloVe 4-bit</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Compression</h2></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/compression.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/compression.svg\" alt=\"Compression\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Search Speed</h2></div>\n<p dir=\"auto\">All benchmarks: 100K vectors, 1K queries, k=64, median of 5 runs.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_st.svg\" alt=\"ARM Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_speed_mt.svg\" alt=\"ARM Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On ARM, TurboQuant beats FAISS FastScan in every config, averaging 3.5× at 4-bit (3.4–3.7× across cells — the SDOT/SMMLA dot-product kernels score the vector-major layout directly) and 26% at 2-bit (22–29%).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_st.svg\" alt=\"x86 Speed — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_speed_mt.svg\" alt=\"x86 Speed — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">On x86, TurboQuant wins every config, averaging 3.4× at 4-bit (3.2–3.5× across cells — the AVX-512 VNNI dot-product kernel on the vector-major layout) and 20% at 2-bit (5–32%), where the <code>vpermb</code> LUT scan carries the short 2-bit accumulate loop.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Insertion &amp; Removal Latency</h2></div>\n<p dir=\"auto\">Same corpus as the search cells: 100K OpenAI vectors, median of 5 runs, timed loops including the Python-call overhead a caller actually pays per op. Insertion measures per-vector <code>add()</code> latency on a warm, populated index (built untimed) at n=1 — a single-vector <code>add()</code> — and n=100 — a 100-vector batch, showing how far batching amortizes the per-call overhead — against <code>add()</code> into the trained, populated FAISS <code>IndexPQFastScan</code> (training untimed). A single <code>add()</code> lands in 6.3–19.7 µs depending on the cell (7.6–13.9× faster than a FAISS single add), and a 100-vector batch amortizes TurboQuant to 4.6–16.3 µs/vector (4.6–15.1× faster than the same batch into FAISS). Removal measures per-op remove-by-id latency at n=1 (the steady per-op rate over 1000 removes) and n=100 (the first 100 removes on a fresh index): <code>IdMapIndex.remove(id)</code> — O(1) swap-and-pop plus the id-map bookkeeping — lands at 0.44–1.22 µs and 0.59–1.37 µs per op across the cells. The FAISS column is the same user-visible operation, <code>remove_ids</code> on an <code>IndexIDMap</code> over <code>IndexPQFastScan</code>, which repacks the stored codes on every call: 0.19–1.02 s per single remove at 100K, with cost doubling alongside code size — which is why the removal charts use a log-scale axis. Charts show the single-threaded cells (<code>RAYON_NUM_THREADS=1</code>); the <code>_mt</code> cells are measured too and match at n=1, since a single add is serial. Scripts: <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/\"><code>benchmarks/suite/</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_online_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_insert_online_st.svg\" alt=\"ARM Online Insert Latency — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_remove_online_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_remove_online_st.svg\" alt=\"ARM Online Remove Latency — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_arm_st.json\">d=1536 2-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_arm_st.json\">d=1536 4-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_arm_st.json\">d=3072 2-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_arm_st.json\">d=3072 4-bit insert</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/\"><code>speed_remove_*</code></a> and <code>_mt</code> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_online_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_insert_online_st.svg\" alt=\"x86 Online Insert Latency — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_remove_online_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_remove_online_st.svg\" alt=\"x86 Online Remove Latency — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_2bit_x86_st.json\">d=1536 2-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d1536_4bit_x86_st.json\">d=1536 4-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_2bit_x86_st.json\">d=3072 2-bit insert</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_insert_d3072_4bit_x86_st.json\">d=3072 4-bit insert</a>, and the matching <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/results/\"><code>speed_remove_*</code></a> and <code>_mt</code> files.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Save &amp; Load</h2></div>\n<p dir=\"auto\">Same corpus as the search cells: 100K OpenAI vectors, median of 5 runs. TurboQuant serializes to a single <code>.tv</code> file with an fsync + atomic rename; FAISS is <code>write_index</code> / <code>read_index</code> on the precision-matched <code>IndexPQFastScan</code> (sub-quantizer count matched to TurboQuant's bit rate, as in the search cells). <strong>Save (warm)</strong> is a write after a search has run, so the blocked layout cache is populated. <strong>Load → first search</strong> opens a fresh index and times the first query — separating bare deserialization (the page cache is warm throughout, so this is layout work, not cold-storage I/O) from the first-query cost. <strong>Round-trip</strong> chains the checkpoint/resume cycle an embedding store actually pays — mutate 1K vectors → save → reopen → serve the first query; FAISS has no measured equivalent for this path, so it is shown for TurboQuant only. On the smaller payloads the round-trip can come in <em>below</em> the isolated post-mutation (\"dirty\") write: the two are timed in separate suite steps, and at small file sizes the standalone <code>fsync</code> in the dirty-write step dominates and inflates it — a measurement artifact of the harness, not a repack win in the combined path. Single-threaded cells pin <code>RAYON_NUM_THREADS=1</code>. Scripts: <a href=\"https://github.com/RyanCodrai/turbovec/tree/main/benchmarks/suite/\"><code>benchmarks/suite/</code></a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">ARM (GCP c4a-standard-8, Google Axion, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_st.svg\" alt=\"ARM Save/Load — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/arm_persist_mt.svg\" alt=\"ARM Save/Load — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_arm_st.json\">d=1536 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_arm_st.json\">d=1536 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_arm_st.json\">d=3072 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_arm_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_arm_st.json\">d=3072 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_arm_mt.json\">MT</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">x86 (Intel Xeon Platinum 8481C / Sapphire Rapids, 8 vCPUs)</h3></div>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_st.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_st.svg\" alt=\"x86 Save/Load — Single-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_mt.svg\"><img src=\"https://raw.githubusercontent.com/RyanCodrai/turbovec/main/docs/x86_persist_mt.svg\" alt=\"x86 Save/Load — Multi-threaded\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Full results: <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_x86_st.json\">d=1536 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_x86_st.json\">d=1536 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d1536_4bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_x86_st.json\">d=3072 2-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_2bit_x86_mt.json\">MT</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_x86_st.json\">d=3072 4-bit persist ST</a>, <a href=\"https://github.com/RyanCodrai/turbovec/blob/main/benchmarks/results/speed_persist_d3072_4bit_x86_mt.json\">MT</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<p dir=\"auto\">Each vector is a direction on a high-dimensional hypersphere. TurboQuant compresses these directions using a simple insight: after applying a random rotation, every coordinate follows a known distribution -- regardless of the input data.</p>\n<p dir=\"auto\"><strong>1. Normalize.</strong> Strip the length (norm) from each vector and store it as a single float. Now every vector is a unit direction on the hypersphere.</p>\n<p dir=\"auto\"><strong>2. Random rotation.</strong> Multiply all vectors by the same random orthogonal matrix. After rotation, each coordinate independently follows a Beta distribution that converges to Gaussian N(0, 1/d) in high dimensions. This holds for any input data -- the rotation makes the coordinate distribution predictable.</p>\n<p dir=\"auto\"><strong>3. Per-coordinate calibration (TQ+).</strong> The Beta distribution from step 2 is asymptotic — at finite dimensions, individual coordinates drift from the canonical shape (especially low-bit and word-vector-style embeddings). TQ+ fits two scalars per coordinate — a shift and a scale — mapping each coordinate's empirical quantiles onto the codebook's outermost centroids. The probability level comes from the codebook, so it tracks the bit width (~0.933 at 2-bit, ~0.996 at 4-bit) rather than being fixed. The Lloyd-Max codebook then quantizes against the <em>target</em> distribution it was designed for. The fit is explicit: call <code>index.calibrate(sample)</code> once with a random, representative sample of your vectors (~1024 rows is enough — a draw of that size matches fitting on the whole corpus) before adding; afterwards the calibration is committed and reused by every add — no retraining, no rebuilds, no separate train phase. An index you never calibrate is plain TurboQuant. <code>index.calibration_state</code> reports <code>\"uncalibrated\"</code> or <code>\"calibrated\"</code>. Recall gain: up to +2.2pp at @1 on the cells that drift most (e.g. GloVe at 2-bit).</p>\n<p dir=\"auto\"><strong>4. Lloyd-Max scalar quantization.</strong> Since the distribution is known, we can precompute the optimal way to bucket each coordinate. For 2-bit, that's 4 buckets; for 4-bit, 16 buckets. The <a href=\"https://en.wikipedia.org/wiki/Lloyd%27s_algorithm\" rel=\"nofollow\">Lloyd-Max algorithm</a> finds bucket boundaries and centroids that minimize mean squared error. These are computed once from the math, not from the data.</p>\n<p dir=\"auto\"><strong>5. Bit-pack.</strong> Each coordinate is now a small integer (0-3 for 2-bit, 0-15 for 4-bit). Pack these tightly into bytes. A 1536-dim vector goes from 6,144 bytes (FP32) to 384 bytes (2-bit). That's 16x compression.</p>\n<p dir=\"auto\"><strong>6. Length-renormalized scoring.</strong> Scalar quantization systematically underestimates inner products — the reconstructed unit direction is a little shorter than the original. We compute one scalar per vector at encode time — the inner product of the rotated unit vector with its own centroid reconstruction — and store <code>||v|| / ⟨u, x̂⟩</code> alongside each compressed vector. The search kernel multiplies the per-candidate score by this scalar before heap insertion, turning the inner-product estimator from downward-biased into unbiased at zero search-time cost and zero extra storage. The recall gain shows up most at low bit widths, where the quantization shrinkage is largest.</p>\n<p dir=\"auto\">Encoding cost: one extra <code>d</code>-dimensional dot product per vector to compute <code>⟨u, x̂⟩</code>. On 1M vectors at d=1536 this is sub-second of additional encode time — a one-shot price paid at ingest, not at query.</p>\n<p dir=\"auto\"><strong>Search.</strong> Instead of decompressing every database vector, we rotate the query once into the same domain and score directly against the codebook values. The scoring kernel uses SIMD intrinsics (NEON on ARM; AVX-512BW on modern x86, falling back to AVX2, then to a scalar path on pre-AVX2 CPUs) with nibble-split lookup tables for maximum throughput.</p>\n<p dir=\"auto\">The Lloyd-Max codebook achieves distortion within a factor of 2.7x of the information-theoretic lower bound (Shannon's distortion-rate limit); the length-renormalization step removes the residual bias the Lloyd-Max codebook introduces on the inner-product estimator itself.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Python (via maturin)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install maturin\ncd turbovec-python\nmaturin build --release\npip install target/wheels/*.whl\"><pre>pip install maturin\n<span class=\"pl-c1\">cd</span> turbovec-python\nmaturin build --release\npip install target/wheels/<span class=\"pl-k\">*</span>.whl</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<p dir=\"auto\">All x86_64 builds target <code>x86-64-v2</code> (SSE4.2 baseline, Nehalem 2008+) via <code>.cargo/config.toml</code>, so any x86-64-v2 CPU can run the whole crate. The AVX-512 and AVX2 kernels are <code>#[target_feature]</code>-gated and selected at runtime via <code>is_x86_feature_detected!</code>, so they kick in on hardware that supports them regardless of the compile baseline; CPUs with neither run the scalar fallback.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running benchmarks</h2></div>\n<p dir=\"auto\">Download datasets:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/download_data.py all            # all datasets\npython3 benchmarks/download_data.py glove          # GloVe d=200\npython3 benchmarks/download_data.py openai-1536    # OpenAI DBpedia d=1536\npython3 benchmarks/download_data.py openai-3072    # OpenAI DBpedia d=3072\"><pre>python3 benchmarks/download_data.py all            <span class=\"pl-c\"><span class=\"pl-c\">#</span> all datasets</span>\npython3 benchmarks/download_data.py glove          <span class=\"pl-c\"><span class=\"pl-c\">#</span> GloVe d=200</span>\npython3 benchmarks/download_data.py openai-1536    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=1536</span>\npython3 benchmarks/download_data.py openai-3072    <span class=\"pl-c\"><span class=\"pl-c\">#</span> OpenAI DBpedia d=3072</span></pre></div>\n<p dir=\"auto\">Each benchmark is a self-contained script in <code>benchmarks/suite/</code>. Run any one individually:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py\"><pre>python3 benchmarks/suite/speed_d1536_2bit_arm_mt.py\npython3 benchmarks/suite/recall_d1536_2bit.py\npython3 benchmarks/suite/compression.py</pre></div>\n<p dir=\"auto\">Run all benchmarks for a category:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"for f in benchmarks/suite/speed_*arm*.py; do python3 &quot;$f&quot;; done    # all ARM speed\nfor f in benchmarks/suite/speed_*x86*.py; do python3 &quot;$f&quot;; done    # all x86 speed\nfor f in benchmarks/suite/recall_*.py; do python3 &quot;$f&quot;; done       # all recall\npython3 benchmarks/suite/compression.py                            # compression\"><pre><span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>arm<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all ARM speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/speed_<span class=\"pl-k\">*</span>x86<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>    <span class=\"pl-c\"><span class=\"pl-c\">#</span> all x86 speed</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-smi\">f</span> <span class=\"pl-k\">in</span> benchmarks/suite/recall_<span class=\"pl-k\">*</span>.py<span class=\"pl-k\">;</span> <span class=\"pl-k\">do</span> python3 <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-smi\">$f</span><span class=\"pl-pds\">\"</span></span><span class=\"pl-k\">;</span> <span class=\"pl-k\">done</span>       <span class=\"pl-c\"><span class=\"pl-c\">#</span> all recall</span>\npython3 benchmarks/suite/compression.py                            <span class=\"pl-c\"><span class=\"pl-c\">#</span> compression</span></pre></div>\n<p dir=\"auto\">Results are saved as JSON to <code>benchmarks/results/</code>. Regenerate charts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 benchmarks/create_diagrams.py\"><pre>python3 benchmarks/create_diagrams.py</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Quick harness for optimization work</h3></div>\n<p dir=\"auto\">The suite above is the source of every published number — real embeddings,\nFAISS comparator, fixed shapes, run on the two official environments. For the\ninner loop of an optimization pass there's also a Rust harness that reproduces\nthe four mutation metrics (cold bulk add, warm append, single add, remove) on\ndeterministic synthetic vectors, so a hypothesis can be measured in seconds on\nany machine with no dataset and no FAISS:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo run --release --example insert_bench -- --dim 1536 --bits 2\nRAYON_NUM_THREADS=1 cargo run --release --example insert_bench\"><pre>cargo run --release --example insert_bench -- --dim 1536 --bits 2\nRAYON_NUM_THREADS=1 cargo run --release --example insert_bench</pre></div>\n<p dir=\"auto\">It is a screening tool, not a source of published numbers.</p>\n<p dir=\"auto\"><code>examples/encode_hash</code> prints a per-stage hash of the encode pipeline for a\nfixed input; CI runs it on every OS in the matrix and fails if they disagree,\nwhich is how cross-platform byte identity of the encode is checked.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">References</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://arxiv.org/abs/2504.19874\" rel=\"nofollow\">TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate</a> (ICLR 2026) -- the paper this implements</li>\n<li><a href=\"https://arxiv.org/abs/2405.12497\" rel=\"nofollow\">RaBitQ: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search</a> (SIGMOD 2024) -- the source of the per-vector length-renormalization correction adapted in step 5</li>\n<li><a href=\"https://github.com/facebookresearch/faiss/wiki/Fast-accumulation-of-PQ-and-AQ-codes-(FastScan)\">FAISS Fast accumulation of PQ and AQ codes</a> -- turbovec's x86 SIMD kernel adapts FastScan's pack layout, nibble-LUT scoring, and u16 accumulator strategy</li>\n</ul>\n</article></div>",
   "contributorCount": 8,
   "punchCard": [
     {
@@ -329,7 +336,7 @@
     {
       "day": 0,
       "hour": 9,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 0,
@@ -464,12 +471,12 @@
     {
       "day": 1,
       "hour": 12,
-      "commits": 1
+      "commits": 4
     },
     {
       "day": 1,
       "hour": 13,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 1,
@@ -484,27 +491,27 @@
     {
       "day": 1,
       "hour": 16,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 1,
       "hour": 17,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 1,
       "hour": 18,
-      "commits": 9
+      "commits": 10
     },
     {
       "day": 1,
       "hour": 19,
-      "commits": 5
+      "commits": 7
     },
     {
       "day": 1,
       "hour": 20,
-      "commits": 3
+      "commits": 5
     },
     {
       "day": 1,
@@ -514,7 +521,7 @@
     {
       "day": 1,
       "hour": 22,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 1,
@@ -999,12 +1006,12 @@
     {
       "day": 5,
       "hour": 23,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
       "hour": 0,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -1054,7 +1061,7 @@
     {
       "day": 6,
       "hour": 10,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
@@ -1069,7 +1076,7 @@
     {
       "day": 6,
       "hour": 13,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -1089,7 +1096,7 @@
     {
       "day": 6,
       "hour": 17,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 6,
@@ -1114,7 +1121,7 @@
     {
       "day": 6,
       "hour": 22,
-      "commits": 10
+      "commits": 11
     },
     {
       "day": 6,
@@ -1125,217 +1132,217 @@
   "firstCommitAt": "2026-03-26T14:09:56Z",
   "recentIssues": [
     {
-      "number": 504,
-      "title": "llama_index: delete_nodes() docstring overstates SimpleVectorStore parity for the both-None call shape",
-      "url": "https://github.com/RyanCodrai/turbovec/issues/504",
-      "createdAt": "2026-08-05T02:44:07Z",
+      "number": 530,
+      "title": "Any plan to cut a release?",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/530",
+      "createdAt": "2026-08-13T23:40:53Z",
       "comments": 0,
       "labels": [],
-      "author": "RyanCodrai"
-    },
-    {
-      "number": 503,
-      "title": "Agno cosine similarity_threshold uses the inner-product mapping (cos+1)/2, admitting documents agno's cosine contract rejects",
-      "url": "https://github.com/RyanCodrai/turbovec/issues/503",
-      "createdAt": "2026-08-05T02:35:06Z",
-      "comments": 0,
-      "labels": [],
-      "author": "RyanCodrai"
-    },
-    {
-      "number": 502,
-      "title": "Agno: Knowledge.search(search_type=\"hybrid\") silently served vector-only (constructor guard bypassed at runtime)",
-      "url": "https://github.com/RyanCodrai/turbovec/issues/502",
-      "createdAt": "2026-08-05T02:22:50Z",
-      "comments": 0,
-      "labels": [],
-      "author": "RyanCodrai"
+      "author": "mtrbean"
     },
     {
       "number": 501,
       "title": "First incremental add after a load/search permanently doubles the codes buffer (Vec::reserve amortized growth on a tight buffer)",
       "url": "https://github.com/RyanCodrai/turbovec/issues/501",
       "createdAt": "2026-08-05T02:18:39Z",
+      "comments": 3,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 493,
+      "title": "nq=1 block-parallel NEON path (scan_range_neon) drops the whole-block prune -> ~28% single-thread regression above the 1024-block gate",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/493",
+      "createdAt": "2026-08-05T00:43:31Z",
       "comments": 0,
       "labels": [],
       "author": "RyanCodrai"
     },
     {
-      "number": 500,
-      "title": "PR template references CONTRIBUTING \"narrow exceptions\" that don't exist",
-      "url": "https://github.com/RyanCodrai/turbovec/issues/500",
-      "createdAt": "2026-08-05T01:58:30Z",
+      "number": 488,
+      "title": "#299 stale-temp sweep is a permanent no-op for destination filenames >=235 bytes",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/488",
+      "createdAt": "2026-08-04T23:58:10Z",
       "comments": 0,
       "labels": [],
       "author": "RyanCodrai"
     },
     {
-      "number": 499,
-      "title": "CHANGELOG: Unreleased #216 \"Interruptible add\" entry ships a never-shipped default (1000) and a removed behavior (indivisible first add)",
-      "url": "https://github.com/RyanCodrai/turbovec/issues/499",
-      "createdAt": "2026-08-05T01:52:30Z",
+      "number": 487,
+      "title": "v6 load allocates from file length, not declared content: 2450-byte index in a 4 GiB sparse file costs 8 GB RSS",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/487",
+      "createdAt": "2026-08-04T23:55:19Z",
+      "comments": 0,
+      "labels": [],
+      "author": "RyanCodrai"
+    },
+    {
+      "number": 484,
+      "title": "lock_write_gil_aware livelocks swap_remove / IdMapIndex.remove under concurrent search: 66 ns -> 25 s",
+      "url": "https://github.com/RyanCodrai/turbovec/issues/484",
+      "createdAt": "2026-08-04T23:39:55Z",
       "comments": 0,
       "labels": [],
       "author": "RyanCodrai"
     }
   ],
   "participation": {
-    "all": 335,
-    "owner": 318,
+    "all": 355,
+    "owner": 338,
     "community": 17
   },
   "recentCommits": [
     {
-      "sha": "f6e8275",
-      "message": "perf: live-index mutation — bulk x1.87, append x2.16, single-add x2.79, remove x1.05 (#505)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/f6e8275dfbb969ab7c749149dd75ac5a5bf75044",
-      "date": "2026-08-06T11:18:30Z",
+      "sha": "8202f19",
+      "message": "test: pin which coordinate the invalid-input scan reports (#528)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/8202f194a0cbbd52213a004290401e180e5c123d",
+      "date": "2026-08-10T21:44:58Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "597baad",
-      "message": "perf(sync): incremental sync latency hill-climb (#481)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/597baad494827f09d5d38651a21fce965c7a9d4e",
-      "date": "2026-08-05T20:57:53Z",
+      "sha": "5f1496e",
+      "message": "fix: validate the quantity the kernels use, not just the stored value (#518)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/5f1496e1aa73488b35c25a2fc323b038f0076ea3",
+      "date": "2026-08-10T19:35:21Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "395d4ed",
-      "message": "perf: whole-file persistence hill-climb (9 wins; load x1.22 ARM / x1.21 x86) (#479)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/395d4ed75123232e67f58b5d930dbaddccd97f2e",
-      "date": "2026-08-05T16:20:31Z",
+      "sha": "f3687ac",
+      "message": "ci: exercise the abi3 floor on all three OSes, and the integrations at release (#527)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/f3687ac67683539b44c9da9f3ce68263de843eba",
+      "date": "2026-08-10T19:29:21Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "c8d7ec0",
-      "message": "sync(): incremental saves on a headerized slot-array container (#476)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/c8d7ec0294a7c8f15d036349f514e82e128070c6",
-      "date": "2026-08-04T22:39:30Z",
+      "sha": "456fd28",
+      "message": "fix(bench): drop the stale calibration caption and read compression from JSON (#525)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/456fd288b29d7b0f3832dc252b13a6da2e8905d7",
+      "date": "2026-08-10T18:44:08Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "22341e9",
-      "message": "TQ+ becomes an explicit, user-supplied calibration (#474)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/22341e963e6fc8667d1289c44ffe5cb6760b4958",
-      "date": "2026-08-02T18:38:55Z",
+      "sha": "f111074",
+      "message": "docs: document sync()/v7, and stop the byte loaders misreporting it (#522)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/f111074915777de0d590c6171ecb360f78998473",
+      "date": "2026-08-10T18:29:52Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "1ae17df",
-      "message": "ci: make the mutants timeout proportional to the measured baseline (#465)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/1ae17df7eb1befce64ad131b8f9698fc1fdae689",
-      "date": "2026-08-02T17:45:01Z",
+      "sha": "4913a1b",
+      "message": "fix(agno): honour agno's own contracts for threshold, search type and async (#519)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/4913a1b378a3ebe6bd9c0a9f50bc744098849061",
+      "date": "2026-08-10T17:09:27Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "fc95f0d",
-      "message": "feat(ci): give the /s summary command full skill parity (#469)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/fc95f0d478c4f212a48107bc2bd35159670335f4",
-      "date": "2026-08-02T17:36:44Z",
+      "sha": "0b5a1b4",
+      "message": "fix(llama_index): coerce metadata from the node, not from _node_content (#523)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/0b5a1b47412a5a706bab904ec87b7e6c801ecca3",
+      "date": "2026-08-10T16:49:12Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "3cd491f",
-      "message": "Revert \"Retain blocked cache after cold writes (#323)\" (#470)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/3cd491f9b479285682c87e2deb8ca53fc3cf546a",
-      "date": "2026-08-02T10:54:33Z",
+      "sha": "9b48102",
+      "message": "docs: correct three claims that no longer match the code (#515)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/9b4810271ead47d94a5399feda4a87ff4c6054b7",
+      "date": "2026-08-10T15:27:52Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "ec2c4cd",
-      "message": "Retain blocked cache after cold writes (#323)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/ec2c4cdbb92e3432173a679f41996b37e229e565",
-      "date": "2026-08-02T10:54:11Z",
-      "author": "faysou",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/893862?v=4"
+      "sha": "2013c3f",
+      "message": "fix(llama_index): filter on the metadata the store actually returns (#521)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/2013c3f9d5e804bd4c47a6d1b507429e3db45d75",
+      "date": "2026-08-10T12:53:33Z",
+      "author": "RyanCodrai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     },
     {
-      "sha": "a5d30e4",
-      "message": "chore(ci): rename the agent trigger phrase to @tq-bot (#468)",
-      "url": "https://github.com/RyanCodrai/turbovec/commit/a5d30e425013ea9b397a008bea75ca6ed85745e8",
-      "date": "2026-08-02T10:42:52Z",
+      "sha": "78f22dc",
+      "message": "test: stop the reader-race test asserting on timing (#520)",
+      "url": "https://github.com/RyanCodrai/turbovec/commit/78f22dcec4804988c0741ae0fa08fcdb304964d5",
+      "date": "2026-08-10T12:53:19Z",
       "author": "RyanCodrai",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10856497?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 485,
-      "title": "perf(search): 1.147x arm / 1.271x x86 — schedule tuning plus a VNNI scan kernel",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/485",
+      "number": 524,
+      "title": "fix(io): sweep leaked temps for long destination filenames",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/524",
       "state": "open",
-      "updatedAt": "2026-08-06T21:58:15Z",
+      "updatedAt": "2026-08-10T22:02:06Z",
       "author": "RyanCodrai",
       "draft": false
     },
     {
-      "number": 505,
-      "title": "perf: live-index mutation — bulk x1.87, append x2.16, single-add x2.79, remove x1.05",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/505",
-      "state": "merged",
-      "updatedAt": "2026-08-06T11:18:33Z",
-      "author": "RyanCodrai",
-      "draft": false
-    },
-    {
-      "number": 481,
-      "title": "perf(sync): incremental sync latency hill-climb",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/481",
-      "state": "merged",
-      "updatedAt": "2026-08-05T20:57:56Z",
-      "author": "RyanCodrai",
-      "draft": false
-    },
-    {
-      "number": 479,
-      "title": "perf: whole-file persistence hill-climb (9 wins; load x1.22 ARM / x1.21 x86)",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/479",
-      "state": "merged",
-      "updatedAt": "2026-08-05T16:20:34Z",
-      "author": "RyanCodrai",
-      "draft": false
-    },
-    {
-      "number": 452,
-      "title": "docs: record that target-cpu=x86-64-v2 does not change any encoded byte (#439)",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/452",
+      "number": 529,
+      "title": "test: pin the TQ+ fit's structural properties",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/529",
       "state": "closed",
-      "updatedAt": "2026-08-05T07:43:18Z",
+      "updatedAt": "2026-08-10T21:50:40Z",
       "author": "RyanCodrai",
       "draft": false
     },
     {
-      "number": 476,
-      "title": "sync(): incremental saves on a headerized slot-array container",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/476",
+      "number": 528,
+      "title": "test: pin which coordinate the invalid-input scan reports",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/528",
       "state": "merged",
-      "updatedAt": "2026-08-04T22:43:55Z",
+      "updatedAt": "2026-08-10T21:45:00Z",
       "author": "RyanCodrai",
       "draft": false
     },
     {
-      "number": 471,
-      "title": "Retain blocked cache after cold writes (relands #323)",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/471",
-      "state": "closed",
-      "updatedAt": "2026-08-04T17:31:57Z",
+      "number": 518,
+      "title": "fix: validate the quantity the kernels use, not just the stored value",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/518",
+      "state": "merged",
+      "updatedAt": "2026-08-10T19:35:24Z",
       "author": "RyanCodrai",
       "draft": false
     },
     {
-      "number": 472,
-      "title": "feat(ci): publish the review gate as a check run with a re-run button",
-      "url": "https://github.com/RyanCodrai/turbovec/pull/472",
+      "number": 527,
+      "title": "ci: exercise the abi3 floor on all three OSes, and the integrations at release",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/527",
+      "state": "merged",
+      "updatedAt": "2026-08-10T19:29:25Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 526,
+      "title": "docs(test): record why an uncalibrated index is the wrong fixture seed",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/526",
       "state": "closed",
-      "updatedAt": "2026-08-02T18:39:08Z",
+      "updatedAt": "2026-08-10T18:58:29Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 525,
+      "title": "fix(bench): drop the stale calibration caption and read compression from JSON",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/525",
+      "state": "merged",
+      "updatedAt": "2026-08-10T18:44:10Z",
+      "author": "RyanCodrai",
+      "draft": false
+    },
+    {
+      "number": 522,
+      "title": "docs: document sync()/v7, and stop the byte loaders misreporting it",
+      "url": "https://github.com/RyanCodrai/turbovec/pull/522",
+      "state": "merged",
+      "updatedAt": "2026-08-10T18:29:55Z",
       "author": "RyanCodrai",
       "draft": false
     }
@@ -1410,19 +1417,19 @@
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 199269,
+      "size": 212831,
       "url": "https://github.com/RyanCodrai/turbovec/blob/main/CHANGELOG.md"
     },
     {
       "name": "CONTRIBUTING.md",
       "type": "file",
-      "size": 9042,
+      "size": 9240,
       "url": "https://github.com/RyanCodrai/turbovec/blob/main/CONTRIBUTING.md"
     },
     {
       "name": "deny.toml",
       "type": "file",
-      "size": 1573,
+      "size": 1940,
       "url": "https://github.com/RyanCodrai/turbovec/blob/main/deny.toml"
     },
     {
@@ -1434,7 +1441,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 24914,
+      "size": 24829,
       "url": "https://github.com/RyanCodrai/turbovec/blob/main/README.md"
     },
     {
@@ -1444,7 +1451,7 @@
       "url": "https://github.com/RyanCodrai/turbovec/blob/main/SECURITY.md"
     }
   ],
-  "branchCount": 80,
+  "branchCount": 8,
   "tagCount": 29,
   "community": {
     "healthPercentage": 85,
@@ -1455,50 +1462,50 @@
   },
   "workflowRuns": [
     {
-      "name": "Review stamp",
+      "name": "Issue Intake",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31754694858",
+      "branch": "main",
+      "updatedAt": "2026-08-13T23:40:58Z"
+    },
+    {
+      "name": "Claude Code",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31754694852",
+      "branch": "main",
+      "updatedAt": "2026-08-13T23:40:58Z"
+    },
+    {
+      "name": "Scheduled",
       "status": "success",
-      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31129015802",
-      "branch": "perf/search-hillclimb",
-      "updatedAt": "2026-08-06T22:28:41Z"
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31645243653",
+      "branch": "main",
+      "updatedAt": "2026-08-12T22:03:58Z"
     },
     {
-      "name": "Changelog",
-      "status": "success",
-      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31129015799",
-      "branch": "perf/search-hillclimb",
-      "updatedAt": "2026-08-06T22:28:28Z"
+      "name": "Summarize command",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31577237165",
+      "branch": "main",
+      "updatedAt": "2026-08-12T08:11:39Z"
     },
     {
-      "name": "Mutants",
-      "status": "failure",
-      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31129015798",
-      "branch": "perf/search-hillclimb",
-      "updatedAt": "2026-08-06T22:30:10Z"
-    },
-    {
-      "name": "CI",
-      "status": "failure",
-      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31129015796",
-      "branch": "perf/search-hillclimb",
-      "updatedAt": "2026-08-06T22:35:43Z"
-    },
-    {
-      "name": "PR #485",
-      "status": "success",
-      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31128663615",
-      "branch": "refs/pull/485/head",
-      "updatedAt": "2026-08-06T22:07:56Z"
+      "name": "PR Review",
+      "status": "skipped",
+      "url": "https://github.com/RyanCodrai/turbovec/actions/runs/31577237163",
+      "branch": "main",
+      "updatedAt": "2026-08-12T08:11:39Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 59,
+  "openIssuesOnly": 28,
   "openPRs": 1,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 205,
-  "mergedPRs": 199,
+  "closedIssues": 238,
+  "mergedPRs": 219,
   "environmentCount": 2,
   "isFork": false,
   "isInOrganization": false,
@@ -1506,14 +1513,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-08-10",
-      "commits": 0
-    },
-    {
-      "week": "2025-08-17",
-      "commits": 0
-    },
     {
       "week": "2025-08-24",
       "commits": 0
@@ -1712,66 +1711,18 @@
     },
     {
       "week": "2026-08-02",
-      "commits": 10
+      "commits": 16
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 14
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-10",
-      "count": 0
-    },
-    {
-      "date": "2025-08-11",
-      "count": 0
-    },
-    {
-      "date": "2025-08-12",
-      "count": 0
-    },
-    {
-      "date": "2025-08-13",
-      "count": 0
-    },
-    {
-      "date": "2025-08-14",
-      "count": 0
-    },
-    {
-      "date": "2025-08-15",
-      "count": 0
-    },
-    {
-      "date": "2025-08-16",
-      "count": 0
-    },
-    {
-      "date": "2025-08-17",
-      "count": 0
-    },
-    {
-      "date": "2025-08-18",
-      "count": 0
-    },
-    {
-      "date": "2025-08-19",
-      "count": 0
-    },
-    {
-      "date": "2025-08-20",
-      "count": 0
-    },
-    {
-      "date": "2025-08-21",
-      "count": 0
-    },
-    {
-      "date": "2025-08-22",
-      "count": 0
-    },
-    {
-      "date": "2025-08-23",
-      "count": 0
-    },
     {
       "date": "2025-08-24",
       "count": 0
@@ -3166,15 +3117,71 @@
     },
     {
       "date": "2026-08-07",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-08-08",
+      "count": 5
+    },
+    {
+      "date": "2026-08-09",
+      "count": 1
+    },
+    {
+      "date": "2026-08-10",
+      "count": 13
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
       "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-08-07T03:46:12.247Z",
+  "factsUpdatedAt": "2026-08-16T07:26:41.765Z",
   "aiSummary": {
     "oneLiner": "A memory-efficient Rust vector index with Python bindings, built on Google's TurboQuant algorithm.",
     "whatItDoes": "turbovec is a high-performance vector index implemented in Rust that utilizes Google Research's TurboQuant algorithm to achieve extreme memory compression. It allows a 10 million document corpus to fit into 4 GB of RAM instead of the typical 31 GB required for float32. The system maps coordinates to a canonical Beta distribution using Hadamard transforms and applies Lloyd-Max scalar quantization without requiring a separate training phase. It features fast, hand-written SIMD search kernels for both ARM and x86 architectures, often outperforming traditional FAISS indexes in speed. It supports online ingestion, incremental saves, and search-time filtering.",
