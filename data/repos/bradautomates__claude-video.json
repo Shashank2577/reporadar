@@ -145,6 +145,11 @@
       "date": "2026-08-24",
       "stars": 16108,
       "forks": 1582
+    },
+    {
+      "date": "2026-08-25",
+      "stars": 16157,
+      "forks": 1588
     }
   ],
   "trendingHistory": [
@@ -285,14 +290,14 @@
   "license": "MIT",
   "language": "Python",
   "topics": [],
-  "stars": 16108,
-  "forks": 1582,
-  "openIssues": 127,
+  "stars": 16157,
+  "forks": 1588,
+  "openIssues": 128,
   "createdAt": "2026-04-24T04:40:43Z",
   "pushedAt": "2026-07-01T01:26:49Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-24T09:40:28.682Z",
+  "updatedAt": "2026-08-25T04:33:40.267Z",
   "commitCount": 11,
   "firstCommitAt": "2026-04-24T04:40:34Z",
   "languages": {
@@ -309,7 +314,7 @@
   ],
   "contributorCount": 1,
   "readmeExcerpt": "# /watch\n\n**Give Claude the ability to watch any video.**\n\nClaude Code (recommended — auto-updates via marketplace):\n```\n/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\n```\n\nCodex, Cursor, Copilot, Gemini CLI, or any of 50+ [Agent Skills](https://agentskills.io) hosts:\n```bash\nnpx skills add bradautomates/claude-video -g\n```\n(`-g` installs globally for your user, available across all projects. Drop it to scope per-project.)\n\nMore install options (claude.ai web, manual) in the [Install](#install) section below.\n\nZero config to start — `yt-dlp` and `ffmpeg` install on first run via `brew` on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. Whisper API key is only needed when a video has no captions.\n\n---\n\nClaude can read a webpage, run a script, browse a repo. What it can't do, out of the box, is *watch a video*. You paste a YouTube link and it has to either guess from the title or pull a transcript that's missing 90% of what's on screen.\n\nWith Claude Video `/watch` you can paste a URL or a local path, ask a question, and Claude fetches captions first, downloads only what it needs, extracts frames (scene-aware, or fast keyframes at `efficient` detail), pulls a timestamped transcript (free captions when available, Whisper API as fallback), and `Read`s every frame as an image. By the time it answers, it has *seen* the video and *heard* the audio.\n\n```\n/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?\n```\n\n## What people actually use it for\n\n**Analyze someone else's content.** `/watch https://youtu.be/<viral-video> what hook did they open with?` Claude looks at the first frames, reads the opening transcript, breaks down the structure. Same for ad creative, competitor launches, podcast intros, anything where the *how* matters as much as the *what*.\n\n**Diagnose a bug from a video.** Someone sends you a screen recording of something broken. `/watch bug-repro.mov what's going wrong?` Claude watches the recording, finds the frame where the issue appears, describes what's on screen, often catches the cause without you ever opening the file.\n\n**Summarize a video.** `/watch https://youtu.be/<long-thing> summarize this` does the obvious thing — pulls the structure, the key moments, what was actually said and shown. Faster than watching at 2x.\n\n**Cut the hype out of an update video.** `/watch https://youtu.be/<launch-video> what's actually new — skip the hype` Strip a \"game-changer\" feature drop down to the few things that matter, so you get the substance without ten minutes of intro and overselling.\n\n**Turn a playlist into notes.** `/watch https://youtu.be/<video> summarize this to a note` Run it across a series and file a per-video summary, so a channel or course becomes a searchable set of notes instead of hours you have to sit through.\n\n## How it works\n\n1. **You paste a video and a question.** URL (anything yt-dlp supports — YouTube, Loom, TikTok, X, Instagram, plus a few hundred more) or a local path (`.mp4`, `.mov`, `.mkv`, `.webm`).\n2. **`yt-dlp` checks captions first.** At `transcript` detail, captioned URLs return without downloading video. Otherwise, or when Whisper needs audio, it downloads only what the run needs.\n3. **`ffmpeg` extracts frames at the chosen detail.** `efficient` decodes keyframes only (near-instant); `balanced`/`token-burner` prefer scene-change frames and fall back to the duration-aware uniform sampler when they under-produce. JPEGs are 512px wide by default and clamped to 1998px tall for Claude Read compatibility.\n4. **The transcript comes from one of two places.** First try: `yt-dlp` pulls native captions (manual or auto-generated) from the source. Free, instant, accurate-ish. Fallback: extract a mono 16 kHz 64 kbps mp3 audio clip (~480 kB/min) and ship it to Whisper — Groq's `whisper-large-v3` (preferred — cheaper and faster) or OpenAI's `whisper-1`.\n5. **Frames + transcript are handed to Claude.** The script prints frame paths with `t=MM:SS` markers and the transcript with timestamps. Claude `Read`s each frame in parallel — JPEGs render directly as images in its context.\n6. **Claude answers grounded in what's actually on screen and in the audio.** Not \"based on the description\" or \"according to the title.\" It saw the frames. It heard the transcript. It answers the way someone who watched the video would.\n7. **Cleanup.** The script prints a working directory at the end. If you're not asking follow-ups, Claude removes it.\n\n## Frame budget — why it matters\n\nToken cost is dominated by frames. Every frame is an image; image tokens add up fast. The script's auto-fps logic exists so you don't blow your context budget on a sparse scan of a 30-minute video that would have been better answered by a focused 30-second window.\n\n| Duration | Default frame budget | What you get |\n|----------|---------------------|--------------|\n| ≤30 s | ~30 frames | Dense — basically every key moment |\n| 30 s - 1 min | ~40 frames | Still dense |\n| 1 - 3 min | ~60 frames | Comfortable |\n| 3 - 10 min | ~80 frames | Sparse but workable |\n| > 10 min | 100 frames (capped modes) | \"Sparse scan\" warning — re-run focused, or `--detail token-burner` for full uncapped coverage |\n\nWhen the user names a moment (\"around 2:30\", \"the last 30 seconds\", \"from 0:45 to 1:00\"), pass `--start` / `--end`. Focused mode gets denser per-second budgets, capped at 2 fps. Far more useful than a sparse pass over the whole thing.\n\n## Frame deduplication\n\nFrame selection — keyframes (`efficient`), scene-change detection (`balanced`/`token-burner`), or the uniform sampler it falls back to — can still surface near-identical frames: a screen recording that holds one slide for 90 seconds produces a dozen, each billed as a separate image. A dedup pass drops them before frames reach Claude. It runs by default on every frame mode (`--no-dedup` turns it off):\n\n1. One `ffmpeg` call scales each extracted JPEG to a 16×16 grayscale thumbnail. Everything after is pure-stdlib Python — no image libraries.\n2. For each frame, compute the **mean absolute difference** against the *last frame that was kept* (average per-pixel brightness change, 0–255 scale).\n3. If that difference is at or below the threshold (`2.0`), the frame is a near-duplicate and is dropped. Otherwise it's kept and becomes the new reference.\n4. The frame-budget cap applies *after* dedup, so the budget is spent on distinct frames.\n\nComparing against the last *kept* frame (not the previous one) catches slow fades that never trip a frame-to-frame threshold. The threshold is deliberately low and measures absolute brightness rather than structure, so a one-line code diff, a terminal scrolling a row, or two differently-colored flat slides all survive.\n\nThe **Frames** line reports what was collapsed, e.g. `6 selected from 14 candidates (… 8 near-duplicates dropped …)`. On always-moving footage nothing is dropped and you pay what you would have anyway.\n\n## Detail modes — measured\n\nThe `--detail` dial trades speed and token cost for visual fidelity. Numbers below are from a real run against a **49:08** YouTube video (1280×720, English auto-captions) — a long, mostly-static screen recording, the case that stresses the caps hardest. Extraction times are local CPU against a pre-downloaded copy; the one-time download was **~37 s** / 76 MB, shared by the three frame modes.\n\n| Mode | Engine | Frames | Cap | Extraction time | Temporal coverage | Est. image tokens |\n|------|--------|--------|-----|-----------------|-------------------|-------------------|\n| `transcript` | none (captions) | 0 | — | **~4.5 s** (one yt-dlp call, no download) | full (text) | 0 (≈26.6k text tokens) |\n| `efficient` | keyframe (`-skip_frame nokey`) | 50 | 50 | **~0.5 s** | 0:00 → 49:04 (full) | **~9.8k** |\n| `balanced` | scene-change | 100 | 100 | **~20.9 s** | 0:00 → 48:38 (full) | **~19.7k** |\n| `token-burner` | scene-change | 116 | uncapped | **~21.0 s** | 0:00 → 48:38 (full) | **~22.8k** |\n\n- **Image tokens** use Anthropic's `(width × height) / 750` — at the default 512px width these 720p frames are 512×288, **≈197 tokens/frame**; `--resolution 1024` roughly 4×s that. The transcript is surfaced in every captioned mode and on long videos is often the larger cost.\n- **One sampling rule across frame modes.** Each detects all candidates across the full range, then even-samples (first + last always kept) down to its cap. The modes differ only in candidate *source* (keyframes vs. scene cuts) and cap, never in how coverage is spread — so the last frame always lands at the end, not partway through.\n- **`efficient` is the speed tier** (~0.5 s) — it only reconstructs keyframes, so it's ~40× faster than the scene modes, which decode every frame to find cuts. It can also return *more* frames than `balanced` on low-motion footage (keyframes outnumber scene cuts); \"efficient\" means fast extraction, not fewer frames.\n- **`token-burner` only diverges from `balanced` past the cap.** This clip had 116 cuts, so `balanced` sampled 100 and `token-burner` kept all 116. On high-motion video with hundreds of cuts, `token-burner` keeps everything (and trips the >250-frame token warning) while `balanced` thins to 100.\n\nEnd-to-end from a cold URL, `transcript` is the cheapest mode by far; the frame modes add the shared ~37 s download on top of the extraction times above.\n\n## Install\n\n| Surface | Install |\n|---------|---------|\n| **Claude Code** | `/plugin marketplace add bradautomates/claude-video` then `/plugin install watch@claude-video` |\n| **Codex, Cursor, Copilot, Gemini CLI, +50 more** | `npx skills add bradautomates/claude-video -g` |\n| **claude.ai** (web) | [Download `watch.skill`](https://github.com/bradautomates/claude-video/releases/latest) → Settings → Capabilities → Skills → `+` |\n| **Manual / dev** | `git clone` then symlink `skills/watch` into your host's skills dir (see below) |\n\n### Claude Code\n\n```\n/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\n```\n\nUpdate later with `/plugin update watch@claude-video`.\n\n### Codex, Cursor, Copilot, Gemini CLI, and 50+ other hosts\n\nThe [Agent Skills](https://agentskills.io) CLI installs the skill into whatever agents it detects:\n\n```bash\nnpx skills add bradautomates/claude-video -g\n```\n\n`-g` installs globally for your user (`~/.codex/skills`, `~/.cursor/skills`, etc.); drop it to install into the current project instead. Useful flags:\n\n- `-a, --agent <names…>` — target specific hosts, e.g. `-a codex -a cursor`\n- `-l, --list` — list the skills in this repo without installing\n- `--copy` — copy files instead of symlinking (for filesystems without symlink support)\n\nThe CLI discovers the skill from `skills/watch/SKILL.md` and copies the whole folder — `SKILL.md` plus its `scripts/` runtime — as a self-contained unit. `SKILL.md` resolves its own scripts relative to wherever it was installed, so it works the same on every host.\n\nUpdate later with `npx skills update watch -g`.\n\n### claude.ai (web)\n\n1. [Download `watch.skill`](https://github.com/bradautomates/claude-video/releases/latest) from the latest release.\n2. Go to Settings → Capabilities → Skills.\n3. Click `+` and drop the file in.\n\nEnable \"Code execution and file creation\" under Capabilities first — the skill shells out to `ffmpeg` and `yt-dlp`, so it won't run without it.\n\n### Manual (developer)\n\nClone the repo and symlink the self-contained skill folder into your host's skills directory — the symlink keeps the install in sync with your working tree as you edit:\n\n```bash\ngit clone https://github.com/bradautomates/claude-video.git\nln -s \"$(pwd)/claude-video/skills/watch\" ~/.claude/skills/watch   # or ~/.codex/skills/watch\n```\n\nFor claude.ai, build the `.skill` bundle from source: `bash skills/watch/scripts/build-skill.sh` produces `dist/watch.skill`.\n\n## First run\n\nOn the first `/watch` call, the skill runs `scripts/setup.py --check`. If `ffmpeg` / `yt-dlp` aren't on your PATH, or no Whi",
-  "factsUpdatedAt": "2026-08-18T00:54:03.983Z",
+  "factsUpdatedAt": "2026-08-25T04:33:43.863Z",
   "aiSummary": {
     "oneLiner": "An agent skill that allows AI assistants to download, transcribe, and visually parse video content directly from a URL.",
     "whatItDoes": "Claude Video is a powerful slash-command plugin that grants AI assistants the ability to natively 'watch' and comprehend video files and YouTube links. Instead of relying on metadata or incomplete captions, it leverages tools like yt-dlp and ffmpeg to download the media, extract contextually relevant frames, and pull highly accurate timestamped transcripts. If a video lacks captions, it automatically falls back to the Whisper API for audio transcription. By combining the visual frames and text transcripts, the plugin provides the LLM with deep, multi-modal context, allowing it to accurately answer hyper-specific questions about the video's actual content.",
@@ -362,8 +367,8 @@
       "publishedAt": "2026-07-01T01:27:00Z",
       "prerelease": false,
       "body": "**Full Changelog**: https://github.com/bradautomates/claude-video/compare/v0.1.3...v0.2.0",
-      "downloads": 7834,
-      "reactions": 10
+      "downloads": 8799,
+      "reactions": 11
     },
     {
       "name": "v0.1.3",
@@ -372,7 +377,7 @@
       "publishedAt": "2026-05-08T22:42:24Z",
       "prerelease": false,
       "body": "**Full Changelog**: https://github.com/bradautomates/claude-video/compare/v0.1.2...v0.1.3",
-      "downloads": 6708,
+      "downloads": 6710,
       "reactions": 0
     },
     {
@@ -382,7 +387,7 @@
       "publishedAt": "2026-04-24T07:23:40Z",
       "prerelease": false,
       "body": "**Full Changelog**: https://github.com/bradautomates/claude-video/compare/v0.1.1...v0.1.2",
-      "downloads": 1386,
+      "downloads": 1387,
       "reactions": 4
     },
     {
@@ -402,11 +407,38 @@
       "publishedAt": "2026-04-24T04:41:50Z",
       "prerelease": false,
       "body": "**Full Changelog**: https://github.com/bradautomates/claude-video/commits/0.1.0",
-      "downloads": 7,
+      "downloads": 8,
       "reactions": 0
     }
   ],
   "recentIssues": [
+    {
+      "number": 163,
+      "title": "Frame extraction fails on ffmpeg 7+: `-vsync` was removed in favour of `-fps_mode`",
+      "url": "https://github.com/bradautomates/claude-video/issues/163",
+      "createdAt": "2026-08-21T16:26:20Z",
+      "comments": 0,
+      "labels": [],
+      "author": "dmitrykarabutov"
+    },
+    {
+      "number": 161,
+      "title": "Frame extraction fails on ffmpeg 9.0: -vsync was removed (use -fps_mode)",
+      "url": "https://github.com/bradautomates/claude-video/issues/161",
+      "createdAt": "2026-08-20T18:23:02Z",
+      "comments": 0,
+      "labels": [],
+      "author": "badwookie208"
+    },
+    {
+      "number": 156,
+      "title": "YouTube media 403 on Windows despite deno + curl_cffi present: only player_client=mweb works, but mweb alone kills subtitles",
+      "url": "https://github.com/bradautomates/claude-video/issues/156",
+      "createdAt": "2026-08-18T07:48:28Z",
+      "comments": 0,
+      "labels": [],
+      "author": "realsalestalk"
+    },
     {
       "number": 153,
       "title": "Captions are hardcoded to English (--sub-langs \"en.*\"), so non-English videos return machine-translated transcripts",
@@ -415,49 +447,9 @@
       "comments": 0,
       "labels": [],
       "author": "miguexis"
-    },
-    {
-      "number": 150,
-      "title": "UnicodeEncodeError on Windows: report printing crashes on cp1252 in focused mode",
-      "url": "https://github.com/bradautomates/claude-video/issues/150",
-      "createdAt": "2026-08-16T15:13:19Z",
-      "comments": 0,
-      "labels": [],
-      "author": "mkgaskin-ops"
-    },
-    {
-      "number": 149,
-      "title": "ffmpeg 'vsync' option removed in ffmpeg 9.x breaks frame extraction",
-      "url": "https://github.com/bradautomates/claude-video/issues/149",
-      "createdAt": "2026-08-16T13:32:46Z",
-      "comments": 0,
-      "labels": [],
-      "author": "LittlePirate58"
-    },
-    {
-      "number": 144,
-      "title": "Non-English videos: hardcoded --sub-langs \"en.*\" fetches the auto-translated track (429s, and worse transcripts when it succeeds)",
-      "url": "https://github.com/bradautomates/claude-video/issues/144",
-      "createdAt": "2026-08-14T17:11:40Z",
-      "comments": 0,
-      "labels": [],
-      "author": "seonghun8476-sudo"
-    },
-    {
-      "number": 143,
-      "title": "Frame extraction broken on ffmpeg 8+: '-vsync' was removed (use -fps_mode)",
-      "url": "https://github.com/bradautomates/claude-video/issues/143",
-      "createdAt": "2026-08-14T13:49:30Z",
-      "comments": 0,
-      "labels": [],
-      "author": "Vinyo2112"
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-08-24",
-      "commits": 0
-    },
     {
       "week": "2025-08-31",
       "commits": 0
@@ -661,6 +653,10 @@
     {
       "week": "2026-08-16",
       "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
     }
   ],
   "community": {
@@ -671,8 +667,8 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 31,
-  "openPRs": 88,
+  "openIssuesOnly": 34,
+  "openPRs": 94,
   "releaseCount": 5,
   "discussionsEnabled": false,
   "discussionCount": 0,
@@ -743,34 +739,6 @@
   },
   "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">/watch</h1></div>\n<p dir=\"auto\"><strong>Give Claude the ability to watch any video.</strong></p>\n<p dir=\"auto\">Claude Code (recommended — auto-updates via marketplace):</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\"><pre class=\"notranslate\"><code>/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\n</code></pre></div>\n<p dir=\"auto\">Codex, Cursor, Copilot, Gemini CLI, or any of 50+ <a href=\"https://agentskills.io\" rel=\"nofollow\">Agent Skills</a> hosts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx skills add bradautomates/claude-video -g\"><pre>npx skills add bradautomates/claude-video -g</pre></div>\n<p dir=\"auto\">(<code>-g</code> installs globally for your user, available across all projects. Drop it to scope per-project.)</p>\n<p dir=\"auto\">More install options (claude.ai web, manual) in the <a href=\"#install\">Install</a> section below.</p>\n<p dir=\"auto\">Zero config to start — <code>yt-dlp</code> and <code>ffmpeg</code> install on first run via <code>brew</code> on macOS (Linux/Windows print exact commands). Captions cover most public videos for free. Whisper API key is only needed when a video has no captions.</p>\n<hr>\n<p dir=\"auto\">Claude can read a webpage, run a script, browse a repo. What it can't do, out of the box, is <em>watch a video</em>. You paste a YouTube link and it has to either guess from the title or pull a transcript that's missing 90% of what's on screen.</p>\n<p dir=\"auto\">With Claude Video <code>/watch</code> you can paste a URL or a local path, ask a question, and Claude fetches captions first, downloads only what it needs, extracts frames (scene-aware, or fast keyframes at <code>efficient</code> detail), pulls a timestamped transcript (free captions when available, Whisper API as fallback), and <code>Read</code>s every frame as an image. By the time it answers, it has <em>seen</em> the video and <em>heard</em> the audio.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?\"><pre class=\"notranslate\"><code>/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What people actually use it for</h2></div>\n<p dir=\"auto\"><strong>Analyze someone else's content.</strong> <code>/watch https://youtu.be/&lt;viral-video&gt; what hook did they open with?</code> Claude looks at the first frames, reads the opening transcript, breaks down the structure. Same for ad creative, competitor launches, podcast intros, anything where the <em>how</em> matters as much as the <em>what</em>.</p>\n<p dir=\"auto\"><strong>Diagnose a bug from a video.</strong> Someone sends you a screen recording of something broken. <code>/watch bug-repro.mov what's going wrong?</code> Claude watches the recording, finds the frame where the issue appears, describes what's on screen, often catches the cause without you ever opening the file.</p>\n<p dir=\"auto\"><strong>Summarize a video.</strong> <code>/watch https://youtu.be/&lt;long-thing&gt; summarize this</code> does the obvious thing — pulls the structure, the key moments, what was actually said and shown. Faster than watching at 2x.</p>\n<p dir=\"auto\"><strong>Cut the hype out of an update video.</strong> <code>/watch https://youtu.be/&lt;launch-video&gt; what's actually new — skip the hype</code> Strip a \"game-changer\" feature drop down to the few things that matter, so you get the substance without ten minutes of intro and overselling.</p>\n<p dir=\"auto\"><strong>Turn a playlist into notes.</strong> <code>/watch https://youtu.be/&lt;video&gt; summarize this to a note</code> Run it across a series and file a per-video summary, so a channel or course becomes a searchable set of notes instead of hours you have to sit through.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<ol dir=\"auto\">\n<li><strong>You paste a video and a question.</strong> URL (anything yt-dlp supports — YouTube, Loom, TikTok, X, Instagram, plus a few hundred more) or a local path (<code>.mp4</code>, <code>.mov</code>, <code>.mkv</code>, <code>.webm</code>).</li>\n<li><strong><code>yt-dlp</code> checks captions first.</strong> At <code>transcript</code> detail, captioned URLs return without downloading video. Otherwise, or when Whisper needs audio, it downloads only what the run needs.</li>\n<li><strong><code>ffmpeg</code> extracts frames at the chosen detail.</strong> <code>efficient</code> decodes keyframes only (near-instant); <code>balanced</code>/<code>token-burner</code> prefer scene-change frames and fall back to the duration-aware uniform sampler when they under-produce. JPEGs are 512px wide by default and clamped to 1998px tall for Claude Read compatibility.</li>\n<li><strong>The transcript comes from one of two places.</strong> First try: <code>yt-dlp</code> pulls native captions (manual or auto-generated) from the source. Free, instant, accurate-ish. Fallback: extract a mono 16 kHz 64 kbps mp3 audio clip (~480 kB/min) and ship it to Whisper — Groq's <code>whisper-large-v3</code> (preferred — cheaper and faster) or OpenAI's <code>whisper-1</code>.</li>\n<li><strong>Frames + transcript are handed to Claude.</strong> The script prints frame paths with <code>t=MM:SS</code> markers and the transcript with timestamps. Claude <code>Read</code>s each frame in parallel — JPEGs render directly as images in its context.</li>\n<li><strong>Claude answers grounded in what's actually on screen and in the audio.</strong> Not \"based on the description\" or \"according to the title.\" It saw the frames. It heard the transcript. It answers the way someone who watched the video would.</li>\n<li><strong>Cleanup.</strong> The script prints a working directory at the end. If you're not asking follow-ups, Claude removes it.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Frame budget — why it matters</h2></div>\n<p dir=\"auto\">Token cost is dominated by frames. Every frame is an image; image tokens add up fast. The script's auto-fps logic exists so you don't blow your context budget on a sparse scan of a 30-minute video that would have been better answered by a focused 30-second window.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Duration</th>\n<th>Default frame budget</th>\n<th>What you get</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>≤30 s</td>\n<td>~30 frames</td>\n<td>Dense — basically every key moment</td>\n</tr>\n<tr>\n<td>30 s - 1 min</td>\n<td>~40 frames</td>\n<td>Still dense</td>\n</tr>\n<tr>\n<td>1 - 3 min</td>\n<td>~60 frames</td>\n<td>Comfortable</td>\n</tr>\n<tr>\n<td>3 - 10 min</td>\n<td>~80 frames</td>\n<td>Sparse but workable</td>\n</tr>\n<tr>\n<td>&gt; 10 min</td>\n<td>100 frames (capped modes)</td>\n<td>\"Sparse scan\" warning — re-run focused, or <code>--detail token-burner</code> for full uncapped coverage</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">When the user names a moment (\"around 2:30\", \"the last 30 seconds\", \"from 0:45 to 1:00\"), pass <code>--start</code> / <code>--end</code>. Focused mode gets denser per-second budgets, capped at 2 fps. Far more useful than a sparse pass over the whole thing.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Frame deduplication</h2></div>\n<p dir=\"auto\">Frame selection — keyframes (<code>efficient</code>), scene-change detection (<code>balanced</code>/<code>token-burner</code>), or the uniform sampler it falls back to — can still surface near-identical frames: a screen recording that holds one slide for 90 seconds produces a dozen, each billed as a separate image. A dedup pass drops them before frames reach Claude. It runs by default on every frame mode (<code>--no-dedup</code> turns it off):</p>\n<ol dir=\"auto\">\n<li>One <code>ffmpeg</code> call scales each extracted JPEG to a 16×16 grayscale thumbnail. Everything after is pure-stdlib Python — no image libraries.</li>\n<li>For each frame, compute the <strong>mean absolute difference</strong> against the <em>last frame that was kept</em> (average per-pixel brightness change, 0–255 scale).</li>\n<li>If that difference is at or below the threshold (<code>2.0</code>), the frame is a near-duplicate and is dropped. Otherwise it's kept and becomes the new reference.</li>\n<li>The frame-budget cap applies <em>after</em> dedup, so the budget is spent on distinct frames.</li>\n</ol>\n<p dir=\"auto\">Comparing against the last <em>kept</em> frame (not the previous one) catches slow fades that never trip a frame-to-frame threshold. The threshold is deliberately low and measures absolute brightness rather than structure, so a one-line code diff, a terminal scrolling a row, or two differently-colored flat slides all survive.</p>\n<p dir=\"auto\">The <strong>Frames</strong> line reports what was collapsed, e.g. <code>6 selected from 14 candidates (… 8 near-duplicates dropped …)</code>. On always-moving footage nothing is dropped and you pay what you would have anyway.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Detail modes — measured</h2></div>\n<p dir=\"auto\">The <code>--detail</code> dial trades speed and token cost for visual fidelity. Numbers below are from a real run against a <strong>49:08</strong> YouTube video (1280×720, English auto-captions) — a long, mostly-static screen recording, the case that stresses the caps hardest. Extraction times are local CPU against a pre-downloaded copy; the one-time download was <strong>~37 s</strong> / 76 MB, shared by the three frame modes.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Mode</th>\n<th>Engine</th>\n<th>Frames</th>\n<th>Cap</th>\n<th>Extraction time</th>\n<th>Temporal coverage</th>\n<th>Est. image tokens</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>transcript</code></td>\n<td>none (captions)</td>\n<td>0</td>\n<td>—</td>\n<td><strong>~4.5 s</strong> (one yt-dlp call, no download)</td>\n<td>full (text)</td>\n<td>0 (≈26.6k text tokens)</td>\n</tr>\n<tr>\n<td><code>efficient</code></td>\n<td>keyframe (<code>-skip_frame nokey</code>)</td>\n<td>50</td>\n<td>50</td>\n<td><strong>~0.5 s</strong></td>\n<td>0:00 → 49:04 (full)</td>\n<td><strong>~9.8k</strong></td>\n</tr>\n<tr>\n<td><code>balanced</code></td>\n<td>scene-change</td>\n<td>100</td>\n<td>100</td>\n<td><strong>~20.9 s</strong></td>\n<td>0:00 → 48:38 (full)</td>\n<td><strong>~19.7k</strong></td>\n</tr>\n<tr>\n<td><code>token-burner</code></td>\n<td>scene-change</td>\n<td>116</td>\n<td>uncapped</td>\n<td><strong>~21.0 s</strong></td>\n<td>0:00 → 48:38 (full)</td>\n<td><strong>~22.8k</strong></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<ul dir=\"auto\">\n<li><strong>Image tokens</strong> use Anthropic's <code>(width × height) / 750</code> — at the default 512px width these 720p frames are 512×288, <strong>≈197 tokens/frame</strong>; <code>--resolution 1024</code> roughly 4×s that. The transcript is surfaced in every captioned mode and on long videos is often the larger cost.</li>\n<li><strong>One sampling rule across frame modes.</strong> Each detects all candidates across the full range, then even-samples (first + last always kept) down to its cap. The modes differ only in candidate <em>source</em> (keyframes vs. scene cuts) and cap, never in how coverage is spread — so the last frame always lands at the end, not partway through.</li>\n<li><strong><code>efficient</code> is the speed tier</strong> (~0.5 s) — it only reconstructs keyframes, so it's ~40× faster than the scene modes, which decode every frame to find cuts. It can also return <em>more</em> frames than <code>balanced</code> on low-motion footage (keyframes outnumber scene cuts); \"efficient\" means fast extraction, not fewer frames.</li>\n<li><strong><code>token-burner</code> only diverges from <code>balanced</code> past the cap.</strong> This clip had 116 cuts, so <code>balanced</code> sampled 100 and <code>token-burner</code> kept all 116. On high-motion video with hundreds of cuts, <code>token-burner</code> keeps everything (and trips the &gt;250-frame token warning) while <code>balanced</code> thins to 100.</li>\n</ul>\n<p dir=\"auto\">End-to-end from a cold URL, <code>transcript</code> is the cheapest mode by far; the frame modes add the shared ~37 s download on top of the extraction times above.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Surface</th>\n<th>Install</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Claude Code</strong></td>\n<td><code>/plugin marketplace add bradautomates/claude-video</code> then <code>/plugin install watch@claude-video</code></td>\n</tr>\n<tr>\n<td><strong>Codex, Cursor, Copilot, Gemini CLI, +50 more</strong></td>\n<td><code>npx skills add bradautomates/claude-video -g</code></td>\n</tr>\n<tr>\n<td><strong>claude.ai</strong> (web)</td>\n<td><a href=\"https://github.com/bradautomates/claude-video/releases/latest\">Download <code>watch.skill</code></a> → Settings → Capabilities → Skills → <code>+</code></td>\n</tr>\n<tr>\n<td><strong>Manual / dev</strong></td>\n<td><code>git clone</code> then symlink <code>skills/watch</code> into your host's skills dir (see below)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Claude Code</h3></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\"><pre class=\"notranslate\"><code>/plugin marketplace add bradautomates/claude-video\n/plugin install watch@claude-video\n</code></pre></div>\n<p dir=\"auto\">Update later with <code>/plugin update watch@claude-video</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Codex, Cursor, Copilot, Gemini CLI, and 50+ other hosts</h3></div>\n<p dir=\"auto\">The <a href=\"https://agentskills.io\" rel=\"nofollow\">Agent Skills</a> CLI installs the skill into whatever agents it detects:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx skills add bradautomates/claude-video -g\"><pre>npx skills add bradautomates/claude-video -g</pre></div>\n<p dir=\"auto\"><code>-g</code> installs globally for your user (<code>~/.codex/skills</code>, <code>~/.cursor/skills</code>, etc.); drop it to install into the current project instead. Useful flags:</p>\n<ul dir=\"auto\">\n<li><code>-a, --agent &lt;names…&gt;</code> — target specific hosts, e.g. <code>-a codex -a cursor</code></li>\n<li><code>-l, --list</code> — list the skills in this repo without installing</li>\n<li><code>--copy</code> — copy files instead of symlinking (for filesystems without symlink support)</li>\n</ul>\n<p dir=\"auto\">The CLI discovers the skill from <code>skills/watch/SKILL.md</code> and copies the whole folder — <code>SKILL.md</code> plus its <code>scripts/</code> runtime — as a self-contained unit. <code>SKILL.md</code> resolves its own scripts relative to wherever it was installed, so it works the same on every host.</p>\n<p dir=\"auto\">Update later with <code>npx skills update watch -g</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">claude.ai (web)</h3></div>\n<ol dir=\"auto\">\n<li><a href=\"https://github.com/bradautomates/claude-video/releases/latest\">Download <code>watch.skill</code></a> from the latest release.</li>\n<li>Go to Settings → Capabilities → Skills.</li>\n<li>Click <code>+</code> and drop the file in.</li>\n</ol>\n<p dir=\"auto\">Enable \"Code execution and file creation\" under Capabilities first — the skill shells out to <code>ffmpeg</code> and <code>yt-dlp</code>, so it won't run without it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Manual (developer)</h3></div>\n<p dir=\"auto\">Clone the repo and symlink the self-contained skill folder into your host's skills directory — the symlink keeps the install in sync with your working tree as you edit:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/bradautomates/claude-video.git\nln -s &quot;$(pwd)/claude-video/skills/watch&quot; ~/.claude/skills/watch   # or ~/.codex/skills/watch\"><pre>git clone https://github.com/bradautomates/claude-video.git\nln -s <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-s\"><span class=\"pl-pds\">$(</span>pwd<span class=\"pl-pds\">)</span></span>/claude-video/skills/watch<span class=\"pl-pds\">\"</span></span> <span class=\"pl-k\">~</span>/.claude/skills/watch   <span class=\"pl-c\"><span class=\"pl-c\">#</span> or ~/.codex/skills/watch</span></pre></div>\n<p dir=\"auto\">For claude.ai, build the <code>.skill</code> bundle from source: <code>bash skills/watch/scripts/build-skill.sh</code> produces <code>dist/watch.skill</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">First run</h2></div>\n<p dir=\"auto\">On the first <code>/watch</code> call, the skill runs <code>scripts/setup.py --check</code>. If <code>ffmpeg</code> / <code>yt-dlp</code> aren't on your PATH, or no Whisper API key is set, it walks you through fixing it:</p>\n<ul dir=\"auto\">\n<li><strong>macOS</strong> — auto-runs <code>brew install ffmpeg yt-dlp</code>.</li>\n<li><strong>Linux</strong> — prints the exact <code>apt</code> / <code>dnf</code> / <code>pipx</code> commands.</li>\n<li><strong>Windows</strong> — prints the <code>winget</code> / <code>pip</code> commands.</li>\n<li><strong>API key</strong> — scaffolds <code>~/.config/watch/.env</code> (mode <code>0600</code>) with commented placeholders for <code>GROQ_API_KEY</code> (preferred) and <code>OPENAI_API_KEY</code>.</li>\n</ul>\n<p dir=\"auto\">After setup, preflight is silent and <code>/watch</code> just works. The check is a sub-100ms lookup, so it doesn't slow you down on subsequent runs.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Bring your own keys</h2></div>\n<p dir=\"auto\">Captions cover the majority of public videos for free. The Whisper fallback only kicks in when a video genuinely has no caption track — typically local files, TikToks, some Vimeos, and the occasional caption-less YouTube upload.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Capability</th>\n<th>What you need</th>\n<th>Cost</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Download + native captions</td>\n<td><code>yt-dlp</code> + <code>ffmpeg</code></td>\n<td>Free</td>\n</tr>\n<tr>\n<td>Whisper fallback (preferred)</td>\n<td><a href=\"https://console.groq.com/keys\" rel=\"nofollow\">Groq API key</a> — <code>whisper-large-v3</code></td>\n<td>Cheap, fast</td>\n</tr>\n<tr>\n<td>Whisper fallback (alt)</td>\n<td><a href=\"https://platform.openai.com/api-keys\" rel=\"nofollow\">OpenAI API key</a> — <code>whisper-1</code></td>\n<td>Standard pricing</td>\n</tr>\n<tr>\n<td>Disable Whisper entirely</td>\n<td><code>--no-whisper</code></td>\n<td>Free, frames-only when no captions</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?\n/watch https://www.tiktok.com/@user/video/123 summarize this\n/watch ~/Movies/screen-recording.mp4 when does the UI break?\n/watch https://vimeo.com/123 what tools does she mention?\"><pre class=\"notranslate\"><code>/watch https://youtu.be/dQw4w9WgXcQ what happens at the 30 second mark?\n/watch https://www.tiktok.com/@user/video/123 summarize this\n/watch ~/Movies/screen-recording.mp4 when does the UI break?\n/watch https://vimeo.com/123 what tools does she mention?\n</code></pre></div>\n<p dir=\"auto\">Focused on a specific section — denser frame budget, lower token cost:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"/watch https://youtu.be/abc --start 2:15 --end 2:45\n/watch video.mp4 --start 50 --end 60\n/watch &quot;$URL&quot; --start 1:12:00            # from 1h12m to end\"><pre class=\"notranslate\"><code>/watch https://youtu.be/abc --start 2:15 --end 2:45\n/watch video.mp4 --start 50 --end 60\n/watch \"$URL\" --start 1:12:00            # from 1h12m to end\n</code></pre></div>\n<p dir=\"auto\">Other knobs (passed to <code>scripts/watch.py</code>):</p>\n<ul dir=\"auto\">\n<li><code>--detail transcript|efficient|balanced|token-burner</code> — fidelity/speed dial. <code>transcript</code> skips frames (transcript only); <code>efficient</code> uses fast keyframes (cap 50); <code>balanced</code> uses scene-aware frames (cap 100); <code>token-burner</code> is scene-aware and uncapped.</li>\n<li><code>--timestamps T1,T2,…</code> — grab a frame at each absolute timestamp (<code>SS</code>/<code>MM:SS</code>/<code>HH:MM:SS</code>). Claude reads the transcript first, then targets the moments the presenter flags (\"look here\", \"as you can see\"). Added on top of the detail frames (reserved against the cap); out-of-window cues are dropped in focus mode; with <code>--detail transcript</code> these become the only frames.</li>\n<li><code>--max-frames N</code> — lower the frame cap for a tighter token budget.</li>\n<li><code>--resolution W</code> — bump frame width to 1024 px when Claude needs to read on-screen text (slides, terminals, code).</li>\n<li><code>--fps F</code> — override the auto-fps calculation (still capped at 2 fps).</li>\n<li><code>--whisper groq|openai</code> — force a specific Whisper backend.</li>\n<li><code>--no-whisper</code> — disable transcription entirely; frames only.</li>\n<li><code>--no-dedup</code> — keep near-duplicate frames. By default a frame-delta pass drops frames that are visually near-identical to the one before them (held slides, static screen recordings, paused video), so the frame budget is spent on distinct content; this flag turns that off.</li>\n<li><code>--out-dir DIR</code> — keep working files somewhere specific (default: auto-generated tmp dir).</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Limits</h2></div>\n<ul dir=\"auto\">\n<li><strong>Long-video accuracy depends on the detail mode.</strong> On the capped modes (<code>efficient</code>, default <code>balanced</code>) coverage thins out past ~10 minutes — the frame cap spreads across the whole clip, so the script prints a \"sparse scan\" warning and you're better off re-running focused with <code>--start</code>/<code>--end</code>. <code>token-burner</code> lifts the cap and keeps <em>every</em> scene-change frame across the full video, so it stays complete on longer clips at the cost of more image tokens. The 10-minute mark is guidance for the capped modes, not a hard ceiling.</li>\n<li><strong>Detail is one dial.</strong> Defaults are balanced: scene-aware frames, 2 fps max, 100-frame cap. Use <code>--detail efficient</code> for a fast 50-frame keyframe pass, or <code>--detail token-burner</code> for uncapped scene candidates. Set <code>WATCH_DETAIL</code> in <code>~/.config/watch/.env</code> to change the default.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Structure</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\".\n├── skills/watch/                 # self-contained skill — copied as a unit by every installer\n│   ├── SKILL.md                  # skill contract — the source of truth across all surfaces\n│   └── scripts/\n│       ├── watch.py              # entry point — orchestrates download → frames → transcript\n│       ├── download.py           # yt-dlp wrapper\n│       ├── frames.py             # ffmpeg frame extraction + auto-fps logic\n│       ├── transcribe.py         # VTT parsing + dedupe + Whisper orchestration\n│       ├── whisper.py            # Groq / OpenAI clients (pure stdlib)\n│       ├── config.py             # shared config (~/.config/watch/.env)\n│       ├── setup.py              # preflight + installer\n│       └── build-skill.sh        # build dist/watch.skill for claude.ai upload (dev-only)\n├── hooks/                        # SessionStart status hook (Claude Code only)\n├── .claude-plugin/               # plugin.json + marketplace.json (Claude Code)\n├── .codex-plugin/                # plugin.json — Codex/agents manifest (&quot;skills&quot;: &quot;./skills/&quot;)\n├── .agents/plugins/              # marketplace.json — Agent Skills marketplace listing\n├── AGENTS.md → CLAUDE.md         # generic-agent entry point\n├── tests/                        # pytest suite (ffmpeg-synthesized clips, no network)\n└── .github/workflows/            # release.yml — auto-builds watch.skill on tag push\"><pre class=\"notranslate\"><code>.\n├── skills/watch/                 # self-contained skill — copied as a unit by every installer\n│   ├── SKILL.md                  # skill contract — the source of truth across all surfaces\n│   └── scripts/\n│       ├── watch.py              # entry point — orchestrates download → frames → transcript\n│       ├── download.py           # yt-dlp wrapper\n│       ├── frames.py             # ffmpeg frame extraction + auto-fps logic\n│       ├── transcribe.py         # VTT parsing + dedupe + Whisper orchestration\n│       ├── whisper.py            # Groq / OpenAI clients (pure stdlib)\n│       ├── config.py             # shared config (~/.config/watch/.env)\n│       ├── setup.py              # preflight + installer\n│       └── build-skill.sh        # build dist/watch.skill for claude.ai upload (dev-only)\n├── hooks/                        # SessionStart status hook (Claude Code only)\n├── .claude-plugin/               # plugin.json + marketplace.json (Claude Code)\n├── .codex-plugin/                # plugin.json — Codex/agents manifest (\"skills\": \"./skills/\")\n├── .agents/plugins/              # marketplace.json — Agent Skills marketplace listing\n├── AGENTS.md → CLAUDE.md         # generic-agent entry point\n├── tests/                        # pytest suite (ffmpeg-synthesized clips, no network)\n└── .github/workflows/            # release.yml — auto-builds watch.skill on tag push\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Develop</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Run the test suite (stdlib + pytest; ffmpeg required for frame tests):\npython3 -m pytest -q\n\n# Build the claude.ai upload bundle:\nbash skills/watch/scripts/build-skill.sh      # → dist/watch.skill\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Run the test suite (stdlib + pytest; ffmpeg required for frame tests):</span>\npython3 -m pytest -q\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build the claude.ai upload bundle:</span>\nbash skills/watch/scripts/build-skill.sh      <span class=\"pl-c\"><span class=\"pl-c\">#</span> → dist/watch.skill</span></pre></div>\n<p dir=\"auto\">Releasing: tag <code>vX.Y.Z</code>, push the tag. The workflow builds <code>dist/watch.skill</code> and attaches it to the GitHub release. Keep the version in sync across <code>skills/watch/SKILL.md</code>, <code>.claude-plugin/plugin.json</code>, and <code>.codex-plugin/plugin.json</code>.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/bradautomates/claude-video/blob/main/CHANGELOG.md\">CHANGELOG.md</a> for version history.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Open source</h2></div>\n<p dir=\"auto\">MIT license.</p>\n<p dir=\"auto\">Built on <code>yt-dlp</code>, <code>ffmpeg</code>, and Claude's multimodal <code>Read</code> tool. Whisper transcription via <a href=\"https://groq.com\" rel=\"nofollow\">Groq</a> or <a href=\"https://openai.com\" rel=\"nofollow\">OpenAI</a>.</p>\n<p dir=\"auto\">Built by Brad Bonanno — I make content about building with AI on <a href=\"https://www.youtube.com/@bradbonanno\" rel=\"nofollow\">YouTube (@bradbonanno)</a>, and build AI operating systems for businesses at <a href=\"https://www.solarisautomation.io/\" rel=\"nofollow\">Solaris Automation</a>. If <code>/watch</code> saves you from scrubbing through a video, come say hi on the channel.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Star History</h2></div>\n<a href=\"https://www.star-history.com/?repos=bradautomates%2Fclaude-video&amp;type=date&amp;legend=top-left\" rel=\"nofollow\">\n <themed-picture data-catalyst-inline=\"true\"><picture>\n   <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://camo.githubusercontent.com/8760be4ebc2f1881eacee6afdceb19f726fdfbce9b311f2294a361c81786802e/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f63686172743f7265706f733d627261646175746f6d617465732f636c617564652d766964656f26747970653d64617465267468656d653d6461726b266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/chart?repos=bradautomates/claude-video&amp;type=date&amp;theme=dark&amp;legend=top-left\">\n   <source media=\"(prefers-color-scheme: light)\" srcset=\"https://camo.githubusercontent.com/ad2cfe6ae329f6a2bddbeaad80d3af0b62295fe7af38d6cd3750cec402b18698/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f63686172743f7265706f733d627261646175746f6d617465732f636c617564652d766964656f26747970653d64617465266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/chart?repos=bradautomates/claude-video&amp;type=date&amp;legend=top-left\">\n   <img alt=\"Star History Chart\" src=\"https://camo.githubusercontent.com/ad2cfe6ae329f6a2bddbeaad80d3af0b62295fe7af38d6cd3750cec402b18698/68747470733a2f2f6170692e737461722d686973746f72792e636f6d2f63686172743f7265706f733d627261646175746f6d617465732f636c617564652d766964656f26747970653d64617465266c6567656e643d746f702d6c656674\" data-canonical-src=\"https://api.star-history.com/chart?repos=bradautomates/claude-video&amp;type=date&amp;legend=top-left\">\n </picture></themed-picture>\n</a>\n<hr>\n<p dir=\"auto\"><a href=\"https://github.com/bradautomates/claude-video\">github.com/bradautomates/claude-video</a> · <a href=\"https://www.youtube.com/@bradbonanno\" rel=\"nofollow\">@bradbonanno</a> · <a href=\"https://www.solarisautomation.io/\" rel=\"nofollow\">Solaris Automation</a> · <a href=\"https://github.com/bradautomates/claude-video/blob/main/LICENSE\">LICENSE</a></p>\n</article></div>",
   "contributionDays": [
-    {
-      "date": "2025-08-24",
-      "count": 0
-    },
-    {
-      "date": "2025-08-25",
-      "count": 0
-    },
-    {
-      "date": "2025-08-26",
-      "count": 0
-    },
-    {
-      "date": "2025-08-27",
-      "count": 0
-    },
-    {
-      "date": "2025-08-28",
-      "count": 0
-    },
-    {
-      "date": "2025-08-29",
-      "count": 0
-    },
-    {
-      "date": "2025-08-30",
-      "count": 0
-    },
     {
       "date": "2025-08-31",
       "count": 0
@@ -2198,6 +2166,34 @@
     {
       "date": "2026-08-22",
       "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
     }
   ],
   "punchCard": [
@@ -3132,6 +3128,11 @@
       "week": "2026-08-16",
       "additions": 0,
       "deletions": 0
+    },
+    {
+      "week": "2026-08-23",
+      "additions": 0,
+      "deletions": 0
     }
   ],
   "participation": {
@@ -3223,75 +3224,75 @@
   ],
   "recentPulls": [
     {
-      "number": 154,
-      "title": "docs(skills): make watch description state when to invoke",
-      "url": "https://github.com/bradautomates/claude-video/pull/154",
+      "number": 166,
+      "title": "Fix frame extraction on ffmpeg 9.0 (-vsync removed)",
+      "url": "https://github.com/bradautomates/claude-video/pull/166",
       "state": "open",
-      "updatedAt": "2026-08-17T22:58:50Z",
-      "author": "thomaswillner",
+      "updatedAt": "2026-08-24T11:45:19Z",
+      "author": "vakogogu-coder",
       "draft": false
     },
     {
-      "number": 152,
-      "title": "feat: add Atlas Cloud ASR transcription backend",
-      "url": "https://github.com/bradautomates/claude-video/pull/152",
-      "state": "open",
-      "updatedAt": "2026-08-17T12:33:34Z",
-      "author": "binyangzhu000-sudo",
-      "draft": false
-    },
-    {
-      "number": 151,
-      "title": "transcribe: dedupe YouTube rolling-caption cues at parse time",
-      "url": "https://github.com/bradautomates/claude-video/pull/151",
-      "state": "open",
-      "updatedAt": "2026-08-16T17:36:08Z",
-      "author": "waxandwires",
-      "draft": false
-    },
-    {
-      "number": 148,
-      "title": "Fix frame extraction on ffmpeg 9 (-vsync removed)",
-      "url": "https://github.com/bradautomates/claude-video/pull/148",
-      "state": "open",
-      "updatedAt": "2026-08-16T05:15:36Z",
-      "author": "utkarshbindal-wq",
-      "draft": false
-    },
-    {
-      "number": 147,
-      "title": "Use a sidecar .vtt as the transcript for local video files",
-      "url": "https://github.com/bradautomates/claude-video/pull/147",
-      "state": "open",
-      "updatedAt": "2026-08-16T05:08:17Z",
-      "author": "JMAL1988",
-      "draft": false
-    },
-    {
-      "number": 146,
-      "title": "Fix FFmpeg compatibility, Windows Unicode handling, and caption selection",
-      "url": "https://github.com/bradautomates/claude-video/pull/146",
-      "state": "open",
-      "updatedAt": "2026-08-16T03:16:28Z",
-      "author": "dungartoriaaa",
-      "draft": false
-    },
-    {
-      "number": 145,
-      "title": "Add Gemini transcription backend and structural analysis mode",
-      "url": "https://github.com/bradautomates/claude-video/pull/145",
+      "number": 165,
+      "title": "fix: use modern ffmpeg frame-rate option",
+      "url": "https://github.com/bradautomates/claude-video/pull/165",
       "state": "closed",
-      "updatedAt": "2026-08-16T02:35:22Z",
-      "author": "MaahesAcademy999",
+      "updatedAt": "2026-08-24T04:59:04Z",
+      "author": "Beauwilliams32",
       "draft": false
     },
     {
-      "number": 69,
-      "title": "Retry yt-dlp when a transient 403 produces no video file",
-      "url": "https://github.com/bradautomates/claude-video/pull/69",
+      "number": 164,
+      "title": "Fix: non-English videos return no captions at all",
+      "url": "https://github.com/bradautomates/claude-video/pull/164",
+      "state": "open",
+      "updatedAt": "2026-08-22T22:04:16Z",
+      "author": "djhammer20k",
+      "draft": false
+    },
+    {
+      "number": 162,
+      "title": "Fix frame extraction on ffmpeg 8+ where -vsync was removed",
+      "url": "https://github.com/bradautomates/claude-video/pull/162",
+      "state": "open",
+      "updatedAt": "2026-08-21T05:26:04Z",
+      "author": "dustymurph",
+      "draft": false
+    },
+    {
+      "number": 160,
+      "title": "Security/w007 w011 containment",
+      "url": "https://github.com/bradautomates/claude-video/pull/160",
+      "state": "open",
+      "updatedAt": "2026-08-20T14:31:32Z",
+      "author": "donlapidos",
+      "draft": false
+    },
+    {
+      "number": 155,
+      "title": "Fix ffmpeg 9.0 crash and Windows non-UTF-8 locale crash",
+      "url": "https://github.com/bradautomates/claude-video/pull/155",
       "state": "closed",
-      "updatedAt": "2026-08-14T21:56:01Z",
-      "author": "CoronovirusG10",
+      "updatedAt": "2026-08-20T12:27:47Z",
+      "author": "SpaceWJK",
+      "draft": false
+    },
+    {
+      "number": 159,
+      "title": "Fix Windows: UTF-8 stdio, platform-correct install and interpreter hints",
+      "url": "https://github.com/bradautomates/claude-video/pull/159",
+      "state": "open",
+      "updatedAt": "2026-08-19T10:40:37Z",
+      "author": "khcho98-maker",
+      "draft": false
+    },
+    {
+      "number": 158,
+      "title": "Fix broken star history chart",
+      "url": "https://github.com/bradautomates/claude-video/pull/158",
+      "state": "open",
+      "updatedAt": "2026-08-19T10:33:47Z",
+      "author": "OctoBored",
       "draft": false
     }
   ],
