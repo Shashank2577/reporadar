@@ -1,0 +1,3062 @@
+{
+  "id": "tailscale/tailcat",
+  "snapshots": [
+    {
+      "date": "2026-08-28",
+      "stars": 2526,
+      "forks": 67
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-08-28",
+      "period": "daily",
+      "rank": 8,
+      "starsGained": 986
+    }
+  ],
+  "owner": "tailscale",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/48932923?v=4",
+  "ownerType": "Organization",
+  "name": "tailcat",
+  "description": "like netcat, but over Tailscale's data plane, without Tailscale's control plane",
+  "url": "https://github.com/tailscale/tailcat",
+  "homepage": "https://tailscale.com/tailcat",
+  "license": "BSD-3-Clause",
+  "language": "Go",
+  "topics": [],
+  "stars": 2526,
+  "forks": 67,
+  "watchers": 12,
+  "openIssues": 11,
+  "createdAt": "2024-10-29T17:21:12Z",
+  "pushedAt": "2026-08-27T01:41:43Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-08-28T18:43:57.876Z",
+  "languages": {
+    "Go": 178829,
+    "JavaScript": 11736,
+    "HTML": 2845,
+    "Nix": 1035
+  },
+  "commitCount": 10396,
+  "releases": [],
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\">\n</p>\n\n<p align=\"center\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n\n# Tailcat\n\nTailcat is a remix of Tailscale open source pieces to act like\n[netcat](https://en.wikipedia.org/wiki/Netcat), but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (`magicsock`,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all `tailcat` connection metadata is exchanged out of\nband, however you want.\n\nThe `tailcat` CLI (in `cmd/tailcat`) is built on the `tailcat` Go library\n(importable as [`github.com/tailscale/tailcat`](https://pkg.go.dev/github.com/tailscale/tailcat)).\n\nWhether you use `tailcat` as a CLI tool or library, one side runs a `tailcat`\nserver (listener) and gets back a short connection token. The other side passes\nthat token to `tailcat`'s client side to connect. All traffic between the two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server ([see below](#bring-your-own-derp-relay)), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).\n\nYou don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.\n\nAnd it's all open source.\n\nYou can use our free rate-limited DERP relays (the default DERP map is\nhttps://tailcat.dev/derpmap.json) or you can [run your own](https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp).\n\nThere's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at https://tailscale.github.io/tailcat/ that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport ([#4](https://github.com/tailscale/tailcat/issues/4)).\n\n## Install\n\n```sh\n$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\n```\n\nOr with Nix flakes, run it directly or install it:\n\n```sh\n$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\n```\n\n## Usage\n\n### Pipe stdin/stdout between two machines\n\nServer starts, printing out its ephemeral address:\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\n```\n\nAnd then the client can:\n\n```sh\n$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \n```\n\nThen the server unblocks:\n\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\n```\n\n### Expose local ports through the tunnel\n\nOr you can serve a local TCP port, forwarded to localhost:\n\n```sh\n$ tailcat --serve=8080,8443 # or --serve=all\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nAnd then the client:\n\n```sh\n$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\n```\n\n### Auth-free SSH server\n\nOn Linux and macOS, you can run an SSH server too with no auth. (If you want auth, you can just `tailcat --serve=22` and proxy to your system SSH server)\n\n```sh\n$ tailcat --serve=no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nAnd on the client side:\n\n```sh\n$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\n```\n\n### Misc commands \n\nPing to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. `--until-direct` keeps pinging (up to\n`--timeout`, default 10s) until a direct path works, exiting non-zero\nif one doesn't:\n\n```sh\n$ tailcat ping --until-direct <token>\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\n```\n\nRun a command through a SOCKS5 proxy routed over the tunnel:\n\n```sh\n$ tailcat socks <token> curl http://server.tailcat:8081/\n```\n\nTokens also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the token argument is optional. (Tokens are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)\n\n```sh\n$ tailcat socks curl http://<token>:8081/\n```\n\nAct as an exit node so the client can reach the server's network:\n\n```sh\n$ tailcat --serve=exit-node\n```\n\nParse a connection token and print its contents (the server's WireGuard\npublic key and DERP info) as JSON, without connecting to anything:\n\n```sh\n$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    \"ServerPublic\": \"nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34\",\n    \"RegionID\": 302\n}\n```\n\nResolve a short token (which references a DERP region by ID, requiring\nclients to fetch the DERP map) into a longer self-contained one with the\nDERP server info embedded, letting clients connect more quickly:\n\n```sh\n$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n```\n\nParsing that resolved token shows the embedded DERP info:\n\n```sh\n$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    \"ServerPublic\": \"nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34\",\n    \"Region\": [\n        {\n            \"Nodes\": [\n                {\n                    \"HostName\": \"tc302a.ipn.dev\",\n                    \"IPv4\": \"208.111.39.38\",\n                    \"IPv6\": \"2607:f740:0:3f::720\"\n                }\n            ]\n        }\n    ]\n}\n```\n\nA server can print the long self-contained form directly with the\n`--full-address` flag.\n\n## Key Management\n\nA server's address (connection token) is derived from its WireGuard key, so\nthe key you use determines who can reach you:\n\n* **Ephemeral keys (the default):** each server run generates a fresh key in\n  memory and prints an address nobody has ever seen. When the process exits,\n  the key is discarded and the address is dead forever. This is the safe\n  default: sharing that address only ever refers to that one run.\n\n* **Saved keys:** `tailcat genkey` generates a key saved to disk so the\n  address stays stable across restarts. The flip side: anyone you've *ever*\n  shared that address with can connect to any future server using that key,\n  unless you restrict clients with `--allow` (see `tailcat genkey --client`).\n\nThe CLI says at startup which kind it's using, so you know whether you're\nstarting a fresh single-use server or re-listening on an address you may\nhave shared in the past.\n\n```sh\n$ tailcat genkey --region=nyc\n# prints the token; key saved to ~/.config/tailcat/keys/default.private.json\n\n# later; the key named \"default\" is used automatically once it exists:\n$ tailcat --serve=8080\n# 🐈 Server listening with saved key \"default\": tcXXXXXXXXX\n\n# ... unless you force a one-off ephemeral key:\n$ tailcat --serve=8080 --key=new\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nThat is, `default` is a magic key name: once it exists, plain `tailcat`\nsilently uses it instead of generating an ephemeral key, and the startup\nline above is what tells you which happened. Use `--key=new` to get an\nephemeral key anyway, `--key=<name>` to use a different saved key, or\n`tailcat genkey --delete --key=default` to remove the saved default key.\n`tailcat genkey --list` lists your saved keys.\n\nTokens can also be published as DNS TXT records and looked up by name;\na DNS name works anywhere the CLI takes a token:\n\n```sh\n# If example.com has a TXT record \"tailcat=tc...\"\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com\n```\n\n## Examples\n\n### Protected SSH server over DNS\n\nWho needs port forwarding or port knocking? This runs an SSH server\nreachable from anywhere by name, with no open inbound ports on the\nserver, where WireGuard authenticates the client before the SSH\nserver ever sees a packet.\n\nOn the client machine, generate a client identity keypair. It prints\nthe public key, which is all the server needs to know:\n\n```sh\nclient$ tailcat genkey --client\n# wrote file to ~/.config/tailcat/keys/client-default.private.json\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16\n```\n\nOn the server, generate a server keypair pinned to its nearest DERP\nregion (see why below), then serve SSH to only that client:\n\n```sh\nserver$ tailcat genkey --fixed-region\n# wrote file to ~/.config/tailcat/keys/default.private.json\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n# 🐈 Server listening with saved key \"default\": tcXXXXXXXXX\n```\n\nPublish the token in DNS as a TXT record:\n\n```\nmy-server.example.com. 300 IN TXT \"tailcat=tcXXXXXXXXX\"\n```\n\nAnd then the client side is just:\n\n```sh\nclient$ tailcat ssh my-server.example.com\n```\n\nClient modes automatically use the saved `client-default` key when it\nexists, so no extra flags are needed to present the allowed identity.\nAnyone else's handshake is silently ignored: they can't reach the SSH\nserver, or even learn that one is running.\n\nWhy `--fixed-region`: it discovers the nearest DERP region once, at\ngenkey time, and bakes its ID into both the printed token and the\nsaved key file, so server restarts bind to the same region (keeping\nthe published token valid) without re-probing. Plain `tailcat genkey`\ndefaults to `--region=auto`, which instead bakes in \"pick at\nstartup\": fine for one-off use, but a token published in DNS should\nname a fixed region so clients and future server restarts all\nrendezvous in the same place. (`--region=<name>` pins an explicit one\ninstead; `--region=list` shows the choices.)\n\nTODO: make the client more robust here if the DERP map changes over\ntime: https://github.com/tailscale/tailcat/issues/7\n\n### Bring your own DERP relay\n\nNothing requires Tailscale's relays: [run your own DERP\nserver](https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp)\n(it needs a hostname with a TLS certificate, which derper can get\nitself via Let's Encrypt), then generate a server key that uses it by\npassing its hostname (or several, comma-separated) as the region:\n\n```sh\nserver$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22\n```\n\nThe token embeds your relay's hostname:\n\n```sh\n$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    \"ServerPublic\": \"nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49\",\n    \"Region\": [\n        {\n            \"Nodes\": [\n                {\n                    \"HostName\": \"derp.example.com\"\n                }\n            ]\n        }\n    ]\n}\n```\n\nso clients need no extra flags and never contact Tailscale's DERP map\nserver or relays, and the only rate limits are yours. Alternatively,\nif you run a whole fleet of relays, serve your own DERP map JSON and\npoint both sides at it with `--derpmap-url`.\n\n### Go library\n\nA minimal server that answers any TCP port through the tunnel and\nprints its token. The zero value Server picks defaults for anything\nunset: a fresh ephemeral key, the nearest region of the default DERP\nmap, and `log.Printf` logging (set `Logf` to `logger.Discard` for\nquiet):\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"log\"\n\t\"net\"\n\n\t\"github.com/tailscale/tailcat\"\n)\n\nfunc main() {\n\ts := &tailcat.Server{\n\t\tOnTCP: func(port uint16) func(net.Conn) {\n\t\t\treturn func(c net.Conn) {\n\t\t\t\tfmt.Fprintf(c, \"hello from port %v\\n\", port)\n\t\t\t\tc.Close()\n\t\t\t}\n\t\t},\n\t}\n\tif err := s.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tfmt.Println(s.ConnBlob())\n\tselect {}\n}\n```",
+  "contributors": [
+    {
+      "login": "bradfitz",
+      "url": "https://github.com/bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4",
+      "contributions": 3354
+    },
+    {
+      "login": "danderson",
+      "url": "https://github.com/danderson",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1918?v=4",
+      "contributions": 881
+    },
+    {
+      "login": "josharian",
+      "url": "https://github.com/josharian",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/67496?v=4",
+      "contributions": 401
+    },
+    {
+      "login": "andrew-d",
+      "url": "https://github.com/andrew-d",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1079173?v=4",
+      "contributions": 264
+    },
+    {
+      "login": "raggi",
+      "url": "https://github.com/raggi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/348?v=4",
+      "contributions": 260
+    },
+    {
+      "login": "jwhited",
+      "url": "https://github.com/jwhited",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/10344482?v=4",
+      "contributions": 229
+    },
+    {
+      "login": "irbekrm",
+      "url": "https://github.com/irbekrm",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/24879183?v=4",
+      "contributions": 208
+    },
+    {
+      "login": "awly",
+      "url": "https://github.com/awly",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1146263?v=4",
+      "contributions": 197
+    },
+    {
+      "login": "dsnet",
+      "url": "https://github.com/dsnet",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6354026?v=4",
+      "contributions": 193
+    },
+    {
+      "login": "crawshaw",
+      "url": "https://github.com/crawshaw",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/161319?v=4",
+      "contributions": 186
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/tailscale/tailcat/blob/main/tailcat.png\"><img src=\"https://raw.githubusercontent.com/tailscale/tailcat/main/tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\" style=\"max-width: 100%; height: auto; max-height: 176px;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Tailcat</h1></div>\n<p dir=\"auto\">Tailcat is a remix of Tailscale open source pieces to act like\n<a href=\"https://en.wikipedia.org/wiki/Netcat\" rel=\"nofollow\">netcat</a>, but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (<code>magicsock</code>,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all <code>tailcat</code> connection metadata is exchanged out of\nband, however you want.</p>\n<p dir=\"auto\">The <code>tailcat</code> CLI (in <code>cmd/tailcat</code>) is built on the <code>tailcat</code> Go library\n(importable as <a href=\"https://pkg.go.dev/github.com/tailscale/tailcat\" rel=\"nofollow\"><code>github.com/tailscale/tailcat</code></a>).</p>\n<p dir=\"auto\">Whether you use <code>tailcat</code> as a CLI tool or library, one side runs a <code>tailcat</code>\nserver (listener) and gets back a short connection token. The other side passes\nthat token to <code>tailcat</code>'s client side to connect. All traffic between the two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server (<a href=\"#bring-your-own-derp-relay\">see below</a>), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).</p>\n<p dir=\"auto\">You don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.</p>\n<p dir=\"auto\">And it's all open source.</p>\n<p dir=\"auto\">You can use our free rate-limited DERP relays (the default DERP map is\n<a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">https://tailcat.dev/derpmap.json</a>) or you can <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own</a>.</p>\n<p dir=\"auto\">There's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at <a href=\"https://tailscale.github.io/tailcat/\" rel=\"nofollow\">https://tailscale.github.io/tailcat/</a> that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport (<a href=\"https://github.com/tailscale/tailcat/issues/4\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/4/hovercard\">#4</a>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\"><pre>$ go install github.com/tailscale/tailcat/cmd/tailcat@latest</pre></div>\n<p dir=\"auto\">Or with Nix flakes, run it directly or install it:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\"><pre>$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Pipe stdin/stdout between two machines</h3></div>\n<p dir=\"auto\">Server starts, printing out its ephemeral address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\n(hangs, waiting...)</pre></div>\n<p dir=\"auto\">And then the client can:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \"><pre>$ <span class=\"pl-c1\">echo</span> hello <span class=\"pl-k\">|</span> tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ </pre></div>\n<p dir=\"auto\">Then the server unblocks:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\nhello\n$</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Expose local ports through the tunnel</h3></div>\n<p dir=\"auto\">Or you can serve a local TCP port, forwarded to localhost:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=8080,8443 # or --serve=all\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat --serve=8080,8443 <span class=\"pl-c\"><span class=\"pl-c\">#</span> or --serve=all</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">And then the client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\"><pre>$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Auth-free SSH server</h3></div>\n<p dir=\"auto\">On Linux and macOS, you can run an SSH server too with no auth. (If you want auth, you can just <code>tailcat --serve=22</code> and proxy to your system SSH server)</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat --serve=no-auth-ssh\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">And on the client side:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\"><pre>$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Misc commands</h3></div>\n<p dir=\"auto\">Ping to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. <code>--until-direct</code> keeps pinging (up to\n<code>--timeout</code>, default 10s) until a direct path works, exiting non-zero\nif one doesn't:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ping --until-direct &lt;token&gt;\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\"><pre>$ tailcat ping --until-direct <span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span>\npong <span class=\"pl-k\">in</span> 42.1ms via DERP(sfo)\npong <span class=\"pl-k\">in</span> 1.2ms via 203.0.113.7:41641</pre></div>\n<p dir=\"auto\">Run a command through a SOCKS5 proxy routed over the tunnel:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks &lt;token&gt; curl http://server.tailcat:8081/\"><pre>$ tailcat socks <span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span> curl http://server.tailcat:8081/</pre></div>\n<p dir=\"auto\">Tokens also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the token argument is optional. (Tokens are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks curl http://&lt;token&gt;:8081/\"><pre>$ tailcat socks curl http://<span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span>:8081/</pre></div>\n<p dir=\"auto\">Act as an exit node so the client can reach the server's network:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=exit-node\"><pre>$ tailcat --serve=exit-node</pre></div>\n<p dir=\"auto\">Parse a connection token and print its contents (the server's WireGuard\npublic key and DERP info) as JSON, without connecting to anything:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;RegionID&quot;: 302\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>RegionID<span class=\"pl-pds\">\"</span></span>: 302\n}</pre></div>\n<p dir=\"auto\">Resolve a short token (which references a DERP region by ID, requiring\nclients to fetch the DERP map) into a longer self-contained one with the\nDERP server info embedded, letting clients connect more quickly:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\"><pre>$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA</pre></div>\n<p dir=\"auto\">Parsing that resolved token shows the embedded DERP info:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;tc302a.ipn.dev&quot;,\n                    &quot;IPv4&quot;: &quot;208.111.39.38&quot;,\n                    &quot;IPv6&quot;: &quot;2607:f740:0:3f::720&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>tc302a.ipn.dev<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv4<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>208.111.39.38<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv6<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>2607:f740:0:3f::720<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">A server can print the long self-contained form directly with the\n<code>--full-address</code> flag.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Management</h2></div>\n<p dir=\"auto\">A server's address (connection token) is derived from its WireGuard key, so\nthe key you use determines who can reach you:</p>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Ephemeral keys (the default):</strong> each server run generates a fresh key in\nmemory and prints an address nobody has ever seen. When the process exits,\nthe key is discarded and the address is dead forever. This is the safe\ndefault: sharing that address only ever refers to that one run.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Saved keys:</strong> <code>tailcat genkey</code> generates a key saved to disk so the\naddress stays stable across restarts. The flip side: anyone you've <em>ever</em>\nshared that address with can connect to any future server using that key,\nunless you restrict clients with <code>--allow</code> (see <code>tailcat genkey --client</code>).</p>\n</li>\n</ul>\n<p dir=\"auto\">The CLI says at startup which kind it's using, so you know whether you're\nstarting a fresh single-use server or re-listening on an address you may\nhave shared in the past.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat genkey --region=nyc\n# prints the token; key saved to ~/.config/tailcat/keys/default.private.json\n\n# later; the key named &quot;default&quot; is used automatically once it exists:\n$ tailcat --serve=8080\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\n\n# ... unless you force a one-off ephemeral key:\n$ tailcat --serve=8080 --key=new\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat genkey --region=nyc\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> prints the token; key saved to ~/.config/tailcat/keys/default.private.json</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> later; the key named \"default\" is used automatically once it exists:</span>\n$ tailcat --serve=8080\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ... unless you force a one-off ephemeral key:</span>\n$ tailcat --serve=8080 --key=new\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">That is, <code>default</code> is a magic key name: once it exists, plain <code>tailcat</code>\nsilently uses it instead of generating an ephemeral key, and the startup\nline above is what tells you which happened. Use <code>--key=new</code> to get an\nephemeral key anyway, <code>--key=&lt;name&gt;</code> to use a different saved key, or\n<code>tailcat genkey --delete --key=default</code> to remove the saved default key.\n<code>tailcat genkey --list</code> lists your saved keys.</p>\n<p dir=\"auto\">Tokens can also be published as DNS TXT records and looked up by name;\na DNS name works anywhere the CLI takes a token:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If example.com has a TXT record &quot;tailcat=tc...&quot;\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If example.com has a TXT record \"tailcat=tc...\"</span>\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Examples</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Protected SSH server over DNS</h3></div>\n<p dir=\"auto\">Who needs port forwarding or port knocking? This runs an SSH server\nreachable from anywhere by name, with no open inbound ports on the\nserver, where WireGuard authenticates the client before the SSH\nserver ever sees a packet.</p>\n<p dir=\"auto\">On the client machine, generate a client identity keypair. It prints\nthe public key, which is all the server needs to know:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat genkey --client\n# wrote file to ~/.config/tailcat/keys/client-default.private.json\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16\"><pre>client$ tailcat genkey --client\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/client-default.private.json</span>\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16</pre></div>\n<p dir=\"auto\">On the server, generate a server keypair pinned to its nearest DERP\nregion (see why below), then serve SSH to only that client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --fixed-region\n# wrote file to ~/.config/tailcat/keys/default.private.json\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\"><pre>server$ tailcat genkey --fixed-region\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/default.private.json</span>\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">Publish the token in DNS as a TXT record:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"my-server.example.com. 300 IN TXT &quot;tailcat=tcXXXXXXXXX&quot;\"><pre class=\"notranslate\"><code>my-server.example.com. 300 IN TXT \"tailcat=tcXXXXXXXXX\"\n</code></pre></div>\n<p dir=\"auto\">And then the client side is just:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat ssh my-server.example.com\"><pre>client$ tailcat ssh my-server.example.com</pre></div>\n<p dir=\"auto\">Client modes automatically use the saved <code>client-default</code> key when it\nexists, so no extra flags are needed to present the allowed identity.\nAnyone else's handshake is silently ignored: they can't reach the SSH\nserver, or even learn that one is running.</p>\n<p dir=\"auto\">Why <code>--fixed-region</code>: it discovers the nearest DERP region once, at\ngenkey time, and bakes its ID into both the printed token and the\nsaved key file, so server restarts bind to the same region (keeping\nthe published token valid) without re-probing. Plain <code>tailcat genkey</code>\ndefaults to <code>--region=auto</code>, which instead bakes in \"pick at\nstartup\": fine for one-off use, but a token published in DNS should\nname a fixed region so clients and future server restarts all\nrendezvous in the same place. (<code>--region=&lt;name&gt;</code> pins an explicit one\ninstead; <code>--region=list</code> shows the choices.)</p>\n<p dir=\"auto\">TODO: make the client more robust here if the DERP map changes over\ntime: <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"5258120127\" data-permission-text=\"Title is private\" data-url=\"https://github.com/tailscale/tailcat/issues/7\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/7/hovercard\" href=\"https://github.com/tailscale/tailcat/issues/7\">#7</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Bring your own DERP relay</h3></div>\n<p dir=\"auto\">Nothing requires Tailscale's relays: <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own DERP\nserver</a>\n(it needs a hostname with a TLS certificate, which derper can get\nitself via Let's Encrypt), then generate a server key that uses it by\npassing its hostname (or several, comma-separated) as the region:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22\"><pre>server$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22</pre></div>\n<p dir=\"auto\">The token embeds your relay's hostname:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;derp.example.com&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>derp.example.com<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">so clients need no extra flags and never contact Tailscale's DERP map\nserver or relays, and the only rate limits are yours. Alternatively,\nif you run a whole fleet of relays, serve your own DERP map JSON and\npoint both sides at it with <code>--derpmap-url</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Go library</h3></div>\n<p dir=\"auto\">A minimal server that answers any TCP port through the tunnel and\nprints its token. The zero value Server picks defaults for anything\nunset: a fresh ephemeral key, the nearest region of the default DERP\nmap, and <code>log.Printf</code> logging (set <code>Logf</code> to <code>logger.Discard</code> for\nquiet):</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;fmt&quot;\n\t&quot;log&quot;\n\t&quot;net&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\ts := &amp;tailcat.Server{\n\t\tOnTCP: func(port uint16) func(net.Conn) {\n\t\t\treturn func(c net.Conn) {\n\t\t\t\tfmt.Fprintf(c, &quot;hello from port %v\\n&quot;, port)\n\t\t\t\tc.Close()\n\t\t\t}\n\t\t},\n\t}\n\tif err := s.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tfmt.Println(s.ConnBlob())\n\tselect {}\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"fmt\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"net\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">s</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-c1\">&amp;</span>tailcat.<span class=\"pl-smi\">Server</span>{\n\t\t<span class=\"pl-s1\">OnTCP</span>: <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">port</span> <span class=\"pl-smi\">uint16</span>) <span class=\"pl-k\">func</span>(net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t<span class=\"pl-k\">return</span> <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">c</span> net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Fprintf</span>(<span class=\"pl-s1\">c</span>, <span class=\"pl-s\">\"hello from port %v<span class=\"pl-cce\">\\n</span>\"</span>, <span class=\"pl-s1\">port</span>)\n\t\t\t\t<span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Close</span>()\n\t\t\t}\n\t\t},\n\t}\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">Start</span>(); <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Println</span>(<span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">ConnBlob</span>())\n\t<span class=\"pl-k\">select</span> {}\n}</pre></div>\n<p dir=\"auto\">And a minimal client that dials it, given that token as its argument.\nLike Server, the Client zero value works with just its Server token\nfield set (<code>tailcat.NewClient</code> is shorthand for exactly that), and\nthe tunnel is established lazily by the first dial:</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;context&quot;\n\t&quot;io&quot;\n\t&quot;log&quot;\n\t&quot;os&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\tcl := tailcat.NewClient(tailcat.ConnBlob(os.Args[1]))\n\tdefer cl.Close()\n\tc, err := cl.DialTCPPort(context.Background(), 80)\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tio.Copy(os.Stdout, c)\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"context\"</span>\n\t<span class=\"pl-s\">\"io\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"os\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">cl</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">NewClient</span>(<span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">ConnBlob</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Args</span>[<span class=\"pl-c1\">1</span>]))\n\t<span class=\"pl-k\">defer</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">Close</span>()\n\t<span class=\"pl-s1\">c</span>, <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">DialTCPPort</span>(<span class=\"pl-s1\">context</span>.<span class=\"pl-c1\">Background</span>(), <span class=\"pl-c1\">80</span>)\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">io</span>.<span class=\"pl-c1\">Copy</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Stdout</span>, <span class=\"pl-s1\">c</span>)\n}</pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80\"><pre>$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection tokens</h3></div>\n<p dir=\"auto\">A Tailcat server is identified by a <strong>connection token</strong> (called a\nConnBlob internally). It looks like <code>tcXYZ...</code> and is a <code>\"tc\"</code> prefix\nfollowed by base64-encoded <a href=\"https://cbor.io/\" rel=\"nofollow\">CBOR</a> containing:</p>\n<ul dir=\"auto\">\n<li>The server's WireGuard public key (Curve25519, 32 bytes)</li>\n<li>DERP info. Either:\n<ol dir=\"auto\">\n<li>a small integer referencing one of the default <a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">Tailscale-run tailcat servers</a>), or</li>\n<li>full DERP server metadata, to either use a custom DERP server, or to avoid the client needing a potential round-trip to fetch the latest DERP map (the server's <code>--full-address</code> flag and the <code>tailcat resolve</code> subcommand produce this form)</li>\n</ol>\n</li>\n</ul>\n<p dir=\"auto\">A typical token with just an integer region ID is around 50 bytes. With embedded\nDERP node details it's longer but self-contained.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Network stack</h3></div>\n<p dir=\"auto\">Tailcat reuses Tailscale's client networking components but\nwithout the control plane.</p>\n<ul dir=\"auto\">\n<li><strong>WireGuard</strong> -- a userspace WireGuard\nimplementation for encrypting all tunnel traffic. It doesn't use a kernel TUN/TAP device (nor does it configure any networking routes or DNS settings), so <code>root</code> isn't required.</li>\n<li><strong>magicsock</strong> -- Tailscale's transport layer that multiplexes traffic\nover direct UDP and DERP relays. It handles STUN-based endpoint\ndiscovery and UDP hole-punching for NAT traversal.</li>\n<li><strong>Netstack</strong> (gVisor) -- a userspace TCP/IP stack that terminates\nTCP connections inside the process. This is what lets Tailcat\naccept inbound connections and dial outbound ones without any OS\nnetwork configuration.</li>\n<li><strong>DERP relay</strong> -- Tailscale's encrypted relay protocol, used as a\nrendezvous channel and as a fallback data path when direct\nconnectivity isn't possible.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection flow</h3></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Server starts.</strong> It generates (or loads) a WireGuard keypair,\nconnects to a DERP relay, and prints its connection token to stderr.\nIt then waits for clients.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Client parses the token</strong> to learn the server's public key and\nDERP region. It generates its own ephemeral keypair and connects to\nthe same DERP relay.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Discovery handshake.</strong> The client sends a \"<strong>Meow</strong>\" ping message\nto the server through the\nDERP relay. This message carries the client's node public key. The\nserver receives it, adds the client to its WireGuard peer list and\nnetwork map, reconfigures the WireGuard engine, and replies with a\n\"<strong>Meowed</strong>\" acknowledgment.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>WireGuard tunnel.</strong> With both sides configured as WireGuard\npeers, the standard WireGuard handshake proceeds (routed through\nDERP initially). Once complete, the tunnel is up and encrypted\ntraffic can flow.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>NAT traversal.</strong> In parallel, each side advertises its UDP\nendpoints (public IP:port learned via STUN, plus local interface\naddresses) to the other in disco call-me-maybe messages over DERP,\nre-advertising whenever they change. Both sides then run Tailscale's\ndisco protocol and attempt UDP hole-punching. If\nsuccessful, traffic upgrades from the DERP relay to a direct\npeer-to-peer path. If hole-punching fails, DERP continues as a\nfallback and the connection still works, just with rate-limited throughput if you're using our public hosted DERP relays.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Data transfer.</strong> The client dials a TCP port on the server\nthrough the tunnel. gVisor's TCP/IP stack on both sides handles\nconnection setup. On the server, the incoming connection is\ndispatched to a handler based on the port: forwarding to localhost,\npiping to stdout, running an SSH session, etc.</p>\n</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Addressing</h3></div>\n<p dir=\"auto\">Each peer currently derives a deterministic IPv6 address from its WireGuard\npublic key, but that's an implementation detail not exposed to end users and\nmight change. (e.g. we might remove those bytes from the IP headers entirely and\nrecover that redundant MTU)</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Stability</h2></div>\n<p dir=\"auto\">Tailcat is free to use, but it comes with no API or CLI stability\npromises: the Go API, the CLI flags and output, and the wire format may\nall change. The public rate-limited Tailcat DERP relays have no uptime\nSLAs or throughput targets, and we may revoke access to them at any\ntime, for any reason. Everything is provided best effort, without a\ncontractual relationship (e.g. dedicated DERP relays and/or support)\nsaying otherwise.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contact Sales?</h2></div>\n<p dir=\"auto\">If you don't want to run and support things on your own, or want any\nhelp, <a href=\"https://tailscale.com/contact/sales\" rel=\"nofollow\">contact sales</a> and we can\nexchange money for <a href=\"https://www.youtube.com/watch?v=A81DYZh6KaQ\" rel=\"nofollow\">goods and\nservices</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">History</h2></div>\n<p dir=\"auto\">Tailcat began life in September 2023 as \"derpcat\", written on a long\nflight while catching up on bad movies: the first sketch was commit\n<a href=\"https://github.com/tailscale/tailcat/commit/9e4d925cc\">9e4d925cc</a>\n(\"cmd/dc: start of derpcat tool\"), and it first worked in commit\n<a href=\"https://github.com/tailscale/tailcat/commit/911915fbb\">911915fbb</a>\n(\"derpcat: it's alive!\", whose commit message notes \"UA 605 PDX-ORD\nen route to Ireland. yay not buying the wifi.\"). Back then it lived\ninside a fork of the\n<a href=\"https://github.com/tailscale/tailscale\">tailscale.com</a> repo and it\nbitrot several times as the Tailscale internals moved on without it.\nWe've since brought it back to life and refactored it to be a regular\nGo module client of the tailscale.com repo instead of a fork of it.</p>\n<p dir=\"auto\">It was open sourced August 2026 at the\n<a href=\"https://tailscale.com/tailscaleup\" rel=\"nofollow\">TailscaleUp conference</a>.</p>\n</article></div>",
+  "firstCommitAt": "2020-01-31T22:00:04Z",
+  "recentIssues": [
+    {
+      "number": 18,
+      "title": "tailcat: Server.Start and Client.initLocked leak resources on partial startup failures",
+      "url": "https://github.com/tailscale/tailcat/issues/18",
+      "createdAt": "2026-08-28T13:46:28Z",
+      "comments": 0,
+      "labels": [],
+      "author": "awdemos"
+    },
+    {
+      "number": 17,
+      "title": "tailcat_ssh: PTY session hangs because stdout io.Copy blocks before cmd.Wait and cleanup",
+      "url": "https://github.com/tailscale/tailcat/issues/17",
+      "createdAt": "2026-08-28T13:46:28Z",
+      "comments": 0,
+      "labels": [],
+      "author": "awdemos"
+    },
+    {
+      "number": 14,
+      "title": "Add client-side local TCP forwarding",
+      "url": "https://github.com/tailscale/tailcat/issues/14",
+      "createdAt": "2026-08-28T04:35:58Z",
+      "comments": 0,
+      "labels": [],
+      "author": "changhoon-sung"
+    },
+    {
+      "number": 13,
+      "title": "Pre-compiled binaries",
+      "url": "https://github.com/tailscale/tailcat/issues/13",
+      "createdAt": "2026-08-28T03:42:48Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ItalyPaleAle"
+    },
+    {
+      "number": 12,
+      "title": "Can't use ssh with connection multiplexing in a common configuration",
+      "url": "https://github.com/tailscale/tailcat/issues/12",
+      "createdAt": "2026-08-27T14:34:02Z",
+      "comments": 0,
+      "labels": [],
+      "author": "exzombie"
+    },
+    {
+      "number": 7,
+      "title": "multi-region, bake in lat/long to fixed-region conn blobs, have clients search nearby regions?",
+      "url": "https://github.com/tailscale/tailcat/issues/7",
+      "createdAt": "2026-08-26T14:19:31Z",
+      "comments": 0,
+      "labels": [],
+      "author": "bradfitz"
+    }
+  ],
+  "contributorCount": 331,
+  "participation": {
+    "all": 899,
+    "owner": 0,
+    "community": 899
+  },
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 13
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 25
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 34
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 15
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 26
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 16
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 30
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 23
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 34
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 27
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 23
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 22
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 30
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 19
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 37
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 27
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 21
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 29
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 81
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 115
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 161
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 150
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 121
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 151
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 149
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 201
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 143
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 99
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 63
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 78
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 89
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 98
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 56
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 34
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 14
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 11
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 30
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 10
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 10
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 35
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 78
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 137
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 135
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 162
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 163
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 161
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 155
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 193
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 118
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 109
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 87
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 71
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 73
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 67
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 40
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 40
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 18
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 14
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 20
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 29
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 77
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 138
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 163
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 174
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 158
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 143
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 200
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 186
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 136
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 105
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 76
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 65
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 78
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 87
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 48
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 37
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 14
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 22
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 31
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 77
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 117
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 151
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 161
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 164
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 157
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 192
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 138
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 129
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 91
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 61
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 58
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 66
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 58
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 57
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 28
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 30
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 16
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 20
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 11
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 27
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 53
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 88
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 114
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 133
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 143
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 161
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 189
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 167
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 144
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 110
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 92
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 72
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 52
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 54
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 55
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 38
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 31
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 30
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 27
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 22
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 21
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 36
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 33
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 33
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 37
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 34
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 28
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 35
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 33
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 31
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 44
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 21
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 11
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-08-31",
+      "commits": 28
+    },
+    {
+      "week": "2025-09-07",
+      "commits": 33
+    },
+    {
+      "week": "2025-09-14",
+      "commits": 53
+    },
+    {
+      "week": "2025-09-21",
+      "commits": 54
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 70
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 58
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 15
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 21
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 26
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 13
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 38
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 53
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 20
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 13
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 19
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 16
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 2
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 21
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 19
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 12
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 33
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 20
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 30
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 17
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 20
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 31
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 15
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 10
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 25
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 7
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 4
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 36
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-08-31",
+      "count": 2
+    },
+    {
+      "date": "2025-09-01",
+      "count": 5
+    },
+    {
+      "date": "2025-09-02",
+      "count": 10
+    },
+    {
+      "date": "2025-09-03",
+      "count": 6
+    },
+    {
+      "date": "2025-09-04",
+      "count": 1
+    },
+    {
+      "date": "2025-09-05",
+      "count": 3
+    },
+    {
+      "date": "2025-09-06",
+      "count": 1
+    },
+    {
+      "date": "2025-09-07",
+      "count": 1
+    },
+    {
+      "date": "2025-09-08",
+      "count": 9
+    },
+    {
+      "date": "2025-09-09",
+      "count": 7
+    },
+    {
+      "date": "2025-09-10",
+      "count": 5
+    },
+    {
+      "date": "2025-09-11",
+      "count": 3
+    },
+    {
+      "date": "2025-09-12",
+      "count": 6
+    },
+    {
+      "date": "2025-09-13",
+      "count": 2
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 15
+    },
+    {
+      "date": "2025-09-16",
+      "count": 11
+    },
+    {
+      "date": "2025-09-17",
+      "count": 11
+    },
+    {
+      "date": "2025-09-18",
+      "count": 3
+    },
+    {
+      "date": "2025-09-19",
+      "count": 9
+    },
+    {
+      "date": "2025-09-20",
+      "count": 4
+    },
+    {
+      "date": "2025-09-21",
+      "count": 1
+    },
+    {
+      "date": "2025-09-22",
+      "count": 9
+    },
+    {
+      "date": "2025-09-23",
+      "count": 9
+    },
+    {
+      "date": "2025-09-24",
+      "count": 8
+    },
+    {
+      "date": "2025-09-25",
+      "count": 8
+    },
+    {
+      "date": "2025-09-26",
+      "count": 16
+    },
+    {
+      "date": "2025-09-27",
+      "count": 3
+    },
+    {
+      "date": "2025-09-28",
+      "count": 4
+    },
+    {
+      "date": "2025-09-29",
+      "count": 13
+    },
+    {
+      "date": "2025-09-30",
+      "count": 17
+    },
+    {
+      "date": "2025-10-01",
+      "count": 12
+    },
+    {
+      "date": "2025-10-02",
+      "count": 8
+    },
+    {
+      "date": "2025-10-03",
+      "count": 9
+    },
+    {
+      "date": "2025-10-04",
+      "count": 7
+    },
+    {
+      "date": "2025-10-05",
+      "count": 2
+    },
+    {
+      "date": "2025-10-06",
+      "count": 18
+    },
+    {
+      "date": "2025-10-07",
+      "count": 10
+    },
+    {
+      "date": "2025-10-08",
+      "count": 12
+    },
+    {
+      "date": "2025-10-09",
+      "count": 6
+    },
+    {
+      "date": "2025-10-10",
+      "count": 10
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 4
+    },
+    {
+      "date": "2025-10-16",
+      "count": 3
+    },
+    {
+      "date": "2025-10-17",
+      "count": 8
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 7
+    },
+    {
+      "date": "2025-10-21",
+      "count": 6
+    },
+    {
+      "date": "2025-10-22",
+      "count": 2
+    },
+    {
+      "date": "2025-10-23",
+      "count": 3
+    },
+    {
+      "date": "2025-10-24",
+      "count": 3
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 2
+    },
+    {
+      "date": "2025-10-28",
+      "count": 8
+    },
+    {
+      "date": "2025-10-29",
+      "count": 9
+    },
+    {
+      "date": "2025-10-30",
+      "count": 5
+    },
+    {
+      "date": "2025-10-31",
+      "count": 2
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 1
+    },
+    {
+      "date": "2025-11-04",
+      "count": 1
+    },
+    {
+      "date": "2025-11-05",
+      "count": 2
+    },
+    {
+      "date": "2025-11-06",
+      "count": 2
+    },
+    {
+      "date": "2025-11-07",
+      "count": 2
+    },
+    {
+      "date": "2025-11-08",
+      "count": 5
+    },
+    {
+      "date": "2025-11-09",
+      "count": 4
+    },
+    {
+      "date": "2025-11-10",
+      "count": 9
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 7
+    },
+    {
+      "date": "2025-11-13",
+      "count": 2
+    },
+    {
+      "date": "2025-11-14",
+      "count": 11
+    },
+    {
+      "date": "2025-11-15",
+      "count": 5
+    },
+    {
+      "date": "2025-11-16",
+      "count": 1
+    },
+    {
+      "date": "2025-11-17",
+      "count": 13
+    },
+    {
+      "date": "2025-11-18",
+      "count": 12
+    },
+    {
+      "date": "2025-11-19",
+      "count": 10
+    },
+    {
+      "date": "2025-11-20",
+      "count": 8
+    },
+    {
+      "date": "2025-11-21",
+      "count": 9
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 1
+    },
+    {
+      "date": "2025-11-25",
+      "count": 10
+    },
+    {
+      "date": "2025-11-26",
+      "count": 5
+    },
+    {
+      "date": "2025-11-27",
+      "count": 2
+    },
+    {
+      "date": "2025-11-28",
+      "count": 2
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 1
+    },
+    {
+      "date": "2025-12-02",
+      "count": 6
+    },
+    {
+      "date": "2025-12-03",
+      "count": 3
+    },
+    {
+      "date": "2025-12-04",
+      "count": 1
+    },
+    {
+      "date": "2025-12-05",
+      "count": 2
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 1
+    },
+    {
+      "date": "2025-12-08",
+      "count": 4
+    },
+    {
+      "date": "2025-12-09",
+      "count": 2
+    },
+    {
+      "date": "2025-12-10",
+      "count": 6
+    },
+    {
+      "date": "2025-12-11",
+      "count": 3
+    },
+    {
+      "date": "2025-12-12",
+      "count": 3
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 4
+    },
+    {
+      "date": "2025-12-16",
+      "count": 1
+    },
+    {
+      "date": "2025-12-17",
+      "count": 6
+    },
+    {
+      "date": "2025-12-18",
+      "count": 3
+    },
+    {
+      "date": "2025-12-19",
+      "count": 2
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 1
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 1
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 3
+    },
+    {
+      "date": "2026-01-06",
+      "count": 3
+    },
+    {
+      "date": "2026-01-07",
+      "count": 5
+    },
+    {
+      "date": "2026-01-08",
+      "count": 6
+    },
+    {
+      "date": "2026-01-09",
+      "count": 4
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 2
+    },
+    {
+      "date": "2026-01-13",
+      "count": 6
+    },
+    {
+      "date": "2026-01-14",
+      "count": 7
+    },
+    {
+      "date": "2026-01-15",
+      "count": 1
+    },
+    {
+      "date": "2026-01-16",
+      "count": 3
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 2
+    },
+    {
+      "date": "2026-01-20",
+      "count": 1
+    },
+    {
+      "date": "2026-01-21",
+      "count": 2
+    },
+    {
+      "date": "2026-01-22",
+      "count": 2
+    },
+    {
+      "date": "2026-01-23",
+      "count": 5
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 6
+    },
+    {
+      "date": "2026-01-27",
+      "count": 4
+    },
+    {
+      "date": "2026-01-28",
+      "count": 8
+    },
+    {
+      "date": "2026-01-29",
+      "count": 5
+    },
+    {
+      "date": "2026-01-30",
+      "count": 10
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 1
+    },
+    {
+      "date": "2026-02-02",
+      "count": 2
+    },
+    {
+      "date": "2026-02-03",
+      "count": 5
+    },
+    {
+      "date": "2026-02-04",
+      "count": 5
+    },
+    {
+      "date": "2026-02-05",
+      "count": 1
+    },
+    {
+      "date": "2026-02-06",
+      "count": 6
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 4
+    },
+    {
+      "date": "2026-02-09",
+      "count": 4
+    },
+    {
+      "date": "2026-02-10",
+      "count": 7
+    },
+    {
+      "date": "2026-02-11",
+      "count": 1
+    },
+    {
+      "date": "2026-02-12",
+      "count": 6
+    },
+    {
+      "date": "2026-02-13",
+      "count": 8
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 4
+    },
+    {
+      "date": "2026-02-17",
+      "count": 2
+    },
+    {
+      "date": "2026-02-18",
+      "count": 4
+    },
+    {
+      "date": "2026-02-19",
+      "count": 3
+    },
+    {
+      "date": "2026-02-20",
+      "count": 4
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 1
+    },
+    {
+      "date": "2026-02-23",
+      "count": 1
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 6
+    },
+    {
+      "date": "2026-02-26",
+      "count": 4
+    },
+    {
+      "date": "2026-02-27",
+      "count": 6
+    },
+    {
+      "date": "2026-02-28",
+      "count": 2
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 4
+    },
+    {
+      "date": "2026-03-03",
+      "count": 1
+    },
+    {
+      "date": "2026-03-04",
+      "count": 8
+    },
+    {
+      "date": "2026-03-05",
+      "count": 9
+    },
+    {
+      "date": "2026-03-06",
+      "count": 6
+    },
+    {
+      "date": "2026-03-07",
+      "count": 3
+    },
+    {
+      "date": "2026-03-08",
+      "count": 3
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 1
+    },
+    {
+      "date": "2026-03-11",
+      "count": 1
+    },
+    {
+      "date": "2026-03-12",
+      "count": 10
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 2
+    },
+    {
+      "date": "2026-07-18",
+      "count": 8
+    },
+    {
+      "date": "2026-07-19",
+      "count": 23
+    },
+    {
+      "date": "2026-07-20",
+      "count": 1
+    },
+    {
+      "date": "2026-07-21",
+      "count": 1
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 7
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 1
+    },
+    {
+      "date": "2026-08-21",
+      "count": 1
+    },
+    {
+      "date": "2026-08-22",
+      "count": 2
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 7
+    },
+    {
+      "date": "2026-08-26",
+      "count": 24
+    },
+    {
+      "date": "2026-08-27",
+      "count": 5
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "c04c5af",
+      "message": "web: clarify that only browser tailcat is DERP-relay-only",
+      "url": "https://github.com/tailscale/tailcat/commit/c04c5afee401df40e620db8ae108e957ae07bcd9",
+      "date": "2026-08-27T01:41:19Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "743d645",
+      "message": "README.md: mention the web demo",
+      "url": "https://github.com/tailscale/tailcat/commit/743d645f67abe424d871fa043e9c64d5edc66223",
+      "date": "2026-08-27T01:40:27Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "d00614d",
+      "message": "web: link the demo notice's \"tailcat\" to the GitHub repo",
+      "url": "https://github.com/tailscale/tailcat/commit/d00614da729085cecb1e9253b429f9c5e5b88bc4",
+      "date": "2026-08-27T01:38:03Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "9be6663",
+      "message": "web: publish the web demo to GitHub Pages",
+      "url": "https://github.com/tailscale/tailcat/commit/9be666321da3a38bd6dcbf8aa73aefb5a4fe28d8",
+      "date": "2026-08-27T01:07:12Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "8ccf2ec",
+      "message": "tailcat: don't advertise endpoints from js/wasm",
+      "url": "https://github.com/tailscale/tailcat/commit/8ccf2ec258524ad411a8fa9483e18cea95b6491f",
+      "date": "2026-08-27T01:32:17Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "0993a15",
+      "message": "README.md: don't imply Tailscale's relays are required for bootstrap",
+      "url": "https://github.com/tailscale/tailcat/commit/0993a1545b0b80d9150d7d73cb7fc471ae9e8dd9",
+      "date": "2026-08-26T19:17:02Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "fea3a95",
+      "message": "add a Nix flake, document installation in the README",
+      "url": "https://github.com/tailscale/tailcat/commit/fea3a957cbc914de7b6c5592986458d743c800e1",
+      "date": "2026-08-26T18:56:01Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "995d33b",
+      "message": "README.md: add an example of bringing your own DERP relay",
+      "url": "https://github.com/tailscale/tailcat/commit/995d33b4e1f921263fbf48c41620c7fccc11bddb",
+      "date": "2026-08-26T18:34:21Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "273264a",
+      "message": "README.md: add a History section",
+      "url": "https://github.com/tailscale/tailcat/commit/273264a82464c0e148ffaf484a65d82ccf88a5c7",
+      "date": "2026-08-26T17:45:00Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    },
+    {
+      "sha": "81c58d2",
+      "message": "tailcat: make the zero value Client usable too",
+      "url": "https://github.com/tailscale/tailcat/commit/81c58d2f28fef4626a25cda0afbd75c9b05c6155",
+      "date": "2026-08-26T17:24:37Z",
+      "author": "bradfitz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/.github"
+    },
+    {
+      "name": "cmd",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/cmd"
+    },
+    {
+      "name": "internal",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/internal"
+    },
+    {
+      "name": "web",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/web"
+    },
+    {
+      "name": "webdemo",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/webdemo"
+    },
+    {
+      "name": ".gitattributes",
+      "type": "file",
+      "size": 39,
+      "url": "https://github.com/tailscale/tailcat/blob/main/.gitattributes"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 83,
+      "url": "https://github.com/tailscale/tailcat/blob/main/.gitignore"
+    },
+    {
+      "name": "disco.go",
+      "type": "file",
+      "size": 2227,
+      "url": "https://github.com/tailscale/tailcat/blob/main/disco.go"
+    },
+    {
+      "name": "export_test.go",
+      "type": "file",
+      "size": 1288,
+      "url": "https://github.com/tailscale/tailcat/blob/main/export_test.go"
+    },
+    {
+      "name": "flake.lock",
+      "type": "file",
+      "size": 1499,
+      "url": "https://github.com/tailscale/tailcat/blob/main/flake.lock"
+    },
+    {
+      "name": "flake.nix",
+      "type": "file",
+      "size": 1035,
+      "url": "https://github.com/tailscale/tailcat/blob/main/flake.nix"
+    },
+    {
+      "name": "go.mod",
+      "type": "file",
+      "size": 5801,
+      "url": "https://github.com/tailscale/tailcat/blob/main/go.mod"
+    },
+    {
+      "name": "go.sum",
+      "type": "file",
+      "size": 30114,
+      "url": "https://github.com/tailscale/tailcat/blob/main/go.sum"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1515,
+      "url": "https://github.com/tailscale/tailcat/blob/main/LICENSE"
+    },
+    {
+      "name": "pickregion_js.go",
+      "type": "file",
+      "size": 587,
+      "url": "https://github.com/tailscale/tailcat/blob/main/pickregion_js.go"
+    },
+    {
+      "name": "pickregion.go",
+      "type": "file",
+      "size": 1326,
+      "url": "https://github.com/tailscale/tailcat/blob/main/pickregion.go"
+    },
+    {
+      "name": "readme.go",
+      "type": "file",
+      "size": 358,
+      "url": "https://github.com/tailscale/tailcat/blob/main/readme.go"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 18044,
+      "url": "https://github.com/tailscale/tailcat/blob/main/README.md"
+    },
+    {
+      "name": "tailcat_ssh_stub.go",
+      "type": "file",
+      "size": 390,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_stub.go"
+    },
+    {
+      "name": "tailcat_ssh_test.go",
+      "type": "file",
+      "size": 6439,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_test.go"
+    },
+    {
+      "name": "tailcat_ssh.go",
+      "type": "file",
+      "size": 11067,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh.go"
+    },
+    {
+      "name": "tailcat_test.go",
+      "type": "file",
+      "size": 9616,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_test.go"
+    },
+    {
+      "name": "tailcat.go",
+      "type": "file",
+      "size": 57178,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat.go"
+    },
+    {
+      "name": "tailcat.png",
+      "type": "file",
+      "size": 3140,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat.png"
+    },
+    {
+      "name": "wire_test.go",
+      "type": "file",
+      "size": 3976,
+      "url": "https://github.com/tailscale/tailcat/blob/main/wire_test.go"
+    },
+    {
+      "name": "wire.go",
+      "type": "file",
+      "size": 4034,
+      "url": "https://github.com/tailscale/tailcat/blob/main/wire.go"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 15,
+      "title": "cmd/tailcat: use a short deterministic host for ssh's ControlPath",
+      "url": "https://github.com/tailscale/tailcat/pull/15",
+      "state": "open",
+      "updatedAt": "2026-08-28T12:11:11Z",
+      "author": "korjavin",
+      "draft": false
+    },
+    {
+      "number": 9,
+      "title": "tailcat: make Server.Close and Client.Close idempotent",
+      "url": "https://github.com/tailscale/tailcat/pull/9",
+      "state": "closed",
+      "updatedAt": "2026-08-28T01:22:55Z",
+      "author": "awdemos",
+      "draft": false
+    },
+    {
+      "number": 10,
+      "title": "tailcat: avoid repeated process-wide netns.SetEnabled side effect",
+      "url": "https://github.com/tailscale/tailcat/pull/10",
+      "state": "closed",
+      "updatedAt": "2026-08-28T01:22:46Z",
+      "author": "awdemos",
+      "draft": false
+    },
+    {
+      "number": 11,
+      "title": "tailcat: clean up partially-initialized backends on startup errors",
+      "url": "https://github.com/tailscale/tailcat/pull/11",
+      "state": "closed",
+      "updatedAt": "2026-08-28T01:22:35Z",
+      "author": "awdemos",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "tailcat_ssh: avoid PTY session hang on slow/interactive shells",
+      "url": "https://github.com/tailscale/tailcat/pull/8",
+      "state": "open",
+      "updatedAt": "2026-08-28T13:18:42Z",
+      "author": "awdemos",
+      "draft": false
+    },
+    {
+      "number": 6,
+      "title": "libtailcat, tailcat: add C bindings for embedding tailcat",
+      "url": "https://github.com/tailscale/tailcat/pull/6",
+      "state": "open",
+      "updatedAt": "2026-08-24T14:02:58Z",
+      "author": "bradfitz",
+      "draft": true
+    },
+    {
+      "number": 3,
+      "title": "add start of web mode",
+      "url": "https://github.com/tailscale/tailcat/pull/3",
+      "state": "merged",
+      "updatedAt": "2026-08-20T19:15:37Z",
+      "author": "bradfitz",
+      "draft": false
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "go.mod",
+    "dependencies": [
+      {
+        "name": "github.com/fxamacker/cbor/v2",
+        "version": "v2.9.0"
+      },
+      {
+        "name": "github.com/google/go-cmp",
+        "version": "v0.7.0"
+      },
+      {
+        "name": "go4.org/mem",
+        "version": "v0.0.0-20240501181205-ae6ca9944745"
+      },
+      {
+        "name": "golang.org/x/exp",
+        "version": "v0.0.0-20260410095643-746e56fc9e2f"
+      },
+      {
+        "name": "gvisor.dev/gvisor",
+        "version": "v0.0.0-20260224225140-573d5e7127a8"
+      },
+      {
+        "name": "tailscale.com",
+        "version": "v1.101.0-pre.0.20260720143344-246c82a658b3"
+      }
+    ],
+    "total": 6
+  },
+  "branchCount": 10,
+  "tagCount": 1,
+  "workflowRuns": [
+    {
+      "name": "Test",
+      "status": "success",
+      "url": "https://github.com/tailscale/tailcat/actions/runs/33170064779",
+      "branch": "fix/ssh-controlpath-too-long-12",
+      "updatedAt": "2026-08-28T13:57:56Z"
+    },
+    {
+      "name": "webdemo-pages",
+      "status": "success",
+      "url": "https://github.com/tailscale/tailcat/actions/runs/33030911075",
+      "branch": "main",
+      "updatedAt": "2026-08-27T01:42:50Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 62,
+    "hasCodeOfConduct": true,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 8,
+  "openPRs": 3,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 3,
+  "mergedPRs": 1,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/tailscale/tailcat/security/policy",
+  "codeOfConduct": {
+    "name": "Other",
+    "url": "https://github.com/tailscale/.github/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": null,
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-08-28T18:44:03.151Z"
+}
