@@ -1,0 +1,2910 @@
+{
+  "id": "pollen-robotics/microduck_rl",
+  "snapshots": [
+    {
+      "date": "2026-08-30",
+      "stars": 640,
+      "forks": 118
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-08-30",
+      "period": "daily",
+      "rank": 10,
+      "starsGained": 147
+    }
+  ],
+  "owner": "pollen-robotics",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/19241070?v=4",
+  "ownerType": "Organization",
+  "name": "microduck_rl",
+  "description": "RL training environments for Microduck (mjlab)",
+  "url": "https://github.com/pollen-robotics/microduck_rl",
+  "homepage": "https://pollen-robotics.com/microduck",
+  "license": "Apache-2.0",
+  "language": "Python",
+  "topics": [],
+  "stars": 640,
+  "forks": 118,
+  "watchers": 3,
+  "openIssues": 9,
+  "createdAt": "2025-12-06T13:00:59Z",
+  "pushedAt": "2026-08-30T11:52:20Z",
+  "defaultBranch": "develop",
+  "archived": false,
+  "updatedAt": "2026-08-30T11:56:17.344Z",
+  "commitCount": 1180,
+  "languages": {
+    "Python": 1004669
+  },
+  "contributors": [
+    {
+      "login": "apirrone",
+      "url": "https://github.com/apirrone",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6552564?v=4",
+      "contributions": 1029
+    },
+    {
+      "login": "Drenayaz",
+      "url": "https://github.com/Drenayaz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/72405531?v=4",
+      "contributions": 135
+    },
+    {
+      "login": "darkseed",
+      "url": "https://github.com/darkseed",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/76959?v=4",
+      "contributions": 12
+    },
+    {
+      "login": "andrewginns",
+      "url": "https://github.com/andrewginns",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/25386449?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "tfrere",
+      "url": "https://github.com/tfrere",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6255609?v=4",
+      "contributions": 2
+    }
+  ],
+  "releases": [],
+  "readmeExcerpt": "# Microduck RL\n\n<img width=\"2215\" height=\"884\" alt=\"image\" src=\"https://github.com/user-attachments/assets/5db7cc83-b3ce-4f7c-83f0-0572a63baed7\" />\n\n\nRL training environments for [Microduck](https://github.com/pollen-robotics/microduck) —\na ~800 g, ~25 cm tall bipedal robot — built on\n[mjlab](https://github.com/mujocolab/mjlab) (MuJoCo Warp) with PPO.\nPolicies are trained here at 50 Hz, exported to ONNX, and deployed on the real\nrobot by the runtime in [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck).\n\n\n\nhttps://github.com/user-attachments/assets/50c3d537-8db2-4005-9d9c-3472faeec4d0\n\nThe repo encodes the full sim2real recipe: [BAM](https://github.com/Rhoban/bam)\nactuator physics, domain randomization, backlash simulation, and the\nreward-design lessons that made it work\n(see [AGENTS.md](AGENTS.md) for the distilled playbook).\n\n## Quickstart\n\nRequires a CUDA GPU (training runs through MuJoCo Warp) and [uv](https://docs.astral.sh/uv/).\n\n> **On ARM boxes (DGX Spark / GB10, Jetson):** `uv sync` pulls ~2 GB of CUDA\n> wheels on first run and uv's default 30 s HTTP timeout can abort mid-download.\n> Export `UV_HTTP_TIMEOUT=600` for the first sync. \n\n```bash\ngit clone https://github.com/pollen-robotics/microduck_rl\ncd microduck_rl\n\n# train the walking policy (uses your GPU; ~1-2 h for a usable gait at 4096 envs)\nuv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096\n\n# watch a trained policy in the viewer\nuv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <entity/project/run_id>\n\n# export to ONNX for deployment\nuv run scripts/export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <...>\n\n# drive the exported policy in CPU MuJoCo with the keyboard\nuv run scripts/infer_policy.py --walking output.onnx\n```\n\nResume from a checkpoint:\n\n```bash\nuv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \\\n    --agent.run-name resume --agent.load-checkpoint model_29999.pt --agent.resume True\n```\n\nNo GPU? Add `--hf-jobs` to any train command to run it on Hugging Face Jobs\ninstead of locally (see [scripts/hf/README.md](scripts/hf/README.md)).\n\n## Tasks\n\n`uv run list-envs` prints the live registry. Flat/Rough variants exist where noted.\n\n\n\n| Task id | Terrain | Description |\n|---|---|---|\n| `Mjlab-Velocity-{Flat,Rough}-MicroDuck` | flat/rough | **The main task**: walking with velocity commands + head-pose commands |\n| `Mjlab-VelStand-{Flat,Rough}-MicroDuck` | flat/rough | Walking + fall recovery in one policy |\n| `Mjlab-StandUp-{Flat,Rough}-MicroDuck` | flat/rough | Stand up from face-down/face-up/sitting, then hold the stand + body-pose control |\n| `Mjlab-SitStand-{Flat,Rough}-MicroDuck` | flat/rough | Commanded sit ↔ stand in one policy, gently, head commandable |\n| `Mjlab-GroundPick-{Flat,Rough}-MicroDuck` | flat/rough | Crouch and touch the ground with the mouth tip, return to stand |\n| `Mjlab-BallKick-Flat-MicroDuck` | flat | Kick a 70 mm / 15 g ball forward (actor is ball-blind) |\n| `Mjlab-Roulade-Flat-MicroDuck` | flat | Forward roll over the head, land back on the feet |\n| `Mjlab-Velocity-Flat-MicroDuck-Rollers` | flat | Roller-skate velocity tracking (passive wheels under the feet) |\n| `Mjlab-Velocity-Swizzle-MicroDuck` | flat | Classic symmetric swizzle skating |\n| `Mjlab-RollerCrouch-Flat-MicroDuck` | flat | Crouch while gliding on rollers |\n| `Mjlab-RollerSlope-Flat-MicroDuck` | slope | Glide down slopes on rollers |\n| `Mjlab-RollerStandUp-Flat-MicroDuck` | flat | Stand up from the ground onto the wheels |\n| `Mjlab-Spin-Flat-MicroDuck` | flat | Fast spin in place on rollers |\n\nAt deployment the runtime hot-swaps these policies (walk / recover / trick)\nbehind a shared 61-dimensional observation contract, so any of them can take\nover the robot at any moment. `scripts/infer_policy.py` rehearses exactly that:\n\n```bash\nuv run scripts/infer_policy.py --walking walk.onnx --standing stand.onnx \\\n    --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs\n```\n\nKeyboard-driven (velocity commands, `G` ground pick, `Y` sit/stand, `R` roulade,\n`K`/`L` kicks); `--debug`, `--save-csv`, `--record` support sim2real comparisons.\n\n### Backlash variants\n\nEvery main task has a **Backlash** twin that trains on a model with ±1° of gear\nplay (2° total) in series with each of the 14 servo joints: insert `-Backlash`\nbefore `MicroDuck` in the task id, e.g. `Mjlab-Velocity-Flat-Backlash-MicroDuck`.\n\nThe backlash is modeled properly for sim2real: each servo gets an unactuated\n`passive_<joint>_backlash` hinge, and because the real encoder sits on the\noutput side of the play, both the firmware PD emulation\n(`BacklashEncoderBamActuator`) and the `joint_pos`/`joint_vel` observations\nread *through* the backlash (`qpos[servo] + qpos[backlash]`). Observation and\naction dims are unchanged, so ONNX export and the runtime need no changes.\nSee `src/mjlab_microduck/tasks/backlash.py`.\n\n## Actuator model\n\nAll tasks use the [BAM](https://github.com/Rhoban/bam) M6 actuator model for\nthe Dynamixel XL330 (voltage control law, back-EMF, Coulomb/Stribeck/load-dependent\nfriction), with per-env domain randomization on battery voltage, voltage sag\nunder load, command delay, and friction magnitude\n(`FrictionDRBamActuator` in `src/mjlab_microduck/actuator/`).\n\nAt this scale — tiny servos driving a ~800 g biped — actuator fidelity is most\nof the sim2real gap, which is why the actuator is modeled down to its voltage\ncontrol law instead of an ideal PD.\n\n## Robot models\n\nMJCF models live in `src/mjlab_microduck/robot/microduck/` and are exported\nfrom Onshape with [onshape-to-robot](https://github.com/Rhoban/onshape-to-robot),\none `config_mjcf_*.json` per model:\n\n| XML | Used by |\n|---|---|\n| `robot_walk.xml` | Velocity (stripped trunk/head contacts — falling is cheap) |\n| `robot_allcollisions.xml` | VelStand, StandUp, SitStand, GroundPick, BallKick, Roulade (body can physically lie on the ground) |\n| `robot_allcollisions_rollers.xml` | Roller tasks (passive wheels) |\n| `robot_*_backlash.xml` | Backlash task variants (generated by `add_backlash.py`) |\n\n`scene*.xml` files wrap the robots with a floor + keyframes (STAND/SIT/FOLD)\nfor quick viewing and for `infer_policy.py`.\n\n\n\n## Project structure\n\n```\nsrc/mjlab_microduck/\n├── robot/\n│   ├── microduck/                    # MJCF exports, export configs, scenes, add_backlash.py\n│   └── microduck_constants.py        # robot cfgs, HOME frame, BAM actuator cfg\n├── actuator/friction_dr_bam.py       # BAM + friction DR + backlash encoder feedback\n├── tasks/\n│   ├── __init__.py                   # task registration (base + backlash variants)\n│   ├── mdp.py                        # rewards, events, observations, custom classes\n│   ├── backlash.py                   # make_backlash_variant() env-cfg wrapper\n│   └── microduck_*_env_cfg.py        # one cfg module per task family\n├── train_cli.py                      # `train` entry point (+ --hf-jobs)\n└── hf_jobs.py                        # Hugging Face Jobs submission\n```\n\nConventions worth knowing:\n\n- The observation layout is shared across every policy (61-dim actor obs:\n  48 proprioception + commands `[twist(3), head_pose(4), body_pose(6)]`), which\n  is what makes runtime policy hot-swapping possible. Envs that don't use a\n  command slot zero-pad it rather than dropping it.\n- Unactuated joints are all named `passive_*` (roller wheels, backlash\n  hinges); actuators, joint observations and pose rewards select servo joints\n  with `^(?!passive_).*`.\n- Domain-randomization toggles are `ENABLE_*` booleans at the top of each\n  env cfg file.\n- Joint layout (14 servos): 0–4 left leg (hip_yaw, hip_roll, hip_pitch, knee,\n  ankle), 5–8 neck/head (neck_pitch, head_pitch, head_yaw, head_roll),\n  9–13 right leg.\n- The exporter bakes the observation normalizer into the ONNX graph — always\n  deploy ONNX produced by `scripts/export.py`, never a hand-converted\n  checkpoint, or the policy sees unnormalized observations at runtime.\n\n[AGENTS.md](AGENTS.md) documents the env-building workflow and the reward-design\nrules learned across the project (also aimed at AI coding agents working in\nthis repo).\n\n## Tests\n\n```bash\nuv run --with pytest pytest tests/\n```\n\nCPU-only config-invariant and reward-function regression tests — they lock in\njoint-index mappings, reward sign conventions, and NaN guards.\n\n## Related projects\n\n- [microduck](https://github.com/pollen-robotics/microduck) — the Microduck project home, including the onboard runtime that runs the exported policies\n- [mjlab](https://github.com/mujocolab/mjlab) — the training framework (MuJoCo Warp + rsl_rl)\n- [BAM](https://github.com/Rhoban/bam) — better actuator models, by Rhoban\n\n## License\n\nThis project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.\n3D model files are licensed under Creative Commons BY-SA-NC.\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Microduck RL</h1></div>\n<a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://private-user-images.githubusercontent.com/6552564/640990161-5db7cc83-b3ce-4f7c-83f0-0572a63baed7.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgwOTEyNzcsIm5iZiI6MTc4ODA5MDk3NywicGF0aCI6Ii82NTUyNTY0LzY0MDk5MDE2MS01ZGI3Y2M4My1iM2NlLTRmN2MtODNmMC0wNTcyYTYzYmFlZDcucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgzMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MzBUMTE1NjE3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9YzJiMzczZGU5M2M3Y2I5OWY1NTVlNDYwYmRmNGRjY2ZkNWJmYjA3ODNkMTRjMWRkNjVhY2YyY2Y2YTgyODgyYyZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPWltYWdlJTJGcG5nIn0.ilUU6EaL-2gB5cuOlCWuZT_YaludDhYotQ9ifJikEE4\"><img width=\"2000\" height=\"798\" alt=\"image\" src=\"https://private-user-images.githubusercontent.com/6552564/640990161-5db7cc83-b3ce-4f7c-83f0-0572a63baed7.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgwOTEyNzcsIm5iZiI6MTc4ODA5MDk3NywicGF0aCI6Ii82NTUyNTY0LzY0MDk5MDE2MS01ZGI3Y2M4My1iM2NlLTRmN2MtODNmMC0wNTcyYTYzYmFlZDcucG5nP1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgzMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MzBUMTE1NjE3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9YzJiMzczZGU5M2M3Y2I5OWY1NTVlNDYwYmRmNGRjY2ZkNWJmYjA3ODNkMTRjMWRkNjVhY2YyY2Y2YTgyODgyYyZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPWltYWdlJTJGcG5nIn0.ilUU6EaL-2gB5cuOlCWuZT_YaludDhYotQ9ifJikEE4\" style=\"max-width: 100%; height: auto; max-height: 798px;; aspect-ratio: 2000 / 798; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<p dir=\"auto\">RL training environments for <a href=\"https://github.com/pollen-robotics/microduck\">Microduck</a> —\na ~800 g, ~25 cm tall bipedal robot — built on\n<a href=\"https://github.com/mujocolab/mjlab\">mjlab</a> (MuJoCo Warp) with PPO.\nPolicies are trained here at 50 Hz, exported to ONNX, and deployed on the real\nrobot by the runtime in <a href=\"https://github.com/pollen-robotics/microduck\">pollen-robotics/microduck</a>.</p>\n\n<details open=\"\" class=\"details-reset border rounded-2\">\n  <summary class=\"tmp-px-3 py-2\">\n    <svg aria-hidden=\"true\" data-component=\"Octicon\" height=\"16\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" data-view-component=\"true\" class=\"octicon octicon-device-camera-video\">\n    <path d=\"M16 3.75v8.5a.75.75 0 0 1-1.136.643L11 10.575v.675A1.75 1.75 0 0 1 9.25 13h-7.5A1.75 1.75 0 0 1 0 11.25v-6.5C0 3.784.784 3 1.75 3h7.5c.966 0 1.75.784 1.75 1.75v.675l3.864-2.318A.75.75 0 0 1 16 3.75Zm-6.5 1a.25.25 0 0 0-.25-.25h-7.5a.25.25 0 0 0-.25.25v6.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-6.5ZM11 8.825l3.5 2.1v-5.85l-3.5 2.1Z\"></path>\n</svg>\n    <span class=\"m-1\">interaction.mov</span>\n    <span class=\"dropdown-caret\"></span>\n  </summary>\n\n  <video src=\"https://private-user-images.githubusercontent.com/6552564/634210931-50c3d537-8db2-4005-9d9c-3472faeec4d0.mov?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgwOTEyNzcsIm5iZiI6MTc4ODA5MDk3NywicGF0aCI6Ii82NTUyNTY0LzYzNDIxMDkzMS01MGMzZDUzNy04ZGIyLTQwMDUtOWQ5Yy0zNDcyZmFlZWM0ZDAubW92P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgzMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MzBUMTE1NjE3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MzExMDJmNGM3OWNhODEwZDRkZDdlNTFlZGU1NWQ5MmUzZGYwODlhZWZiY2ZhY2FhYWQ1MWE4MjE1YTU3MjMxNiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGcXVpY2t0aW1lIn0.52YVLOc2q9moqmm-qk2M3A5YwA_LnTdzcyeVPOIC6LI\" data-canonical-src=\"https://private-user-images.githubusercontent.com/6552564/634210931-50c3d537-8db2-4005-9d9c-3472faeec4d0.mov?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgwOTEyNzcsIm5iZiI6MTc4ODA5MDk3NywicGF0aCI6Ii82NTUyNTY0LzYzNDIxMDkzMS01MGMzZDUzNy04ZGIyLTQwMDUtOWQ5Yy0zNDcyZmFlZWM0ZDAubW92P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgzMCUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MzBUMTE1NjE3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MzExMDJmNGM3OWNhODEwZDRkZDdlNTFlZGU1NWQ5MmUzZGYwODlhZWZiY2ZhY2FhYWQ1MWE4MjE1YTU3MjMxNiZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGcXVpY2t0aW1lIn0.52YVLOc2q9moqmm-qk2M3A5YwA_LnTdzcyeVPOIC6LI\" controls=\"controls\" muted=\"muted\" class=\"d-block rounded-bottom-2 border-top width-fit\" style=\"max-height:640px; min-height: 200px\">\n\n  </video>\n</details>\n\n<p dir=\"auto\">The repo encodes the full sim2real recipe: <a href=\"https://github.com/Rhoban/bam\">BAM</a>\nactuator physics, domain randomization, backlash simulation, and the\nreward-design lessons that made it work\n(see <a href=\"https://github.com/pollen-robotics/microduck_rl/blob/develop/AGENTS.md\">AGENTS.md</a> for the distilled playbook).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quickstart</h2></div>\n<p dir=\"auto\">Requires a CUDA GPU (training runs through MuJoCo Warp) and <a href=\"https://docs.astral.sh/uv/\" rel=\"nofollow\">uv</a>.</p>\n<blockquote>\n<p dir=\"auto\"><strong>On ARM boxes (DGX Spark / GB10, Jetson):</strong> <code>uv sync</code> pulls ~2 GB of CUDA\nwheels on first run and uv's default 30 s HTTP timeout can abort mid-download.\nExport <code>UV_HTTP_TIMEOUT=600</code> for the first sync.</p>\n</blockquote>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/pollen-robotics/microduck_rl\ncd microduck_rl\n\n# train the walking policy (uses your GPU; ~1-2 h for a usable gait at 4096 envs)\nuv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096\n\n# watch a trained policy in the viewer\nuv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path &lt;entity/project/run_id&gt;\n\n# export to ONNX for deployment\nuv run scripts/export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path &lt;...&gt;\n\n# drive the exported policy in CPU MuJoCo with the keyboard\nuv run scripts/infer_policy.py --walking output.onnx\"><pre>git clone https://github.com/pollen-robotics/microduck_rl\n<span class=\"pl-c1\">cd</span> microduck_rl\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> train the walking policy (uses your GPU; ~1-2 h for a usable gait at 4096 envs)</span>\nuv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> watch a trained policy in the viewer</span>\nuv run play Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <span class=\"pl-k\">&lt;</span>entity/project/run_id<span class=\"pl-k\">&gt;</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> export to ONNX for deployment</span>\nuv run scripts/export.py Mjlab-Velocity-Flat-MicroDuck --wandb-run-path <span class=\"pl-k\">&lt;</span>...<span class=\"pl-k\">&gt;</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> drive the exported policy in CPU MuJoCo with the keyboard</span>\nuv run scripts/infer_policy.py --walking output.onnx</pre></div>\n<p dir=\"auto\">Resume from a checkpoint:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \\\n    --agent.run-name resume --agent.load-checkpoint model_29999.pt --agent.resume True\"><pre>uv run train Mjlab-Velocity-Flat-MicroDuck --env.scene.num-envs 4096 \\\n    --agent.run-name resume --agent.load-checkpoint model_29999.pt --agent.resume True</pre></div>\n<p dir=\"auto\">No GPU? Add <code>--hf-jobs</code> to any train command to run it on Hugging Face Jobs\ninstead of locally (see <a href=\"https://github.com/pollen-robotics/microduck_rl/blob/develop/scripts/hf/README.md\">scripts/hf/README.md</a>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Tasks</h2></div>\n<p dir=\"auto\"><code>uv run list-envs</code> prints the live registry. Flat/Rough variants exist where noted.</p>\n\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Task id</th>\n<th>Terrain</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>Mjlab-Velocity-{Flat,Rough}-MicroDuck</code></td>\n<td>flat/rough</td>\n<td><strong>The main task</strong>: walking with velocity commands + head-pose commands</td>\n</tr>\n<tr>\n<td><code>Mjlab-VelStand-{Flat,Rough}-MicroDuck</code></td>\n<td>flat/rough</td>\n<td>Walking + fall recovery in one policy</td>\n</tr>\n<tr>\n<td><code>Mjlab-StandUp-{Flat,Rough}-MicroDuck</code></td>\n<td>flat/rough</td>\n<td>Stand up from face-down/face-up/sitting, then hold the stand + body-pose control</td>\n</tr>\n<tr>\n<td><code>Mjlab-SitStand-{Flat,Rough}-MicroDuck</code></td>\n<td>flat/rough</td>\n<td>Commanded sit ↔ stand in one policy, gently, head commandable</td>\n</tr>\n<tr>\n<td><code>Mjlab-GroundPick-{Flat,Rough}-MicroDuck</code></td>\n<td>flat/rough</td>\n<td>Crouch and touch the ground with the mouth tip, return to stand</td>\n</tr>\n<tr>\n<td><code>Mjlab-BallKick-Flat-MicroDuck</code></td>\n<td>flat</td>\n<td>Kick a 70 mm / 15 g ball forward (actor is ball-blind)</td>\n</tr>\n<tr>\n<td><code>Mjlab-Roulade-Flat-MicroDuck</code></td>\n<td>flat</td>\n<td>Forward roll over the head, land back on the feet</td>\n</tr>\n<tr>\n<td><code>Mjlab-Velocity-Flat-MicroDuck-Rollers</code></td>\n<td>flat</td>\n<td>Roller-skate velocity tracking (passive wheels under the feet)</td>\n</tr>\n<tr>\n<td><code>Mjlab-Velocity-Swizzle-MicroDuck</code></td>\n<td>flat</td>\n<td>Classic symmetric swizzle skating</td>\n</tr>\n<tr>\n<td><code>Mjlab-RollerCrouch-Flat-MicroDuck</code></td>\n<td>flat</td>\n<td>Crouch while gliding on rollers</td>\n</tr>\n<tr>\n<td><code>Mjlab-RollerSlope-Flat-MicroDuck</code></td>\n<td>slope</td>\n<td>Glide down slopes on rollers</td>\n</tr>\n<tr>\n<td><code>Mjlab-RollerStandUp-Flat-MicroDuck</code></td>\n<td>flat</td>\n<td>Stand up from the ground onto the wheels</td>\n</tr>\n<tr>\n<td><code>Mjlab-Spin-Flat-MicroDuck</code></td>\n<td>flat</td>\n<td>Fast spin in place on rollers</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">At deployment the runtime hot-swaps these policies (walk / recover / trick)\nbehind a shared 61-dimensional observation contract, so any of them can take\nover the robot at any moment. <code>scripts/infer_policy.py</code> rehearses exactly that:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run scripts/infer_policy.py --walking walk.onnx --standing stand.onnx \\\n    --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs\"><pre>uv run scripts/infer_policy.py --walking walk.onnx --standing stand.onnx \\\n    --sitstand sitstand.onnx --roulade roulade.onnx --new-cmd-obs</pre></div>\n<p dir=\"auto\">Keyboard-driven (velocity commands, <code>G</code> ground pick, <code>Y</code> sit/stand, <code>R</code> roulade,\n<code>K</code>/<code>L</code> kicks); <code>--debug</code>, <code>--save-csv</code>, <code>--record</code> support sim2real comparisons.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Backlash variants</h3></div>\n<p dir=\"auto\">Every main task has a <strong>Backlash</strong> twin that trains on a model with ±1° of gear\nplay (2° total) in series with each of the 14 servo joints: insert <code>-Backlash</code>\nbefore <code>MicroDuck</code> in the task id, e.g. <code>Mjlab-Velocity-Flat-Backlash-MicroDuck</code>.</p>\n<p dir=\"auto\">The backlash is modeled properly for sim2real: each servo gets an unactuated\n<code>passive_&lt;joint&gt;_backlash</code> hinge, and because the real encoder sits on the\noutput side of the play, both the firmware PD emulation\n(<code>BacklashEncoderBamActuator</code>) and the <code>joint_pos</code>/<code>joint_vel</code> observations\nread <em>through</em> the backlash (<code>qpos[servo] + qpos[backlash]</code>). Observation and\naction dims are unchanged, so ONNX export and the runtime need no changes.\nSee <code>src/mjlab_microduck/tasks/backlash.py</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Actuator model</h2></div>\n<p dir=\"auto\">All tasks use the <a href=\"https://github.com/Rhoban/bam\">BAM</a> M6 actuator model for\nthe Dynamixel XL330 (voltage control law, back-EMF, Coulomb/Stribeck/load-dependent\nfriction), with per-env domain randomization on battery voltage, voltage sag\nunder load, command delay, and friction magnitude\n(<code>FrictionDRBamActuator</code> in <code>src/mjlab_microduck/actuator/</code>).</p>\n<p dir=\"auto\">At this scale — tiny servos driving a ~800 g biped — actuator fidelity is most\nof the sim2real gap, which is why the actuator is modeled down to its voltage\ncontrol law instead of an ideal PD.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Robot models</h2></div>\n<p dir=\"auto\">MJCF models live in <code>src/mjlab_microduck/robot/microduck/</code> and are exported\nfrom Onshape with <a href=\"https://github.com/Rhoban/onshape-to-robot\">onshape-to-robot</a>,\none <code>config_mjcf_*.json</code> per model:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>XML</th>\n<th>Used by</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>robot_walk.xml</code></td>\n<td>Velocity (stripped trunk/head contacts — falling is cheap)</td>\n</tr>\n<tr>\n<td><code>robot_allcollisions.xml</code></td>\n<td>VelStand, StandUp, SitStand, GroundPick, BallKick, Roulade (body can physically lie on the ground)</td>\n</tr>\n<tr>\n<td><code>robot_allcollisions_rollers.xml</code></td>\n<td>Roller tasks (passive wheels)</td>\n</tr>\n<tr>\n<td><code>robot_*_backlash.xml</code></td>\n<td>Backlash task variants (generated by <code>add_backlash.py</code>)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><code>scene*.xml</code> files wrap the robots with a floor + keyframes (STAND/SIT/FOLD)\nfor quick viewing and for <code>infer_policy.py</code>.</p>\n\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Project structure</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"src/mjlab_microduck/\n├── robot/\n│   ├── microduck/                    # MJCF exports, export configs, scenes, add_backlash.py\n│   └── microduck_constants.py        # robot cfgs, HOME frame, BAM actuator cfg\n├── actuator/friction_dr_bam.py       # BAM + friction DR + backlash encoder feedback\n├── tasks/\n│   ├── __init__.py                   # task registration (base + backlash variants)\n│   ├── mdp.py                        # rewards, events, observations, custom classes\n│   ├── backlash.py                   # make_backlash_variant() env-cfg wrapper\n│   └── microduck_*_env_cfg.py        # one cfg module per task family\n├── train_cli.py                      # `train` entry point (+ --hf-jobs)\n└── hf_jobs.py                        # Hugging Face Jobs submission\"><pre class=\"notranslate\"><code>src/mjlab_microduck/\n├── robot/\n│   ├── microduck/                    # MJCF exports, export configs, scenes, add_backlash.py\n│   └── microduck_constants.py        # robot cfgs, HOME frame, BAM actuator cfg\n├── actuator/friction_dr_bam.py       # BAM + friction DR + backlash encoder feedback\n├── tasks/\n│   ├── __init__.py                   # task registration (base + backlash variants)\n│   ├── mdp.py                        # rewards, events, observations, custom classes\n│   ├── backlash.py                   # make_backlash_variant() env-cfg wrapper\n│   └── microduck_*_env_cfg.py        # one cfg module per task family\n├── train_cli.py                      # `train` entry point (+ --hf-jobs)\n└── hf_jobs.py                        # Hugging Face Jobs submission\n</code></pre></div>\n<p dir=\"auto\">Conventions worth knowing:</p>\n<ul dir=\"auto\">\n<li>The observation layout is shared across every policy (61-dim actor obs:\n48 proprioception + commands <code>[twist(3), head_pose(4), body_pose(6)]</code>), which\nis what makes runtime policy hot-swapping possible. Envs that don't use a\ncommand slot zero-pad it rather than dropping it.</li>\n<li>Unactuated joints are all named <code>passive_*</code> (roller wheels, backlash\nhinges); actuators, joint observations and pose rewards select servo joints\nwith <code>^(?!passive_).*</code>.</li>\n<li>Domain-randomization toggles are <code>ENABLE_*</code> booleans at the top of each\nenv cfg file.</li>\n<li>Joint layout (14 servos): 0–4 left leg (hip_yaw, hip_roll, hip_pitch, knee,\nankle), 5–8 neck/head (neck_pitch, head_pitch, head_yaw, head_roll),\n9–13 right leg.</li>\n<li>The exporter bakes the observation normalizer into the ONNX graph — always\ndeploy ONNX produced by <code>scripts/export.py</code>, never a hand-converted\ncheckpoint, or the policy sees unnormalized observations at runtime.</li>\n</ul>\n<p dir=\"auto\"><a href=\"https://github.com/pollen-robotics/microduck_rl/blob/develop/AGENTS.md\">AGENTS.md</a> documents the env-building workflow and the reward-design\nrules learned across the project (also aimed at AI coding agents working in\nthis repo).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Tests</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run --with pytest pytest tests/\"><pre>uv run --with pytest pytest tests/</pre></div>\n<p dir=\"auto\">CPU-only config-invariant and reward-function regression tests — they lock in\njoint-index mappings, reward sign conventions, and NaN guards.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Related projects</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/pollen-robotics/microduck\">microduck</a> — the Microduck project home, including the onboard runtime that runs the exported policies</li>\n<li><a href=\"https://github.com/mujocolab/mjlab\">mjlab</a> — the training framework (MuJoCo Warp + rsl_rl)</li>\n<li><a href=\"https://github.com/Rhoban/bam\">BAM</a> — better actuator models, by Rhoban</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">This project is licensed under the Apache 2.0 License. See the <a href=\"https://github.com/pollen-robotics/microduck_rl/blob/develop/LICENSE\">LICENSE</a> file for details.\n3D model files are licensed under Creative Commons BY-SA-NC.</p>\n</article></div>",
+  "contributorCount": 5,
+  "firstCommitAt": "2025-12-06T13:46:19Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 16
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 10
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 18
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 20
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 22
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 28
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 39
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 29
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 30
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 27
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 20
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 31
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 24
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 34
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 24
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 33
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 23
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 26
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 25
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 24
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 31
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 22
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 34
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 38
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 17
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 14
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 29
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 27
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 16
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 23
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 20
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 23
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 14
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 11
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 16
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 17
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 11
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 14
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 11,
+      "title": "Community port: training the walking task on AMD GPUs (ROCm) via Genesis",
+      "url": "https://github.com/pollen-robotics/microduck_rl/issues/11",
+      "createdAt": "2026-08-29T10:08:28Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Macmachi"
+    },
+    {
+      "number": 6,
+      "title": "Default Walking Policy?",
+      "url": "https://github.com/pollen-robotics/microduck_rl/issues/6",
+      "createdAt": "2026-08-28T04:24:31Z",
+      "comments": 1,
+      "labels": [],
+      "author": "hoangducnhatminh"
+    }
+  ],
+  "participation": {
+    "all": 1180,
+    "owner": 0,
+    "community": 1180
+  },
+  "recentCommits": [
+    {
+      "sha": "d424a0c",
+      "message": "Merge pull request #4 from andrewginns/docs/add-agents-guidance",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/d424a0c899f6b33cbd3daeb279913134349c0b63",
+      "date": "2026-08-27T15:52:22Z",
+      "author": "apirrone",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6552564?v=4"
+    },
+    {
+      "sha": "52fc5ef",
+      "message": "docs: make AGENTS.md canonical",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/52fc5efb54b5cd4275fad0b888aeac75175e082f",
+      "date": "2026-08-27T15:25:40Z",
+      "author": "andrewginns",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/25386449?v=4"
+    },
+    {
+      "sha": "51fa71d",
+      "message": "docs: add AGENTS.md guidance",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/51fa71dc3221b24ae4bf4061b50005fb0ab1afa6",
+      "date": "2026-08-27T14:05:47Z",
+      "author": "andrewginns",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/25386449?v=4"
+    },
+    {
+      "sha": "c690e55",
+      "message": "Revert \"Merge pull request #3 from pollen-robotics/fix/french-to-english\"",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/c690e5599866893b11b3ab2764883a8b0800cbe7",
+      "date": "2026-08-27T03:14:26Z",
+      "author": "tfrere",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6255609?v=4"
+    },
+    {
+      "sha": "1477b69",
+      "message": "Merge pull request #3 from pollen-robotics/fix/french-to-english",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/1477b69173f333d2d522d9f2a0f1b22907db4279",
+      "date": "2026-08-26T21:20:27Z",
+      "author": "tfrere",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6255609?v=4"
+    },
+    {
+      "sha": "eb2eb40",
+      "message": "A bit to verbose by the AI",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/eb2eb4079924aa1affa712e972aff585ac8eda60",
+      "date": "2026-08-26T19:50:33Z",
+      "author": "darkseed",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/76959?v=4"
+    },
+    {
+      "sha": "0eb0d59",
+      "message": "Merge pull request #2 from pollen-robotics/fix/aarch64-cuda-torch-dgx-spark",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/0eb0d596832c9399764aa080f960df7eacd86e20",
+      "date": "2026-08-26T19:46:54Z",
+      "author": "darkseed",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/76959?v=4"
+    },
+    {
+      "sha": "bae6feb",
+      "message": "translate remaining missed French comments and plan lines to English",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/bae6febe8b0cf8cb852af7bf988c2b1979c2e6f3",
+      "date": "2026-08-26T16:29:37Z",
+      "author": "darkseed",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/76959?v=4"
+    },
+    {
+      "sha": "14697b5",
+      "message": "translate spin-env plan to English",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/14697b5fbbb90f7ad3fd97011200db85bcf0ad03",
+      "date": "2026-08-26T16:29:37Z",
+      "author": "darkseed",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/76959?v=4"
+    },
+    {
+      "sha": "fc16976",
+      "message": "Update README.md",
+      "url": "https://github.com/pollen-robotics/microduck_rl/commit/fc1697699c478ed4f67373808a23caccc6bed785",
+      "date": "2026-08-26T16:04:04Z",
+      "author": "apirrone",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6552564?v=4"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Graph Update: uv in /. #1517025293",
+      "status": "success",
+      "url": "https://github.com/pollen-robotics/microduck_rl/actions/runs/31373838081",
+      "branch": "develop",
+      "updatedAt": "2026-08-10T09:17:47Z"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pollen-robotics/microduck_rl/tree/develop/docs"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pollen-robotics/microduck_rl/tree/develop/scripts"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pollen-robotics/microduck_rl/tree/develop/src"
+    },
+    {
+      "name": "tests",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/pollen-robotics/microduck_rl/tree/develop/tests"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 423,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/.gitignore"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 15761,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/AGENTS.md"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 11,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/CLAUDE.md"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 11351,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/LICENSE"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 4566,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 9494,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/README.md"
+    },
+    {
+      "name": "uv.lock",
+      "type": "file",
+      "size": 241445,
+      "url": "https://github.com/pollen-robotics/microduck_rl/blob/develop/uv.lock"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 15,
+      "title": "Add validation for Blender motion exports",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/15",
+      "state": "open",
+      "updatedAt": "2026-08-30T11:42:38Z",
+      "author": "sandriverfish",
+      "draft": false
+    },
+    {
+      "number": 12,
+      "title": "Add AMD GPU (ROCm/HIP) training support",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/12",
+      "state": "open",
+      "updatedAt": "2026-08-30T07:15:01Z",
+      "author": "shailensobhee",
+      "draft": false
+    },
+    {
+      "number": 14,
+      "title": "Add jump task: two-foot hop, land standing",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/14",
+      "state": "open",
+      "updatedAt": "2026-08-30T07:13:46Z",
+      "author": "SAMBAS123",
+      "draft": false
+    },
+    {
+      "number": 13,
+      "title": "Fix wandb credential lookup on Windows (~/_netrc, not ~/.netrc)",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/13",
+      "state": "open",
+      "updatedAt": "2026-08-29T19:35:24Z",
+      "author": "xX-Tony-S-Xx",
+      "draft": false
+    },
+    {
+      "number": 10,
+      "title": "Add 16-DOF footed Growbot Roulade simulation",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/10",
+      "state": "closed",
+      "updatedAt": "2026-08-29T05:00:39Z",
+      "author": "ai-wes",
+      "draft": false
+    },
+    {
+      "number": 9,
+      "title": "fix(hf-jobs): auto-export never finds the checkpoint",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/9",
+      "state": "open",
+      "updatedAt": "2026-08-29T00:01:58Z",
+      "author": "hermias1",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "roller-standup: fix joint indices to servo space (env crashed on first step)",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/8",
+      "state": "open",
+      "updatedAt": "2026-08-28T13:26:27Z",
+      "author": "rakhimovv",
+      "draft": false
+    },
+    {
+      "number": 5,
+      "title": "Add play-dead task: stand, flop onto the back, and hold",
+      "url": "https://github.com/pollen-robotics/microduck_rl/pull/5",
+      "state": "open",
+      "updatedAt": "2026-08-27T20:34:08Z",
+      "author": "SAMBAS123",
+      "draft": false
+    }
+  ],
+  "community": {
+    "healthPercentage": 37,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "mjlab",
+        "version": "1.3.0"
+      },
+      {
+        "name": "warp-lang",
+        "version": "1.12.0"
+      },
+      {
+        "name": "better-actuator-models",
+        "version": null
+      },
+      {
+        "name": "onnxruntime",
+        "version": "1.24.4"
+      },
+      {
+        "name": "rustypot",
+        "version": "1.4.2"
+      },
+      {
+        "name": "huggingface_hub",
+        "version": "0.27.0"
+      },
+      {
+        "name": "matplotlib",
+        "version": "3.10.9"
+      },
+      {
+        "name": "scipy",
+        "version": "1.16"
+      }
+    ],
+    "total": 8
+  },
+  "branchCount": 15,
+  "tagCount": 1,
+  "fundingLinks": [],
+  "openIssuesOnly": 2,
+  "openPRs": 7,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 1,
+  "mergedPRs": 3,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "commitActivity": [
+    {
+      "week": "2025-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 3
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 18
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 77
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 89
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 52
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 125
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 28
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 29
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 35
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 64
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 73
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 80
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 36
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 18
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 14
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 5
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 80
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 41
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 5
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 4
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 48
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 22
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 20
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 74
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 40
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 29
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 15
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 8
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 27
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-09-06",
+      "count": 0
+    },
+    {
+      "date": "2025-09-07",
+      "count": 0
+    },
+    {
+      "date": "2025-09-08",
+      "count": 0
+    },
+    {
+      "date": "2025-09-09",
+      "count": 0
+    },
+    {
+      "date": "2025-09-10",
+      "count": 0
+    },
+    {
+      "date": "2025-09-11",
+      "count": 0
+    },
+    {
+      "date": "2025-09-12",
+      "count": 0
+    },
+    {
+      "date": "2025-09-13",
+      "count": 0
+    },
+    {
+      "date": "2025-09-14",
+      "count": 0
+    },
+    {
+      "date": "2025-09-15",
+      "count": 0
+    },
+    {
+      "date": "2025-09-16",
+      "count": 0
+    },
+    {
+      "date": "2025-09-17",
+      "count": 0
+    },
+    {
+      "date": "2025-09-18",
+      "count": 0
+    },
+    {
+      "date": "2025-09-19",
+      "count": 0
+    },
+    {
+      "date": "2025-09-20",
+      "count": 0
+    },
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 3
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 2
+    },
+    {
+      "date": "2026-01-16",
+      "count": 3
+    },
+    {
+      "date": "2026-01-17",
+      "count": 13
+    },
+    {
+      "date": "2026-01-18",
+      "count": 12
+    },
+    {
+      "date": "2026-01-19",
+      "count": 16
+    },
+    {
+      "date": "2026-01-20",
+      "count": 13
+    },
+    {
+      "date": "2026-01-21",
+      "count": 25
+    },
+    {
+      "date": "2026-01-22",
+      "count": 11
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 14
+    },
+    {
+      "date": "2026-01-27",
+      "count": 12
+    },
+    {
+      "date": "2026-01-28",
+      "count": 40
+    },
+    {
+      "date": "2026-01-29",
+      "count": 23
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 18
+    },
+    {
+      "date": "2026-02-03",
+      "count": 1
+    },
+    {
+      "date": "2026-02-04",
+      "count": 13
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 7
+    },
+    {
+      "date": "2026-02-07",
+      "count": 13
+    },
+    {
+      "date": "2026-02-08",
+      "count": 4
+    },
+    {
+      "date": "2026-02-09",
+      "count": 28
+    },
+    {
+      "date": "2026-02-10",
+      "count": 29
+    },
+    {
+      "date": "2026-02-11",
+      "count": 4
+    },
+    {
+      "date": "2026-02-12",
+      "count": 19
+    },
+    {
+      "date": "2026-02-13",
+      "count": 13
+    },
+    {
+      "date": "2026-02-14",
+      "count": 28
+    },
+    {
+      "date": "2026-02-15",
+      "count": 22
+    },
+    {
+      "date": "2026-02-16",
+      "count": 5
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 1
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 3
+    },
+    {
+      "date": "2026-02-24",
+      "count": 2
+    },
+    {
+      "date": "2026-02-25",
+      "count": 7
+    },
+    {
+      "date": "2026-02-26",
+      "count": 15
+    },
+    {
+      "date": "2026-02-27",
+      "count": 1
+    },
+    {
+      "date": "2026-02-28",
+      "count": 1
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 2
+    },
+    {
+      "date": "2026-03-03",
+      "count": 7
+    },
+    {
+      "date": "2026-03-04",
+      "count": 9
+    },
+    {
+      "date": "2026-03-05",
+      "count": 8
+    },
+    {
+      "date": "2026-03-06",
+      "count": 5
+    },
+    {
+      "date": "2026-03-07",
+      "count": 4
+    },
+    {
+      "date": "2026-03-08",
+      "count": 6
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 20
+    },
+    {
+      "date": "2026-03-12",
+      "count": 31
+    },
+    {
+      "date": "2026-03-13",
+      "count": 7
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 14
+    },
+    {
+      "date": "2026-03-16",
+      "count": 19
+    },
+    {
+      "date": "2026-03-17",
+      "count": 25
+    },
+    {
+      "date": "2026-03-18",
+      "count": 12
+    },
+    {
+      "date": "2026-03-19",
+      "count": 3
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 20
+    },
+    {
+      "date": "2026-03-24",
+      "count": 17
+    },
+    {
+      "date": "2026-03-25",
+      "count": 19
+    },
+    {
+      "date": "2026-03-26",
+      "count": 18
+    },
+    {
+      "date": "2026-03-27",
+      "count": 6
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 16
+    },
+    {
+      "date": "2026-03-31",
+      "count": 1
+    },
+    {
+      "date": "2026-04-01",
+      "count": 2
+    },
+    {
+      "date": "2026-04-02",
+      "count": 6
+    },
+    {
+      "date": "2026-04-03",
+      "count": 7
+    },
+    {
+      "date": "2026-04-04",
+      "count": 4
+    },
+    {
+      "date": "2026-04-05",
+      "count": 3
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 9
+    },
+    {
+      "date": "2026-04-08",
+      "count": 4
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 2
+    },
+    {
+      "date": "2026-04-12",
+      "count": 7
+    },
+    {
+      "date": "2026-04-13",
+      "count": 7
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 5
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 9
+    },
+    {
+      "date": "2026-05-12",
+      "count": 27
+    },
+    {
+      "date": "2026-05-13",
+      "count": 15
+    },
+    {
+      "date": "2026-05-14",
+      "count": 16
+    },
+    {
+      "date": "2026-05-15",
+      "count": 13
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 21
+    },
+    {
+      "date": "2026-05-19",
+      "count": 12
+    },
+    {
+      "date": "2026-05-20",
+      "count": 6
+    },
+    {
+      "date": "2026-05-21",
+      "count": 2
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 5
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 2
+    },
+    {
+      "date": "2026-06-25",
+      "count": 2
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 13
+    },
+    {
+      "date": "2026-06-29",
+      "count": 10
+    },
+    {
+      "date": "2026-06-30",
+      "count": 11
+    },
+    {
+      "date": "2026-07-01",
+      "count": 9
+    },
+    {
+      "date": "2026-07-02",
+      "count": 5
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 8
+    },
+    {
+      "date": "2026-07-07",
+      "count": 3
+    },
+    {
+      "date": "2026-07-08",
+      "count": 6
+    },
+    {
+      "date": "2026-07-09",
+      "count": 5
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 7
+    },
+    {
+      "date": "2026-07-16",
+      "count": 4
+    },
+    {
+      "date": "2026-07-17",
+      "count": 9
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 5
+    },
+    {
+      "date": "2026-07-21",
+      "count": 8
+    },
+    {
+      "date": "2026-07-22",
+      "count": 6
+    },
+    {
+      "date": "2026-07-23",
+      "count": 16
+    },
+    {
+      "date": "2026-07-24",
+      "count": 39
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 21
+    },
+    {
+      "date": "2026-07-28",
+      "count": 16
+    },
+    {
+      "date": "2026-07-29",
+      "count": 3
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 22
+    },
+    {
+      "date": "2026-08-05",
+      "count": 5
+    },
+    {
+      "date": "2026-08-06",
+      "count": 2
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 3
+    },
+    {
+      "date": "2026-08-11",
+      "count": 5
+    },
+    {
+      "date": "2026-08-12",
+      "count": 4
+    },
+    {
+      "date": "2026-08-13",
+      "count": 3
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 1
+    },
+    {
+      "date": "2026-08-19",
+      "count": 1
+    },
+    {
+      "date": "2026-08-20",
+      "count": 4
+    },
+    {
+      "date": "2026-08-21",
+      "count": 2
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 12
+    },
+    {
+      "date": "2026-08-26",
+      "count": 12
+    },
+    {
+      "date": "2026-08-27",
+      "count": 3
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-08-30T11:56:28.793Z"
+}
