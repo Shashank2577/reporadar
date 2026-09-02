@@ -155,6 +155,11 @@
       "date": "2026-08-31",
       "stars": 21794,
       "forks": 2801
+    },
+    {
+      "date": "2026-09-02",
+      "stars": 21836,
+      "forks": 2807
     }
   ],
   "trendingHistory": [
@@ -413,43 +418,43 @@
     "threejs",
     "typescript"
   ],
-  "stars": 21794,
-  "forks": 2801,
-  "watchers": 118,
+  "stars": 21836,
+  "forks": 2807,
+  "watchers": 119,
   "openIssues": 38,
   "createdAt": "2025-10-16T19:35:06Z",
-  "pushedAt": "2026-08-31T13:07:17Z",
+  "pushedAt": "2026-09-02T22:01:39Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-08-31T17:21:33.106Z",
-  "commitCount": 1356,
+  "updatedAt": "2026-09-02T23:47:07.553Z",
+  "commitCount": 1406,
   "languages": {
-    "TypeScript": 15090880,
-    "JavaScript": 32804,
+    "TypeScript": 16765492,
     "CSS": 14986,
     "Shell": 13882,
+    "JavaScript": 5512,
     "Dockerfile": 954
   },
-  "readmeExcerpt": "# Pascal Editor\n\nA 3D building editor built with React Three Fiber and WebGPU.\n\n\n\n\n\n\n\n\nhttps://github.com/user-attachments/assets/8b50e7cf-cebe-4579-9cf3-8786b35f7b6b\n\n## Run the Editor Locally\n\nNode.js 22.13 or newer can create a persistent local Pascal installation without\ncloning this repository:\n\n```bash\nnpx @pascal-app/cli editor\n```\n\nThe CLI starts the editor and an authenticated MCP service in the background, selects\ncollision-free loopback ports, and keeps projects in `~/.pascal/data/pascal.db`. Configure\nan agent to launch `pascal mcp connect`. See [Run Pascal locally](https://editor.pascal.app/docs/developers/local-editor)\nfor pnpm/Bun commands, project management, MCP setup, updates, storage paths, and\ntroubleshooting.\n\n## Using Published Packages\n\nThe viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting `<Viewer>`:\n\n```bash\nnpm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\n```\n\n```typescript\nimport { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\n```\n\nSee the [`@pascal-app/viewer` quick start](packages/viewer/README.md#usage) for a React example.\n\n\n## Repository Architecture\n\nThis is a Turborepo monorepo with the reusable editor packages, the standalone app,\nand the CLI that distributes it:\n\n```\neditor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\n```\n\n### Separation of Concerns\n\n| Package | Responsibility |\n|---------|---------------|\n| **@pascal-app/core** | Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus |\n| **@pascal-app/viewer** | 3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing |\n| **@pascal-app/editor** | Editing tools, panels, selection, and direct-manipulation UI |\n| **@pascal-app/nodes** | Built-in registry plugin with node definitions, renderers, geometry, and systems |\n| **@pascal-app/cli** | Installs and manages a versioned standalone editor runtime and persistent local data |\n| **@pascal-app/mcp** | Exposes scene tools, resources, prompts, and local storage to MCP-compatible AI hosts |\n| **apps/editor** | Standalone Next.js host for the editor packages |\n\nThe **viewer** renders the scene with sensible defaults. The **editor** extends it with interactive tools, selection management, and editing capabilities.\n\n### Stores\n\nEach package has its own Zustand store for managing state:\n\n| Store | Package | Responsibility |\n|-------|---------|----------------|\n| `useScene` | `@pascal-app/core` | Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo. |\n| `useViewer` | `@pascal-app/viewer` | Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode. |\n| `useEditor` | `apps/editor` | Editor state: active tool, structure layer visibility, panel states, editor-specific preferences. |\n\n**Access patterns:**\n\n```typescript\n// Subscribe to state changes (React component)\nconst nodes = useScene((state) => state.nodes)\nconst levelId = useViewer((state) => state.selection.levelId)\nconst activeTool = useEditor((state) => state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\n```\n\n---\n\n## Core Concepts\n\n### Nodes\n\nNodes are the data primitives that describe the 3D scene. All nodes extend `BaseNode`:\n\n```typescript\nBaseNode {\n  id: string              // Auto-generated with type prefix (e.g., \"wall_abc123\")\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\n```\n\n**Node Hierarchy:**\n\n```\nSite\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n```\n\nNodes are stored in a **flat dictionary** (`Record<id, Node>`), not a nested tree. Parent-child relationships are defined via `parentId` and `children` arrays.\n\n---\n\n### Scene State (Zustand Store)\n\nThe scene is managed by a Zustand store in `@pascal-app/core`:\n\n```typescript\nuseScene.getState() = {\n  nodes: Record<id, AnyNode>,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set<string>,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\n```\n\n**Middleware:**\n- **Persist** - Saves to IndexedDB (excludes transient nodes)\n- **Temporal** (Zundo) - Undo/redo with 50-step history\n\n---\n\n### Scene Registry\n\nThe registry maps node IDs to their Three.js objects for fast lookup:\n\n```typescript\nsceneRegistry = {\n  nodes: Map<id, Object3D>,    // ID → 3D object\n  byType: {\n    wall: Set<id>,\n    item: Set<id>,\n    zone: Set<id>,\n    // ...\n  }\n}\n```\n\nRenderers register their refs using the `useRegistry` hook:\n\n```tsx\nconst ref = useRef<Mesh>(null!)\nuseRegistry(node.id, 'wall', ref)\n```\n\nThis allows systems to access 3D objects directly without traversing the scene graph.\n\n---\n\n### Node Renderers\n\nRenderers are React components that create Three.js objects for each node type:\n\n```\nSceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n```\n\n**Pattern:**\n1. Renderer creates a placeholder mesh/group\n2. Registers it with `useRegistry`\n3. Systems update geometry based on node data\n\nExample (simplified):\n```tsx\nconst WallRenderer = ({ node }) => {\n  const ref = useRef<Mesh>(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    <mesh ref={ref}>\n      <boxGeometry args={[0, 0, 0]} />  {/* Replaced by WallSystem */}\n      <meshStandardMaterial />\n      {node.children.map(id => <NodeRenderer key={id} nodeId={id} />)}\n    </mesh>\n  )\n}\n```\n\n---\n\n### Systems\n\nSystems are React components that run in the render loop (`useFrame`) to update geometry and transforms. They process **dirty nodes** marked by the store.\n\n**Core Systems (in `@pascal-app/core`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `WallSystem` | Generates wall geometry with mitering and CSG cutouts for doors/windows |\n| `SlabSystem` | Generates floor geometry from polygons |\n| `CeilingSystem` | Generates ceiling geometry |\n| `RoofSystem` | Generates roof geometry |\n| `ItemSystem` | Positions items on walls, ceilings, or floors (slab elevation) |\n\n**Viewer Systems (in `@pascal-app/viewer`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `LevelSystem` | Handles level visibility and vertical positioning (stacked/exploded/solo modes) |\n| `ScanSystem` | Controls 3D scan visibility |\n| `GuideSystem` | Controls guide image visibility |\n\n**Processing Pattern:**\n```typescript\nuseFrame(() => {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\n```\n\n---\n\n### Dirty Nodes\n\nWhen a node changes, it's marked as **dirty** in `useScene.getState().dirtyNodes`. Systems check this set each frame and only recompute geometry for dirty nodes.\n\n```typescript\n// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\n```\n\n**Manual marking:**\n```typescript\nuseScene.getState().dirtyNodes.add(wallId)\n```\n\n---\n\n### Event Bus\n\nInter-component communication uses a typed event emitter (mitt):\n\n```typescript\n// Node events\nemitter.on('wall:click', (event) => { ... })\nemitter.on('item:enter', (event) => { ... })\nemitter.on('zone:context-menu', (event) => { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) => { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () => void\n}\n```\n\n---\n\n### Spatial Grid Manager\n\nHandles collision detection and placement validation:\n\n```typescript\nspatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\n```\n\nUsed by item placement tools to validate positions and calculate slab elevations.\n\n---\n\n## Editor Architecture\n\nThe editor extends the viewer with:\n\n### Tools\n\nTools are activated via the toolbar and handle user input for specific operations:\n\n- **SelectTool** - Selection and manipulation\n- **WallTool** - Draw walls\n- **ZoneTool** - Create zones\n- **ItemTool** - Place furniture/fixtures\n- **SlabTool** - Create floor slabs\n\n### Selection Manager\n\nThe editor uses a custom selection manager with hierarchical navigation:\n\n```\nSite → Building → Level → Zone → Items\n```\n\nEach depth level has its own selection strategy for hover/click behavior.\n\n### Editor-Specific Systems\n\n- `ZoneSystem` - Controls zone visibility based on level mode\n- Custom camera controls with node focusing\n\n---\n\n## Data Flow\n\n```\nUser Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n```\n\n---\n\n## Building a Plugin\n\nThe editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same `Plugin` manifest the built-ins use — there is no separate internal API.\n\n- **Developer guide** — [Create a plugin](https://editor.pascal.app/docs/developers/plugins): the `Plugin` shape, panel contributions, discovery, lifecycle, and what's in/out of v1.\n- **Worked example** — [`pascalorg/plugin-trees`](https://github.com/pascalorg/plugin-trees): a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.\n\n---\n\n## Technology Stack\n\n- **React 19** + **Next.js 16**\n- **Three.js** (WebGPU renderer)\n- **React Three Fiber** + **Drei**\n- **Zustand** (state management)\n- **Zod** (schema validation)\n- **Zundo** (undo/redo)\n- **three-bvh-csg** (Boolean geometry operations)\n- **Turborepo** (monorepo management)\n- **Bun** (package manager)\n\n---\n\n## Getting Started\n\n### Development\n\nRun the development server from the **root directory** to enable hot reload for all packages:\n\n```bash\n# Install dependencies\nbun install\n\n# Run development server (builds packages + starts editor with watch mode)\nbun dev\n\n# This will:\n# 1. Build @pascal-app/core and @pascal-app/viewer\n# 2. Start watching both packages for changes\n# 3. Start the Next.js editor dev server\n# Open http://localhost:3002\n```\n\n**Important:** Always run `bun dev` from the root directory to ensure the package watchers are running. This enables hot reload when you edit files in `packages/core/src/` or `packages/viewer/src/`.\n\n### Building for",
+  "readmeExcerpt": "# Pascal Editor\n\nA 3D building editor built with React Three Fiber and WebGPU.\n\n\n\n\n\n\n\n\nhttps://github.com/user-attachments/assets/8b50e7cf-cebe-4579-9cf3-8786b35f7b6b\n\n## Run the Editor Locally\n\nNode.js 22.13 or newer can create a persistent local Pascal installation without\ncloning this repository:\n\n```bash\nnpx @pascal-app/cli editor\n```\n\nThe CLI starts the editor and an authenticated MCP service in the background, selects\ncollision-free loopback ports, and keeps projects in `~/.pascal/data/pascal.db`. Configure\nan agent to launch `pascal mcp connect`. See [Run Pascal locally](https://editor.pascal.app/docs/developers/local-editor)\nfor pnpm/Bun commands, project management, MCP setup, updates, storage paths, and\ntroubleshooting.\n\n## Using Published Packages\n\nThe viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting `<Viewer>`. Capture sessions are an\noptional transport-neutral extension:\n\n```bash\nnpm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\nnpm install @pascal-app/capture-protocol @pascal-app/capture-viewer\n```\n\n```typescript\nimport { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\n```\n\nSee the [`@pascal-app/viewer` quick start](packages/viewer/README.md#usage) for a React example.\n\n\n## Repository Architecture\n\nThis is a Turborepo monorepo with the reusable editor packages, the standalone app,\nand the CLI that distributes it:\n\n```\neditor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── capture-protocol/ # Static/live capture-session contracts\n│   ├── capture-viewer/  # Capture source runtime and reference renderers\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\n```\n\n### Separation of Concerns\n\n| Package | Responsibility |\n|---------|---------------|\n| **@pascal-app/core** | Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus |\n| **@pascal-app/viewer** | 3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing |\n| **@pascal-app/capture-protocol** | Versioned capture manifests, normalized streams, and transport-neutral static/live sources |\n| **@pascal-app/capture-viewer** | Viewer child runtime and reference model, device-motion, and point-cloud layers |\n| **@pascal-app/editor** | Editing tools, panels, selection, and direct-manipulation UI |\n| **@pascal-app/nodes** | Built-in registry plugin with node definitions, renderers, geometry, and systems |\n| **@pascal-app/cli** | Installs and manages a versioned standalone editor runtime and persistent local data |\n| **@pascal-app/mcp** | Exposes scene tools, resources, prompts, and local storage to MCP-compatible AI hosts |\n| **apps/editor** | Standalone Next.js host for the editor packages |\n\nThe **viewer** renders the scene with sensible defaults. The **editor** extends it with interactive tools, selection management, and editing capabilities.\n\n### Stores\n\nEach package has its own Zustand store for managing state:\n\n| Store | Package | Responsibility |\n|-------|---------|----------------|\n| `useScene` | `@pascal-app/core` | Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo. |\n| `useViewer` | `@pascal-app/viewer` | Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode. |\n| `useEditor` | `apps/editor` | Editor state: active tool, structure layer visibility, panel states, editor-specific preferences. |\n\n**Access patterns:**\n\n```typescript\n// Subscribe to state changes (React component)\nconst nodes = useScene((state) => state.nodes)\nconst levelId = useViewer((state) => state.selection.levelId)\nconst activeTool = useEditor((state) => state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\n```\n\n---\n\n## Core Concepts\n\n### Nodes\n\nNodes are the data primitives that describe the 3D scene. All nodes extend `BaseNode`:\n\n```typescript\nBaseNode {\n  id: string              // Auto-generated with type prefix (e.g., \"wall_abc123\")\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\n```\n\n**Node Hierarchy:**\n\n```\nSite\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n```\n\nNodes are stored in a **flat dictionary** (`Record<id, Node>`), not a nested tree. Parent-child relationships are defined via `parentId` and `children` arrays.\n\n---\n\n### Scene State (Zustand Store)\n\nThe scene is managed by a Zustand store in `@pascal-app/core`:\n\n```typescript\nuseScene.getState() = {\n  nodes: Record<id, AnyNode>,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set<string>,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\n```\n\n**Middleware:**\n- **Persist** - Saves to IndexedDB (excludes transient nodes)\n- **Temporal** (Zundo) - Undo/redo with 50-step history\n\n---\n\n### Scene Registry\n\nThe registry maps node IDs to their Three.js objects for fast lookup:\n\n```typescript\nsceneRegistry = {\n  nodes: Map<id, Object3D>,    // ID → 3D object\n  byType: {\n    wall: Set<id>,\n    item: Set<id>,\n    zone: Set<id>,\n    // ...\n  }\n}\n```\n\nRenderers register their refs using the `useRegistry` hook:\n\n```tsx\nconst ref = useRef<Mesh>(null!)\nuseRegistry(node.id, 'wall', ref)\n```\n\nThis allows systems to access 3D objects directly without traversing the scene graph.\n\n---\n\n### Node Renderers\n\nRenderers are React components that create Three.js objects for each node type:\n\n```\nSceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n```\n\n**Pattern:**\n1. Renderer creates a placeholder mesh/group\n2. Registers it with `useRegistry`\n3. Systems update geometry based on node data\n\nExample (simplified):\n```tsx\nconst WallRenderer = ({ node }) => {\n  const ref = useRef<Mesh>(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    <mesh ref={ref}>\n      <boxGeometry args={[0, 0, 0]} />  {/* Replaced by WallSystem */}\n      <meshStandardMaterial />\n      {node.children.map(id => <NodeRenderer key={id} nodeId={id} />)}\n    </mesh>\n  )\n}\n```\n\n---\n\n### Systems\n\nSystems are React components that run in the render loop (`useFrame`) to update geometry and transforms. They process **dirty nodes** marked by the store.\n\n**Core Systems (in `@pascal-app/core`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `WallSystem` | Generates wall geometry with mitering and CSG cutouts for doors/windows |\n| `SlabSystem` | Generates floor geometry from polygons |\n| `CeilingSystem` | Generates ceiling geometry |\n| `RoofSystem` | Generates roof geometry |\n| `ItemSystem` | Positions items on walls, ceilings, or floors (slab elevation) |\n\n**Viewer Systems (in `@pascal-app/viewer`):**\n\n| System | Responsibility |\n|--------|---------------|\n| `LevelSystem` | Handles level visibility and vertical positioning (stacked/exploded/solo modes) |\n| `ScanSystem` | Controls 3D scan visibility |\n| `GuideSystem` | Controls guide image visibility |\n\n**Processing Pattern:**\n```typescript\nuseFrame(() => {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\n```\n\n---\n\n### Dirty Nodes\n\nWhen a node changes, it's marked as **dirty** in `useScene.getState().dirtyNodes`. Systems check this set each frame and only recompute geometry for dirty nodes.\n\n```typescript\n// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\n```\n\n**Manual marking:**\n```typescript\nuseScene.getState().dirtyNodes.add(wallId)\n```\n\n---\n\n### Event Bus\n\nInter-component communication uses a typed event emitter (mitt):\n\n```typescript\n// Node events\nemitter.on('wall:click', (event) => { ... })\nemitter.on('item:enter', (event) => { ... })\nemitter.on('zone:context-menu', (event) => { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) => { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () => void\n}\n```\n\n---\n\n### Spatial Grid Manager\n\nHandles collision detection and placement validation:\n\n```typescript\nspatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\n```\n\nUsed by item placement tools to validate positions and calculate slab elevations.\n\n---\n\n## Editor Architecture\n\nThe editor extends the viewer with:\n\n### Tools\n\nTools are activated via the toolbar and handle user input for specific operations:\n\n- **SelectTool** - Selection and manipulation\n- **WallTool** - Draw walls\n- **ZoneTool** - Create zones\n- **ItemTool** - Place furniture/fixtures\n- **SlabTool** - Create floor slabs\n\n### Selection Manager\n\nThe editor uses a custom selection manager with hierarchical navigation:\n\n```\nSite → Building → Level → Zone → Items\n```\n\nEach depth level has its own selection strategy for hover/click behavior.\n\n### Editor-Specific Systems\n\n- `ZoneSystem` - Controls zone visibility based on level mode\n- Custom camera controls with node focusing\n\n---\n\n## Data Flow\n\n```\nUser Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n```\n\n---\n\n## Building a Plugin\n\nThe editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same `Plugin` manifest the built-ins use — there is no separate internal API.\n\n- **Developer guide** — [Create a plugin](https://editor.pascal.app/docs/developers/plugins): the `Plugin` shape, panel contributions, discovery, lifecycle, and what's in/out of v1.\n- **Worked example** — [`pascalorg/plugin-trees`](https://github.com/pascalorg/plugin-trees): a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.\n\n---\n\n## Technology Stack\n\n- **React 19** + **Next.js 16**\n- **Three.js** (WebGPU renderer)\n- **React Three Fiber** + **Drei**\n- **Zustand** (state management)\n- **Zod** (schema validation)\n- **Zundo** (undo/redo)\n- **three-bvh-csg** (Boolean geometry operations)\n- **Turborepo** (monorepo management)\n- **Bun** (package manager)\n\n---\n\n## Getting Started\n\n### Development\n\nRun the development server from the **root directory** to enable hot reload for all packages:\n\n```bash\n# In",
   "firstCommitAt": "2026-01-13T22:26:59Z",
   "contributors": [
     {
       "login": "wass08",
       "url": "https://github.com/wass08",
       "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4",
-      "contributions": 742
+      "contributions": 758
     },
     {
       "login": "Aymericr",
       "url": "https://github.com/Aymericr",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4",
-      "contributions": 218
+      "contributions": 229
     },
     {
       "login": "sudhir9297",
       "url": "https://github.com/sudhir9297",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4",
-      "contributions": 181
+      "contributions": 187
     },
     {
       "login": "open-pascal",
@@ -461,13 +466,13 @@
       "login": "anton-pascal",
       "url": "https://github.com/anton-pascal",
       "avatarUrl": "https://avatars.githubusercontent.com/u/257628774?v=4",
-      "contributions": 40
+      "contributions": 41
     },
     {
       "login": "Snoopy147",
       "url": "https://github.com/Snoopy147",
       "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4",
-      "contributions": 25
+      "contributions": 37
     },
     {
       "login": "AdrianPerez3",
@@ -494,7 +499,7 @@
       "contributions": 6
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pascal Editor</h1></div>\n<p dir=\"auto\">A 3D building editor built with React Three Fiber and WebGPU.</p>\n<p dir=\"auto\"><a href=\"https://github.com/pascalorg/editor/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"MIT License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/core\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8a8c086de309040b65826cd58531b97e54fb2ed5879acf239805855438c3c50f/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f636f72653f6c6162656c3d25343070617363616c2d617070253246636f7265\" alt=\"npm @pascal-app/core\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/core?label=%40pascal-app%2Fcore\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/viewer\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/b2c5b591a1f49675cc695c2e83f72e39a79b7ef70fd6eb6ff7507fbe40c360a0/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f7669657765723f6c6162656c3d25343070617363616c2d617070253246766965776572\" alt=\"npm @pascal-app/viewer\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/viewer?label=%40pascal-app%2Fviewer\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/cli\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/69e1b806bfb9a1dc27167e0ec51b620b7ef6f87037a756bfc43883d5da80a8c3/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f636c693f6c6162656c3d25343070617363616c2d617070253246636c69\" alt=\"npm @pascal-app/cli\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/cli?label=%40pascal-app%2Fcli\" style=\"max-width: 100%;\"></a>\n<a href=\"https://discord.gg/XRKsDcpqgS\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c1436607f9edd988df13ebe8debf4a6fc18a9d305e663150eb65600605a3ef62/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446973636f72642d4a6f696e2532305365727665722d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465\" alt=\"Discord\" data-canonical-src=\"https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&amp;logoColor=white\" style=\"max-width: 100%;\"></a>\n<a href=\"https://x.com/pascal_app\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/5aa572af0c485dd448be7f0bd86af5ee5202221aebf08e5f0c68211c298bb0c9/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f666f6c6c6f772d25343070617363616c5f5f6170702d626c61636b3f6c6f676f3d78266c6f676f436f6c6f723d7768697465\" alt=\"X (Twitter)\" data-canonical-src=\"https://img.shields.io/badge/follow-%40pascal__app-black?logo=x&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<details open=\"\" class=\"details-reset border rounded-2\">\n  <summary class=\"tmp-px-3 py-2\">\n    <svg aria-hidden=\"true\" data-component=\"Octicon\" height=\"16\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" data-view-component=\"true\" class=\"octicon octicon-device-camera-video\">\n    <path d=\"M16 3.75v8.5a.75.75 0 0 1-1.136.643L11 10.575v.675A1.75 1.75 0 0 1 9.25 13h-7.5A1.75 1.75 0 0 1 0 11.25v-6.5C0 3.784.784 3 1.75 3h7.5c.966 0 1.75.784 1.75 1.75v.675l3.864-2.318A.75.75 0 0 1 16 3.75Zm-6.5 1a.25.25 0 0 0-.25-.25h-7.5a.25.25 0 0 0-.25.25v6.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-6.5ZM11 8.825l3.5 2.1v-5.85l-3.5 2.1Z\"></path>\n</svg>\n    <span class=\"m-1\">pascal_editor.mp4</span>\n    <span class=\"dropdown-caret\"></span>\n  </summary>\n\n  <video src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODczMTYwMDcsIm5iZiI6MTc4NzMxNTcwNywicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgyMSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MjFUMTIzNTA3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MTY2MmYwNzVhYTcyYzQyNTJlN2ZhZGRiY2RmNzgzZjQzMTcwYWM5N2YxNWU0ZDdiYTczYTM2ZDI4N2RkMDI3NCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.akU2AMz9HP9fzuvCd3h7EgkZfrD8HTObNAoktYEmdAA\" data-canonical-src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODczMTYwMDcsIm5iZiI6MTc4NzMxNTcwNywicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDgyMSUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA4MjFUMTIzNTA3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9MTY2MmYwNzVhYTcyYzQyNTJlN2ZhZGRiY2RmNzgzZjQzMTcwYWM5N2YxNWU0ZDdiYTczYTM2ZDI4N2RkMDI3NCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.akU2AMz9HP9fzuvCd3h7EgkZfrD8HTObNAoktYEmdAA\" controls=\"controls\" muted=\"muted\" class=\"d-block rounded-bottom-2 border-top width-fit\" style=\"max-height:640px; min-height: 200px\">\n\n  </video>\n</details>\n\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Run the Editor Locally</h2></div>\n<p dir=\"auto\">Node.js 22.13 or newer can create a persistent local Pascal installation without\ncloning this repository:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx @pascal-app/cli editor\"><pre>npx @pascal-app/cli editor</pre></div>\n<p dir=\"auto\">The CLI starts the editor and an authenticated MCP service in the background, selects\ncollision-free loopback ports, and keeps projects in <code>~/.pascal/data/pascal.db</code>. Configure\nan agent to launch <code>pascal mcp connect</code>. See <a href=\"https://editor.pascal.app/docs/developers/local-editor\" rel=\"nofollow\">Run Pascal locally</a>\nfor pnpm/Bun commands, project management, MCP setup, updates, storage paths, and\ntroubleshooting.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Using Published Packages</h2></div>\n<p dir=\"auto\">The viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting <code>&lt;Viewer&gt;</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\"><pre>npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes</pre></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">loadPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/core'</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">builtinPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/nodes'</span>\n\n<span class=\"pl-k\">await</span> <span class=\"pl-en\">loadPlugin</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">builtinPlugin</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">See the <a href=\"https://github.com/pascalorg/editor/blob/main/packages/viewer/README.md#usage\"><code>@pascal-app/viewer</code> quick start</a> for a React example.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository Architecture</h2></div>\n<p dir=\"auto\">This is a Turborepo monorepo with the reusable editor packages, the standalone app,\nand the CLI that distributes it:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\"><pre class=\"notranslate\"><code>editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Separation of Concerns</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>@pascal-app/core</strong></td>\n<td>Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/viewer</strong></td>\n<td>3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/editor</strong></td>\n<td>Editing tools, panels, selection, and direct-manipulation UI</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/nodes</strong></td>\n<td>Built-in registry plugin with node definitions, renderers, geometry, and systems</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/cli</strong></td>\n<td>Installs and manages a versioned standalone editor runtime and persistent local data</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/mcp</strong></td>\n<td>Exposes scene tools, resources, prompts, and local storage to MCP-compatible AI hosts</td>\n</tr>\n<tr>\n<td><strong>apps/editor</strong></td>\n<td>Standalone Next.js host for the editor packages</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The <strong>viewer</strong> renders the scene with sensible defaults. The <strong>editor</strong> extends it with interactive tools, selection management, and editing capabilities.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Stores</h3></div>\n<p dir=\"auto\">Each package has its own Zustand store for managing state:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Store</th>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>useScene</code></td>\n<td><code>@pascal-app/core</code></td>\n<td>Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo.</td>\n</tr>\n<tr>\n<td><code>useViewer</code></td>\n<td><code>@pascal-app/viewer</code></td>\n<td>Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode.</td>\n</tr>\n<tr>\n<td><code>useEditor</code></td>\n<td><code>apps/editor</code></td>\n<td>Editor state: active tool, structure layer visibility, panel states, editor-specific preferences.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Access patterns:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Subscribe to state changes (React component)\nconst nodes = useScene((state) =&gt; state.nodes)\nconst levelId = useViewer((state) =&gt; state.selection.levelId)\nconst activeTool = useEditor((state) =&gt; state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\"><pre><span class=\"pl-c\">// Subscribe to state changes (React component)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">nodes</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useScene</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">levelId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useViewer</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">selection</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">levelId</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">activeTool</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useEditor</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">tool</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Access state outside React (callbacks, systems)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n<span class=\"pl-s1\">useViewer</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setSelection</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">levelId</span>: <span class=\"pl-s\">'level_123'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Core Concepts</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Nodes</h3></div>\n<p dir=\"auto\">Nodes are the data primitives that describe the 3D scene. All nodes extend <code>BaseNode</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"BaseNode {\n  id: string              // Auto-generated with type prefix (e.g., &quot;wall_abc123&quot;)\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\"><pre><span class=\"pl-v\">BaseNode</span> <span class=\"pl-kos\">{</span>\n  id: <span class=\"pl-s1\">string</span>              <span class=\"pl-c\">// Auto-generated with type prefix (e.g., \"wall_abc123\")</span>\n  type: <span class=\"pl-s1\">string</span>            <span class=\"pl-c\">// Discriminator for type-safe handling</span>\n  parentId: <span class=\"pl-s1\">string</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// Parent node reference</span>\n  visible: <span class=\"pl-s1\">boolean</span>\n  camera?: <span class=\"pl-v\">Camera</span>         <span class=\"pl-c\">// Optional saved camera position</span>\n  metadata?: <span class=\"pl-c1\">JSON</span>         <span class=\"pl-c\">// Arbitrary metadata (e.g., { isTransient: true })</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Node Hierarchy:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\"><pre class=\"notranslate\"><code>Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n</code></pre></div>\n<p dir=\"auto\">Nodes are stored in a <strong>flat dictionary</strong> (<code>Record&lt;id, Node&gt;</code>), not a nested tree. Parent-child relationships are defined via <code>parentId</code> and <code>children</code> arrays.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene State (Zustand Store)</h3></div>\n<p dir=\"auto\">The scene is managed by a Zustand store in <code>@pascal-app/core</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState() = {\n  nodes: Record&lt;id, AnyNode&gt;,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set&lt;string&gt;,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-c1\"></span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Record</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">AnyNode</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>  <span class=\"pl-c\">// All nodes</span>\n  <span class=\"pl-c1\">rootNodeIds</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>       <span class=\"pl-c\">// Top-level nodes (sites)</span>\n  <span class=\"pl-c1\">dirtyNodes</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">string</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>     <span class=\"pl-c\">// Nodes pending system updates</span>\n\n  <span class=\"pl-c1\">createNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">parentId</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">updates</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">deleteNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Middleware:</strong></p>\n<ul dir=\"auto\">\n<li><strong>Persist</strong> - Saves to IndexedDB (excludes transient nodes)</li>\n<li><strong>Temporal</strong> (Zundo) - Undo/redo with 50-step history</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene Registry</h3></div>\n<p dir=\"auto\">The registry maps node IDs to their Three.js objects for fast lookup:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sceneRegistry = {\n  nodes: Map&lt;id, Object3D&gt;,    // ID → 3D object\n  byType: {\n    wall: Set&lt;id&gt;,\n    item: Set&lt;id&gt;,\n    zone: Set&lt;id&gt;,\n    // ...\n  }\n}\"><pre><span class=\"pl-s1\">sceneRegistry</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Map</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">Object3D</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>    <span class=\"pl-c\">// ID → 3D object</span>\n  <span class=\"pl-c1\">byType</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">wall</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">item</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">zone</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">// ...</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Renderers register their refs using the <code>useRegistry</code> hook:</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const ref = useRef&lt;Mesh&gt;(null!)\nuseRegistry(node.id, 'wall', ref)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">This allows systems to access 3D objects directly without traversing the scene graph.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Node Renderers</h3></div>\n<p dir=\"auto\">Renderers are React components that create Three.js objects for each node type:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\"><pre class=\"notranslate\"><code>SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n</code></pre></div>\n<p dir=\"auto\"><strong>Pattern:</strong></p>\n<ol dir=\"auto\">\n<li>Renderer creates a placeholder mesh/group</li>\n<li>Registers it with <code>useRegistry</code></li>\n<li>Systems update geometry based on node data</li>\n</ol>\n<p dir=\"auto\">Example (simplified):</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const WallRenderer = ({ node }) =&gt; {\n  const ref = useRef&lt;Mesh&gt;(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    &lt;mesh ref={ref}&gt;\n      &lt;boxGeometry args={[0, 0, 0]} /&gt;  {/* Replaced by WallSystem */}\n      &lt;meshStandardMaterial /&gt;\n      {node.children.map(id =&gt; &lt;NodeRenderer key={id} nodeId={id} /&gt;)}\n    &lt;/mesh&gt;\n  )\n}\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-v\">WallRenderer</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> node <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span>\n\n  <span class=\"pl-k\">return</span> <span class=\"pl-kos\">(</span>\n    <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">mesh</span> <span class=\"pl-c1\">ref</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">ref</span><span class=\"pl-kos\">}</span><span class=\"pl-c1\">&gt;</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">boxGeometry</span> <span class=\"pl-c1\">args</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span>  <span class=\"pl-kos\">{</span><span class=\"pl-c\">/* Replaced by WallSystem */</span><span class=\"pl-kos\">}</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">meshStandardMaterial</span> <span class=\"pl-kos\">/&gt;</span>\n      <span class=\"pl-kos\">{</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">children</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">map</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-c1\">&lt;</span><span class=\"pl-v\">NodeRenderer</span> <span class=\"pl-c1\">key</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-c1\">nodeId</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span>\n    <span class=\"pl-kos\">&lt;/</span><span class=\"pl-s1\">mesh</span><span class=\"pl-c1\">&gt;</span>\n  <span class=\"pl-kos\">)</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Systems</h3></div>\n<p dir=\"auto\">Systems are React components that run in the render loop (<code>useFrame</code>) to update geometry and transforms. They process <strong>dirty nodes</strong> marked by the store.</p>\n<p dir=\"auto\"><strong>Core Systems (in <code>@pascal-app/core</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>WallSystem</code></td>\n<td>Generates wall geometry with mitering and CSG cutouts for doors/windows</td>\n</tr>\n<tr>\n<td><code>SlabSystem</code></td>\n<td>Generates floor geometry from polygons</td>\n</tr>\n<tr>\n<td><code>CeilingSystem</code></td>\n<td>Generates ceiling geometry</td>\n</tr>\n<tr>\n<td><code>RoofSystem</code></td>\n<td>Generates roof geometry</td>\n</tr>\n<tr>\n<td><code>ItemSystem</code></td>\n<td>Positions items on walls, ceilings, or floors (slab elevation)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Viewer Systems (in <code>@pascal-app/viewer</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>LevelSystem</code></td>\n<td>Handles level visibility and vertical positioning (stacked/exploded/solo modes)</td>\n</tr>\n<tr>\n<td><code>ScanSystem</code></td>\n<td>Controls 3D scan visibility</td>\n</tr>\n<tr>\n<td><code>GuideSystem</code></td>\n<td>Controls guide image visibility</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Processing Pattern:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useFrame(() =&gt; {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\"><pre><span class=\"pl-en\">useFrame</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">id</span> <span class=\"pl-k\">of</span> <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">obj</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sceneRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">get</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n\n    <span class=\"pl-c\">// Update geometry, transforms, etc.</span>\n    <span class=\"pl-en\">updateGeometry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">obj</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">node</span><span class=\"pl-kos\">)</span>\n\n    <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">delete</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Dirty Nodes</h3></div>\n<p dir=\"auto\">When a node changes, it's marked as <strong>dirty</strong> in <code>useScene.getState().dirtyNodes</code>. Systems check this set each frame and only recompute geometry for dirty nodes.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\"><pre><span class=\"pl-c\">// Automatic: createNode, updateNode, deleteNode mark nodes dirty</span>\n<span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">thickness</span>: <span class=\"pl-c1\">0.2</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// → wallId added to dirtyNodes</span>\n<span class=\"pl-c\">// → WallSystem regenerates geometry next frame</span>\n<span class=\"pl-c\">// → wallId removed from dirtyNodes</span></pre></div>\n<p dir=\"auto\"><strong>Manual marking:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState().dirtyNodes.add(wallId)\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Event Bus</h3></div>\n<p dir=\"auto\">Inter-component communication uses a typed event emitter (mitt):</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Node events\nemitter.on('wall:click', (event) =&gt; { ... })\nemitter.on('item:enter', (event) =&gt; { ... })\nemitter.on('zone:context-menu', (event) =&gt; { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) =&gt; { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () =&gt; void\n}\"><pre><span class=\"pl-c\">// Node events</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'wall:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'item:enter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'zone:context-menu'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Grid events (background)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'grid:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Event payload</span>\n<span class=\"pl-v\">NodeEvent</span><span class=\"pl-kos\"></span> <span class=\"pl-kos\">{</span>\n  node: <span class=\"pl-v\">AnyNode</span>\n  position: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  localPosition: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  normal?: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  stopPropagation: <span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-s1\"></span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Spatial Grid Manager</h3></div>\n<p dir=\"auto\">Handles collision detection and placement validation:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"spatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\"><pre><span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnFloor</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">position</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">rotation</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnWall</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">t</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">height</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getSlabElevationAt</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Used by item placement tools to validate positions and calculate slab elevations.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Editor Architecture</h2></div>\n<p dir=\"auto\">The editor extends the viewer with:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Tools</h3></div>\n<p dir=\"auto\">Tools are activated via the toolbar and handle user input for specific operations:</p>\n<ul dir=\"auto\">\n<li><strong>SelectTool</strong> - Selection and manipulation</li>\n<li><strong>WallTool</strong> - Draw walls</li>\n<li><strong>ZoneTool</strong> - Create zones</li>\n<li><strong>ItemTool</strong> - Place furniture/fixtures</li>\n<li><strong>SlabTool</strong> - Create floor slabs</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Selection Manager</h3></div>\n<p dir=\"auto\">The editor uses a custom selection manager with hierarchical navigation:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site → Building → Level → Zone → Items\"><pre class=\"notranslate\"><code>Site → Building → Level → Zone → Items\n</code></pre></div>\n<p dir=\"auto\">Each depth level has its own selection strategy for hover/click behavior.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Editor-Specific Systems</h3></div>\n<ul dir=\"auto\">\n<li><code>ZoneSystem</code> - Controls zone visibility based on level mode</li>\n<li>Custom camera controls with node focusing</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Data Flow</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\"><pre class=\"notranslate\"><code>User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n</code></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building a Plugin</h2></div>\n<p dir=\"auto\">The editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same <code>Plugin</code> manifest the built-ins use — there is no separate internal API.</p>\n<ul dir=\"auto\">\n<li><strong>Developer guide</strong> — <a href=\"https://editor.pascal.app/docs/developers/plugins\" rel=\"nofollow\">Create a plugin</a>: the <code>Plugin</code> shape, panel contributions, discovery, lifecycle, and what's in/out of v1.</li>\n<li><strong>Worked example</strong> — <a href=\"https://github.com/pascalorg/plugin-trees\"><code>pascalorg/plugin-trees</code></a>: a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Technology Stack</h2></div>\n<ul dir=\"auto\">\n<li><strong>React 19</strong> + <strong>Next.js 16</strong></li>\n<li><strong>Three.js</strong> (WebGPU renderer)</li>\n<li><strong>React Three Fiber</strong> + <strong>Drei</strong></li>\n<li><strong>Zustand</strong> (state management)</li>\n<li><strong>Zod</strong> (schema validation)</li>\n<li><strong>Zundo</strong> (undo/redo)</li>\n<li><strong>three-bvh-csg</strong> (Boolean geometry operations)</li>\n<li><strong>Turborepo</strong> (monorepo management)</li>\n<li><strong>Bun</strong> (package manager)</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Getting Started</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Development</h3></div>\n<p dir=\"auto\">Run the development server from the <strong>root directory</strong> to enable hot reload for all packages:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Install dependencies\nbun install\n\n# Run development server (builds packages + starts editor with watch mode)\nbun dev\n\n# This will:\n# 1. Build @pascal-app/core and @pascal-app/viewer\n# 2. Start watching both packages for changes\n# 3. Start the Next.js editor dev server\n# Open http://localhost:3002\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Install dependencies</span>\nbun install\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Run development server (builds packages + starts editor with watch mode)</span>\nbun dev\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> This will:</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Build @pascal-app/core and @pascal-app/viewer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Start watching both packages for changes</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Start the Next.js editor dev server</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Open http://localhost:3002</span></pre></div>\n<p dir=\"auto\"><strong>Important:</strong> Always run <code>bun dev</code> from the root directory to ensure the package watchers are running. This enables hot reload when you edit files in <code>packages/core/src/</code> or <code>packages/viewer/src/</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for Production</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build all packages\nturbo build\n\n# Build specific package\nturbo build --filter=@pascal-app/core\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build all packages</span>\nturbo build\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build specific package</span>\nturbo build --filter=@pascal-app/core</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Publishing Packages</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build packages\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n# Publish to npm\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build packages</span>\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Publish to npm</span>\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public</pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Files</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>packages/core/src/schema/</code></td>\n<td>Node type definitions (Zod schemas)</td>\n</tr>\n<tr>\n<td><code>packages/core/src/store/use-scene.ts</code></td>\n<td>Scene state store</td>\n</tr>\n<tr>\n<td><code>packages/core/src/hooks/scene-registry/</code></td>\n<td>3D object registry</td>\n</tr>\n<tr>\n<td><code>packages/core/src/systems/</code></td>\n<td>Geometry generation systems</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/renderers/</code></td>\n<td>Node renderers</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/viewer/</code></td>\n<td>Main Viewer component</td>\n</tr>\n<tr>\n<td><code>apps/editor/components/tools/</code></td>\n<td>Editor tools</td>\n</tr>\n<tr>\n<td><code>apps/editor/store/</code></td>\n<td>Editor-specific state</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Bug fixes, features, docs and ideas are all welcome. Start with <a href=\"https://github.com/pascalorg/editor/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a> for setup, code style and the PR flow.</p>\n<ul dir=\"auto\">\n<li>New node kinds and sidebar panels ship as <a href=\"https://editor.pascal.app/docs/developers/plugins\" rel=\"nofollow\">plugins</a> rather than edits to the built-ins — <a href=\"https://github.com/pascalorg/plugin-trees\"><code>pascalorg/plugin-trees</code></a> is a worked example</li>\n<li>Questions and ideas go to <a href=\"https://github.com/pascalorg/editor/discussions\">Discussions</a>; reproducible bugs go to <a href=\"https://github.com/pascalorg/editor/issues\">Issues</a></li>\n<li>Participation is covered by our <a href=\"https://github.com/pascalorg/editor/blob/main/CODE_OF_CONDUCT.md\">Code of Conduct</a></li>\n<li>Security problems go to <a href=\"https://github.com/pascalorg/editor/blob/main/SECURITY.md\">SECURITY.md</a>, not a public issue</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributors</h2></div>\n<p dir=\"auto\"><a href=\"https://github.com/Aymericr\"><img src=\"https://avatars.githubusercontent.com/u/4444492?v=4\" width=\"60\" height=\"60\" alt=\"Aymeric Rabot\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/wass08\"><img src=\"https://avatars.githubusercontent.com/u/6551176?v=4\" width=\"60\" height=\"60\" alt=\"Wassim Samad\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/sudhir9297\"><img src=\"https://avatars.githubusercontent.com/sudhir9297?v=4\" width=\"60\" height=\"60\" alt=\"Sudhir\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n<hr>\n<p dir=\"auto\"><a href=\"https://trendshift.io/repositories/23831\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/93310c4e4c31854e7af5b46996b4eaa96c5f721cad8d076ea68d5d9ed011dbfb/68747470733a2f2f7472656e6473686966742e696f2f6170692f62616467652f7265706f7369746f726965732f3233383331\" alt=\"pascalorg/editor | Trendshift\" width=\"250\" height=\"55\" data-canonical-src=\"https://trendshift.io/api/badge/repositories/23831\" style=\"max-width: 100%; height: auto; max-height: 55px;; aspect-ratio: 250 / 55; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pascal Editor</h1></div>\n<p dir=\"auto\">A 3D building editor built with React Three Fiber and WebGPU.</p>\n<p dir=\"auto\"><a href=\"https://github.com/pascalorg/editor/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"MIT License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/core\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8a8c086de309040b65826cd58531b97e54fb2ed5879acf239805855438c3c50f/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f636f72653f6c6162656c3d25343070617363616c2d617070253246636f7265\" alt=\"npm @pascal-app/core\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/core?label=%40pascal-app%2Fcore\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/viewer\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/b2c5b591a1f49675cc695c2e83f72e39a79b7ef70fd6eb6ff7507fbe40c360a0/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f7669657765723f6c6162656c3d25343070617363616c2d617070253246766965776572\" alt=\"npm @pascal-app/viewer\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/viewer?label=%40pascal-app%2Fviewer\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.npmjs.com/package/@pascal-app/cli\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/69e1b806bfb9a1dc27167e0ec51b620b7ef6f87037a756bfc43883d5da80a8c3/68747470733a2f2f696d672e736869656c64732e696f2f6e706d2f762f4070617363616c2d6170702f636c693f6c6162656c3d25343070617363616c2d617070253246636c69\" alt=\"npm @pascal-app/cli\" data-canonical-src=\"https://img.shields.io/npm/v/@pascal-app/cli?label=%40pascal-app%2Fcli\" style=\"max-width: 100%;\"></a>\n<a href=\"https://discord.gg/XRKsDcpqgS\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c1436607f9edd988df13ebe8debf4a6fc18a9d305e663150eb65600605a3ef62/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446973636f72642d4a6f696e2532305365727665722d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465\" alt=\"Discord\" data-canonical-src=\"https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&amp;logoColor=white\" style=\"max-width: 100%;\"></a>\n<a href=\"https://x.com/pascal_app\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/5aa572af0c485dd448be7f0bd86af5ee5202221aebf08e5f0c68211c298bb0c9/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f666f6c6c6f772d25343070617363616c5f5f6170702d626c61636b3f6c6f676f3d78266c6f676f436f6c6f723d7768697465\" alt=\"X (Twitter)\" data-canonical-src=\"https://img.shields.io/badge/follow-%40pascal__app-black?logo=x&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<details open=\"\" class=\"details-reset border rounded-2\">\n  <summary class=\"tmp-px-3 py-2\">\n    <svg aria-hidden=\"true\" data-component=\"Octicon\" height=\"16\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" data-view-component=\"true\" class=\"octicon octicon-device-camera-video\">\n    <path d=\"M16 3.75v8.5a.75.75 0 0 1-1.136.643L11 10.575v.675A1.75 1.75 0 0 1 9.25 13h-7.5A1.75 1.75 0 0 1 0 11.25v-6.5C0 3.784.784 3 1.75 3h7.5c.966 0 1.75.784 1.75 1.75v.675l3.864-2.318A.75.75 0 0 1 16 3.75Zm-6.5 1a.25.25 0 0 0-.25-.25h-7.5a.25.25 0 0 0-.25.25v6.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-6.5ZM11 8.825l3.5 2.1v-5.85l-3.5 2.1Z\"></path>\n</svg>\n    <span class=\"m-1\">pascal_editor.mp4</span>\n    <span class=\"dropdown-caret\"></span>\n  </summary>\n\n  <video src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgzOTMxMjcsIm5iZiI6MTc4ODM5MjgyNywicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDkwMiUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA5MDJUMjM0NzA3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9YmYyMDJlMGZmOGYwZTY2M2UxZDBlOGQ4NDA5MmEwNDhkNjRjZTY0ZjE0NzI3NzEwZjgyNWFhYmY3NzRmYzhjNCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.B5kFCdHcoQAgTZ_IRuJHph2G6kh4T9iUsCDWzyvU8nQ\" data-canonical-src=\"https://private-user-images.githubusercontent.com/4444492/564279553-8b50e7cf-cebe-4579-9cf3-8786b35f7b6b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODgzOTMxMjcsIm5iZiI6MTc4ODM5MjgyNywicGF0aCI6Ii80NDQ0NDkyLzU2NDI3OTU1My04YjUwZTdjZi1jZWJlLTQ1NzktOWNmMy04Nzg2YjM1ZjdiNmIubXA0P1gtQW16LUFsZ29yaXRobT1BV1M0LUhNQUMtU0hBMjU2JlgtQW16LUNyZWRlbnRpYWw9QUtJQVZDT0RZTFNBNTNQUUs0WkElMkYyMDI2MDkwMiUyRnVzLWVhc3QtMSUyRnMzJTJGYXdzNF9yZXF1ZXN0JlgtQW16LURhdGU9MjAyNjA5MDJUMjM0NzA3WiZYLUFtei1FeHBpcmVzPTMwMCZYLUFtei1TaWduYXR1cmU9YmYyMDJlMGZmOGYwZTY2M2UxZDBlOGQ4NDA5MmEwNDhkNjRjZTY0ZjE0NzI3NzEwZjgyNWFhYmY3NzRmYzhjNCZYLUFtei1TaWduZWRIZWFkZXJzPWhvc3QmcmVzcG9uc2UtY29udGVudC10eXBlPXZpZGVvJTJGbXA0In0.B5kFCdHcoQAgTZ_IRuJHph2G6kh4T9iUsCDWzyvU8nQ\" controls=\"controls\" muted=\"muted\" class=\"d-block rounded-bottom-2 border-top width-fit\" style=\"max-height:640px; min-height: 200px\">\n\n  </video>\n</details>\n\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Run the Editor Locally</h2></div>\n<p dir=\"auto\">Node.js 22.13 or newer can create a persistent local Pascal installation without\ncloning this repository:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx @pascal-app/cli editor\"><pre>npx @pascal-app/cli editor</pre></div>\n<p dir=\"auto\">The CLI starts the editor and an authenticated MCP service in the background, selects\ncollision-free loopback ports, and keeps projects in <code>~/.pascal/data/pascal.db</code>. Configure\nan agent to launch <code>pascal mcp connect</code>. See <a href=\"https://editor.pascal.app/docs/developers/local-editor\" rel=\"nofollow\">Run Pascal locally</a>\nfor pnpm/Bun commands, project management, MCP setup, updates, storage paths, and\ntroubleshooting.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Using Published Packages</h2></div>\n<p dir=\"auto\">The viewer runtime and built-in node definitions are separate packages. Install the full built-in\nviewer set, then load the built-in plugin once before mounting <code>&lt;Viewer&gt;</code>. Capture sessions are an\noptional transport-neutral extension:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\nnpm install @pascal-app/capture-protocol @pascal-app/capture-viewer\"><pre>npm install @pascal-app/core @pascal-app/viewer @pascal-app/editor @pascal-app/nodes\nnpm install @pascal-app/capture-protocol @pascal-app/capture-viewer</pre></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { loadPlugin } from '@pascal-app/core'\nimport { builtinPlugin } from '@pascal-app/nodes'\n\nawait loadPlugin(builtinPlugin)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">loadPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/core'</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">builtinPlugin</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@pascal-app/nodes'</span>\n\n<span class=\"pl-k\">await</span> <span class=\"pl-en\">loadPlugin</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">builtinPlugin</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">See the <a href=\"https://github.com/pascalorg/editor/blob/main/packages/viewer/README.md#usage\"><code>@pascal-app/viewer</code> quick start</a> for a React example.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository Architecture</h2></div>\n<p dir=\"auto\">This is a Turborepo monorepo with the reusable editor packages, the standalone app,\nand the CLI that distributes it:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── capture-protocol/ # Static/live capture-session contracts\n│   ├── capture-viewer/  # Capture source runtime and reference renderers\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\"><pre class=\"notranslate\"><code>editor/\n├── apps/\n│   └── editor/          # Next.js application\n├── packages/\n│   ├── core/            # Schemas, scene state, and registry contracts\n│   ├── viewer/          # 3D rendering runtime and shared systems\n│   ├── capture-protocol/ # Static/live capture-session contracts\n│   ├── capture-viewer/  # Capture source runtime and reference renderers\n│   ├── editor/          # Editing tools and UI components\n│   ├── nodes/           # Built-in node definitions, renderers, and systems\n│   ├── cli/             # Persistent local editor installer and process manager\n│   ├── mcp/             # Model Context Protocol server and scene storage\n│   └── ui/              # Shared UI components\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Separation of Concerns</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>@pascal-app/core</strong></td>\n<td>Node schemas, scene state (Zustand), registry contracts, spatial queries, and event bus</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/viewer</strong></td>\n<td>3D rendering via React Three Fiber, shared render systems, default camera/controls, and post-processing</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/capture-protocol</strong></td>\n<td>Versioned capture manifests, normalized streams, and transport-neutral static/live sources</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/capture-viewer</strong></td>\n<td>Viewer child runtime and reference model, device-motion, and point-cloud layers</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/editor</strong></td>\n<td>Editing tools, panels, selection, and direct-manipulation UI</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/nodes</strong></td>\n<td>Built-in registry plugin with node definitions, renderers, geometry, and systems</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/cli</strong></td>\n<td>Installs and manages a versioned standalone editor runtime and persistent local data</td>\n</tr>\n<tr>\n<td><strong>@pascal-app/mcp</strong></td>\n<td>Exposes scene tools, resources, prompts, and local storage to MCP-compatible AI hosts</td>\n</tr>\n<tr>\n<td><strong>apps/editor</strong></td>\n<td>Standalone Next.js host for the editor packages</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The <strong>viewer</strong> renders the scene with sensible defaults. The <strong>editor</strong> extends it with interactive tools, selection management, and editing capabilities.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Stores</h3></div>\n<p dir=\"auto\">Each package has its own Zustand store for managing state:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Store</th>\n<th>Package</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>useScene</code></td>\n<td><code>@pascal-app/core</code></td>\n<td>Scene data: nodes, root IDs, dirty nodes, CRUD operations. Persisted to IndexedDB with undo/redo via Zundo.</td>\n</tr>\n<tr>\n<td><code>useViewer</code></td>\n<td><code>@pascal-app/viewer</code></td>\n<td>Viewer state: current selection (building/level/zone IDs), level display mode (stacked/exploded/solo), camera mode.</td>\n</tr>\n<tr>\n<td><code>useEditor</code></td>\n<td><code>apps/editor</code></td>\n<td>Editor state: active tool, structure layer visibility, panel states, editor-specific preferences.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Access patterns:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Subscribe to state changes (React component)\nconst nodes = useScene((state) =&gt; state.nodes)\nconst levelId = useViewer((state) =&gt; state.selection.levelId)\nconst activeTool = useEditor((state) =&gt; state.tool)\n\n// Access state outside React (callbacks, systems)\nconst node = useScene.getState().nodes[id]\nuseViewer.getState().setSelection({ levelId: 'level_123' })\"><pre><span class=\"pl-c\">// Subscribe to state changes (React component)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">nodes</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useScene</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">levelId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useViewer</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">selection</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">levelId</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">activeTool</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useEditor</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">state</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">state</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">tool</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Access state outside React (callbacks, systems)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n<span class=\"pl-s1\">useViewer</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setSelection</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">levelId</span>: <span class=\"pl-s\">'level_123'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Core Concepts</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Nodes</h3></div>\n<p dir=\"auto\">Nodes are the data primitives that describe the 3D scene. All nodes extend <code>BaseNode</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"BaseNode {\n  id: string              // Auto-generated with type prefix (e.g., &quot;wall_abc123&quot;)\n  type: string            // Discriminator for type-safe handling\n  parentId: string | null // Parent node reference\n  visible: boolean\n  camera?: Camera         // Optional saved camera position\n  metadata?: JSON         // Arbitrary metadata (e.g., { isTransient: true })\n}\"><pre><span class=\"pl-v\">BaseNode</span> <span class=\"pl-kos\">{</span>\n  id: <span class=\"pl-s1\">string</span>              <span class=\"pl-c\">// Auto-generated with type prefix (e.g., \"wall_abc123\")</span>\n  type: <span class=\"pl-s1\">string</span>            <span class=\"pl-c\">// Discriminator for type-safe handling</span>\n  parentId: <span class=\"pl-s1\">string</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// Parent node reference</span>\n  visible: <span class=\"pl-s1\">boolean</span>\n  camera?: <span class=\"pl-v\">Camera</span>         <span class=\"pl-c\">// Optional saved camera position</span>\n  metadata?: <span class=\"pl-c1\">JSON</span>         <span class=\"pl-c\">// Arbitrary metadata (e.g., { isTransient: true })</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Node Hierarchy:</strong></p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\"><pre class=\"notranslate\"><code>Site\n└── Building\n    └── Level\n        ├── Wall → Item (doors, windows)\n        ├── Slab\n        ├── Ceiling → Item (lights)\n        ├── Roof\n        ├── Zone\n        ├── Scan (3D reference)\n        └── Guide (2D reference)\n</code></pre></div>\n<p dir=\"auto\">Nodes are stored in a <strong>flat dictionary</strong> (<code>Record&lt;id, Node&gt;</code>), not a nested tree. Parent-child relationships are defined via <code>parentId</code> and <code>children</code> arrays.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene State (Zustand Store)</h3></div>\n<p dir=\"auto\">The scene is managed by a Zustand store in <code>@pascal-app/core</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState() = {\n  nodes: Record&lt;id, AnyNode&gt;,  // All nodes\n  rootNodeIds: string[],       // Top-level nodes (sites)\n  dirtyNodes: Set&lt;string&gt;,     // Nodes pending system updates\n\n  createNode(node, parentId),\n  updateNode(id, updates),\n  deleteNode(id),\n}\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-c1\"></span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Record</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">AnyNode</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>  <span class=\"pl-c\">// All nodes</span>\n  <span class=\"pl-c1\">rootNodeIds</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span>       <span class=\"pl-c\">// Top-level nodes (sites)</span>\n  <span class=\"pl-c1\">dirtyNodes</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">string</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>     <span class=\"pl-c\">// Nodes pending system updates</span>\n\n  <span class=\"pl-c1\">createNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">parentId</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">updates</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">deleteNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\"><strong>Middleware:</strong></p>\n<ul dir=\"auto\">\n<li><strong>Persist</strong> - Saves to IndexedDB (excludes transient nodes)</li>\n<li><strong>Temporal</strong> (Zundo) - Undo/redo with 50-step history</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Scene Registry</h3></div>\n<p dir=\"auto\">The registry maps node IDs to their Three.js objects for fast lookup:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sceneRegistry = {\n  nodes: Map&lt;id, Object3D&gt;,    // ID → 3D object\n  byType: {\n    wall: Set&lt;id&gt;,\n    item: Set&lt;id&gt;,\n    zone: Set&lt;id&gt;,\n    // ...\n  }\n}\"><pre><span class=\"pl-s1\">sceneRegistry</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">nodes</span>: <span class=\"pl-v\">Map</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-smi\">Object3D</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>    <span class=\"pl-c\">// ID → 3D object</span>\n  <span class=\"pl-c1\">byType</span>: <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">wall</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">item</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">zone</span>: <span class=\"pl-v\">Set</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">id</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">// ...</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Renderers register their refs using the <code>useRegistry</code> hook:</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const ref = useRef&lt;Mesh&gt;(null!)\nuseRegistry(node.id, 'wall', ref)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">This allows systems to access 3D objects directly without traversing the scene graph.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Node Renderers</h3></div>\n<p dir=\"auto\">Renderers are React components that create Three.js objects for each node type:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\"><pre class=\"notranslate\"><code>SceneRenderer\n└── NodeRenderer (dispatches by type)\n    ├── BuildingRenderer\n    ├── LevelRenderer\n    ├── WallRenderer\n    ├── SlabRenderer\n    ├── ZoneRenderer\n    ├── ItemRenderer\n    └── ...\n</code></pre></div>\n<p dir=\"auto\"><strong>Pattern:</strong></p>\n<ol dir=\"auto\">\n<li>Renderer creates a placeholder mesh/group</li>\n<li>Registers it with <code>useRegistry</code></li>\n<li>Systems update geometry based on node data</li>\n</ol>\n<p dir=\"auto\">Example (simplified):</p>\n<div class=\"highlight highlight-source-tsx notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const WallRenderer = ({ node }) =&gt; {\n  const ref = useRef&lt;Mesh&gt;(null!)\n  useRegistry(node.id, 'wall', ref)\n\n  return (\n    &lt;mesh ref={ref}&gt;\n      &lt;boxGeometry args={[0, 0, 0]} /&gt;  {/* Replaced by WallSystem */}\n      &lt;meshStandardMaterial /&gt;\n      {node.children.map(id =&gt; &lt;NodeRenderer key={id} nodeId={id} /&gt;)}\n    &lt;/mesh&gt;\n  )\n}\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-v\">WallRenderer</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> node <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">ref</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">useRef</span><span class=\"pl-c1\">&lt;</span><span class=\"pl-smi\">Mesh</span><span class=\"pl-c1\">&gt;</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">null</span><span class=\"pl-c1\">!</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-en\">useRegistry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">id</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'wall'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">ref</span><span class=\"pl-kos\">)</span>\n\n  <span class=\"pl-k\">return</span> <span class=\"pl-kos\">(</span>\n    <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">mesh</span> <span class=\"pl-c1\">ref</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">ref</span><span class=\"pl-kos\">}</span><span class=\"pl-c1\">&gt;</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">boxGeometry</span> <span class=\"pl-c1\">args</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-kos\">[</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span>  <span class=\"pl-kos\">{</span><span class=\"pl-c\">/* Replaced by WallSystem */</span><span class=\"pl-kos\">}</span>\n      <span class=\"pl-c1\">&lt;</span><span class=\"pl-s1\">meshStandardMaterial</span> <span class=\"pl-kos\">/&gt;</span>\n      <span class=\"pl-kos\">{</span><span class=\"pl-s1\">node</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">children</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">map</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-c1\">&lt;</span><span class=\"pl-v\">NodeRenderer</span> <span class=\"pl-c1\">key</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-c1\">nodeId</span><span class=\"pl-c1\">=</span><span class=\"pl-kos\">{</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span> <span class=\"pl-kos\">/&gt;</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span>\n    <span class=\"pl-kos\">&lt;/</span><span class=\"pl-s1\">mesh</span><span class=\"pl-c1\">&gt;</span>\n  <span class=\"pl-kos\">)</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Systems</h3></div>\n<p dir=\"auto\">Systems are React components that run in the render loop (<code>useFrame</code>) to update geometry and transforms. They process <strong>dirty nodes</strong> marked by the store.</p>\n<p dir=\"auto\"><strong>Core Systems (in <code>@pascal-app/core</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>WallSystem</code></td>\n<td>Generates wall geometry with mitering and CSG cutouts for doors/windows</td>\n</tr>\n<tr>\n<td><code>SlabSystem</code></td>\n<td>Generates floor geometry from polygons</td>\n</tr>\n<tr>\n<td><code>CeilingSystem</code></td>\n<td>Generates ceiling geometry</td>\n</tr>\n<tr>\n<td><code>RoofSystem</code></td>\n<td>Generates roof geometry</td>\n</tr>\n<tr>\n<td><code>ItemSystem</code></td>\n<td>Positions items on walls, ceilings, or floors (slab elevation)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Viewer Systems (in <code>@pascal-app/viewer</code>):</strong></p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>System</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>LevelSystem</code></td>\n<td>Handles level visibility and vertical positioning (stacked/exploded/solo modes)</td>\n</tr>\n<tr>\n<td><code>ScanSystem</code></td>\n<td>Controls 3D scan visibility</td>\n</tr>\n<tr>\n<td><code>GuideSystem</code></td>\n<td>Controls guide image visibility</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Processing Pattern:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useFrame(() =&gt; {\n  for (const id of dirtyNodes) {\n    const obj = sceneRegistry.nodes.get(id)\n    const node = useScene.getState().nodes[id]\n\n    // Update geometry, transforms, etc.\n    updateGeometry(obj, node)\n\n    dirtyNodes.delete(id)\n  }\n})\"><pre><span class=\"pl-en\">useFrame</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">const</span> <span class=\"pl-s1\">id</span> <span class=\"pl-k\">of</span> <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">obj</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sceneRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">get</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">node</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nodes</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">]</span>\n\n    <span class=\"pl-c\">// Update geometry, transforms, etc.</span>\n    <span class=\"pl-en\">updateGeometry</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">obj</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">node</span><span class=\"pl-kos\">)</span>\n\n    <span class=\"pl-s1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">delete</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Dirty Nodes</h3></div>\n<p dir=\"auto\">When a node changes, it's marked as <strong>dirty</strong> in <code>useScene.getState().dirtyNodes</code>. Systems check this set each frame and only recompute geometry for dirty nodes.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Automatic: createNode, updateNode, deleteNode mark nodes dirty\nuseScene.getState().updateNode(wallId, { thickness: 0.2 })\n// → wallId added to dirtyNodes\n// → WallSystem regenerates geometry next frame\n// → wallId removed from dirtyNodes\"><pre><span class=\"pl-c\">// Automatic: createNode, updateNode, deleteNode mark nodes dirty</span>\n<span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">updateNode</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">thickness</span>: <span class=\"pl-c1\">0.2</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// → wallId added to dirtyNodes</span>\n<span class=\"pl-c\">// → WallSystem regenerates geometry next frame</span>\n<span class=\"pl-c\">// → wallId removed from dirtyNodes</span></pre></div>\n<p dir=\"auto\"><strong>Manual marking:</strong></p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"useScene.getState().dirtyNodes.add(wallId)\"><pre><span class=\"pl-s1\">useScene</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getState</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">dirtyNodes</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">add</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">)</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Event Bus</h3></div>\n<p dir=\"auto\">Inter-component communication uses a typed event emitter (mitt):</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Node events\nemitter.on('wall:click', (event) =&gt; { ... })\nemitter.on('item:enter', (event) =&gt; { ... })\nemitter.on('zone:context-menu', (event) =&gt; { ... })\n\n// Grid events (background)\nemitter.on('grid:click', (event) =&gt; { ... })\n\n// Event payload\nNodeEvent {\n  node: AnyNode\n  position: [x, y, z]\n  localPosition: [x, y, z]\n  normal?: [x, y, z]\n  stopPropagation: () =&gt; void\n}\"><pre><span class=\"pl-c\">// Node events</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'wall:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'item:enter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'zone:context-menu'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Grid events (background)</span>\n<span class=\"pl-s1\">emitter</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'grid:click'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> ... <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-c\">// Event payload</span>\n<span class=\"pl-v\">NodeEvent</span><span class=\"pl-kos\"></span> <span class=\"pl-kos\">{</span>\n  node: <span class=\"pl-v\">AnyNode</span>\n  position: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  localPosition: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  normal?: <span class=\"pl-kos\">[</span><span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">]</span>\n  stopPropagation: <span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-s1\"></span>\n<span class=\"pl-kos\">}</span></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Spatial Grid Manager</h3></div>\n<p dir=\"auto\">Handles collision detection and placement validation:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"spatialGridManager.canPlaceOnFloor(levelId, position, dimensions, rotation)\nspatialGridManager.canPlaceOnWall(wallId, t, height, dimensions)\nspatialGridManager.getSlabElevationAt(levelId, x, z)\"><pre><span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnFloor</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">position</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">rotation</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">canPlaceOnWall</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">wallId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">t</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">height</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">dimensions</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-s1\">spatialGridManager</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getSlabElevationAt</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">levelId</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">x</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">z</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Used by item placement tools to validate positions and calculate slab elevations.</p>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Editor Architecture</h2></div>\n<p dir=\"auto\">The editor extends the viewer with:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Tools</h3></div>\n<p dir=\"auto\">Tools are activated via the toolbar and handle user input for specific operations:</p>\n<ul dir=\"auto\">\n<li><strong>SelectTool</strong> - Selection and manipulation</li>\n<li><strong>WallTool</strong> - Draw walls</li>\n<li><strong>ZoneTool</strong> - Create zones</li>\n<li><strong>ItemTool</strong> - Place furniture/fixtures</li>\n<li><strong>SlabTool</strong> - Create floor slabs</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Selection Manager</h3></div>\n<p dir=\"auto\">The editor uses a custom selection manager with hierarchical navigation:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Site → Building → Level → Zone → Items\"><pre class=\"notranslate\"><code>Site → Building → Level → Zone → Items\n</code></pre></div>\n<p dir=\"auto\">Each depth level has its own selection strategy for hover/click behavior.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Editor-Specific Systems</h3></div>\n<ul dir=\"auto\">\n<li><code>ZoneSystem</code> - Controls zone visibility based on level mode</li>\n<li>Custom camera controls with node focusing</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Data Flow</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\"><pre class=\"notranslate\"><code>User Action (click, drag)\n       ↓\nTool Handler\n       ↓\nuseScene.createNode() / updateNode()\n       ↓\nNode added/updated in store\nNode marked dirty\n       ↓\nReact re-renders NodeRenderer\nuseRegistry() registers 3D object\n       ↓\nSystem detects dirty node (useFrame)\nUpdates geometry via sceneRegistry\nClears dirty flag\n</code></pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building a Plugin</h2></div>\n<p dir=\"auto\">The editor is extensible: a plugin ships node kinds (schema, 3D/2D rendering, placement tools, inspector parametrics) and left-rail panels through the same <code>Plugin</code> manifest the built-ins use — there is no separate internal API.</p>\n<ul dir=\"auto\">\n<li><strong>Developer guide</strong> — <a href=\"https://editor.pascal.app/docs/developers/plugins\" rel=\"nofollow\">Create a plugin</a>: the <code>Plugin</code> shape, panel contributions, discovery, lifecycle, and what's in/out of v1.</li>\n<li><strong>Worked example</strong> — <a href=\"https://github.com/pascalorg/plugin-trees\"><code>pascalorg/plugin-trees</code></a>: a standalone plugin with procedural trees, flowers, grass, and a presets panel. Clone it as a starting point.</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Technology Stack</h2></div>\n<ul dir=\"auto\">\n<li><strong>React 19</strong> + <strong>Next.js 16</strong></li>\n<li><strong>Three.js</strong> (WebGPU renderer)</li>\n<li><strong>React Three Fiber</strong> + <strong>Drei</strong></li>\n<li><strong>Zustand</strong> (state management)</li>\n<li><strong>Zod</strong> (schema validation)</li>\n<li><strong>Zundo</strong> (undo/redo)</li>\n<li><strong>three-bvh-csg</strong> (Boolean geometry operations)</li>\n<li><strong>Turborepo</strong> (monorepo management)</li>\n<li><strong>Bun</strong> (package manager)</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Getting Started</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Development</h3></div>\n<p dir=\"auto\">Run the development server from the <strong>root directory</strong> to enable hot reload for all packages:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Install dependencies\nbun install\n\n# Run development server (builds packages + starts editor with watch mode)\nbun dev\n\n# This will:\n# 1. Build @pascal-app/core and @pascal-app/viewer\n# 2. Start watching both packages for changes\n# 3. Start the Next.js editor dev server\n# Open http://localhost:3002\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Install dependencies</span>\nbun install\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Run development server (builds packages + starts editor with watch mode)</span>\nbun dev\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> This will:</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Build @pascal-app/core and @pascal-app/viewer</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Start watching both packages for changes</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Start the Next.js editor dev server</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Open http://localhost:3002</span></pre></div>\n<p dir=\"auto\"><strong>Important:</strong> Always run <code>bun dev</code> from the root directory to ensure the package watchers are running. This enables hot reload when you edit files in <code>packages/core/src/</code> or <code>packages/viewer/src/</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for Production</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build all packages\nturbo build\n\n# Build specific package\nturbo build --filter=@pascal-app/core\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build all packages</span>\nturbo build\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Build specific package</span>\nturbo build --filter=@pascal-app/core</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Publishing Packages</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build packages\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n# Publish to npm\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build packages</span>\nturbo build --filter=@pascal-app/core --filter=@pascal-app/viewer\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Publish to npm</span>\nnpm publish --workspace=@pascal-app/core --access public\nnpm publish --workspace=@pascal-app/viewer --access public</pre></div>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Files</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>packages/core/src/schema/</code></td>\n<td>Node type definitions (Zod schemas)</td>\n</tr>\n<tr>\n<td><code>packages/core/src/store/use-scene.ts</code></td>\n<td>Scene state store</td>\n</tr>\n<tr>\n<td><code>packages/core/src/hooks/scene-registry/</code></td>\n<td>3D object registry</td>\n</tr>\n<tr>\n<td><code>packages/core/src/systems/</code></td>\n<td>Geometry generation systems</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/renderers/</code></td>\n<td>Node renderers</td>\n</tr>\n<tr>\n<td><code>packages/viewer/src/components/viewer/</code></td>\n<td>Main Viewer component</td>\n</tr>\n<tr>\n<td><code>apps/editor/components/tools/</code></td>\n<td>Editor tools</td>\n</tr>\n<tr>\n<td><code>apps/editor/store/</code></td>\n<td>Editor-specific state</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Bug fixes, features, docs and ideas are all welcome. Start with <a href=\"https://github.com/pascalorg/editor/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a> for setup, code style and the PR flow.</p>\n<ul dir=\"auto\">\n<li>New node kinds and sidebar panels ship as <a href=\"https://editor.pascal.app/docs/developers/plugins\" rel=\"nofollow\">plugins</a> rather than edits to the built-ins — <a href=\"https://github.com/pascalorg/plugin-trees\"><code>pascalorg/plugin-trees</code></a> is a worked example</li>\n<li>Questions and ideas go to <a href=\"https://github.com/pascalorg/editor/discussions\">Discussions</a>; reproducible bugs go to <a href=\"https://github.com/pascalorg/editor/issues\">Issues</a></li>\n<li>Participation is covered by our <a href=\"https://github.com/pascalorg/editor/blob/main/CODE_OF_CONDUCT.md\">Code of Conduct</a></li>\n<li>Security problems go to <a href=\"https://github.com/pascalorg/editor/blob/main/SECURITY.md\">SECURITY.md</a>, not a public issue</li>\n</ul>\n<hr>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributors</h2></div>\n<p dir=\"auto\"><a href=\"https://github.com/Aymericr\"><img src=\"https://avatars.githubusercontent.com/u/4444492?v=4\" width=\"60\" height=\"60\" alt=\"Aymeric Rabot\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/wass08\"><img src=\"https://avatars.githubusercontent.com/u/6551176?v=4\" width=\"60\" height=\"60\" alt=\"Wassim Samad\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n<a href=\"https://github.com/sudhir9297\"><img src=\"https://avatars.githubusercontent.com/sudhir9297?v=4\" width=\"60\" height=\"60\" alt=\"Sudhir\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n<hr>\n<p dir=\"auto\"><a href=\"https://trendshift.io/repositories/23831\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/93310c4e4c31854e7af5b46996b4eaa96c5f721cad8d076ea68d5d9ed011dbfb/68747470733a2f2f7472656e6473686966742e696f2f6170692f62616467652f7265706f7369746f726965732f3233383331\" alt=\"pascalorg/editor | Trendshift\" width=\"250\" height=\"55\" data-canonical-src=\"https://trendshift.io/api/badge/repositories/23831\" style=\"max-width: 100%; height: auto; max-height: 55px;; aspect-ratio: 250 / 55; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a></p>\n</article></div>",
   "releases": [
     {
       "name": "Pascal Editor 1.0.0-beta.1",
@@ -504,7 +509,7 @@
       "prerelease": true,
       "body": "The first Pascal Editor 1.0 beta focuses the editor around a stable, extensible scene model and production-grade architectural workflows.\n\n### Highlights\n\n- **Terrain sculpting** — raise, lower, flatten, and smooth a compact height field with a persistent brush, live grid feedback, subtle continuous sound, undo-safe strokes, terrain raycasting, and first-person collision.\n- **Terrain-aware construction** — walls, slabs, stairs, fences, columns, items, and other floor-placed nodes resolve stacked support and update live while terrain is sculpted. Wall and slab foundations can fill down to terrain without changing authored height or thickness.\n- **Vertical modeling** — stored storey heights, raised-support drafting, explicit elevation anchors and guides, slab/deck stacking, auto-room surface elevation, wall/ceiling clamps, and support-aware placement above or below slabs.\n- **Plugin and node architecture** — public node definitions, the built-in nodes package, plugin management, host integration primitives, and first-party Nature and MEP workflows.\n- **Floor-plan and export workflows** — faster navigation, contextual dimensions and modes, more reliable placement and selection, textur",
       "downloads": 0,
-      "reactions": 9
+      "reactions": 11
     },
     {
       "name": "v0.9.1 — Preset System, Rooms & Templates, Building Manipulation",
@@ -547,12 +552,12 @@
       "reactions": 3
     }
   ],
-  "contributorCount": 37,
+  "contributorCount": 41,
   "punchCard": [
     {
       "day": 0,
       "hour": 0,
-      "commits": 11
+      "commits": 12
     },
     {
       "day": 0,
@@ -572,7 +577,7 @@
     {
       "day": 0,
       "hour": 4,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 0,
@@ -627,7 +632,7 @@
     {
       "day": 0,
       "hour": 15,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 0,
@@ -667,12 +672,12 @@
     {
       "day": 0,
       "hour": 23,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 1,
       "hour": 0,
-      "commits": 0
+      "commits": 4
     },
     {
       "day": 1,
@@ -707,7 +712,7 @@
     {
       "day": 1,
       "hour": 7,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 1,
@@ -717,7 +722,7 @@
     {
       "day": 1,
       "hour": 9,
-      "commits": 14
+      "commits": 15
     },
     {
       "day": 1,
@@ -732,7 +737,7 @@
     {
       "day": 1,
       "hour": 12,
-      "commits": 15
+      "commits": 16
     },
     {
       "day": 1,
@@ -747,7 +752,7 @@
     {
       "day": 1,
       "hour": 15,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 1,
@@ -757,12 +762,12 @@
     {
       "day": 1,
       "hour": 17,
-      "commits": 8
+      "commits": 11
     },
     {
       "day": 1,
       "hour": 18,
-      "commits": 5
+      "commits": 7
     },
     {
       "day": 1,
@@ -827,7 +832,7 @@
     {
       "day": 2,
       "hour": 7,
-      "commits": 9
+      "commits": 10
     },
     {
       "day": 2,
@@ -837,7 +842,7 @@
     {
       "day": 2,
       "hour": 9,
-      "commits": 16
+      "commits": 17
     },
     {
       "day": 2,
@@ -847,17 +852,17 @@
     {
       "day": 2,
       "hour": 11,
-      "commits": 14
+      "commits": 15
     },
     {
       "day": 2,
       "hour": 12,
-      "commits": 18
+      "commits": 20
     },
     {
       "day": 2,
       "hour": 13,
-      "commits": 20
+      "commits": 21
     },
     {
       "day": 2,
@@ -867,12 +872,12 @@
     {
       "day": 2,
       "hour": 15,
-      "commits": 23
+      "commits": 24
     },
     {
       "day": 2,
       "hour": 16,
-      "commits": 12
+      "commits": 16
     },
     {
       "day": 2,
@@ -937,7 +942,7 @@
     {
       "day": 3,
       "hour": 5,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -962,17 +967,17 @@
     {
       "day": 3,
       "hour": 10,
-      "commits": 19
+      "commits": 21
     },
     {
       "day": 3,
       "hour": 11,
-      "commits": 15
+      "commits": 16
     },
     {
       "day": 3,
       "hour": 12,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 3,
@@ -992,7 +997,7 @@
     {
       "day": 3,
       "hour": 16,
-      "commits": 15
+      "commits": 17
     },
     {
       "day": 3,
@@ -1002,12 +1007,12 @@
     {
       "day": 3,
       "hour": 18,
-      "commits": 8
+      "commits": 10
     },
     {
       "day": 3,
       "hour": 19,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -1147,7 +1152,7 @@
     {
       "day": 4,
       "hour": 23,
-      "commits": 7
+      "commits": 8
     },
     {
       "day": 5,
@@ -1177,7 +1182,7 @@
     {
       "day": 5,
       "hour": 5,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 5,
@@ -1207,7 +1212,7 @@
     {
       "day": 5,
       "hour": 11,
-      "commits": 18
+      "commits": 20
     },
     {
       "day": 5,
@@ -1217,7 +1222,7 @@
     {
       "day": 5,
       "hour": 13,
-      "commits": 15
+      "commits": 16
     },
     {
       "day": 5,
@@ -1237,12 +1242,12 @@
     {
       "day": 5,
       "hour": 17,
-      "commits": 16
+      "commits": 17
     },
     {
       "day": 5,
       "hour": 18,
-      "commits": 10
+      "commits": 11
     },
     {
       "day": 5,
@@ -1287,7 +1292,7 @@
     {
       "day": 6,
       "hour": 3,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -1327,7 +1332,7 @@
     {
       "day": 6,
       "hour": 11,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 6,
@@ -1347,7 +1352,7 @@
     {
       "day": 6,
       "hour": 15,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 6,
@@ -1362,7 +1367,7 @@
     {
       "day": 6,
       "hour": 18,
-      "commits": 5
+      "commits": 6
     },
     {
       "day": 6,
@@ -1387,56 +1392,81 @@
     {
       "day": 6,
       "hour": 23,
-      "commits": 1
+      "commits": 2
     }
   ],
   "participation": {
-    "all": 1354,
+    "all": 1400,
     "owner": 0,
-    "community": 1354
+    "community": 1400
   },
   "recentIssues": [
     {
-      "number": 696,
-      "title": "MCP tool output schemas declare `draft-07` dialect — rejected by clients enforcing JSON Schema 2020-12",
-      "url": "https://github.com/pascalorg/editor/issues/696",
-      "createdAt": "2026-08-20T22:47:22Z",
+      "number": 737,
+      "title": "Follow-up: scan node + capture-protocol manifest for scanning-app hand-offs",
+      "url": "https://github.com/pascalorg/editor/issues/737",
+      "createdAt": "2026-08-31T04:42:38Z",
       "comments": 0,
+      "labels": [],
+      "author": "alxbouchard"
+    },
+    {
+      "number": 734,
+      "title": "Save Build / Load Build round-trip drops collections",
+      "url": "https://github.com/pascalorg/editor/issues/734",
+      "createdAt": "2026-08-31T03:41:57Z",
+      "comments": 0,
+      "labels": [
+        "bug"
+      ],
+      "author": "Aymericr"
+    },
+    {
+      "number": 733,
+      "title": "Local asset storage never cleans up: deleting an asset:// scan or guide orphans its File in IndexedDB",
+      "url": "https://github.com/pascalorg/editor/issues/733",
+      "createdAt": "2026-08-31T03:41:56Z",
+      "comments": 0,
+      "labels": [
+        "bug"
+      ],
+      "author": "Aymericr"
+    },
+    {
+      "number": 715,
+      "title": "@pascal-app/editor beta.5 pulls node:module into external browser builds through Manifold print export",
+      "url": "https://github.com/pascalorg/editor/issues/715",
+      "createdAt": "2026-08-24T12:16:04Z",
+      "comments": 4,
+      "labels": [
+        "bug"
+      ],
+      "author": "smokie40"
+    },
+    {
+      "number": 704,
+      "title": "No documented way to bridge a Pascal Capture (cloud) scan into the local MCP server; local MCP also fails to start under Cowork/Code with \"Connection closed\"",
+      "url": "https://github.com/pascalorg/editor/issues/704",
+      "createdAt": "2026-08-22T13:43:01Z",
+      "comments": 1,
       "labels": [
         "bug"
       ],
       "author": "seasonsbrick-cell"
     },
     {
-      "number": 647,
-      "title": "AI agent has no repsonse and always preparing",
-      "url": "https://github.com/pascalorg/editor/issues/647",
-      "createdAt": "2026-08-14T05:32:35Z",
-      "comments": 0,
+      "number": 696,
+      "title": "MCP tool output schemas declare `draft-07` dialect — rejected by clients enforcing JSON Schema 2020-12",
+      "url": "https://github.com/pascalorg/editor/issues/696",
+      "createdAt": "2026-08-20T22:47:22Z",
+      "comments": 1,
       "labels": [
         "bug"
       ],
-      "author": "WangJinCheng1998"
-    },
-    {
-      "number": 645,
-      "title": "Self-hosted editor: scan upload button is a silent no-op (onUploadAsset never wired locally)",
-      "url": "https://github.com/pascalorg/editor/issues/645",
-      "createdAt": "2026-08-13T17:16:49Z",
-      "comments": 0,
-      "labels": [],
-      "author": "xentzu"
+      "author": "seasonsbrick-cell"
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-08-23",
-      "commits": 0
-    },
-    {
-      "week": "2025-08-30",
-      "commits": 0
-    },
     {
       "week": "2025-09-06",
       "commits": 0
@@ -1635,66 +1665,18 @@
     },
     {
       "week": "2026-08-16",
-      "commits": 36
+      "commits": 43
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 18
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 25
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-23",
-      "count": 0
-    },
-    {
-      "date": "2025-08-24",
-      "count": 0
-    },
-    {
-      "date": "2025-08-25",
-      "count": 0
-    },
-    {
-      "date": "2025-08-26",
-      "count": 0
-    },
-    {
-      "date": "2025-08-27",
-      "count": 0
-    },
-    {
-      "date": "2025-08-28",
-      "count": 0
-    },
-    {
-      "date": "2025-08-29",
-      "count": 0
-    },
-    {
-      "date": "2025-08-30",
-      "count": 0
-    },
-    {
-      "date": "2025-08-31",
-      "count": 0
-    },
-    {
-      "date": "2025-09-01",
-      "count": 0
-    },
-    {
-      "date": "2025-09-02",
-      "count": 0
-    },
-    {
-      "date": "2025-09-03",
-      "count": 0
-    },
-    {
-      "date": "2025-09-04",
-      "count": 0
-    },
-    {
-      "date": "2025-09-05",
-      "count": 0
-    },
     {
       "date": "2025-09-06",
       "count": 0
@@ -3089,91 +3071,147 @@
     },
     {
       "date": "2026-08-21",
-      "count": 2
+      "count": 5
     },
     {
       "date": "2026-08-22",
+      "count": 4
+    },
+    {
+      "date": "2026-08-23",
+      "count": 3
+    },
+    {
+      "date": "2026-08-24",
+      "count": 6
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 4
+    },
+    {
+      "date": "2026-08-27",
+      "count": 1
+    },
+    {
+      "date": "2026-08-28",
+      "count": 3
+    },
+    {
+      "date": "2026-08-29",
+      "count": 1
+    },
+    {
+      "date": "2026-08-30",
+      "count": 1
+    },
+    {
+      "date": "2026-08-31",
+      "count": 7
+    },
+    {
+      "date": "2026-09-01",
+      "count": 11
+    },
+    {
+      "date": "2026-09-02",
+      "count": 6
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
       "count": 0
     }
   ],
   "recentCommits": [
     {
-      "sha": "8408cb8",
-      "message": "chore: bump plugin-bones to ecadea5 (night-7 batch) (#698)",
-      "url": "https://github.com/pascalorg/editor/commit/8408cb889aae59ce9c20c38afae167ed06a46d20",
-      "date": "2026-08-21T11:28:14Z",
-      "author": "Snoopy147",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4"
-    },
-    {
-      "sha": "a046ef1",
-      "message": "fix: nearest-first hover/selection — hidden walls win over the furniture behind them (#697)",
-      "url": "https://github.com/pascalorg/editor/commit/a046ef1f89ac44ea26fe6f2abb42d35f65374732",
-      "date": "2026-08-21T06:02:38Z",
-      "author": "Snoopy147",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4"
-    },
-    {
-      "sha": "182f7c9",
-      "message": "chore: bump plugin-bones to 85238a8e (night-6 batch) (#695)",
-      "url": "https://github.com/pascalorg/editor/commit/182f7c949ff79dc656040a09613436ea613240f8",
-      "date": "2026-08-20T19:53:56Z",
-      "author": "Snoopy147",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4"
-    },
-    {
-      "sha": "f0ca911",
-      "message": "fix: opening MOVE drags ride the node's own wall; one undo entry per gesture (#694)",
-      "url": "https://github.com/pascalorg/editor/commit/f0ca9119a01c2ff65712a9555062db1e55174071",
-      "date": "2026-08-20T19:47:34Z",
-      "author": "Snoopy147",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4"
-    },
-    {
-      "sha": "d8be9fa",
-      "message": "test(nodes): give the every-angle corner-joint sweep a CI-sized timeout (#693)",
-      "url": "https://github.com/pascalorg/editor/commit/d8be9fa9dfd1fd083b09eeecdf0f0c55f325f8c0",
-      "date": "2026-08-20T16:41:28Z",
+      "sha": "19327a9",
+      "message": "editor: a failed scene load shows an error with retry instead of an empty scene (#759)",
+      "url": "https://github.com/pascalorg/editor/commit/19327a98748db383b394643494f9fa3af220906d",
+      "date": "2026-09-02T22:01:38Z",
       "author": "wass08",
       "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
     },
     {
-      "sha": "1b9300f",
-      "message": "fix: hidden walls stay ray targets while a door/window tool is active (#689)",
-      "url": "https://github.com/pascalorg/editor/commit/1b9300f7b291d4312c077b5ba46aad83de330bd1",
-      "date": "2026-08-20T15:58:39Z",
-      "author": "Snoopy147",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/8753673?v=4"
-    },
-    {
-      "sha": "2d3650f",
-      "message": "chore(core): evict runtime R3F from the core barrel + architecture test (#692)",
-      "url": "https://github.com/pascalorg/editor/commit/2d3650f186529e377de8830a6a55883c2a3760d4",
-      "date": "2026-08-20T14:42:17Z",
+      "sha": "17e7f4d",
+      "message": "Dirty-lifecycle correctness: guarded dirty set, undo phantom sweep, animation split (#758)",
+      "url": "https://github.com/pascalorg/editor/commit/17e7f4da73b68de9fb51c1288bab3a26e0fb8de0",
+      "date": "2026-09-02T20:59:41Z",
       "author": "wass08",
       "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
     },
     {
-      "sha": "889144d",
-      "message": "editor: improve roof materials, drawing, and intersections (#690)",
-      "url": "https://github.com/pascalorg/editor/commit/889144dbeba272fb1c5a8a8c918562069ea9eaff",
-      "date": "2026-08-20T12:13:26Z",
+      "sha": "5c058b9",
+      "message": "capture-viewer: render extracted JSON preview artifacts (#757)",
+      "url": "https://github.com/pascalorg/editor/commit/5c058b9695d45ad4c814444e228f107eb6f1d5f4",
+      "date": "2026-09-02T20:08:25Z",
+      "author": "Aymericr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4444492?v=4"
+    },
+    {
+      "sha": "8a6c43f",
+      "message": "Add presentation.findInCatalog opt-out for the action menu's find button (#756)",
+      "url": "https://github.com/pascalorg/editor/commit/8a6c43fc276f5df681b71a2aa2646fd15bb71ce9",
+      "date": "2026-09-02T16:49:01Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "3a5fdde",
+      "message": "?perf instrumentation suite: real GPU timestamps, system tracks, action receipts, DOM panel (#755)",
+      "url": "https://github.com/pascalorg/editor/commit/3a5fdde4e696dd53f3f572cbad5aefe9359ea5e4",
+      "date": "2026-09-02T15:20:35Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "83400c9",
+      "message": "feat(cabinet): support exact sizing and run-aware editing (#753)",
+      "url": "https://github.com/pascalorg/editor/commit/83400c9de7c0c01980ae1e35878d215d4d93308a",
+      "date": "2026-09-02T12:37:57Z",
       "author": "sudhir9297",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4"
     },
     {
-      "sha": "0ce54ba",
-      "message": "editor: add lean-to roof extensions and automatic drainage (#651)",
-      "url": "https://github.com/pascalorg/editor/commit/0ce54ba62ea8c01e0a3c54484974007cc2792dfa",
-      "date": "2026-08-19T17:39:03Z",
-      "author": "sudhir9297",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19578447?v=4"
+      "sha": "9cdafb0",
+      "message": "editor: level-follow camera, snapshot walk/drone suite, opening placement regressions (#752)",
+      "url": "https://github.com/pascalorg/editor/commit/9cdafb0400fd2d4e3032eaca95246fdc25730e1f",
+      "date": "2026-09-01T20:45:35Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
     },
     {
-      "sha": "bab7ff1",
-      "message": "fix(nodes/wall): let a hovered wall out of its batch so it can outline (#687)",
-      "url": "https://github.com/pascalorg/editor/commit/bab7ff1b13184a4eae71ce26129a8a10050dc129",
-      "date": "2026-08-19T17:24:11Z",
+      "sha": "12cb40d",
+      "message": "editor: single-writer ToolMode FSM for mode/tool (#751)",
+      "url": "https://github.com/pascalorg/editor/commit/12cb40d87c08ec08749ebabe7dcf64e313fafe90",
+      "date": "2026-09-01T20:45:19Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "9b01a10",
+      "message": "registry: declarative def.toolOptions + shared ToolOptionsPanel; roof draws from it (#750)",
+      "url": "https://github.com/pascalorg/editor/commit/9b01a10c29367a9fe75d5f9913642938a67ba92a",
+      "date": "2026-09-01T20:45:03Z",
+      "author": "wass08",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
+    },
+    {
+      "sha": "a6d02e7",
+      "message": "viewer: re-resolve dangling library material refs; paint picker defaults to Pascal (#749)",
+      "url": "https://github.com/pascalorg/editor/commit/a6d02e7bec238d5282ac5b2d0f4fdb5c74bb9434",
+      "date": "2026-09-01T20:44:54Z",
       "author": "wass08",
       "avatarUrl": "https://avatars.githubusercontent.com/u/6551176?v=4"
     }
@@ -3302,7 +3340,7 @@
     {
       "name": "bun.lock",
       "type": "file",
-      "size": 233268,
+      "size": 241443,
       "url": "https://github.com/pascalorg/editor/blob/main/bun.lock"
     },
     {
@@ -3362,13 +3400,13 @@
     {
       "name": "package.json",
       "type": "file",
-      "size": 2515,
+      "size": 2569,
       "url": "https://github.com/pascalorg/editor/blob/main/package.json"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 15381,
+      "size": 15914,
       "url": "https://github.com/pascalorg/editor/blob/main/README.md"
     },
     {
@@ -3392,79 +3430,79 @@
   ],
   "recentPulls": [
     {
-      "number": 698,
-      "title": "chore: bump plugin-bones to ecadea5 (night-7 batch)",
-      "url": "https://github.com/pascalorg/editor/pull/698",
+      "number": 759,
+      "title": "editor: a failed scene load shows an error with retry, never an empty scene",
+      "url": "https://github.com/pascalorg/editor/pull/759",
       "state": "merged",
-      "updatedAt": "2026-08-21T11:28:16Z",
-      "author": "Snoopy147",
+      "updatedAt": "2026-09-02T22:01:39Z",
+      "author": "wass08",
       "draft": false
     },
     {
-      "number": 697,
-      "title": "fix: nearest-first hover/selection — hidden walls win over the furniture behind them",
-      "url": "https://github.com/pascalorg/editor/pull/697",
+      "number": 758,
+      "title": "Dirty-lifecycle correctness: guarded dirty set, undo phantom sweep, animation split",
+      "url": "https://github.com/pascalorg/editor/pull/758",
       "state": "merged",
-      "updatedAt": "2026-08-21T06:06:06Z",
-      "author": "Snoopy147",
+      "updatedAt": "2026-09-02T20:59:42Z",
+      "author": "wass08",
       "draft": false
     },
     {
-      "number": 691,
-      "title": "nodes: improve block mesh editing UX",
-      "url": "https://github.com/pascalorg/editor/pull/691",
-      "state": "open",
-      "updatedAt": "2026-08-21T05:38:06Z",
+      "number": 757,
+      "title": "capture-viewer: render extracted JSON preview artifacts",
+      "url": "https://github.com/pascalorg/editor/pull/757",
+      "state": "merged",
+      "updatedAt": "2026-09-02T20:08:28Z",
+      "author": "Aymericr",
+      "draft": false
+    },
+    {
+      "number": 756,
+      "title": "editor: add presentation.findInCatalog opt-out for the action menu",
+      "url": "https://github.com/pascalorg/editor/pull/756",
+      "state": "merged",
+      "updatedAt": "2026-09-02T16:49:03Z",
+      "author": "wass08",
+      "draft": false
+    },
+    {
+      "number": 755,
+      "title": "?perf instrumentation suite: real GPU timestamps, system tracks, action receipts, DOM panel",
+      "url": "https://github.com/pascalorg/editor/pull/755",
+      "state": "merged",
+      "updatedAt": "2026-09-02T15:20:36Z",
+      "author": "wass08",
+      "draft": false
+    },
+    {
+      "number": 753,
+      "title": "feat(cabinet): support exact sizing and run-aware editing",
+      "url": "https://github.com/pascalorg/editor/pull/753",
+      "state": "merged",
+      "updatedAt": "2026-09-02T12:37:58Z",
       "author": "sudhir9297",
       "draft": false
     },
     {
-      "number": 695,
-      "title": "chore: bump plugin-bones to 85238a8e (night-6 batch)",
-      "url": "https://github.com/pascalorg/editor/pull/695",
-      "state": "merged",
-      "updatedAt": "2026-08-20T19:53:58Z",
-      "author": "Snoopy147",
+      "number": 754,
+      "title": "Main",
+      "url": "https://github.com/pascalorg/editor/pull/754",
+      "state": "open",
+      "updatedAt": "2026-09-02T12:26:12Z",
+      "author": "ovurrsl",
       "draft": false
     },
     {
-      "number": 694,
-      "title": "fix: opening MOVE drags ride the node's own wall; one undo entry per gesture",
-      "url": "https://github.com/pascalorg/editor/pull/694",
-      "state": "merged",
-      "updatedAt": "2026-08-20T19:47:36Z",
-      "author": "Snoopy147",
-      "draft": false
-    },
-    {
-      "number": 693,
-      "title": "test(nodes): CI-sized timeout for the every-angle corner-joint sweep",
-      "url": "https://github.com/pascalorg/editor/pull/693",
-      "state": "merged",
-      "updatedAt": "2026-08-20T16:41:29Z",
-      "author": "wass08",
-      "draft": false
-    },
-    {
-      "number": 689,
-      "title": "fix: hidden walls stay ray targets while a door/window tool is active",
-      "url": "https://github.com/pascalorg/editor/pull/689",
-      "state": "merged",
-      "updatedAt": "2026-08-20T15:58:41Z",
-      "author": "Snoopy147",
-      "draft": false
-    },
-    {
-      "number": 692,
-      "title": "chore(core): evict runtime R3F from the core barrel + architecture test",
-      "url": "https://github.com/pascalorg/editor/pull/692",
-      "state": "merged",
-      "updatedAt": "2026-08-20T14:42:18Z",
-      "author": "wass08",
+      "number": 601,
+      "title": "Claude/x86 graphics performance issue 9rac6j",
+      "url": "https://github.com/pascalorg/editor/pull/601",
+      "state": "closed",
+      "updatedAt": "2026-09-02T08:24:17Z",
+      "author": "ovurrsl",
       "draft": false
     }
   ],
-  "branchCount": 173,
+  "branchCount": 186,
   "tagCount": 52,
   "community": {
     "healthPercentage": 87,
@@ -3477,63 +3515,63 @@
     {
       "name": "CI",
       "status": "success",
-      "url": "https://github.com/pascalorg/editor/actions/runs/32477350145",
+      "url": "https://github.com/pascalorg/editor/actions/runs/33688265287",
       "branch": "main",
-      "updatedAt": "2026-08-21T11:31:19Z"
+      "updatedAt": "2026-09-02T22:04:55Z"
     },
     {
       "name": "mcp-ci",
       "status": "success",
-      "url": "https://github.com/pascalorg/editor/actions/runs/32477350100",
+      "url": "https://github.com/pascalorg/editor/actions/runs/33682571914",
       "branch": "main",
-      "updatedAt": "2026-08-21T11:28:50Z"
+      "updatedAt": "2026-09-02T21:00:22Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 30,
-  "openPRs": 18,
+  "openIssuesOnly": 26,
+  "openPRs": 12,
   "releaseCount": 14,
   "discussionsEnabled": true,
   "discussionCount": 21,
   "discussions": [
     {
-      "title": "@pascal-app/nodes not published to npm + npm publish cadence",
-      "url": "https://github.com/pascalorg/editor/discussions/440",
-      "createdAt": "2026-06-25T08:57:43Z",
+      "title": "When will the AI feature be launched? Will it support multiple languages in the future?",
+      "url": "https://github.com/pascalorg/editor/discussions/272",
+      "createdAt": "2026-04-22T14:04:52Z",
       "comments": 3,
-      "category": "Q&A"
+      "category": "General"
     },
     {
-      "title": "Docker image",
-      "url": "https://github.com/pascalorg/editor/discussions/559",
-      "createdAt": "2026-07-29T06:06:41Z",
+      "title": "Add export 3D printable STL option",
+      "url": "https://github.com/pascalorg/editor/discussions/331",
+      "createdAt": "2026-05-22T14:30:25Z",
       "comments": 3,
-      "category": "Show and tell"
-    },
-    {
-      "title": "Editor's architecture and codebase explanation",
-      "url": "https://github.com/pascalorg/editor/discussions/555",
-      "createdAt": "2026-07-28T11:58:05Z",
-      "comments": 3,
-      "category": "Show and tell"
-    },
-    {
-      "title": "Quick Start with docker",
-      "url": "https://github.com/pascalorg/editor/discussions/183",
-      "createdAt": "2026-03-26T06:47:40Z",
-      "comments": 2,
-      "category": "Show and tell"
+      "category": "Ideas"
     },
     {
       "title": "Docker distribution ?",
       "url": "https://github.com/pascalorg/editor/discussions/263",
       "createdAt": "2026-04-19T06:09:31Z",
-      "comments": 3,
+      "comments": 4,
+      "category": "Q&A"
+    },
+    {
+      "title": "Floor Plans pdf Feature",
+      "url": "https://github.com/pascalorg/editor/discussions/391",
+      "createdAt": "2026-06-10T01:16:02Z",
+      "comments": 2,
+      "category": "General"
+    },
+    {
+      "title": "2D Blueprint Import & Scale Calibration",
+      "url": "https://github.com/pascalorg/editor/discussions/460",
+      "createdAt": "2026-07-03T13:54:08Z",
+      "comments": 1,
       "category": "Q&A"
     }
   ],
-  "closedIssues": 67,
-  "mergedPRs": 475,
+  "closedIssues": 80,
+  "mergedPRs": 525,
   "environmentCount": 3,
   "isFork": false,
   "isInOrganization": true,
@@ -3547,7 +3585,7 @@
     "publishedAt": "2026-06-10T03:17:29Z"
   },
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-08-21T12:35:19.666Z",
+  "factsUpdatedAt": "2026-09-02T23:47:18.967Z",
   "aiSummary": {
     "oneLiner": "A 3D spatial building editor leveraging React Three Fiber and WebGPU for architectural design.",
     "whatItDoes": "Pascal Editor is a specialized 3D architectural and spatial building tool designed around modern web technologies like React Three Fiber and WebGPU. It provides a local runtime environment for declaratively editing complex 3D structures and scenes directly within an application via a Turborepo monorepo architecture. The tool includes a standalone Node.js CLI that provisions a persistent local installation, selects collision-free loopback ports, and manages projects via a local database without requiring repository cloning. Additionally, it features an integrated, authenticated Model Context Protocol (MCP) service running in the background to seamlessly facilitate AI agent interactions.",
