@@ -45,6 +45,11 @@
       "date": "2026-09-08",
       "stars": 6751,
       "forks": 265
+    },
+    {
+      "date": "2026-09-09",
+      "stars": 6854,
+      "forks": 276
     }
   ],
   "trendingHistory": [
@@ -95,30 +100,83 @@
   "license": "BSD-3-Clause",
   "language": "Go",
   "topics": [],
-  "stars": 6751,
-  "forks": 265,
+  "stars": 6854,
+  "forks": 276,
   "watchers": 24,
-  "openIssues": 17,
+  "openIssues": 16,
   "createdAt": "2024-10-29T17:21:12Z",
-  "pushedAt": "2026-09-05T22:04:09Z",
+  "pushedAt": "2026-09-09T15:44:26Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-08T07:43:23.576Z",
+  "updatedAt": "2026-09-09T23:46:06.523Z",
   "languages": {
-    "Go": 178829,
+    "Go": 458683,
     "JavaScript": 11736,
     "HTML": 2845,
-    "Nix": 1035
+    "Nix": 1918,
+    "Shell": 1416,
+    "Makefile": 108
   },
-  "commitCount": 10396,
-  "releases": [],
-  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\">\n</p>\n\n<p align=\"center\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n\n# Tailcat\n\nTailcat is a remix of Tailscale open source pieces to act like\n[netcat](https://en.wikipedia.org/wiki/Netcat), but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (`magicsock`,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all `tailcat` connection metadata is exchanged out of\nband, however you want.\n\nThe `tailcat` CLI (in `cmd/tailcat`) is built on the `tailcat` Go library\n(importable as [`github.com/tailscale/tailcat`](https://pkg.go.dev/github.com/tailscale/tailcat)).\n\nWhether you use `tailcat` as a CLI tool or library, one side runs a `tailcat`\nserver (listener) and gets back a short connection token. The other side passes\nthat token to `tailcat`'s client side to connect. All traffic between the two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server ([see below](#bring-your-own-derp-relay)), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).\n\nYou don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.\n\nAnd it's all open source.\n\nYou can use our free rate-limited DERP relays (the default DERP map is\nhttps://tailcat.dev/derpmap.json) or you can [run your own](https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp).\n\nThere's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at https://tailscale.github.io/tailcat/ that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport ([#4](https://github.com/tailscale/tailcat/issues/4)).\n\n## Install\n\n```sh\n$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\n```\n\nOr with Nix flakes, run it directly or install it:\n\n```sh\n$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\n```\n\n## Usage\n\n### Pipe stdin/stdout between two machines\n\nServer starts, printing out its ephemeral address:\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\n```\n\nAnd then the client can:\n\n```sh\n$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \n```\n\nThen the server unblocks:\n\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\n```\n\n### Expose local ports through the tunnel\n\nOr you can serve a local TCP port, forwarded to localhost:\n\n```sh\n$ tailcat --serve=8080,8443 # or --serve=all\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nAnd then the client:\n\n```sh\n$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\n```\n\n### Auth-free SSH server\n\nOn Linux and macOS, you can run an SSH server too with no auth. (If you want auth, you can just `tailcat --serve=22` and proxy to your system SSH server)\n\n```sh\n$ tailcat --serve=no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nAnd on the client side:\n\n```sh\n$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\n```\n\n### Misc commands \n\nPing to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. `--until-direct` keeps pinging (up to\n`--timeout`, default 10s) until a direct path works, exiting non-zero\nif one doesn't:\n\n```sh\n$ tailcat ping --until-direct <token>\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\n```\n\nRun a command through a SOCKS5 proxy routed over the tunnel:\n\n```sh\n$ tailcat socks <token> curl http://server.tailcat:8081/\n```\n\nTokens also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the token argument is optional. (Tokens are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)\n\n```sh\n$ tailcat socks curl http://<token>:8081/\n```\n\nAct as an exit node so the client can reach the server's network:\n\n```sh\n$ tailcat --serve=exit-node\n```\n\nParse a connection token and print its contents (the server's WireGuard\npublic key and DERP info) as JSON, without connecting to anything:\n\n```sh\n$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    \"ServerPublic\": \"nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34\",\n    \"RegionID\": 302\n}\n```\n\nResolve a short token (which references a DERP region by ID, requiring\nclients to fetch the DERP map) into a longer self-contained one with the\nDERP server info embedded, letting clients connect more quickly:\n\n```sh\n$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n```\n\nParsing that resolved token shows the embedded DERP info:\n\n```sh\n$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    \"ServerPublic\": \"nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34\",\n    \"Region\": [\n        {\n            \"Nodes\": [\n                {\n                    \"HostName\": \"tc302a.ipn.dev\",\n                    \"IPv4\": \"208.111.39.38\",\n                    \"IPv6\": \"2607:f740:0:3f::720\"\n                }\n            ]\n        }\n    ]\n}\n```\n\nA server can print the long self-contained form directly with the\n`--full-address` flag.\n\n## Key Management\n\nA server's address (connection token) is derived from its WireGuard key, so\nthe key you use determines who can reach you:\n\n* **Ephemeral keys (the default):** each server run generates a fresh key in\n  memory and prints an address nobody has ever seen. When the process exits,\n  the key is discarded and the address is dead forever. This is the safe\n  default: sharing that address only ever refers to that one run.\n\n* **Saved keys:** `tailcat genkey` generates a key saved to disk so the\n  address stays stable across restarts. The flip side: anyone you've *ever*\n  shared that address with can connect to any future server using that key,\n  unless you restrict clients with `--allow` (see `tailcat genkey --client`).\n\nThe CLI says at startup which kind it's using, so you know whether you're\nstarting a fresh single-use server or re-listening on an address you may\nhave shared in the past.\n\n```sh\n$ tailcat genkey --region=nyc\n# prints the token; key saved to ~/.config/tailcat/keys/default.private.json\n\n# later; the key named \"default\" is used automatically once it exists:\n$ tailcat --serve=8080\n# 🐈 Server listening with saved key \"default\": tcXXXXXXXXX\n\n# ... unless you force a one-off ephemeral key:\n$ tailcat --serve=8080 --key=new\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nThat is, `default` is a magic key name: once it exists, plain `tailcat`\nsilently uses it instead of generating an ephemeral key, and the startup\nline above is what tells you which happened. Use `--key=new` to get an\nephemeral key anyway, `--key=<name>` to use a different saved key, or\n`tailcat genkey --delete --key=default` to remove the saved default key.\n`tailcat genkey --list` lists your saved keys.\n\nTokens can also be published as DNS TXT records and looked up by name;\na DNS name works anywhere the CLI takes a token:\n\n```sh\n# If example.com has a TXT record \"tailcat=tc...\"\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com\n```\n\n## Examples\n\n### Protected SSH server over DNS\n\nWho needs port forwarding or port knocking? This runs an SSH server\nreachable from anywhere by name, with no open inbound ports on the\nserver, where WireGuard authenticates the client before the SSH\nserver ever sees a packet.\n\nOn the client machine, generate a client identity keypair. It prints\nthe public key, which is all the server needs to know:\n\n```sh\nclient$ tailcat genkey --client\n# wrote file to ~/.config/tailcat/keys/client-default.private.json\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16\n```\n\nOn the server, generate a server keypair pinned to its nearest DERP\nregion (see why below), then serve SSH to only that client:\n\n```sh\nserver$ tailcat genkey --fixed-region\n# wrote file to ~/.config/tailcat/keys/default.private.json\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n# 🐈 Server listening with saved key \"default\": tcXXXXXXXXX\n```\n\nPublish the token in DNS as a TXT record:\n\n```\nmy-server.example.com. 300 IN TXT \"tailcat=tcXXXXXXXXX\"\n```\n\nAnd then the client side is just:\n\n```sh\nclient$ tailcat ssh my-server.example.com\n```\n\nClient modes automatically use the saved `client-default` key when it\nexists, so no extra flags are needed to present the allowed identity.\nAnyone else's handshake is silently ignored: they can't reach the SSH\nserver, or even learn that one is running.\n\nWhy `--fixed-region`: it discovers the nearest DERP region once, at\ngenkey time, and bakes its ID into both the printed token and the\nsaved key file, so server restarts bind to the same region (keeping\nthe published token valid) without re-probing. Plain `tailcat genkey`\ndefaults to `--region=auto`, which instead bakes in \"pick at\nstartup\": fine for one-off use, but a token published in DNS should\nname a fixed region so clients and future server restarts all\nrendezvous in the same place. (`--region=<name>` pins an explicit one\ninstead; `--region=list` shows the choices.)\n\nTODO: make the client more robust here if the DERP map changes over\ntime: https://github.com/tailscale/tailcat/issues/7\n\n### Bring your own DERP relay\n\nNothing requires Tailscale's relays: [run your own DERP\nserver](https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp)\n(it needs a hostname with a TLS certificate, which derper can get\nitself via Let's Encrypt), then generate a server key that uses it by\npassing its hostname (or several, comma-separated) as the region:\n\n```sh\nserver$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22\n```\n\nThe token embeds your relay's hostname:\n\n```sh\n$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    \"ServerPublic\": \"nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49\",\n    \"Region\": [\n        {\n            \"Nodes\": [\n                {\n                    \"HostName\": \"derp.example.com\"\n                }\n            ]\n        }\n    ]\n}\n```\n\nso clients need no extra flags and never contact Tailscale's DERP map\nserver or relays, and the only rate limits are yours. Alternatively,\nif you run a whole fleet of relays, serve your own DERP map JSON and\npoint both sides at it with `--derpmap-url`.\n\n### Go library\n\nA minimal server that answers any TCP port through the tunnel and\nprints its token. The zero value Server picks defaults for anything\nunset: a fresh ephemeral key, the nearest region of the default DERP\nmap, and `log.Printf` logging (set `Logf` to `logger.Discard` for\nquiet):\n\n```go\npackage main\n\nimport (\n\t\"fmt\"\n\t\"log\"\n\t\"net\"\n\n\t\"github.com/tailscale/tailcat\"\n)\n\nfunc main() {\n\ts := &tailcat.Server{\n\t\tOnTCP: func(port uint16) func(net.Conn) {\n\t\t\treturn func(c net.Conn) {\n\t\t\t\tfmt.Fprintf(c, \"hello from port %v\\n\", port)\n\t\t\t\tc.Close()\n\t\t\t}\n\t\t},\n\t}\n\tif err := s.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tfmt.Println(s.ConnBlob())\n\tselect {}\n}\n```",
+  "commitCount": 10495,
+  "releases": [
+    {
+      "name": "v0.6.0",
+      "tag": "v0.6.0",
+      "url": "https://github.com/tailscale/tailcat/releases/tag/v0.6.0",
+      "publishedAt": "2026-09-04T18:46:12Z",
+      "prerelease": false,
+      "body": "## v0.6.0 (2026-09-04) highlights\r\n\r\n- Application-layer UDP support: servers can serve and forward UDP\r\n  flows, clients can dial UDP ports, and `tailcat socks` supports\r\n  SOCKS5 UDP ASSOCIATE. Idle incoming UDP flows close after a\r\n  configurable timeout, two minutes by default. ([#25](https://github.com/tailscale/tailcat/pull/25), [@sksingh2005](https://github.com/sksingh2005))\r\n- SSH public key authentication: `tailcat serve ssh` takes\r\n  `--ssh-authorized-keys` with literal keys, key files, or\r\n  `user@github` to fetch a GitHub user's keys. ([#88](https://github.com/tailscale/tailcat/pull/88))\r\n- tailcat addresses now include a WireGuard pre-shared key by default;\r\n  `--psk=false` opts out, and servers warn when serving without one. ([#85](https://github.com/tailscale/tailcat/pull/85))\r\n- `tailcat forward` can forward through exit-node servers to arbitrary\r\n  IP:port targets, and a local port of 0 picks a free one. ([#75](https://github.com/tailscale/tailcat/pull/75), [@Audi-dask](https://github.com/Audi-dask))\r\n- `--derpmap-url` defaults from the `TAILCAT_DERPMAP_URL` environment\r\n  variable. ([#72](https://github.com/tailscale/tailcat/pull/72))\r\n- Served processes receive t",
+      "downloads": 2108,
+      "reactions": 0
+    },
+    {
+      "name": "v0.5.0",
+      "tag": "v0.5.0",
+      "url": "https://github.com/tailscale/tailcat/releases/tag/v0.5.0",
+      "publishedAt": "2026-09-02T23:08:51Z",
+      "prerelease": false,
+      "body": "Fixes [security bug in `tailcat recv`](https://github.com/tailscale/tailcat/security/advisories/GHSA-w496-344h-g2vv). Thanks to [Will Frame](https://wpf.nz/) for the reports!\r\n\r\n## Changelog\r\n* cc6db4948e324e2c3434155a13d0d787ec9df7a4 rename ConnBlob/token to tailcat addr\r\n* cf46aa8217f0aedf978c507ec0f8f24612a37795 cmd/tailcat: add forward subcommand\r\n* 521eea90665a9f89bce3f55f4a8876e977626d97 tailcat, cmd/tailcat: stop drop boxes leaking file existence, add :wo+\r\n* 0ae8edf961fb41ae43f09c2b0594c2982b4e1b61 add SECURITY.md; link it from the README\r\n* d796f883e5ec8b17f6c4196276fad65646d101f5 fix write-only shares to actually be write-only\r\n* 5cb1ec3566617f5667764456fd1f2ee7cb46a366 avoid DNS lookups for mistyped connection blobs\r\n* aba9d9ba255380ab58b12abf8dbcb17cf1f5a649 harden validation of arguments passed to ssh/scp child processes\r\n* 4a25a91e0337252a4d16e097b03cf3cbb92c20cd tailcat: look for pwsh.exe on Windows\r\n\r\n",
+      "downloads": 1460,
+      "reactions": 0
+    },
+    {
+      "name": "v0.4.0",
+      "tag": "v0.4.0",
+      "url": "https://github.com/tailscale/tailcat/releases/tag/v0.4.0",
+      "publishedAt": "2026-08-31T19:20:47Z",
+      "prerelease": false,
+      "body": "## Changelog\n* ce6fedcabc220bab3b94d470ab330219111eeae8 README: document Homebrew install for macOS\n* 79da910c40a65125c318f41f22a8ac7f5c5c5efd tailcat: reject meows with a zero disco key\n* deece6387d5132ce4bd6b83af39f7c6b87a0c4e2 flake.nix, tool/updateflakes: keep the nix vendor hash fresh automatically\n* 2a48b15694059ae39a1506d54bdb37cb98629604 tailcat: reject null regions and nodes in a ConnBlob\n* 4d50a34f315d593d03c31f12a20ba8d163cbf321 cmd/tailcat: keep --version working as an unadvertised alias\n* 3748bfd8d68a2eae8f63bfc98aa2b9af042ec9be cmd/tailcat: add an ls subcommand\n* c6dfb6bb986c8a92ca339ec20289774b2df5e20c README: document receiving, sending, and serving files\n* 173024619f4f3763206fbe28e23a122deefeaae6 cmd/tailcat: add a recv subcommand\n* 0e377d7d4da41d30a108f3c667437d4de3592666 cmd/tailcat: add a cp subcommand\n* 6e15eaceb6ebab8d7c5acc6526c73eb81bd58146 tailcat: send the SSH exit-status before closing the sftp channel\n* 1bf70fa7cd6ffa1b573eb2406c459d072bcfa752 cmd/tailcat: add the files service and --files flag\n* 2bd0b26b52b6f200c2893a55dc028beebd8b181e tailcat: serve the SFTP subsystem, optionally rooted and access-limited\n* 0bf8f4e1ea928bcfcc3fea9630f4d5b4e484e3d9 cmd/",
+      "downloads": 4654,
+      "reactions": 1
+    },
+    {
+      "name": "v0.3.0",
+      "tag": "v0.3.0",
+      "url": "https://github.com/tailscale/tailcat/releases/tag/v0.3.0",
+      "publishedAt": "2026-08-30T14:03:12Z",
+      "prerelease": false,
+      "body": "Recommend updating for security reasons.\r\n\r\n## Changelog\r\n* cb1e0d753e9ace2ebc5bff147ccf1eee6ccdd463 tailcat: separate node and disco keys\r\n* bce78f30525ca8bd328c1611062c02eca28ab9a2 cmd/tailcat: make local dev DERP mode usable and test it hermetically\r\n* e8e083ceef2ded72839b9da13d75f99acb16b3ea tailcat, cmd/tailcat: drain the final ACK before a client exits\r\n* caac99949abbe89515da1565e6cf13d77c3d9b34 Add archlinux package information\r\n\r\n",
+      "downloads": 905,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.0",
+      "tag": "v0.2.0",
+      "url": "https://github.com/tailscale/tailcat/releases/tag/v0.2.0",
+      "publishedAt": "2026-08-30T05:00:49Z",
+      "prerelease": false,
+      "body": "## Changelog\n* a34089b378fea36d49ea2276d83b9237a32bb338 tailcat: reject malformed ConnBlob public keys\n* cdf35e5df7dcc03554c0425daba7a306bbc79068 internal/wasmbuild: keep peerapiclient to work around tsdial Close panic\n* b353eafb650630f883c6aadee83f5225b3156560 README.md: document prebuilt binaries and the container image\n* 5ee36cd4c38bea5b517b66b114cc3f5d3cb40b98 .github/workflows: update actions to Node 24 releases\n\n",
+      "downloads": 402,
+      "reactions": 0
+    }
+  ],
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\">\n</p>\n\n<p align=\"center\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n\n# Tailcat\n\nTailcat is a remix of Tailscale open source pieces to act like\n[netcat](https://en.wikipedia.org/wiki/Netcat), but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (`magicsock`,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all `tailcat` connection metadata is exchanged out of\nband, however you want.\n\nThe `tailcat` CLI (in `cmd/tailcat`) is built on the `tailcat` Go library\n(importable as [`github.com/tailscale/tailcat`](https://pkg.go.dev/github.com/tailscale/tailcat)).\n\nWhether you use `tailcat` as a CLI tool or library, one side runs a `tailcat`\nserver (listener) and gets back a short tailcat address. The other side passes\nthat tailcat address to `tailcat`'s client side to connect. All traffic between\nthe two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server ([see below](#bring-your-own-derp-relay)), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).\n\nYou don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.\n\nAnd it's all open source.\n\nYou can use our free rate-limited DERP relays (the default DERP map is\nhttps://tailcat.dev/derpmap.json) or you can [run your own](https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp).\n\nThere's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at https://tailscale.github.io/tailcat/ that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport ([#4](https://github.com/tailscale/tailcat/issues/4)).\n\n## Install\n\nPrebuilt binaries are on the\n[Releases page](https://github.com/tailscale/tailcat/releases): static\nLinux binaries (tar.gz) plus Debian (.deb) and RPM (.rpm) packages for\namd64, arm64, and armv7, and Windows binaries (zip) for amd64 and\narm64.\n\nThere's also a\n[container image](https://github.com/tailscale/tailcat/pkgs/container/tailcat):\n\n```sh\n$ docker pull ghcr.io/tailscale/tailcat:v0.1.0  # or :latest\n$ docker run --rm -it ghcr.io/tailscale/tailcat:latest\n```\n\nFor macOS, install with [Homebrew](https://brew.sh/):\n\n```sh\n$ brew install tailcat\n```\n\nOr build from source with a Go toolchain:\n\n```sh\n$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\n```\n\nOr with Nix, from [nixpkgs](https://search.nixos.org/packages?channel=unstable&query=tailcat):\n\n```sh\n$ nix profile install nixpkgs#tailcat\n$ nix-env -iA nixpkgs.tailcat  # or with classic nix-env\n```\n\nOr with Nix flakes from this repo, run it directly or install it:\n\n```sh\n$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\n```\n\nOr from archlinux AUR:\n\n\n\n\n```bash\n# Build release package from source\nyay -S tailcat\n\n# OR install the binary release\nyay -S tailcat-bin\n```\n\nOr from conda-forge:\n\n\n\n\n```bash\npixi global install tailcat\n# run without installation\npixi exec tailcat\n```\n\n### Packaging from source\n\nThe official binaries are built with a list of build tags that omits\nunused Tailscale features, making them about 16% smaller. The\nrecommended tag list is checked in as\n[build-tags.txt](./build-tags.txt) (and kept accurate by a CI test),\nso packagers (Homebrew, AUR, NixOS, etc.) can build the same way:\n\n```sh\n$ go build -tags \"$(cat build-tags.txt)\" -ldflags \"-s -w\" ./cmd/tailcat\n```\n\nSee [build-tags.md](./build-tags.md) for the details.\n\n## Usage\n\n### Pipe stdin/stdout between two machines\n\nServer starts, printing out its ephemeral address:\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\n```\n\nAnd then the client can:\n\n```sh\n$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \n```\n\nThen the server unblocks:\n\n```sh\n$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\n```\n\n### Expose local ports through the tunnel\n\nOr you can serve a local TCP port, forwarded to localhost:\n\n```sh\n$ tailcat serve 8080,8443 # or: tailcat serve all\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nAnd then the client:\n\n```sh\n$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\n```\n\n### Forward local ports to a tailcat server\n\nTo make ports served by a tailcat server available as ordinary local TCP ports (for browsers, database clients, or other tools that do not support SOCKS or stdio), run `forward` with the server's tailcat address:\n\n```sh\n$ tailcat serve 8080,3306\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat forward tcXXXXXXXXX 18080:8080 3306\n```\n\nA local port of 0 asks the operating system for a free port; each listener prints its address once it's listening.\n\nTo forward local ports to assets on the network reachable by an exit-node server, run the server in exit-node mode and specify each remote IP address and port in the mapping:\n\n```sh\n$ tailcat serve exit-node\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat forward tcXXXXXXXXX \\\n    3001:172.23.52.30:3001 \\\n    17170:172.23.52.31:17170\n```\n\nThis forwards `127.0.0.1:3001` to `172.23.52.30:3001` and `127.0.0.1:17170` to `172.23.52.31:17170` through the exit-node server.\n\nBy default, listeners bind to `127.0.0.1` and diagnostic logs are suppressed. Pass `--verbose` before the subcommand to enable verbose networking logs. Use `--bind=0.0.0.0` only when clients on other machines should be able to connect:\n\n```sh\n$ tailcat forward --bind=0.0.0.0 tcXXXXXXXXX 18080:8080\n```\n\nPress Ctrl-C to stop forwarding.\n\n### Open a browser to a tailcat server\n\nTo view a web server behind a tailcat server, run `browse`:\n\n```sh\n$ tailcat serve 80\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat browse tcXXXXXXXXX\n```\n\nThis is an alias for `tailcat forward --open-browser <tc-addr> 0:80`: it opens `http://127.0.0.1:<port>/` in a web browser once the local listener is ready, then blocks, forwarding connections, until interrupted. The `--open-browser` flag works with any single `forward` port mapping.\n\n### Public-key-authenticated SSH server\n\nRun an SSH server that accepts keys from local `authorized_keys` files,\nliteral OpenSSH public key lines, or GitHub accounts:\n\n```sh\n$ tailcat serve --ssh-authorized-keys=~/.ssh/authorized_keys ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nMultiple sources can be comma-separated. A `user@github` source fetches\n`https://github.com/user.keys` once, before the server starts:\n\n```sh\n$ tailcat serve --ssh-authorized-keys=bradfitz@github,./contractor.pub ssh\n```\n\nEvery source must exist, fetch successfully, and contain valid public key\nlines or startup fails. Authorized-key options such as `command=` and\n`from=` are rejected because the built-in server does not implement them.\nRunning `tailcat serve ssh` without `--ssh-authorized-keys` also fails; use the\nexplicit `no-auth-ssh` service when the tunnel identity alone is sufficient.\n\n### Auth-free SSH server\n\nOn Linux, macOS, and Windows, you can also explicitly run the SSH server with\nno client authentication. The encrypted tunnel provides the client identity.\n\n```sh\n$ tailcat serve no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\n> [!WARNING]\n> With `no-auth-ssh`, the address **is** the credential: anyone who\n> learns it gets a shell as the user running the server. Share it only\n> over private channels, and never publish it, in a DNS TXT record or\n> anywhere else public. If you want an SSH server reachable by DNS\n> name, it must require client authentication: `--allow` at the tunnel\n> layer, `--ssh-authorized-keys` at the SSH layer, or both.\n\nAnd on the client side:\n\n```sh\n$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\n```\n\n### Run a command per connection\n\nLike inetd, the `exec` service runs a command for each incoming\nconnection, with the connection as the command's stdin and stdout.\nThe command comes after `--`:\n\n```sh\n$ tailcat serve exec -- /usr/bin/fortune\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\n```sh\n$ tailcat tcXXXXXXXXX 80 < /dev/null\n```\n\nThe command's stderr goes to the server's. It gets the peer's node\nkey in `$TAILCAT_PEER_KEY` (in `--allow`'s format) and the peer's\ntailcat IP:port in `$TAILCAT_REMOTE_ADDR`.\n\nGiven with the `ssh` or `no-auth-ssh` service, the command instead\nreplaces the shell, like OpenSSH's `ForceCommand`: every SSH session\nruns only that command (on a PTY if the client asks for one), and the\nserver offers no shell, no client-chosen command, and no SFTP. The\nclient's requested command, if any, arrives in `$SSH_ORIGINAL_COMMAND`.\n\n```sh\n$ tailcat serve --ssh-authorized-keys=alice@github ssh -- ./deploy.sh\n$ tailcat serve no-auth-ssh -- git-upload-pack /srv/repo.git\n```\n\n### Send and receive files\n\nTo receive files, run a drop box and share the printed tailcat address:\n\n```sh\n$ tailcat recv ~/inbox\n# 🐈 Server listening with new address: tcXXXXXXXXX\n```\n\nThe sender then runs:\n\n```sh\n$ tailcat cp report.pdf tcXXXXXXXXX:\n```\n\n`tailcat cp` runs the system `scp` with the connection routed through\ntailcat, so you get its usual progress display, and `-r` for\ndirectory trees. The drop box is write-only: senders can't list the\ndirectory, read anything back, or touch existing files.\n\nTo offer files instead, serve a directory read-only (the default) or\nread-write:\n\n```sh\n$ tailcat serve files                  # current directory, read-only\n$ tailcat serve --files=/pub:rw files  # a given directory, read-write\n```\n\n```sh\n$ tailcat ls -l tcXXXXXXXXX\n$ tailcat cp tcXXXXXXXXX:report.pdf .\n```\n\n`tailcat ls` speaks SFTP natively, so it works even without OpenSSH\ninstalled.\n\nThe server confines all paths to the served directory (via Go's\n`os.Root`), so neither `..` nor symlinks escape it. The file service\nspeaks SFTP, so the stock `sftp` and `scp` clients also work against\nit, given a ProxyCommand that pipes through tailcat (the same trick\n`tailcat cp` and `tailcat ssh` use). Both `ssh` and `no-auth-ssh`\nservers serve SFTP too, with the same access as the shell.\n\nTransfers are not compressed: the SFTP protocol has no compression\nof its own, and the SSH transport here doesn't either (Go's SSH\nstack omits it; transport compression has a history of security\nproblems, and TLS dropped it too). Compress files before sending\nif it matters.\n\n### Misc commands \n\nPing to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. `--until-direct` keeps pinging (up to\n`--timeout`, default 10s) until a direct path works, exiting non-zero\nif one doesn't:\n\n```sh\n$ tailcat ping --until-direct <tc-addr>\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\n```\n\nRun a command through a SOCKS5 proxy routed over the tunnel:\n\n```sh\n$ tailcat socks <tc-addr> curl http://server.tailcat:8081/\n```\n\nTailcat addresses also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the tailcat address argument is optional. (Tailcat addresses are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)\n\n```sh\n$ tailcat socks curl http://<tc-addr>:8081/\n```\n\nAct as an exit node so the client can reach the server's network:\n\n```sh\n$ tailcat serve exit-node\n```\n\nParse a tailcat address and print its contents (the server's WireGuard\npublic key and DERP info) ",
   "contributors": [
     {
       "login": "bradfitz",
       "url": "https://github.com/bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4",
-      "contributions": 3354
+      "contributions": 3428
     },
     {
       "login": "danderson",
@@ -142,7 +200,7 @@
       "login": "raggi",
       "url": "https://github.com/raggi",
       "avatarUrl": "https://avatars.githubusercontent.com/u/348?v=4",
-      "contributions": 260
+      "contributions": 261
     },
     {
       "login": "jwhited",
@@ -175,80 +233,87 @@
       "contributions": 186
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/tailscale/tailcat/blob/main/tailcat.png\"><img src=\"https://raw.githubusercontent.com/tailscale/tailcat/main/tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\" style=\"max-width: 100%; height: auto; max-height: 176px;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Tailcat</h1></div>\n<p dir=\"auto\">Tailcat is a remix of Tailscale open source pieces to act like\n<a href=\"https://en.wikipedia.org/wiki/Netcat\" rel=\"nofollow\">netcat</a>, but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (<code>magicsock</code>,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all <code>tailcat</code> connection metadata is exchanged out of\nband, however you want.</p>\n<p dir=\"auto\">The <code>tailcat</code> CLI (in <code>cmd/tailcat</code>) is built on the <code>tailcat</code> Go library\n(importable as <a href=\"https://pkg.go.dev/github.com/tailscale/tailcat\" rel=\"nofollow\"><code>github.com/tailscale/tailcat</code></a>).</p>\n<p dir=\"auto\">Whether you use <code>tailcat</code> as a CLI tool or library, one side runs a <code>tailcat</code>\nserver (listener) and gets back a short connection token. The other side passes\nthat token to <code>tailcat</code>'s client side to connect. All traffic between the two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server (<a href=\"#bring-your-own-derp-relay\">see below</a>), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).</p>\n<p dir=\"auto\">You don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.</p>\n<p dir=\"auto\">And it's all open source.</p>\n<p dir=\"auto\">You can use our free rate-limited DERP relays (the default DERP map is\n<a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">https://tailcat.dev/derpmap.json</a>) or you can <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own</a>.</p>\n<p dir=\"auto\">There's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at <a href=\"https://tailscale.github.io/tailcat/\" rel=\"nofollow\">https://tailscale.github.io/tailcat/</a> that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport (<a href=\"https://github.com/tailscale/tailcat/issues/4\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/4/hovercard\">#4</a>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\"><pre>$ go install github.com/tailscale/tailcat/cmd/tailcat@latest</pre></div>\n<p dir=\"auto\">Or with Nix flakes, run it directly or install it:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\"><pre>$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Pipe stdin/stdout between two machines</h3></div>\n<p dir=\"auto\">Server starts, printing out its ephemeral address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\n(hangs, waiting...)</pre></div>\n<p dir=\"auto\">And then the client can:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \"><pre>$ <span class=\"pl-c1\">echo</span> hello <span class=\"pl-k\">|</span> tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ </pre></div>\n<p dir=\"auto\">Then the server unblocks:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\nhello\n$</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Expose local ports through the tunnel</h3></div>\n<p dir=\"auto\">Or you can serve a local TCP port, forwarded to localhost:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=8080,8443 # or --serve=all\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat --serve=8080,8443 <span class=\"pl-c\"><span class=\"pl-c\">#</span> or --serve=all</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">And then the client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\"><pre>$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Auth-free SSH server</h3></div>\n<p dir=\"auto\">On Linux and macOS, you can run an SSH server too with no auth. (If you want auth, you can just <code>tailcat --serve=22</code> and proxy to your system SSH server)</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat --serve=no-auth-ssh\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">And on the client side:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\"><pre>$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Misc commands</h3></div>\n<p dir=\"auto\">Ping to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. <code>--until-direct</code> keeps pinging (up to\n<code>--timeout</code>, default 10s) until a direct path works, exiting non-zero\nif one doesn't:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ping --until-direct &lt;token&gt;\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\"><pre>$ tailcat ping --until-direct <span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span>\npong <span class=\"pl-k\">in</span> 42.1ms via DERP(sfo)\npong <span class=\"pl-k\">in</span> 1.2ms via 203.0.113.7:41641</pre></div>\n<p dir=\"auto\">Run a command through a SOCKS5 proxy routed over the tunnel:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks &lt;token&gt; curl http://server.tailcat:8081/\"><pre>$ tailcat socks <span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span> curl http://server.tailcat:8081/</pre></div>\n<p dir=\"auto\">Tokens also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the token argument is optional. (Tokens are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks curl http://&lt;token&gt;:8081/\"><pre>$ tailcat socks curl http://<span class=\"pl-k\">&lt;</span>token<span class=\"pl-k\">&gt;</span>:8081/</pre></div>\n<p dir=\"auto\">Act as an exit node so the client can reach the server's network:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat --serve=exit-node\"><pre>$ tailcat --serve=exit-node</pre></div>\n<p dir=\"auto\">Parse a connection token and print its contents (the server's WireGuard\npublic key and DERP info) as JSON, without connecting to anything:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;RegionID&quot;: 302\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>RegionID<span class=\"pl-pds\">\"</span></span>: 302\n}</pre></div>\n<p dir=\"auto\">Resolve a short token (which references a DERP region by ID, requiring\nclients to fetch the DERP map) into a longer self-contained one with the\nDERP server info embedded, letting clients connect more quickly:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\"><pre>$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA</pre></div>\n<p dir=\"auto\">Parsing that resolved token shows the embedded DERP info:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;tc302a.ipn.dev&quot;,\n                    &quot;IPv4&quot;: &quot;208.111.39.38&quot;,\n                    &quot;IPv6&quot;: &quot;2607:f740:0:3f::720&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>tc302a.ipn.dev<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv4<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>208.111.39.38<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv6<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>2607:f740:0:3f::720<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">A server can print the long self-contained form directly with the\n<code>--full-address</code> flag.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Management</h2></div>\n<p dir=\"auto\">A server's address (connection token) is derived from its WireGuard key, so\nthe key you use determines who can reach you:</p>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Ephemeral keys (the default):</strong> each server run generates a fresh key in\nmemory and prints an address nobody has ever seen. When the process exits,\nthe key is discarded and the address is dead forever. This is the safe\ndefault: sharing that address only ever refers to that one run.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Saved keys:</strong> <code>tailcat genkey</code> generates a key saved to disk so the\naddress stays stable across restarts. The flip side: anyone you've <em>ever</em>\nshared that address with can connect to any future server using that key,\nunless you restrict clients with <code>--allow</code> (see <code>tailcat genkey --client</code>).</p>\n</li>\n</ul>\n<p dir=\"auto\">The CLI says at startup which kind it's using, so you know whether you're\nstarting a fresh single-use server or re-listening on an address you may\nhave shared in the past.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat genkey --region=nyc\n# prints the token; key saved to ~/.config/tailcat/keys/default.private.json\n\n# later; the key named &quot;default&quot; is used automatically once it exists:\n$ tailcat --serve=8080\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\n\n# ... unless you force a one-off ephemeral key:\n$ tailcat --serve=8080 --key=new\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat genkey --region=nyc\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> prints the token; key saved to ~/.config/tailcat/keys/default.private.json</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> later; the key named \"default\" is used automatically once it exists:</span>\n$ tailcat --serve=8080\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ... unless you force a one-off ephemeral key:</span>\n$ tailcat --serve=8080 --key=new\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">That is, <code>default</code> is a magic key name: once it exists, plain <code>tailcat</code>\nsilently uses it instead of generating an ephemeral key, and the startup\nline above is what tells you which happened. Use <code>--key=new</code> to get an\nephemeral key anyway, <code>--key=&lt;name&gt;</code> to use a different saved key, or\n<code>tailcat genkey --delete --key=default</code> to remove the saved default key.\n<code>tailcat genkey --list</code> lists your saved keys.</p>\n<p dir=\"auto\">Tokens can also be published as DNS TXT records and looked up by name;\na DNS name works anywhere the CLI takes a token:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If example.com has a TXT record &quot;tailcat=tc...&quot;\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If example.com has a TXT record \"tailcat=tc...\"</span>\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Examples</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Protected SSH server over DNS</h3></div>\n<p dir=\"auto\">Who needs port forwarding or port knocking? This runs an SSH server\nreachable from anywhere by name, with no open inbound ports on the\nserver, where WireGuard authenticates the client before the SSH\nserver ever sees a packet.</p>\n<p dir=\"auto\">On the client machine, generate a client identity keypair. It prints\nthe public key, which is all the server needs to know:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat genkey --client\n# wrote file to ~/.config/tailcat/keys/client-default.private.json\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16\"><pre>client$ tailcat genkey --client\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/client-default.private.json</span>\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16</pre></div>\n<p dir=\"auto\">On the server, generate a server keypair pinned to its nearest DERP\nregion (see why below), then serve SSH to only that client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --fixed-region\n# wrote file to ~/.config/tailcat/keys/default.private.json\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\"><pre>server$ tailcat genkey --fixed-region\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/default.private.json</span>\ntcXXXXXXXXX\n\nserver$ tailcat --serve=22 --allow=nodekey:cfb6bf...ddfd16\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">Publish the token in DNS as a TXT record:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"my-server.example.com. 300 IN TXT &quot;tailcat=tcXXXXXXXXX&quot;\"><pre class=\"notranslate\"><code>my-server.example.com. 300 IN TXT \"tailcat=tcXXXXXXXXX\"\n</code></pre></div>\n<p dir=\"auto\">And then the client side is just:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat ssh my-server.example.com\"><pre>client$ tailcat ssh my-server.example.com</pre></div>\n<p dir=\"auto\">Client modes automatically use the saved <code>client-default</code> key when it\nexists, so no extra flags are needed to present the allowed identity.\nAnyone else's handshake is silently ignored: they can't reach the SSH\nserver, or even learn that one is running.</p>\n<p dir=\"auto\">Why <code>--fixed-region</code>: it discovers the nearest DERP region once, at\ngenkey time, and bakes its ID into both the printed token and the\nsaved key file, so server restarts bind to the same region (keeping\nthe published token valid) without re-probing. Plain <code>tailcat genkey</code>\ndefaults to <code>--region=auto</code>, which instead bakes in \"pick at\nstartup\": fine for one-off use, but a token published in DNS should\nname a fixed region so clients and future server restarts all\nrendezvous in the same place. (<code>--region=&lt;name&gt;</code> pins an explicit one\ninstead; <code>--region=list</code> shows the choices.)</p>\n<p dir=\"auto\">TODO: make the client more robust here if the DERP map changes over\ntime: <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"5258120127\" data-permission-text=\"Title is private\" data-url=\"https://github.com/tailscale/tailcat/issues/7\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/7/hovercard\" href=\"https://github.com/tailscale/tailcat/issues/7\">#7</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Bring your own DERP relay</h3></div>\n<p dir=\"auto\">Nothing requires Tailscale's relays: <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own DERP\nserver</a>\n(it needs a hostname with a TLS certificate, which derper can get\nitself via Let's Encrypt), then generate a server key that uses it by\npassing its hostname (or several, comma-separated) as the region:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22\"><pre>server$ tailcat genkey --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat --serve=22</pre></div>\n<p dir=\"auto\">The token embeds your relay's hostname:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;derp.example.com&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>derp.example.com<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">so clients need no extra flags and never contact Tailscale's DERP map\nserver or relays, and the only rate limits are yours. Alternatively,\nif you run a whole fleet of relays, serve your own DERP map JSON and\npoint both sides at it with <code>--derpmap-url</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Go library</h3></div>\n<p dir=\"auto\">A minimal server that answers any TCP port through the tunnel and\nprints its token. The zero value Server picks defaults for anything\nunset: a fresh ephemeral key, the nearest region of the default DERP\nmap, and <code>log.Printf</code> logging (set <code>Logf</code> to <code>logger.Discard</code> for\nquiet):</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;fmt&quot;\n\t&quot;log&quot;\n\t&quot;net&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\ts := &amp;tailcat.Server{\n\t\tOnTCP: func(port uint16) func(net.Conn) {\n\t\t\treturn func(c net.Conn) {\n\t\t\t\tfmt.Fprintf(c, &quot;hello from port %v\\n&quot;, port)\n\t\t\t\tc.Close()\n\t\t\t}\n\t\t},\n\t}\n\tif err := s.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tfmt.Println(s.ConnBlob())\n\tselect {}\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"fmt\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"net\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">s</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-c1\">&amp;</span>tailcat.<span class=\"pl-smi\">Server</span>{\n\t\t<span class=\"pl-s1\">OnTCP</span>: <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">port</span> <span class=\"pl-smi\">uint16</span>) <span class=\"pl-k\">func</span>(net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t<span class=\"pl-k\">return</span> <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">c</span> net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Fprintf</span>(<span class=\"pl-s1\">c</span>, <span class=\"pl-s\">\"hello from port %v<span class=\"pl-cce\">\\n</span>\"</span>, <span class=\"pl-s1\">port</span>)\n\t\t\t\t<span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Close</span>()\n\t\t\t}\n\t\t},\n\t}\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">Start</span>(); <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Println</span>(<span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">ConnBlob</span>())\n\t<span class=\"pl-k\">select</span> {}\n}</pre></div>\n<p dir=\"auto\">And a minimal client that dials it, given that token as its argument.\nLike Server, the Client zero value works with just its Server token\nfield set (<code>tailcat.NewClient</code> is shorthand for exactly that), and\nthe tunnel is established lazily by the first dial:</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;context&quot;\n\t&quot;io&quot;\n\t&quot;log&quot;\n\t&quot;os&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\tcl := tailcat.NewClient(tailcat.ConnBlob(os.Args[1]))\n\tdefer cl.Close()\n\tc, err := cl.DialTCPPort(context.Background(), 80)\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tio.Copy(os.Stdout, c)\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"context\"</span>\n\t<span class=\"pl-s\">\"io\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"os\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">cl</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">NewClient</span>(<span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">ConnBlob</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Args</span>[<span class=\"pl-c1\">1</span>]))\n\t<span class=\"pl-k\">defer</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">Close</span>()\n\t<span class=\"pl-s1\">c</span>, <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">DialTCPPort</span>(<span class=\"pl-s1\">context</span>.<span class=\"pl-c1\">Background</span>(), <span class=\"pl-c1\">80</span>)\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">io</span>.<span class=\"pl-c1\">Copy</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Stdout</span>, <span class=\"pl-s1\">c</span>)\n}</pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80\"><pre>$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection tokens</h3></div>\n<p dir=\"auto\">A Tailcat server is identified by a <strong>connection token</strong> (called a\nConnBlob internally). It looks like <code>tcXYZ...</code> and is a <code>\"tc\"</code> prefix\nfollowed by base64-encoded <a href=\"https://cbor.io/\" rel=\"nofollow\">CBOR</a> containing:</p>\n<ul dir=\"auto\">\n<li>The server's WireGuard public key (Curve25519, 32 bytes)</li>\n<li>DERP info. Either:\n<ol dir=\"auto\">\n<li>a small integer referencing one of the default <a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">Tailscale-run tailcat servers</a>), or</li>\n<li>full DERP server metadata, to either use a custom DERP server, or to avoid the client needing a potential round-trip to fetch the latest DERP map (the server's <code>--full-address</code> flag and the <code>tailcat resolve</code> subcommand produce this form)</li>\n</ol>\n</li>\n</ul>\n<p dir=\"auto\">A typical token with just an integer region ID is around 50 bytes. With embedded\nDERP node details it's longer but self-contained.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Network stack</h3></div>\n<p dir=\"auto\">Tailcat reuses Tailscale's client networking components but\nwithout the control plane.</p>\n<ul dir=\"auto\">\n<li><strong>WireGuard</strong> -- a userspace WireGuard\nimplementation for encrypting all tunnel traffic. It doesn't use a kernel TUN/TAP device (nor does it configure any networking routes or DNS settings), so <code>root</code> isn't required.</li>\n<li><strong>magicsock</strong> -- Tailscale's transport layer that multiplexes traffic\nover direct UDP and DERP relays. It handles STUN-based endpoint\ndiscovery and UDP hole-punching for NAT traversal.</li>\n<li><strong>Netstack</strong> (gVisor) -- a userspace TCP/IP stack that terminates\nTCP connections inside the process. This is what lets Tailcat\naccept inbound connections and dial outbound ones without any OS\nnetwork configuration.</li>\n<li><strong>DERP relay</strong> -- Tailscale's encrypted relay protocol, used as a\nrendezvous channel and as a fallback data path when direct\nconnectivity isn't possible.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection flow</h3></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Server starts.</strong> It generates (or loads) a WireGuard keypair,\nconnects to a DERP relay, and prints its connection token to stderr.\nIt then waits for clients.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Client parses the token</strong> to learn the server's public key and\nDERP region. It generates its own ephemeral keypair and connects to\nthe same DERP relay.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Discovery handshake.</strong> The client sends a \"<strong>Meow</strong>\" ping message\nto the server through the\nDERP relay. This message carries the client's node public key. The\nserver receives it, adds the client to its WireGuard peer list and\nnetwork map, reconfigures the WireGuard engine, and replies with a\n\"<strong>Meowed</strong>\" acknowledgment.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>WireGuard tunnel.</strong> With both sides configured as WireGuard\npeers, the standard WireGuard handshake proceeds (routed through\nDERP initially). Once complete, the tunnel is up and encrypted\ntraffic can flow.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>NAT traversal.</strong> In parallel, each side advertises its UDP\nendpoints (public IP:port learned via STUN, plus local interface\naddresses) to the other in disco call-me-maybe messages over DERP,\nre-advertising whenever they change. Both sides then run Tailscale's\ndisco protocol and attempt UDP hole-punching. If\nsuccessful, traffic upgrades from the DERP relay to a direct\npeer-to-peer path. If hole-punching fails, DERP continues as a\nfallback and the connection still works, just with rate-limited throughput if you're using our public hosted DERP relays.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Data transfer.</strong> The client dials a TCP port on the server\nthrough the tunnel. gVisor's TCP/IP stack on both sides handles\nconnection setup. On the server, the incoming connection is\ndispatched to a handler based on the port: forwarding to localhost,\npiping to stdout, running an SSH session, etc.</p>\n</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Addressing</h3></div>\n<p dir=\"auto\">Each peer currently derives a deterministic IPv6 address from its WireGuard\npublic key, but that's an implementation detail not exposed to end users and\nmight change. (e.g. we might remove those bytes from the IP headers entirely and\nrecover that redundant MTU)</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Stability</h2></div>\n<p dir=\"auto\">Tailcat is free to use, but it comes with no API or CLI stability\npromises: the Go API, the CLI flags and output, and the wire format may\nall change. The public rate-limited Tailcat DERP relays have no uptime\nSLAs or throughput targets, and we may revoke access to them at any\ntime, for any reason. Everything is provided best effort, without a\ncontractual relationship (e.g. dedicated DERP relays and/or support)\nsaying otherwise.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contact Sales?</h2></div>\n<p dir=\"auto\">If you don't want to run and support things on your own, or want any\nhelp, <a href=\"https://tailscale.com/contact/sales\" rel=\"nofollow\">contact sales</a> and we can\nexchange money for <a href=\"https://www.youtube.com/watch?v=A81DYZh6KaQ\" rel=\"nofollow\">goods and\nservices</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">History</h2></div>\n<p dir=\"auto\">Tailcat began life in September 2023 as \"derpcat\", written on a long\nflight while catching up on bad movies: the first sketch was commit\n<a href=\"https://github.com/tailscale/tailcat/commit/9e4d925cc\">9e4d925cc</a>\n(\"cmd/dc: start of derpcat tool\"), and it first worked in commit\n<a href=\"https://github.com/tailscale/tailcat/commit/911915fbb\">911915fbb</a>\n(\"derpcat: it's alive!\", whose commit message notes \"UA 605 PDX-ORD\nen route to Ireland. yay not buying the wifi.\"). Back then it lived\ninside a fork of the\n<a href=\"https://github.com/tailscale/tailscale\">tailscale.com</a> repo and it\nbitrot several times as the Tailscale internals moved on without it.\nWe've since brought it back to life and refactored it to be a regular\nGo module client of the tailscale.com repo instead of a fork of it.</p>\n<p dir=\"auto\">It was open sourced August 2026 at the\n<a href=\"https://tailscale.com/tailscaleup\" rel=\"nofollow\">TailscaleUp conference</a>.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/tailscale/tailcat/blob/main/tailcat.png\"><img src=\"https://raw.githubusercontent.com/tailscale/tailcat/main/tailcat.png\" alt=\"Tailcat\" width=\"149\" height=\"176\" style=\"max-width: 100%; height: auto; max-height: 176px;\"></a>\n</p>\n<p align=\"center\" dir=\"auto\"><em>\"Tailscale without Tailscale, by Tailscale\"</em></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Tailcat</h1></div>\n<p dir=\"auto\">Tailcat is a remix of Tailscale open source pieces to act like\n<a href=\"https://en.wikipedia.org/wiki/Netcat\" rel=\"nofollow\">netcat</a>, but over Tailscale's data plane,\nwithout Tailscale's control plane. Tailscale's data plane (<code>magicsock</code>,\ninternally) gives you point-to-point WireGuard®-encrypted tunnels between two\nmachines with DERP as the NAT-hole-punching communication side channel and the\nultimate relay-of-last-resort if NAT traversal fails. Instead of using the\nTailscale control plane, all <code>tailcat</code> connection metadata is exchanged out of\nband, however you want.</p>\n<p dir=\"auto\">The <code>tailcat</code> CLI (in <code>cmd/tailcat</code>) is built on the <code>tailcat</code> Go library\n(importable as <a href=\"https://pkg.go.dev/github.com/tailscale/tailcat\" rel=\"nofollow\"><code>github.com/tailscale/tailcat</code></a>).</p>\n<p dir=\"auto\">Whether you use <code>tailcat</code> as a CLI tool or library, one side runs a <code>tailcat</code>\nserver (listener) and gets back a short tailcat address. The other side passes\nthat tailcat address to <code>tailcat</code>'s client side to connect. All traffic between\nthe two is\nencrypted end-to-end with WireGuard. The initial connection bootstraps through\na DERP server (<a href=\"#bring-your-own-derp-relay\">see below</a>), and then magicsock performs NAT traversal to\nupgrade to a direct peer-to-peer UDP connection when possible (usually!).</p>\n<p dir=\"auto\">You don't need a Tailscale account, root/admin access on the machine\n(it doesn't alter your machine's routing tables, DNS, etc.). It's just\na userspace library and CLI tool.</p>\n<p dir=\"auto\">And it's all open source.</p>\n<p dir=\"auto\">You can use our free rate-limited DERP relays (the default DERP map is\n<a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">https://tailcat.dev/derpmap.json</a>) or you can <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own</a>.</p>\n<p dir=\"auto\">There's also an experimental in-browser web demo (tailcat compiled to\nWebAssembly) at <a href=\"https://tailscale.github.io/tailcat/\" rel=\"nofollow\">https://tailscale.github.io/tailcat/</a> that can send and\nreceive files or text, interoperating with the CLI. Browser traffic is\nrelayed over DERP only, with no direct connections until WebRTC\nsupport (<a href=\"https://github.com/tailscale/tailcat/issues/4\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/4/hovercard\">#4</a>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<p dir=\"auto\">Prebuilt binaries are on the\n<a href=\"https://github.com/tailscale/tailcat/releases\">Releases page</a>: static\nLinux binaries (tar.gz) plus Debian (.deb) and RPM (.rpm) packages for\namd64, arm64, and armv7, and Windows binaries (zip) for amd64 and\narm64.</p>\n<p dir=\"auto\">There's also a\n<a href=\"https://github.com/tailscale/tailcat/pkgs/container/tailcat\">container image</a>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ docker pull ghcr.io/tailscale/tailcat:v0.1.0  # or :latest\n$ docker run --rm -it ghcr.io/tailscale/tailcat:latest\"><pre>$ docker pull ghcr.io/tailscale/tailcat:v0.1.0  <span class=\"pl-c\"><span class=\"pl-c\">#</span> or :latest</span>\n$ docker run --rm -it ghcr.io/tailscale/tailcat:latest</pre></div>\n<p dir=\"auto\">For macOS, install with <a href=\"https://brew.sh/\" rel=\"nofollow\">Homebrew</a>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ brew install tailcat\"><pre>$ brew install tailcat</pre></div>\n<p dir=\"auto\">Or build from source with a Go toolchain:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ go install github.com/tailscale/tailcat/cmd/tailcat@latest\"><pre>$ go install github.com/tailscale/tailcat/cmd/tailcat@latest</pre></div>\n<p dir=\"auto\">Or with Nix, from <a href=\"https://search.nixos.org/packages?channel=unstable&amp;query=tailcat\" rel=\"nofollow\">nixpkgs</a>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ nix profile install nixpkgs#tailcat\n$ nix-env -iA nixpkgs.tailcat  # or with classic nix-env\"><pre>$ nix profile install nixpkgs#tailcat\n$ nix-env -iA nixpkgs.tailcat  <span class=\"pl-c\"><span class=\"pl-c\">#</span> or with classic nix-env</span></pre></div>\n<p dir=\"auto\">Or with Nix flakes from this repo, run it directly or install it:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat\"><pre>$ nix run github:tailscale/tailcat\n$ nix profile install github:tailscale/tailcat</pre></div>\n<p dir=\"auto\">Or from archlinux AUR:</p>\n<p dir=\"auto\"><a href=\"https://aur.archlinux.org/packages/tailcat/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c4b852aef7cb86454d4b926fb4e28c2fede1d68b7e017fd515d8f0e7ddfcf713/68747470733a2f2f696d672e736869656c64732e696f2f6175722f76657273696f6e2f7461696c6361743f6c6162656c3d7461696c636174\" alt=\"tailcat on AUR\" data-canonical-src=\"https://img.shields.io/aur/version/tailcat?label=tailcat\" style=\"max-width: 100%;\"></a>\n<a href=\"https://aur.archlinux.org/packages/tailcat-bin/\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/fb0fb272274b48405fcb665a687aeebbfc6c1ffdcae83375ec784be8930460b9/68747470733a2f2f696d672e736869656c64732e696f2f6175722f76657273696f6e2f7461696c6361742d62696e3f6c6162656c3d7461696c6361742d62696e\" alt=\"tailcat-bin on AUR\" data-canonical-src=\"https://img.shields.io/aur/version/tailcat-bin?label=tailcat-bin\" style=\"max-width: 100%;\"></a></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Build release package from source\nyay -S tailcat\n\n# OR install the binary release\nyay -S tailcat-bin\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Build release package from source</span>\nyay -S tailcat\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> OR install the binary release</span>\nyay -S tailcat-bin</pre></div>\n<p dir=\"auto\">Or from conda-forge:</p>\n<p dir=\"auto\"><a href=\"https://prefix.dev/channels/conda-forge/packages/tailcat\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/b16c571b7f5e7f72b9d0c39a3248a80f53e971da0439df36a0aa6f58a2efd713/68747470733a2f2f696d672e736869656c64732e696f2f636f6e64612f766e2f636f6e64612d666f7267652f7461696c6361743f6c6f676f3d636f6e64612d666f726765\" alt=\"tailcat on conda-forge\" data-canonical-src=\"https://img.shields.io/conda/vn/conda-forge/tailcat?logo=conda-forge\" style=\"max-width: 100%;\"></a>\n<a href=\"https://prefix.dev/channels/conda-forge/packages/tailcat\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/558f1fc3958215f8c3f2d5400de909ddc685b60ed61a0e87795bf4a0c6929136/68747470733a2f2f696d672e736869656c64732e696f2f636f6e64612f706e2f636f6e64612d666f7267652f7461696c6361743f6c6f676f3d636f6e64612d666f726765\" alt=\"tailcat on conda-forge\" data-canonical-src=\"https://img.shields.io/conda/pn/conda-forge/tailcat?logo=conda-forge\" style=\"max-width: 100%;\"></a></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pixi global install tailcat\n# run without installation\npixi exec tailcat\"><pre>pixi global install tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> run without installation</span>\npixi <span class=\"pl-c1\">exec</span> tailcat</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Packaging from source</h3></div>\n<p dir=\"auto\">The official binaries are built with a list of build tags that omits\nunused Tailscale features, making them about 16% smaller. The\nrecommended tag list is checked in as\n<a href=\"https://github.com/tailscale/tailcat/blob/main/build-tags.txt\">build-tags.txt</a> (and kept accurate by a CI test),\nso packagers (Homebrew, AUR, NixOS, etc.) can build the same way:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ go build -tags &quot;$(cat build-tags.txt)&quot; -ldflags &quot;-s -w&quot; ./cmd/tailcat\"><pre>$ go build -tags <span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-s\"><span class=\"pl-pds\">$(</span>cat build-tags.txt<span class=\"pl-pds\">)</span></span><span class=\"pl-pds\">\"</span></span> -ldflags <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>-s -w<span class=\"pl-pds\">\"</span></span> ./cmd/tailcat</pre></div>\n<p dir=\"auto\">See <a href=\"https://github.com/tailscale/tailcat/blob/main/build-tags.md\">build-tags.md</a> for the details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Pipe stdin/stdout between two machines</h3></div>\n<p dir=\"auto\">Server starts, printing out its ephemeral address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n(hangs, waiting...)\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\n(hangs, waiting...)</pre></div>\n<p dir=\"auto\">And then the client can:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ echo hello | tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ \"><pre>$ <span class=\"pl-c1\">echo</span> hello <span class=\"pl-k\">|</span> tailcat tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n$ </pre></div>\n<p dir=\"auto\">Then the server unblocks:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat\n# Selected bootstrap relay region 302, San Francisco\n# 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\nhello\n$\"><pre>$ tailcat\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Selected bootstrap relay region 302, San Francisco</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu</span>\nhello\n$</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Expose local ports through the tunnel</h3></div>\n<p dir=\"auto\">Or you can serve a local TCP port, forwarded to localhost:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve 8080,8443 # or: tailcat serve all\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat serve 8080,8443 <span class=\"pl-c\"><span class=\"pl-c\">#</span> or: tailcat serve all</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">And then the client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....\"><pre>$ tailcat tcXXXXXXXXX 8080\nGET / HTTP/1.1\nHost: foo\n\nHTTP/1.1 200 OK\n....</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Forward local ports to a tailcat server</h3></div>\n<p dir=\"auto\">To make ports served by a tailcat server available as ordinary local TCP ports (for browsers, database clients, or other tools that do not support SOCKS or stdio), run <code>forward</code> with the server's tailcat address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve 8080,3306\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat forward tcXXXXXXXXX 18080:8080 3306\"><pre>$ tailcat serve 8080,3306\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span>\n\n$ tailcat forward tcXXXXXXXXX 18080:8080 3306</pre></div>\n<p dir=\"auto\">A local port of 0 asks the operating system for a free port; each listener prints its address once it's listening.</p>\n<p dir=\"auto\">To forward local ports to assets on the network reachable by an exit-node server, run the server in exit-node mode and specify each remote IP address and port in the mapping:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve exit-node\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat forward tcXXXXXXXXX \\\n    3001:172.23.52.30:3001 \\\n    17170:172.23.52.31:17170\"><pre>$ tailcat serve exit-node\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span>\n\n$ tailcat forward tcXXXXXXXXX \\\n    3001:172.23.52.30:3001 \\\n    17170:172.23.52.31:17170</pre></div>\n<p dir=\"auto\">This forwards <code>127.0.0.1:3001</code> to <code>172.23.52.30:3001</code> and <code>127.0.0.1:17170</code> to <code>172.23.52.31:17170</code> through the exit-node server.</p>\n<p dir=\"auto\">By default, listeners bind to <code>127.0.0.1</code> and diagnostic logs are suppressed. Pass <code>--verbose</code> before the subcommand to enable verbose networking logs. Use <code>--bind=0.0.0.0</code> only when clients on other machines should be able to connect:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat forward --bind=0.0.0.0 tcXXXXXXXXX 18080:8080\"><pre>$ tailcat forward --bind=0.0.0.0 tcXXXXXXXXX 18080:8080</pre></div>\n<p dir=\"auto\">Press Ctrl-C to stop forwarding.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Open a browser to a tailcat server</h3></div>\n<p dir=\"auto\">To view a web server behind a tailcat server, run <code>browse</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve 80\n# 🐈 Server listening with new address: tcXXXXXXXXX\n\n$ tailcat browse tcXXXXXXXXX\"><pre>$ tailcat serve 80\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span>\n\n$ tailcat browse tcXXXXXXXXX</pre></div>\n<p dir=\"auto\">This is an alias for <code>tailcat forward --open-browser &lt;tc-addr&gt; 0:80</code>: it opens <code>http://127.0.0.1:&lt;port&gt;/</code> in a web browser once the local listener is ready, then blocks, forwarding connections, until interrupted. The <code>--open-browser</code> flag works with any single <code>forward</code> port mapping.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Public-key-authenticated SSH server</h3></div>\n<p dir=\"auto\">Run an SSH server that accepts keys from local <code>authorized_keys</code> files,\nliteral OpenSSH public key lines, or GitHub accounts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve --ssh-authorized-keys=~/.ssh/authorized_keys ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat serve --ssh-authorized-keys=<span class=\"pl-k\">~</span>/.ssh/authorized_keys ssh\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">Multiple sources can be comma-separated. A <code>user@github</code> source fetches\n<code>https://github.com/user.keys</code> once, before the server starts:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve --ssh-authorized-keys=bradfitz@github,./contractor.pub ssh\"><pre>$ tailcat serve --ssh-authorized-keys=bradfitz@github,./contractor.pub ssh</pre></div>\n<p dir=\"auto\">Every source must exist, fetch successfully, and contain valid public key\nlines or startup fails. Authorized-key options such as <code>command=</code> and\n<code>from=</code> are rejected because the built-in server does not implement them.\nRunning <code>tailcat serve ssh</code> without <code>--ssh-authorized-keys</code> also fails; use the\nexplicit <code>no-auth-ssh</code> service when the tunnel identity alone is sufficient.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Auth-free SSH server</h3></div>\n<p dir=\"auto\">On Linux, macOS, and Windows, you can also explicitly run the SSH server with\nno client authentication. The encrypted tunnel provides the client identity.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve no-auth-ssh\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat serve no-auth-ssh\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\">With <code>no-auth-ssh</code>, the address <strong>is</strong> the credential: anyone who\nlearns it gets a shell as the user running the server. Share it only\nover private channels, and never publish it, in a DNS TXT record or\nanywhere else public. If you want an SSH server reachable by DNS\nname, it must require client authentication: <code>--allow</code> at the tunnel\nlayer, <code>--ssh-authorized-keys</code> at the SSH layer, or both.</p>\n</div>\n<p dir=\"auto\">And on the client side:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la\"><pre>$ tailcat ssh tcXXXXXXXXX\n$ tailcat ssh tcXXXXXXXXX ls -la</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Run a command per connection</h3></div>\n<p dir=\"auto\">Like inetd, the <code>exec</code> service runs a command for each incoming\nconnection, with the connection as the command's stdin and stdout.\nThe command comes after <code>--</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve exec -- /usr/bin/fortune\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat serve <span class=\"pl-c1\">exec</span> -- /usr/bin/fortune\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat tcXXXXXXXXX 80 &lt; /dev/null\"><pre>$ tailcat tcXXXXXXXXX 80 <span class=\"pl-k\">&lt;</span> /dev/null</pre></div>\n<p dir=\"auto\">The command's stderr goes to the server's. It gets the peer's node\nkey in <code>$TAILCAT_PEER_KEY</code> (in <code>--allow</code>'s format) and the peer's\ntailcat IP:port in <code>$TAILCAT_REMOTE_ADDR</code>.</p>\n<p dir=\"auto\">Given with the <code>ssh</code> or <code>no-auth-ssh</code> service, the command instead\nreplaces the shell, like OpenSSH's <code>ForceCommand</code>: every SSH session\nruns only that command (on a PTY if the client asks for one), and the\nserver offers no shell, no client-chosen command, and no SFTP. The\nclient's requested command, if any, arrives in <code>$SSH_ORIGINAL_COMMAND</code>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve --ssh-authorized-keys=alice@github ssh -- ./deploy.sh\n$ tailcat serve no-auth-ssh -- git-upload-pack /srv/repo.git\"><pre>$ tailcat serve --ssh-authorized-keys=alice@github ssh -- ./deploy.sh\n$ tailcat serve no-auth-ssh -- git-upload-pack /srv/repo.git</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Send and receive files</h3></div>\n<p dir=\"auto\">To receive files, run a drop box and share the printed tailcat address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat recv ~/inbox\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat recv <span class=\"pl-k\">~</span>/inbox\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">The sender then runs:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat cp report.pdf tcXXXXXXXXX:\"><pre>$ tailcat cp report.pdf tcXXXXXXXXX:</pre></div>\n<p dir=\"auto\"><code>tailcat cp</code> runs the system <code>scp</code> with the connection routed through\ntailcat, so you get its usual progress display, and <code>-r</code> for\ndirectory trees. The drop box is write-only: senders can't list the\ndirectory, read anything back, or touch existing files.</p>\n<p dir=\"auto\">To offer files instead, serve a directory read-only (the default) or\nread-write:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve files                  # current directory, read-only\n$ tailcat serve --files=/pub:rw files  # a given directory, read-write\"><pre>$ tailcat serve files                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> current directory, read-only</span>\n$ tailcat serve --files=/pub:rw files  <span class=\"pl-c\"><span class=\"pl-c\">#</span> a given directory, read-write</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ls -l tcXXXXXXXXX\n$ tailcat cp tcXXXXXXXXX:report.pdf .\"><pre>$ tailcat ls -l tcXXXXXXXXX\n$ tailcat cp tcXXXXXXXXX:report.pdf <span class=\"pl-c1\">.</span></pre></div>\n<p dir=\"auto\"><code>tailcat ls</code> speaks SFTP natively, so it works even without OpenSSH\ninstalled.</p>\n<p dir=\"auto\">The server confines all paths to the served directory (via Go's\n<code>os.Root</code>), so neither <code>..</code> nor symlinks escape it. The file service\nspeaks SFTP, so the stock <code>sftp</code> and <code>scp</code> clients also work against\nit, given a ProxyCommand that pipes through tailcat (the same trick\n<code>tailcat cp</code> and <code>tailcat ssh</code> use). Both <code>ssh</code> and <code>no-auth-ssh</code>\nservers serve SFTP too, with the same access as the shell.</p>\n<p dir=\"auto\">Transfers are not compressed: the SFTP protocol has no compression\nof its own, and the SSH transport here doesn't either (Go's SSH\nstack omits it; transport compression has a history of security\nproblems, and TLS dropped it too). Compress files before sending\nif it matters.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Misc commands</h3></div>\n<p dir=\"auto\">Ping to test connectivity; each pong reports whether it arrived via a\nDERP relay or a direct path. <code>--until-direct</code> keeps pinging (up to\n<code>--timeout</code>, default 10s) until a direct path works, exiting non-zero\nif one doesn't:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat ping --until-direct &lt;tc-addr&gt;\npong in 42.1ms via DERP(sfo)\npong in 1.2ms via 203.0.113.7:41641\"><pre>$ tailcat ping --until-direct <span class=\"pl-k\">&lt;</span>tc-addr<span class=\"pl-k\">&gt;</span>\npong <span class=\"pl-k\">in</span> 42.1ms via DERP(sfo)\npong <span class=\"pl-k\">in</span> 1.2ms via 203.0.113.7:41641</pre></div>\n<p dir=\"auto\">Run a command through a SOCKS5 proxy routed over the tunnel:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks &lt;tc-addr&gt; curl http://server.tailcat:8081/\"><pre>$ tailcat socks <span class=\"pl-k\">&lt;</span>tc-addr<span class=\"pl-k\">&gt;</span> curl http://server.tailcat:8081/</pre></div>\n<p dir=\"auto\">Tailcat addresses also work directly as URL hostnames: the SOCKS proxy recognizes\nand dials them, so the tailcat address argument is optional. (Tailcat addresses are\ncase-sensitive; this works with curl and most CLI tools, but not with\nbrowsers, which lowercase hostnames.)</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat socks curl http://&lt;tc-addr&gt;:8081/\"><pre>$ tailcat socks curl http://<span class=\"pl-k\">&lt;</span>tc-addr<span class=\"pl-k\">&gt;</span>:8081/</pre></div>\n<p dir=\"auto\">Act as an exit node so the client can reach the server's network:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat serve exit-node\"><pre>$ tailcat serve exit-node</pre></div>\n<p dir=\"auto\">Parse a tailcat address and print its contents (the server's WireGuard\npublic key and DERP info) as JSON, without connecting to anything:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;RegionID&quot;: 302\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>RegionID<span class=\"pl-pds\">\"</span></span>: 302\n}</pre></div>\n<p dir=\"auto\">Resolve a short tailcat address (which references a DERP region by ID, requiring\nclients to fetch the DERP map) into a longer self-contained one with the\nDERP server info embedded, letting clients connect more quickly:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\"><pre>$ tailcat resolve tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu\ntcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA</pre></div>\n<p dir=\"auto\">Parsing that resolved tailcat address shows the embedded DERP info:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;tc302a.ipn.dev&quot;,\n                    &quot;IPv4&quot;: &quot;208.111.39.38&quot;,\n                    &quot;IPv6&quot;: &quot;2607:f740:0:3f::720&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFygaFhToGjYWhudGMzMDJhLmlwbi5kZXZhNG0yMDguMTExLjM5LjM4YTZzMjYwNzpmNzQwOjA6M2Y6OjcyMA\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:9c8d2e6728da80a1dd37e275a82595b42d9a838610bc53f74a7670d1610f2e34<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>tc302a.ipn.dev<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv4<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>208.111.39.38<span class=\"pl-pds\">\"</span></span>,\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>IPv6<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>2607:f740:0:3f::720<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">A server can print the long self-contained form directly with the\n<code>tailcat serve --full-address</code> flag.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Key Management</h2></div>\n<p dir=\"auto\">A server's tailcat address contains its WireGuard public key and an independent\nWireGuard pre-shared key, so the saved key material determines who can reach you:</p>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Ephemeral keys (the default):</strong> each server run generates a fresh key in\nmemory and prints an address nobody has ever seen. When the process exits,\nthe key is discarded and the address is dead forever. This is the safe\ndefault: sharing that address only ever refers to that one run.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Saved keys:</strong> <code>tailcat genkey</code> generates a key saved to disk so the\naddress stays stable across restarts. The flip side: anyone you've <em>ever</em>\nshared that address with can connect to any future server using that key,\nunless you restrict clients with <code>tailcat serve --allow</code> (see\n<code>tailcat genkey --client</code>).</p>\n</li>\n</ul>\n<p dir=\"auto\">The CLI says at startup which kind it's using, so you know whether you're\nstarting a fresh single-use server or re-listening on an address you may\nhave shared in the past.</p>\n<p dir=\"auto\">WireGuard pre-shared keys are enabled by default and strongly recommended. For\ncompatibility with tailcat clients v0.5.0 and earlier, <code>--psk=false</code> on <code>serve</code>\nor <code>genkey</code> produces shorter addresses, but removes post-quantum protection and\nprotection from public DERP operators that observe the peers' public keys.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat genkey --key=default --region=nyc\n# prints the tailcat address; key saved to ~/.config/tailcat/keys/default.private.json\n\n# later; the key named &quot;default&quot; is used automatically once it exists:\n$ tailcat serve 8080\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\n\n# ... unless you force a one-off ephemeral key:\n$ tailcat serve --key=new 8080\n# 🐈 Server listening with new address: tcXXXXXXXXX\"><pre>$ tailcat genkey --key=default --region=nyc\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> prints the tailcat address; key saved to ~/.config/tailcat/keys/default.private.json</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> later; the key named \"default\" is used automatically once it exists:</span>\n$ tailcat serve 8080\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> ... unless you force a one-off ephemeral key:</span>\n$ tailcat serve --key=new 8080\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with new address: tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">That is, <code>default</code> is a magic key name: once it exists, plain <code>tailcat</code>\nsilently uses it instead of generating an ephemeral key, and the startup\nline above is what tells you which happened. Use <code>--key=new</code> to get an\nephemeral key anyway, <code>--key=&lt;name&gt;</code> to use a different saved key, or\n<code>tailcat genkey --delete --key=default</code> to remove the saved default key.\n<code>tailcat genkey --list</code> lists your saved keys.</p>\n<p dir=\"auto\">Tailcat addresses can also be published as DNS TXT records and looked up by name;\na DNS name works anywhere the CLI takes a tailcat address:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If example.com has a TXT record &quot;tailcat=tc...&quot;\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If example.com has a TXT record \"tailcat=tc...\"</span>\n$ tailcat example.com 8080\n$ tailcat ssh example.com\n$ tailcat ping example.com</pre></div>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\">A tailcat address is normally a secret: knowing it is what lets a\nclient connect. A DNS TXT record is <strong>not</strong> secret. It is public,\nworld-readable, and actively scanned. Publishing an address in DNS\nhands it to everyone on the internet, so the server behind it must\nauthenticate clients by something other than knowledge of the\naddress: restrict the tunnel to known client keys with <code>tailcat serve --allow=...</code>, or, for SSH, require public keys with <code>tailcat serve --ssh-authorized-keys=... ssh</code>. Never publish the address of a\n<code>no-auth-ssh</code> server (or any other server that trusts whoever\nconnects): that is a shell on your machine, published in a TXT\nrecord. See <a href=\"#protected-ssh-server-over-dns\">Protected SSH server over\nDNS</a> for the safe setup.</p>\n</div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Examples</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Protected SSH server over DNS</h3></div>\n<p dir=\"auto\">Who needs port forwarding or port knocking? This runs an SSH server\nreachable from anywhere by name, with no open inbound ports on the\nserver, where WireGuard authenticates the client before the SSH\nserver ever sees a packet.</p>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\">The <code>--allow</code> flag below is not optional decoration. The DNS TXT\nrecord makes the tailcat address public, so possession of the\naddress no longer proves anything: the server must authenticate\nclients itself, here by allowing only one client node key. Without\n<code>--allow</code> (or SSH-level <code>--ssh-authorized-keys</code>), anyone on the\ninternet who reads the TXT record can connect.</p>\n</div>\n<p dir=\"auto\">On the client machine, generate a client identity keypair. It prints\nthe public key, which is all the server needs to know:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat genkey --client --key=client-default\n# wrote file to ~/.config/tailcat/keys/client-default.private.json\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16\"><pre>client$ tailcat genkey --client --key=client-default\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/client-default.private.json</span>\nnodekey:cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16</pre></div>\n<p dir=\"auto\">On the server, generate a server keypair pinned to its nearest DERP\nregion (see why below), then serve SSH to only that client:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --key=default --fixed-region\n# wrote file to ~/.config/tailcat/keys/default.private.json\ntcXXXXXXXXX\n\nserver$ tailcat serve --allow=nodekey:cfb6bf...ddfd16 22\n# 🐈 Server listening with saved key &quot;default&quot;: tcXXXXXXXXX\"><pre>server$ tailcat genkey --key=default --fixed-region\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> wrote file to ~/.config/tailcat/keys/default.private.json</span>\ntcXXXXXXXXX\n\nserver$ tailcat serve --allow=nodekey:cfb6bf...ddfd16 22\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 🐈 Server listening with saved key \"default\": tcXXXXXXXXX</span></pre></div>\n<p dir=\"auto\">Publish the tailcat address in DNS as a TXT record:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"my-server.example.com. 300 IN TXT &quot;tailcat=tcXXXXXXXXX&quot;\"><pre class=\"notranslate\"><code>my-server.example.com. 300 IN TXT \"tailcat=tcXXXXXXXXX\"\n</code></pre></div>\n<p dir=\"auto\">And then the client side is just:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"client$ tailcat ssh my-server.example.com\"><pre>client$ tailcat ssh my-server.example.com</pre></div>\n<p dir=\"auto\">Client modes automatically use the saved <code>client-default</code> key when it\nexists, so no extra flags are needed to present the allowed identity.\nAnyone else's handshake is silently ignored: they can't reach the SSH\nserver, or even learn that one is running.</p>\n<p dir=\"auto\">As a safety net, <code>tailcat ssh</code> probes a DNS-named destination before\nconnecting: it attempts an SSH login as a stranger would, with a\nfreshly generated client key and no SSH credentials. If the server\naccepts that login, anyone who reads the TXT record could do the\nsame, so tailcat refuses to connect and says why. The probe\ncatches the misconfiguration the first time you test your own server;\nthe <code>--skip-dns-safety-check</code> flag skips it, whether because you\nreally do want a public server or just to shave off the probe's\nround trips.</p>\n<p dir=\"auto\">Why <code>--fixed-region</code>: it discovers the nearest DERP region once, at\ngenkey time, and bakes its ID into both the printed tailcat address and the\nsaved key file, so server restarts bind to the same region (keeping\nthe published tailcat address valid) without re-probing. Otherwise genkey\ndefaults to <code>--region=auto</code>, which instead bakes in \"pick at\nstartup\": fine for one-off use, but a tailcat address published in DNS should\nname a fixed region so clients and future server restarts all\nrendezvous in the same place. (<code>--region=&lt;name&gt;</code> pins an explicit one\ninstead; <code>--region=list</code> shows the choices.)</p>\n<p dir=\"auto\">TODO: make the client more robust here if the DERP map changes over\ntime: <a class=\"issue-link js-issue-link\" data-error-text=\"Failed to load title\" data-id=\"5258120127\" data-permission-text=\"Title is private\" data-url=\"https://github.com/tailscale/tailcat/issues/7\" data-hovercard-type=\"issue\" data-hovercard-url=\"/tailscale/tailcat/issues/7/hovercard\" href=\"https://github.com/tailscale/tailcat/issues/7\">#7</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Bring your own DERP relay</h3></div>\n<p dir=\"auto\">Nothing requires Tailscale's relays: <a href=\"https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp\">run your own DERP\nserver</a>\n(it needs a hostname with a TLS certificate, which derper can get\nitself via Let's Encrypt), then generate a server key that uses it by\npassing its hostname (or several, comma-separated) as the region:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"server$ tailcat genkey --key=default --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat serve 22\"><pre>server$ tailcat genkey --key=default --region=derp.example.com\ntcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n\nserver$ tailcat serve 22</pre></div>\n<p dir=\"auto\">The tailcat address embeds your relay's hostname:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    &quot;ServerPublic&quot;: &quot;nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49&quot;,\n    &quot;Region&quot;: [\n        {\n            &quot;Nodes&quot;: [\n                {\n                    &quot;HostName&quot;: &quot;derp.example.com&quot;\n                }\n            ]\n        }\n    ]\n}\"><pre>$ tailcat parse tcomFwWCCAIsKOqPUux6ClG2RM4A_vOq4VBzGgHGGjq9OsJuFKSWFygaFhToGhYWhwZGVycC5leGFtcGxlLmNvbQ\n{\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ServerPublic<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>nodekey:8022c28ea8f52ec7a0a51b644ce00fef3aae150731a01c61a3abd3ac26e14a49<span class=\"pl-pds\">\"</span></span>,\n    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Region<span class=\"pl-pds\">\"</span></span>: [\n        {\n            <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Nodes<span class=\"pl-pds\">\"</span></span>: [\n                {\n                    <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>HostName<span class=\"pl-pds\">\"</span></span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>derp.example.com<span class=\"pl-pds\">\"</span></span>\n                }\n            ]\n        }\n    ]\n}</pre></div>\n<p dir=\"auto\">so clients need no extra flags and never contact Tailscale's DERP map\nserver or relays, and the only rate limits are yours. Alternatively,\nif you run a whole fleet of relays, serve your own DERP map JSON and\npoint both sides at it with <code>--derpmap-url</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Go library</h3></div>\n<p dir=\"auto\">A minimal server that answers any TCP port through the tunnel and\nprints its tailcat address. The zero value Server picks defaults for anything\nunset: a fresh ephemeral key, the nearest region of the default DERP\nmap, and <code>log.Printf</code> logging (set <code>Logf</code> to <code>logger.Discard</code> for\nquiet):</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;fmt&quot;\n\t&quot;log&quot;\n\t&quot;net&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\ts := &amp;tailcat.Server{\n\t\tOnTCP: func(port uint16) func(net.Conn) {\n\t\t\treturn func(c net.Conn) {\n\t\t\t\tfmt.Fprintf(c, &quot;hello from port %v\\n&quot;, port)\n\t\t\t\tc.Close()\n\t\t\t}\n\t\t},\n\t}\n\tif err := s.Start(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tfmt.Println(s.TailcatAddr())\n\tselect {}\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"fmt\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"net\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">s</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-c1\">&amp;</span>tailcat.<span class=\"pl-smi\">Server</span>{\n\t\t<span class=\"pl-s1\">OnTCP</span>: <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">port</span> <span class=\"pl-smi\">uint16</span>) <span class=\"pl-k\">func</span>(net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t<span class=\"pl-k\">return</span> <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">c</span> net.<span class=\"pl-smi\">Conn</span>) {\n\t\t\t\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Fprintf</span>(<span class=\"pl-s1\">c</span>, <span class=\"pl-s\">\"hello from port %v<span class=\"pl-cce\">\\n</span>\"</span>, <span class=\"pl-s1\">port</span>)\n\t\t\t\t<span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Close</span>()\n\t\t\t}\n\t\t},\n\t}\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">Start</span>(); <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">fmt</span>.<span class=\"pl-c1\">Println</span>(<span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">TailcatAddr</span>())\n\t<span class=\"pl-k\">select</span> {}\n}</pre></div>\n<p dir=\"auto\">And a minimal client that dials it, given that tailcat address as its argument.\nLike Server, the Client zero value works with just its <code>Server</code> field set to a\ntailcat address (<code>tailcat.NewClient</code> is shorthand for exactly that), and\nthe tunnel is established lazily by the first dial:</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"package main\n\nimport (\n\t&quot;context&quot;\n\t&quot;io&quot;\n\t&quot;log&quot;\n\t&quot;os&quot;\n\n\t&quot;github.com/tailscale/tailcat&quot;\n)\n\nfunc main() {\n\tcl := tailcat.NewClient(tailcat.Addr(os.Args[1]))\n\tdefer cl.Close()\n\tc, err := cl.DialTCPPort(context.Background(), 80)\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\tio.Copy(os.Stdout, c)\n}\"><pre><span class=\"pl-k\">package</span> main\n\n<span class=\"pl-k\">import</span> (\n\t<span class=\"pl-s\">\"context\"</span>\n\t<span class=\"pl-s\">\"io\"</span>\n\t<span class=\"pl-s\">\"log\"</span>\n\t<span class=\"pl-s\">\"os\"</span>\n\n\t<span class=\"pl-s\">\"github.com/tailscale/tailcat\"</span>\n)\n\n<span class=\"pl-k\">func</span> <span class=\"pl-s1\">main</span>() {\n\t<span class=\"pl-s1\">cl</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">NewClient</span>(<span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">Addr</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Args</span>[<span class=\"pl-c1\">1</span>]))\n\t<span class=\"pl-k\">defer</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">Close</span>()\n\t<span class=\"pl-s1\">c</span>, <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">DialTCPPort</span>(<span class=\"pl-s1\">context</span>.<span class=\"pl-c1\">Background</span>(), <span class=\"pl-c1\">80</span>)\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t<span class=\"pl-s1\">log</span>.<span class=\"pl-c1\">Fatal</span>(<span class=\"pl-s1\">err</span>)\n\t}\n\t<span class=\"pl-s1\">io</span>.<span class=\"pl-c1\">Copy</span>(<span class=\"pl-s1\">os</span>.<span class=\"pl-c1\">Stdout</span>, <span class=\"pl-s1\">c</span>)\n}</pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80\"><pre>$ ./client tcomFwWCAWf933BLELdzd3RkHiOufJ...\nhello from port 80</pre></div>\n<p dir=\"auto\">UDP uses a connected packet connection for each client flow, preserving\ndatagram boundaries and both endpoint addresses:</p>\n<div class=\"highlight highlight-source-go notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"s.OnUDP = func(port uint16) func(tailcat.ConnPacketConn) {\n\tif port != 53 {\n\t\treturn nil\n\t}\n\treturn func(c tailcat.ConnPacketConn) {\n\t\tdefer c.Close()\n\t\tbuf := make([]byte, tailcat.MaxUDPPayload)\n\t\tfor {\n\t\t\tn, err := c.Read(buf)\n\t\t\tif err != nil {\n\t\t\t\treturn\n\t\t\t}\n\t\t\tc.Write(buf[:n])\n\t\t}\n\t}\n}\n\npc, err := cl.DialUDPPort(context.Background(), 53)\"><pre><span class=\"pl-s1\">s</span>.<span class=\"pl-c1\">OnUDP</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">port</span> <span class=\"pl-smi\">uint16</span>) <span class=\"pl-k\">func</span>(tailcat.<span class=\"pl-smi\">ConnPacketConn</span>) {\n\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">port</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">53</span> {\n\t\t<span class=\"pl-k\">return</span> <span class=\"pl-c1\">nil</span>\n\t}\n\t<span class=\"pl-k\">return</span> <span class=\"pl-k\">func</span>(<span class=\"pl-s1\">c</span> tailcat.<span class=\"pl-smi\">ConnPacketConn</span>) {\n\t\t<span class=\"pl-k\">defer</span> <span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Close</span>()\n\t\t<span class=\"pl-s1\">buf</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">make</span>([]<span class=\"pl-smi\">byte</span>, <span class=\"pl-s1\">tailcat</span>.<span class=\"pl-c1\">MaxUDPPayload</span>)\n\t\t<span class=\"pl-k\">for</span> {\n\t\t\t<span class=\"pl-s1\">n</span>, <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Read</span>(<span class=\"pl-s1\">buf</span>)\n\t\t\t<span class=\"pl-k\">if</span> <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">!=</span> <span class=\"pl-c1\">nil</span> {\n\t\t\t\t<span class=\"pl-k\">return</span>\n\t\t\t}\n\t\t\t<span class=\"pl-s1\">c</span>.<span class=\"pl-c1\">Write</span>(<span class=\"pl-s1\">buf</span>[:<span class=\"pl-s1\">n</span>])\n\t\t}\n\t}\n}\n\n<span class=\"pl-s1\">pc</span>, <span class=\"pl-s1\">err</span> <span class=\"pl-c1\">:=</span> <span class=\"pl-s1\">cl</span>.<span class=\"pl-c1\">DialUDPPort</span>(<span class=\"pl-s1\">context</span>.<span class=\"pl-c1\">Background</span>(), <span class=\"pl-c1\">53</span>)</pre></div>\n<p dir=\"auto\"><code>ConnPacketConn</code> implements both <code>net.Conn</code> and <code>net.PacketConn</code>. Keep payloads\nat or below <code>tailcat.MaxUDPPayload</code> (1232 bytes) to fit the IPv6 tunnel MTU\nwithout fragmentation. Use <code>OnUDPForward</code> and <code>DialUDP</code> for exit-node traffic;\n<code>ProxyPacketConns</code> provides datagram-safe bidirectional forwarding. Inactive\nserver-side UDP flows close after <code>tailcat.DefaultUDPIdleTimeout</code> (two minutes);\nset <code>Server.UDPIdleTimeout</code> to change the timeout.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Tailcat addresses</h3></div>\n<p dir=\"auto\">A Tailcat server is identified by a <strong>tailcat address</strong>, represented by the Go\ntype <code>tailcat.Addr</code>. It looks like <code>tcXYZ...</code> and is a <code>\"tc\"</code> prefix\nfollowed by base64-encoded <a href=\"https://cbor.io/\" rel=\"nofollow\">CBOR</a> containing:</p>\n<ul dir=\"auto\">\n<li>The server's WireGuard public key (Curve25519, 32 bytes)</li>\n<li>A separate path-discovery public key (Curve25519, 32 bytes)</li>\n<li>By default, an independent WireGuard pre-shared key (256 random bits),\nwhich prevents a DERP operator that observes the peers' public keys from\njoining the tunnel and provides post-quantum protection against recorded\ntraffic</li>\n<li>DERP info. Either:\n<ol dir=\"auto\">\n<li>a small integer referencing one of the default <a href=\"https://tailcat.dev/derpmap.json\" rel=\"nofollow\">Tailscale-run tailcat servers</a>, or</li>\n<li>full DERP server metadata, to either use a custom DERP server, or to avoid the client needing a potential round-trip to fetch the latest DERP map (the <code>tailcat serve --full-address</code> flag and the <code>tailcat resolve</code> subcommand produce this form)</li>\n</ol>\n</li>\n</ul>\n<p dir=\"auto\">A typical tailcat address with just an integer region ID is around 140 bytes.\nWith embedded DERP node details it's longer but self-contained.</p>\n<p dir=\"auto\">The default address is a secret bearer capability because it contains the\npre-shared key. Share it only with clients that should be able to connect.\nPublishing it, in a public DNS TXT record or anywhere else, gives that\ncapability to the whole internet, which is only safe when the server also\nauthenticates clients: <code>serve --allow</code> restricts the tunnel to listed\nclient node keys, and the <code>ssh</code> service requires <code>--ssh-authorized-keys</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Network stack</h3></div>\n<p dir=\"auto\">Tailcat reuses Tailscale's client networking components but\nwithout the control plane.</p>\n<ul dir=\"auto\">\n<li><strong>WireGuard</strong> -- a userspace WireGuard\nimplementation for encrypting all tunnel traffic. It doesn't use a kernel TUN/TAP device (nor does it configure any networking routes or DNS settings), so <code>root</code> isn't required.</li>\n<li><strong>magicsock</strong> -- Tailscale's transport layer that multiplexes traffic\nover direct UDP and DERP relays. It handles STUN-based endpoint\ndiscovery and UDP hole-punching for NAT traversal.</li>\n<li><strong>Netstack</strong> (gVisor) -- a userspace TCP/IP stack that terminates\nTCP connections inside the process. This is what lets Tailcat\naccept inbound connections and dial outbound ones without any OS\nnetwork configuration.</li>\n<li><strong>DERP relay</strong> -- Tailscale's encrypted relay protocol, used as a\nrendezvous channel and as a fallback data path when direct\nconnectivity isn't possible.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection flow</h3></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\"><strong>Server starts.</strong> It generates (or loads) a WireGuard keypair and, by\ndefault, a pre-shared key, connects to a DERP relay, and prints its tailcat\naddress to stderr. It then waits for clients.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Client parses the tailcat address</strong> to learn the server's public key,\npath-discovery key, optional pre-shared key, and DERP region. It generates\nits own ephemeral keypair and connects to the same DERP relay. The separate\npath-discovery key can appear in cleartext direct-path disco frames without\nrevealing the WireGuard public key. The pre-shared key remains the secret\nconnection capability even when a relay operator observes both peers'\npublic keys.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Discovery handshake.</strong> The client sends a \"<strong>Meow</strong>\" ping message\nto the server through the\nDERP relay. This message carries the client's node public key. The\nserver receives it, adds the client to its WireGuard peer list and\nnetwork map, reconfigures the WireGuard engine, and replies with a\n\"<strong>Meowed</strong>\" acknowledgment.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>WireGuard tunnel.</strong> With both sides configured as WireGuard peers using\nthe address's pre-shared key when present, the WireGuard handshake proceeds\n(routed through DERP initially). Once complete, the tunnel is up and\nencrypted traffic can flow.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>NAT traversal.</strong> In parallel, each side advertises its UDP\nendpoints (public IP:port learned via STUN, plus local interface\naddresses) to the other in disco call-me-maybe messages over DERP,\nre-advertising whenever they change. Both sides then run Tailscale's\ndisco protocol and attempt UDP hole-punching. If\nsuccessful, traffic upgrades from the DERP relay to a direct\npeer-to-peer path. If hole-punching fails, DERP continues as a\nfallback and the connection still works, just with rate-limited throughput if you're using our public hosted DERP relays.</p>\n</li>\n<li>\n<p dir=\"auto\"><strong>Data transfer.</strong> The client dials a TCP port on the server\nthrough the tunnel. gVisor's TCP/IP stack on both sides handles\nconnection setup. On the server, the incoming connection is\ndispatched to a handler based on the port: forwarding to localhost,\npiping to stdout, running an SSH session, etc.</p>\n</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Addressing</h3></div>\n<p dir=\"auto\">Each peer currently derives a deterministic IPv6 address from its WireGuard\npublic key, but that's an implementation detail not exposed to end users and\nmight change. (e.g. we might remove those bytes from the IP headers entirely and\nrecover that redundant MTU)</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Security</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/tailscale/tailcat/blob/main/SECURITY.md\">SECURITY.md</a> for how to report security issues,\nand for notes on tailcat's current threat model.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Stability</h2></div>\n<p dir=\"auto\">Tailcat is free to use, but it comes with no API or CLI stability\npromises: the Go API, the CLI flags and output, and the wire format may\nall change. The public rate-limited Tailcat DERP relays have no uptime\nSLAs or throughput targets, and we may revoke access to them at any\ntime, for any reason. Everything is provided best effort, without a\ncontractual relationship (e.g. dedicated DERP relays and/or support)\nsaying otherwise.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contact Sales?</h2></div>\n<p dir=\"auto\">If you don't want to run and support things on your own, or want any\nhelp, <a href=\"https://tailscale.com/contact/sales\" rel=\"nofollow\">contact sales</a> and we can\nexchange money for <a href=\"https://www.youtube.com/watch?v=A81DYZh6KaQ\" rel=\"nofollow\">goods and\nservices</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">History</h2></div>\n<p dir=\"auto\">Tailcat began life in September 2023 as \"derpcat\", written on a long\nflight while catching up on bad movies: the first sketch was commit\n<a href=\"https://github.com/tailscale/tailcat/commit/9e4d925cc\">9e4d925cc</a>\n(\"cmd/dc: start of derpcat tool\"), and it first worked in commit\n<a href=\"https://github.com/tailscale/tailcat/commit/911915fbb\">911915fbb</a>\n(\"derpcat: it's alive!\", whose commit message notes \"UA 605 PDX-ORD\nen route to Ireland. yay not buying the wifi.\"). Back then it lived\ninside a fork of the\n<a href=\"https://github.com/tailscale/tailscale\">tailscale.com</a> repo and it\nbitrot several times as the Tailscale internals moved on without it.\nWe've since brought it back to life and refactored it to be a regular\nGo module client of the tailscale.com repo instead of a fork of it.</p>\n<p dir=\"auto\">It was open sourced August 2026 at the\n<a href=\"https://tailscale.com/tailscaleup\" rel=\"nofollow\">TailscaleUp conference</a>.</p>\n</article></div>",
   "firstCommitAt": "2020-01-31T22:00:04Z",
   "recentIssues": [
     {
-      "number": 18,
-      "title": "tailcat: Server.Start and Client.initLocked leak resources on partial startup failures",
-      "url": "https://github.com/tailscale/tailcat/issues/18",
-      "createdAt": "2026-08-28T13:46:28Z",
-      "comments": 0,
+      "number": 105,
+      "title": "Question/docs request: Is a `tailcat` address a secret?",
+      "url": "https://github.com/tailscale/tailcat/issues/105",
+      "createdAt": "2026-09-07T21:13:57Z",
+      "comments": 1,
       "labels": [],
-      "author": "awdemos"
+      "author": "DilumAluthge"
     },
     {
-      "number": 17,
-      "title": "tailcat_ssh: PTY session hangs because stdout io.Copy blocks before cmd.Wait and cleanup",
-      "url": "https://github.com/tailscale/tailcat/issues/17",
-      "createdAt": "2026-08-28T13:46:28Z",
-      "comments": 0,
-      "labels": [],
-      "author": "awdemos"
+      "number": 94,
+      "title": "Add mobile app?",
+      "url": "https://github.com/tailscale/tailcat/issues/94",
+      "createdAt": "2026-09-04T13:47:55Z",
+      "comments": 1,
+      "labels": [
+        "enhancement"
+      ],
+      "author": "bradfitz"
     },
     {
-      "number": 14,
-      "title": "Add client-side local TCP forwarding",
-      "url": "https://github.com/tailscale/tailcat/issues/14",
-      "createdAt": "2026-08-28T04:35:58Z",
+      "number": 93,
+      "title": "Add support for serving unix domain sockets",
+      "url": "https://github.com/tailscale/tailcat/issues/93",
+      "createdAt": "2026-09-04T09:35:16Z",
       "comments": 0,
       "labels": [],
-      "author": "changhoon-sung"
+      "author": "matrss"
     },
     {
-      "number": 13,
-      "title": "Pre-compiled binaries",
-      "url": "https://github.com/tailscale/tailcat/issues/13",
-      "createdAt": "2026-08-28T03:42:48Z",
-      "comments": 0,
-      "labels": [],
-      "author": "ItalyPaleAle"
-    },
-    {
-      "number": 12,
-      "title": "Can't use ssh with connection multiplexing in a common configuration",
-      "url": "https://github.com/tailscale/tailcat/issues/12",
-      "createdAt": "2026-08-27T14:34:02Z",
-      "comments": 0,
-      "labels": [],
-      "author": "exzombie"
-    },
-    {
-      "number": 7,
-      "title": "multi-region, bake in lat/long to fixed-region conn blobs, have clients search nearby regions?",
-      "url": "https://github.com/tailscale/tailcat/issues/7",
-      "createdAt": "2026-08-26T14:19:31Z",
+      "number": 81,
+      "title": "add QR code support",
+      "url": "https://github.com/tailscale/tailcat/issues/81",
+      "createdAt": "2026-09-03T22:36:26Z",
       "comments": 0,
       "labels": [],
       "author": "bradfitz"
+    },
+    {
+      "number": 59,
+      "title": "Feature request: interoperability with an existing Tailscale node",
+      "url": "https://github.com/tailscale/tailcat/issues/59",
+      "createdAt": "2026-09-01T01:26:34Z",
+      "comments": 4,
+      "labels": [
+        "enhancement",
+        "thinking"
+      ],
+      "author": "Peterpig"
+    },
+    {
+      "number": 39,
+      "title": "Add verbose logging flag to log incoming connections",
+      "url": "https://github.com/tailscale/tailcat/issues/39",
+      "createdAt": "2026-08-31T00:52:36Z",
+      "comments": 1,
+      "labels": [
+        "enhancement"
+      ],
+      "author": "bradfitz"
     }
   ],
-  "contributorCount": 331,
+  "contributorCount": 347,
   "participation": {
-    "all": 899,
+    "all": 943,
     "owner": 0,
-    "community": 899
+    "community": 943
   },
   "punchCard": [
     {
       "day": 0,
       "hour": 0,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 0,
       "hour": 1,
-      "commits": 4
+      "commits": 6
     },
     {
       "day": 0,
@@ -258,7 +323,7 @@
     {
       "day": 0,
       "hour": 3,
-      "commits": 7
+      "commits": 11
     },
     {
       "day": 0,
@@ -283,7 +348,7 @@
     {
       "day": 0,
       "hour": 8,
-      "commits": 34
+      "commits": 35
     },
     {
       "day": 0,
@@ -293,7 +358,7 @@
     {
       "day": 0,
       "hour": 10,
-      "commits": 26
+      "commits": 27
     },
     {
       "day": 0,
@@ -308,7 +373,7 @@
     {
       "day": 0,
       "hour": 13,
-      "commits": 23
+      "commits": 26
     },
     {
       "day": 0,
@@ -318,27 +383,27 @@
     {
       "day": 0,
       "hour": 15,
-      "commits": 27
+      "commits": 28
     },
     {
       "day": 0,
       "hour": 16,
-      "commits": 23
+      "commits": 24
     },
     {
       "day": 0,
       "hour": 17,
-      "commits": 22
+      "commits": 23
     },
     {
       "day": 0,
       "hour": 18,
-      "commits": 30
+      "commits": 40
     },
     {
       "day": 0,
       "hour": 19,
-      "commits": 19
+      "commits": 20
     },
     {
       "day": 0,
@@ -353,37 +418,37 @@
     {
       "day": 0,
       "hour": 22,
-      "commits": 21
+      "commits": 22
     },
     {
       "day": 0,
       "hour": 23,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 1,
       "hour": 0,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 1,
       "hour": 1,
-      "commits": 5
+      "commits": 8
     },
     {
       "day": 1,
       "hour": 2,
-      "commits": 4
+      "commits": 11
     },
     {
       "day": 1,
       "hour": 3,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 1,
       "hour": 4,
-      "commits": 1
+      "commits": 3
     },
     {
       "day": 1,
@@ -413,7 +478,7 @@
     {
       "day": 1,
       "hour": 10,
-      "commits": 161
+      "commits": 162
     },
     {
       "day": 1,
@@ -438,7 +503,7 @@
     {
       "day": 1,
       "hour": 15,
-      "commits": 201
+      "commits": 205
     },
     {
       "day": 1,
@@ -478,7 +543,7 @@
     {
       "day": 1,
       "hour": 23,
-      "commits": 34
+      "commits": 35
     },
     {
       "day": 2,
@@ -613,7 +678,7 @@
     {
       "day": 3,
       "hour": 2,
-      "commits": 11
+      "commits": 12
     },
     {
       "day": 3,
@@ -658,7 +723,7 @@
     {
       "day": 3,
       "hour": 11,
-      "commits": 174
+      "commits": 175
     },
     {
       "day": 3,
@@ -668,7 +733,7 @@
     {
       "day": 3,
       "hour": 13,
-      "commits": 143
+      "commits": 144
     },
     {
       "day": 3,
@@ -683,12 +748,12 @@
     {
       "day": 3,
       "hour": 16,
-      "commits": 136
+      "commits": 137
     },
     {
       "day": 3,
       "hour": 17,
-      "commits": 105
+      "commits": 107
     },
     {
       "day": 3,
@@ -708,12 +773,12 @@
     {
       "day": 3,
       "hour": 21,
-      "commits": 87
+      "commits": 88
     },
     {
       "day": 3,
       "hour": 22,
-      "commits": 48
+      "commits": 50
     },
     {
       "day": 3,
@@ -728,7 +793,7 @@
     {
       "day": 4,
       "hour": 1,
-      "commits": 22
+      "commits": 27
     },
     {
       "day": 4,
@@ -773,17 +838,17 @@
     {
       "day": 4,
       "hour": 10,
-      "commits": 151
+      "commits": 152
     },
     {
       "day": 4,
       "hour": 11,
-      "commits": 161
+      "commits": 162
     },
     {
       "day": 4,
       "hour": 12,
-      "commits": 164
+      "commits": 166
     },
     {
       "day": 4,
@@ -793,12 +858,12 @@
     {
       "day": 4,
       "hour": 14,
-      "commits": 192
+      "commits": 193
     },
     {
       "day": 4,
       "hour": 15,
-      "commits": 138
+      "commits": 139
     },
     {
       "day": 4,
@@ -813,17 +878,17 @@
     {
       "day": 4,
       "hour": 18,
-      "commits": 61
+      "commits": 62
     },
     {
       "day": 4,
       "hour": 19,
-      "commits": 58
+      "commits": 59
     },
     {
       "day": 4,
       "hour": 20,
-      "commits": 66
+      "commits": 67
     },
     {
       "day": 4,
@@ -858,12 +923,12 @@
     {
       "day": 5,
       "hour": 3,
-      "commits": 13
+      "commits": 14
     },
     {
       "day": 5,
       "hour": 4,
-      "commits": 7
+      "commits": 9
     },
     {
       "day": 5,
@@ -903,7 +968,7 @@
     {
       "day": 5,
       "hour": 12,
-      "commits": 161
+      "commits": 162
     },
     {
       "day": 5,
@@ -918,22 +983,22 @@
     {
       "day": 5,
       "hour": 15,
-      "commits": 144
+      "commits": 148
     },
     {
       "day": 5,
       "hour": 16,
-      "commits": 110
+      "commits": 113
     },
     {
       "day": 5,
       "hour": 17,
-      "commits": 92
+      "commits": 96
     },
     {
       "day": 5,
       "hour": 18,
-      "commits": 72
+      "commits": 75
     },
     {
       "day": 5,
@@ -978,7 +1043,7 @@
     {
       "day": 6,
       "hour": 3,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 6,
@@ -1008,7 +1073,7 @@
     {
       "day": 6,
       "hour": 9,
-      "commits": 27
+      "commits": 29
     },
     {
       "day": 6,
@@ -1028,7 +1093,7 @@
     {
       "day": 6,
       "hour": 13,
-      "commits": 33
+      "commits": 35
     },
     {
       "day": 6,
@@ -1038,7 +1103,7 @@
     {
       "day": 6,
       "hour": 15,
-      "commits": 37
+      "commits": 39
     },
     {
       "day": 6,
@@ -1073,23 +1138,15 @@
     {
       "day": 6,
       "hour": 22,
-      "commits": 21
+      "commits": 22
     },
     {
       "day": 6,
       "hour": 23,
-      "commits": 11
+      "commits": 12
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-08-31",
-      "commits": 28
-    },
-    {
-      "week": "2025-09-07",
-      "commits": 33
-    },
     {
       "week": "2025-09-14",
       "commits": 53
@@ -1288,66 +1345,18 @@
     },
     {
       "week": "2026-08-23",
-      "commits": 36
+      "commits": 46
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 87
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 1
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-08-31",
-      "count": 2
-    },
-    {
-      "date": "2025-09-01",
-      "count": 5
-    },
-    {
-      "date": "2025-09-02",
-      "count": 10
-    },
-    {
-      "date": "2025-09-03",
-      "count": 6
-    },
-    {
-      "date": "2025-09-04",
-      "count": 1
-    },
-    {
-      "date": "2025-09-05",
-      "count": 3
-    },
-    {
-      "date": "2025-09-06",
-      "count": 1
-    },
-    {
-      "date": "2025-09-07",
-      "count": 1
-    },
-    {
-      "date": "2025-09-08",
-      "count": 9
-    },
-    {
-      "date": "2025-09-09",
-      "count": 7
-    },
-    {
-      "date": "2025-09-10",
-      "count": 5
-    },
-    {
-      "date": "2025-09-11",
-      "count": 3
-    },
-    {
-      "date": "2025-09-12",
-      "count": 6
-    },
-    {
-      "date": "2025-09-13",
-      "count": 2
-    },
     {
       "date": "2025-09-14",
       "count": 0
@@ -2742,91 +2751,147 @@
     },
     {
       "date": "2026-08-28",
-      "count": 0
+      "count": 4
     },
     {
       "date": "2026-08-29",
+      "count": 6
+    },
+    {
+      "date": "2026-08-30",
+      "count": 30
+    },
+    {
+      "date": "2026-08-31",
+      "count": 19
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 8
+    },
+    {
+      "date": "2026-09-03",
+      "count": 14
+    },
+    {
+      "date": "2026-09-04",
+      "count": 13
+    },
+    {
+      "date": "2026-09-05",
+      "count": 3
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 1
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
       "count": 0
     }
   ],
   "recentCommits": [
     {
-      "sha": "c04c5af",
-      "message": "web: clarify that only browser tailcat is DERP-relay-only",
-      "url": "https://github.com/tailscale/tailcat/commit/c04c5afee401df40e620db8ae108e957ae07bcd9",
-      "date": "2026-08-27T01:41:19Z",
+      "sha": "91dc497",
+      "message": "cmd/tailcat: add a browse command and a forward --open-browser flag",
+      "url": "https://github.com/tailscale/tailcat/commit/91dc4979bd4ae88af6ae2c8bb549616de4bcaa5a",
+      "date": "2026-09-09T02:35:37Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "743d645",
-      "message": "README.md: mention the web demo",
-      "url": "https://github.com/tailscale/tailcat/commit/743d645f67abe424d871fa043e9c64d5edc66223",
-      "date": "2026-08-27T01:40:27Z",
+      "sha": "7a50a1a",
+      "message": "cmd/tailcat, tailcat: add an exec service and an SSH forced command",
+      "url": "https://github.com/tailscale/tailcat/commit/7a50a1abd8bca63432afbcc5c04dd278c7029e31",
+      "date": "2026-09-05T20:47:56Z",
+      "author": "raggi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/348?v=4"
+    },
+    {
+      "sha": "1233960",
+      "message": "cmd/tailcat: warn about public DNS in root help and at no-auth-ssh startup",
+      "url": "https://github.com/tailscale/tailcat/commit/12339608d78cae95598803da203ad8f8b4178557",
+      "date": "2026-09-05T15:17:34Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "d00614d",
-      "message": "web: link the demo notice's \"tailcat\" to the GitHub repo",
-      "url": "https://github.com/tailscale/tailcat/commit/d00614da729085cecb1e9253b429f9c5e5b88bc4",
-      "date": "2026-08-27T01:38:03Z",
+      "sha": "5a83b9f",
+      "message": "cmd/tailcat, README.md: warn when a DNS-named SSH destination is wide open",
+      "url": "https://github.com/tailscale/tailcat/commit/5a83b9f9e119aad6b558cbc122d94efdca87452d",
+      "date": "2026-09-05T03:41:26Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "9be6663",
-      "message": "web: publish the web demo to GitHub Pages",
-      "url": "https://github.com/tailscale/tailcat/commit/9be666321da3a38bd6dcbf8aa73aefb5a4fe28d8",
-      "date": "2026-08-27T01:07:12Z",
+      "sha": "b3aeffb",
+      "message": "cmd/tailcat: fix argument parsing under Termux on Android",
+      "url": "https://github.com/tailscale/tailcat/commit/b3aeffb34d8f51c30143911e5e0fa06fd7f28ff9",
+      "date": "2026-09-04T08:02:57Z",
+      "author": "Shaun",
+      "avatarUrl": null
+    },
+    {
+      "sha": "7904062",
+      "message": "CHANGELOG.md: link contributors' profiles and pull requests",
+      "url": "https://github.com/tailscale/tailcat/commit/790406204c002a6f109ef7c6a30a436601a1f6a8",
+      "date": "2026-09-04T18:33:35Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "8ccf2ec",
-      "message": "tailcat: don't advertise endpoints from js/wasm",
-      "url": "https://github.com/tailscale/tailcat/commit/8ccf2ec258524ad411a8fa9483e18cea95b6491f",
-      "date": "2026-08-27T01:32:17Z",
+      "sha": "da4cde0",
+      "message": "CHANGELOG.md: add a changelog, retroactively covering all releases",
+      "url": "https://github.com/tailscale/tailcat/commit/da4cde08c87e9f2b48a3c3b45edee197d92526de",
+      "date": "2026-09-04T18:24:42Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "0993a15",
-      "message": "README.md: don't imply Tailscale's relays are required for bootstrap",
-      "url": "https://github.com/tailscale/tailcat/commit/0993a1545b0b80d9150d7d73cb7fc471ae9e8dd9",
-      "date": "2026-08-26T19:17:02Z",
+      "sha": "55756e7",
+      "message": ".goreleaser.yaml: create GitHub Releases as drafts",
+      "url": "https://github.com/tailscale/tailcat/commit/55756e7b597704efcea54082fe213d3fe0357d94",
+      "date": "2026-09-04T18:18:20Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "fea3a95",
-      "message": "add a Nix flake, document installation in the README",
-      "url": "https://github.com/tailscale/tailcat/commit/fea3a957cbc914de7b6c5592986458d743c800e1",
-      "date": "2026-08-26T18:56:01Z",
+      "sha": "0c31395",
+      "message": "tailcat: keep the tests' netchecks off the real network",
+      "url": "https://github.com/tailscale/tailcat/commit/0c31395bfd1ae0c0ef2917c0ec20432466087417",
+      "date": "2026-09-04T16:51:14Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     },
     {
-      "sha": "995d33b",
-      "message": "README.md: add an example of bringing your own DERP relay",
-      "url": "https://github.com/tailscale/tailcat/commit/995d33b4e1f921263fbf48c41620c7fccc11bddb",
-      "date": "2026-08-26T18:34:21Z",
-      "author": "bradfitz",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
-    },
-    {
-      "sha": "273264a",
-      "message": "README.md: add a History section",
-      "url": "https://github.com/tailscale/tailcat/commit/273264a82464c0e148ffaf484a65d82ccf88a5c7",
-      "date": "2026-08-26T17:45:00Z",
-      "author": "bradfitz",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
-    },
-    {
-      "sha": "81c58d2",
-      "message": "tailcat: make the zero value Client usable too",
-      "url": "https://github.com/tailscale/tailcat/commit/81c58d2f28fef4626a25cda0afbd75c9b05c6155",
-      "date": "2026-08-26T17:24:37Z",
+      "sha": "8123eb9",
+      "message": "tailcat, cmd/tailcat: stop netcheck stalling 3s per process, speed up tests",
+      "url": "https://github.com/tailscale/tailcat/commit/8123eb9a4daf92d570c65de946d9460b9ef4a5aa",
+      "date": "2026-09-04T15:02:35Z",
       "author": "bradfitz",
       "avatarUrl": "https://avatars.githubusercontent.com/u/2621?v=4"
     }
@@ -2851,6 +2916,12 @@
       "url": "https://github.com/tailscale/tailcat/tree/main/internal"
     },
     {
+      "name": "tool",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/tailscale/tailcat/tree/main/tool"
+    },
+    {
       "name": "web",
       "type": "dir",
       "size": 0,
@@ -2865,20 +2936,74 @@
     {
       "name": ".gitattributes",
       "type": "file",
-      "size": 39,
+      "size": 272,
       "url": "https://github.com/tailscale/tailcat/blob/main/.gitattributes"
     },
     {
       "name": ".gitignore",
       "type": "file",
-      "size": 83,
+      "size": 140,
       "url": "https://github.com/tailscale/tailcat/blob/main/.gitignore"
+    },
+    {
+      "name": ".goreleaser.yaml",
+      "type": "file",
+      "size": 3450,
+      "url": "https://github.com/tailscale/tailcat/blob/main/.goreleaser.yaml"
+    },
+    {
+      "name": "build-tags.md",
+      "type": "file",
+      "size": 2704,
+      "url": "https://github.com/tailscale/tailcat/blob/main/build-tags.md"
+    },
+    {
+      "name": "build-tags.txt",
+      "type": "file",
+      "size": 1395,
+      "url": "https://github.com/tailscale/tailcat/blob/main/build-tags.txt"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "size": 8104,
+      "url": "https://github.com/tailscale/tailcat/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "connblob_deprecated_test.go",
+      "type": "file",
+      "size": 567,
+      "url": "https://github.com/tailscale/tailcat/blob/main/connblob_deprecated_test.go"
+    },
+    {
+      "name": "connblob_deprecated.go",
+      "type": "file",
+      "size": 916,
+      "url": "https://github.com/tailscale/tailcat/blob/main/connblob_deprecated.go"
+    },
+    {
+      "name": "disco_test.go",
+      "type": "file",
+      "size": 5246,
+      "url": "https://github.com/tailscale/tailcat/blob/main/disco_test.go"
     },
     {
       "name": "disco.go",
       "type": "file",
-      "size": 2227,
+      "size": 2306,
       "url": "https://github.com/tailscale/tailcat/blob/main/disco.go"
+    },
+    {
+      "name": "Dockerfile.goreleaser",
+      "type": "file",
+      "size": 1169,
+      "url": "https://github.com/tailscale/tailcat/blob/main/Dockerfile.goreleaser"
+    },
+    {
+      "name": "export_sftp_test.go",
+      "type": "file",
+      "size": 559,
+      "url": "https://github.com/tailscale/tailcat/blob/main/export_sftp_test.go"
     },
     {
       "name": "export_test.go",
@@ -2895,19 +3020,25 @@
     {
       "name": "flake.nix",
       "type": "file",
-      "size": 1035,
+      "size": 1918,
       "url": "https://github.com/tailscale/tailcat/blob/main/flake.nix"
+    },
+    {
+      "name": "flakehashes.json",
+      "type": "file",
+      "size": 158,
+      "url": "https://github.com/tailscale/tailcat/blob/main/flakehashes.json"
     },
     {
       "name": "go.mod",
       "type": "file",
-      "size": 5801,
+      "size": 5854,
       "url": "https://github.com/tailscale/tailcat/blob/main/go.mod"
     },
     {
       "name": "go.sum",
       "type": "file",
-      "size": 30114,
+      "size": 30761,
       "url": "https://github.com/tailscale/tailcat/blob/main/go.sum"
     },
     {
@@ -2917,139 +3048,166 @@
       "url": "https://github.com/tailscale/tailcat/blob/main/LICENSE"
     },
     {
+      "name": "Makefile",
+      "type": "file",
+      "size": 108,
+      "url": "https://github.com/tailscale/tailcat/blob/main/Makefile"
+    },
+    {
       "name": "pickregion_js.go",
       "type": "file",
-      "size": 587,
+      "size": 604,
       "url": "https://github.com/tailscale/tailcat/blob/main/pickregion_js.go"
     },
     {
       "name": "pickregion.go",
       "type": "file",
-      "size": 1326,
+      "size": 1841,
       "url": "https://github.com/tailscale/tailcat/blob/main/pickregion.go"
     },
     {
       "name": "readme.go",
       "type": "file",
-      "size": 358,
+      "size": 362,
       "url": "https://github.com/tailscale/tailcat/blob/main/readme.go"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 18044,
+      "size": 30448,
       "url": "https://github.com/tailscale/tailcat/blob/main/README.md"
+    },
+    {
+      "name": "RELEASING.md",
+      "type": "file",
+      "size": 2537,
+      "url": "https://github.com/tailscale/tailcat/blob/main/RELEASING.md"
+    },
+    {
+      "name": "SECURITY.md",
+      "type": "file",
+      "size": 3124,
+      "url": "https://github.com/tailscale/tailcat/blob/main/SECURITY.md"
+    },
+    {
+      "name": "tag.sh",
+      "type": "file",
+      "size": 1416,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tag.sh"
+    },
+    {
+      "name": "tailcat_exec.go",
+      "type": "file",
+      "size": 3093,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_exec.go"
+    },
+    {
+      "name": "tailcat_files.go",
+      "type": "file",
+      "size": 2882,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_files.go"
+    },
+    {
+      "name": "tailcat_sftp_test.go",
+      "type": "file",
+      "size": 10985,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_sftp_test.go"
+    },
+    {
+      "name": "tailcat_sftp.go",
+      "type": "file",
+      "size": 11089,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_sftp.go"
+    },
+    {
+      "name": "tailcat_ssh_keys_test.go",
+      "type": "file",
+      "size": 2183,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_keys_test.go"
+    },
+    {
+      "name": "tailcat_ssh_keys.go",
+      "type": "file",
+      "size": 1983,
+      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_keys.go"
     },
     {
       "name": "tailcat_ssh_stub.go",
       "type": "file",
-      "size": 390,
+      "size": 625,
       "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_stub.go"
-    },
-    {
-      "name": "tailcat_ssh_test.go",
-      "type": "file",
-      "size": 6439,
-      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh_test.go"
-    },
-    {
-      "name": "tailcat_ssh.go",
-      "type": "file",
-      "size": 11067,
-      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_ssh.go"
-    },
-    {
-      "name": "tailcat_test.go",
-      "type": "file",
-      "size": 9616,
-      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat_test.go"
-    },
-    {
-      "name": "tailcat.go",
-      "type": "file",
-      "size": 57178,
-      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat.go"
-    },
-    {
-      "name": "tailcat.png",
-      "type": "file",
-      "size": 3140,
-      "url": "https://github.com/tailscale/tailcat/blob/main/tailcat.png"
-    },
-    {
-      "name": "wire_test.go",
-      "type": "file",
-      "size": 3976,
-      "url": "https://github.com/tailscale/tailcat/blob/main/wire_test.go"
-    },
-    {
-      "name": "wire.go",
-      "type": "file",
-      "size": 4034,
-      "url": "https://github.com/tailscale/tailcat/blob/main/wire.go"
     }
   ],
   "recentPulls": [
     {
-      "number": 15,
-      "title": "cmd/tailcat: use a short deterministic host for ssh's ControlPath",
-      "url": "https://github.com/tailscale/tailcat/pull/15",
-      "state": "open",
-      "updatedAt": "2026-08-28T12:11:11Z",
-      "author": "korjavin",
-      "draft": false
-    },
-    {
-      "number": 9,
-      "title": "tailcat: make Server.Close and Client.Close idempotent",
-      "url": "https://github.com/tailscale/tailcat/pull/9",
-      "state": "closed",
-      "updatedAt": "2026-08-28T01:22:55Z",
-      "author": "awdemos",
-      "draft": false
-    },
-    {
-      "number": 10,
-      "title": "tailcat: avoid repeated process-wide netns.SetEnabled side effect",
-      "url": "https://github.com/tailscale/tailcat/pull/10",
-      "state": "closed",
-      "updatedAt": "2026-08-28T01:22:46Z",
-      "author": "awdemos",
-      "draft": false
-    },
-    {
-      "number": 11,
-      "title": "tailcat: clean up partially-initialized backends on startup errors",
-      "url": "https://github.com/tailscale/tailcat/pull/11",
-      "state": "closed",
-      "updatedAt": "2026-08-28T01:22:35Z",
-      "author": "awdemos",
-      "draft": false
-    },
-    {
-      "number": 8,
-      "title": "tailcat_ssh: avoid PTY session hang on slow/interactive shells",
-      "url": "https://github.com/tailscale/tailcat/pull/8",
-      "state": "open",
-      "updatedAt": "2026-08-28T13:18:42Z",
-      "author": "awdemos",
-      "draft": false
-    },
-    {
-      "number": 6,
-      "title": "libtailcat, tailcat: add C bindings for embedding tailcat",
-      "url": "https://github.com/tailscale/tailcat/pull/6",
-      "state": "open",
-      "updatedAt": "2026-08-24T14:02:58Z",
-      "author": "bradfitz",
-      "draft": true
-    },
-    {
-      "number": 3,
-      "title": "add start of web mode",
-      "url": "https://github.com/tailscale/tailcat/pull/3",
+      "number": 106,
+      "title": "cmd/tailcat: add a browse command and a forward --open-browser flag",
+      "url": "https://github.com/tailscale/tailcat/pull/106",
       "state": "merged",
-      "updatedAt": "2026-08-20T19:15:37Z",
+      "updatedAt": "2026-09-09T15:44:27Z",
+      "author": "bradfitz",
+      "draft": false
+    },
+    {
+      "number": 104,
+      "title": "cmd/tailcat: serve Unix-domain sockets",
+      "url": "https://github.com/tailscale/tailcat/pull/104",
+      "state": "open",
+      "updatedAt": "2026-09-06T23:17:48Z",
+      "author": "atirna",
+      "draft": false
+    },
+    {
+      "number": 103,
+      "title": "cmd/tailcat, tailcat: add an exec service and an SSH forced command",
+      "url": "https://github.com/tailscale/tailcat/pull/103",
+      "state": "merged",
+      "updatedAt": "2026-09-05T22:04:10Z",
+      "author": "raggi",
+      "draft": false
+    },
+    {
+      "number": 101,
+      "title": "cmd/tailcat, README.md: warn when a DNS-named SSH destination is wide open",
+      "url": "https://github.com/tailscale/tailcat/pull/101",
+      "state": "merged",
+      "updatedAt": "2026-09-05T21:08:36Z",
+      "author": "bradfitz",
+      "draft": false
+    },
+    {
+      "number": 102,
+      "title": "cmd/tailcat: warn about public DNS in root help and at no-auth-ssh startup",
+      "url": "https://github.com/tailscale/tailcat/pull/102",
+      "state": "merged",
+      "updatedAt": "2026-09-05T15:41:01Z",
+      "author": "bradfitz",
+      "draft": false
+    },
+    {
+      "number": 92,
+      "title": "cmd/tailcat: fix argument parsing under Termux on Android",
+      "url": "https://github.com/tailscale/tailcat/pull/92",
+      "state": "merged",
+      "updatedAt": "2026-09-05T06:00:37Z",
+      "author": "shaunlee",
+      "draft": false
+    },
+    {
+      "number": 99,
+      "title": "cmd/tailcat: add --log-connections server access log",
+      "url": "https://github.com/tailscale/tailcat/pull/99",
+      "state": "open",
+      "updatedAt": "2026-09-04T20:19:10Z",
+      "author": "sksingh2005",
+      "draft": false
+    },
+    {
+      "number": 98,
+      "title": "speed up tests",
+      "url": "https://github.com/tailscale/tailcat/pull/98",
+      "state": "merged",
+      "updatedAt": "2026-09-04T17:32:10Z",
       "author": "bradfitz",
       "draft": false
     }
@@ -3057,6 +3215,18 @@
   "manifestDependencies": {
     "manifest": "go.mod",
     "dependencies": [
+      {
+        "name": "github.com/chromedp/cdproto",
+        "version": "v0.0.0-20260714215040-dc233986426f"
+      },
+      {
+        "name": "github.com/chromedp/chromedp",
+        "version": "v0.16.0"
+      },
+      {
+        "name": "github.com/creack/pty",
+        "version": "v1.1.24"
+      },
       {
         "name": "github.com/fxamacker/cbor/v2",
         "version": "v2.9.0"
@@ -3066,12 +3236,52 @@
         "version": "v0.7.0"
       },
       {
+        "name": "github.com/klauspost/compress",
+        "version": "v1.19.1"
+      },
+      {
+        "name": "github.com/peterbourgon/ff/v4",
+        "version": "v4.0.0-beta.1"
+      },
+      {
+        "name": "github.com/pkg/sftp",
+        "version": "v1.13.6"
+      },
+      {
+        "name": "github.com/tailscale/gliderssh",
+        "version": "v0.3.4-0.20260716005906-1a0f895faf28"
+      },
+      {
+        "name": "github.com/tailscale/wireguard-go",
+        "version": "v0.0.0-20260904023712-e855235c55a2"
+      },
+      {
+        "name": "github.com/toqueteos/webbrowser",
+        "version": "v1.2.1"
+      },
+      {
+        "name": "github.com/u-root/u-root",
+        "version": "v0.14.0"
+      },
+      {
         "name": "go4.org/mem",
         "version": "v0.0.0-20240501181205-ae6ca9944745"
       },
       {
+        "name": "go4.org/netipx",
+        "version": "v0.0.0-20260823151212-3075585bcbeb"
+      },
+      {
+        "name": "golang.org/x/crypto",
+        "version": "v0.55.0"
+      },
+      {
         "name": "golang.org/x/exp",
         "version": "v0.0.0-20260410095643-746e56fc9e2f"
+      },
+      {
+        "name": "golang.org/x/sys",
+        "version": "v0.47.0"
       },
       {
         "name": "gvisor.dev/gvisor",
@@ -3079,27 +3289,34 @@
       },
       {
         "name": "tailscale.com",
-        "version": "v1.101.0-pre.0.20260720143344-246c82a658b3"
+        "version": "v1.103.0-pre.0.20260904030409-31d8badb3bfb"
       }
     ],
-    "total": 6
+    "total": 19
   },
-  "branchCount": 10,
-  "tagCount": 1,
+  "branchCount": 41,
+  "tagCount": 6,
   "workflowRuns": [
     {
       "name": "Test",
       "status": "success",
-      "url": "https://github.com/tailscale/tailcat/actions/runs/33170064779",
-      "branch": "fix/ssh-controlpath-too-long-12",
-      "updatedAt": "2026-08-28T13:57:56Z"
+      "url": "https://github.com/tailscale/tailcat/actions/runs/34372227134",
+      "branch": "main",
+      "updatedAt": "2026-09-09T15:49:38Z"
     },
     {
       "name": "webdemo-pages",
       "status": "success",
-      "url": "https://github.com/tailscale/tailcat/actions/runs/33030911075",
+      "url": "https://github.com/tailscale/tailcat/actions/runs/34372227069",
       "branch": "main",
-      "updatedAt": "2026-08-27T01:42:50Z"
+      "updatedAt": "2026-09-09T15:46:48Z"
+    },
+    {
+      "name": "Nix",
+      "status": "success",
+      "url": "https://github.com/tailscale/tailcat/actions/runs/34372226913",
+      "branch": "main",
+      "updatedAt": "2026-09-09T15:48:13Z"
     }
   ],
   "community": {
@@ -3110,14 +3327,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 8,
-  "openPRs": 3,
-  "releaseCount": 0,
+  "openIssuesOnly": 10,
+  "openPRs": 6,
+  "releaseCount": 6,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 3,
-  "mergedPRs": 1,
+  "closedIssues": 32,
+  "mergedPRs": 50,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": true,
@@ -3126,9 +3343,12 @@
     "name": "Other",
     "url": "https://github.com/tailscale/.github/blob/main/CODE_OF_CONDUCT.md"
   },
-  "latestRelease": null,
+  "latestRelease": {
+    "tag": "v0.6.0",
+    "publishedAt": "2026-09-04T18:46:12Z"
+  },
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-08-28T18:44:03.151Z",
+  "factsUpdatedAt": "2026-09-09T23:46:11.828Z",
   "aiSummary": {
     "oneLiner": "A netcat-like tool built on Tailscale's data plane for encrypted peer-to-peer connections without the control plane.",
     "whatItDoes": "Tailcat leverages the core networking technologies of Tailscale to provide a secure, netcat-style communication tool. It establishes point-to-point, WireGuard-encrypted tunnels directly between two machines without relying on the central Tailscale control plane. The connection process utilizes a connection token exchanged out-of-band, initial bootstrapping via a DERP relay server, and subsequent NAT traversal to achieve a direct peer-to-peer UDP connection. This architecture ensures all traffic remains completely end-to-end encrypted while bypassing standard network barriers. It can be utilized either as a standalone command-line interface or integrated as a Go library.",
