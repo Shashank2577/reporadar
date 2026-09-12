@@ -155,6 +155,11 @@
       "date": "2026-09-10",
       "stars": 11459,
       "forks": 1450
+    },
+    {
+      "date": "2026-09-12",
+      "stars": 11738,
+      "forks": 1484
     }
   ],
   "trendingHistory": [
@@ -268,30 +273,30 @@
   "license": "MIT",
   "language": "Swift",
   "topics": [],
-  "stars": 11459,
-  "forks": 1450,
-  "watchers": 67,
-  "openIssues": 25,
+  "stars": 11738,
+  "forks": 1484,
+  "watchers": 66,
+  "openIssues": 27,
   "createdAt": "2026-02-26T11:29:08Z",
   "pushedAt": "2026-09-10T08:13:01Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-10T16:52:06.082Z",
+  "updatedAt": "2026-09-12T23:36:30.410Z",
   "languages": {
-    "Swift": 1190659,
+    "Swift": 1192824,
     "Objective-C": 345082,
     "Shell": 235715,
     "Python": 234181,
     "Makefile": 26187
   },
-  "readmeExcerpt": "<div align=\"right\"><strong><a href=\"./docs/README_ko.md\">🇰🇷한국어</a></strong> | <strong><a href=\"./docs/README_ja.md\">🇯🇵日本語</a></strong> | <strong><a href=\"./docs/README_zh.md\">🇨🇳中文</a></strong> | <strong>🇬🇧English</strong></div>\n\n# vphone-cli\n\nBoot a virtual iPhone via Apple's Virtualization.framework using PCC research VM infrastructure.\n\n\n\n## Prerequisites\n\n**Host:**\n\n- Apple Silicon\n- macOS 15+ (Sequoia)\n- Xcode + iOS SDK (cross-compiles the guest daemon)\n- [SIP/AMFI relaxation to allow private PV=3 entitlements with unsigned-binary](#sipamfi-relaxation)\n\n**Dependencies:**\n\n```bash\nbrew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd\n```\n\n## Install\n\n```bash\nbrew install zqxwce/tap/vphone-cli\n```\n\n## Build\n\n```bash\ngit clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      # install deps, build toolchain submodules, create the Python venv\n./scripts/build.sh            # build + sign vphone-cli, bundle the .app, cross-compile vphoned\n\ncd .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help\n```\n\n## Quick Start\n\nOne command creates a VM end-to-end (download → patch → DFU restore → CFW install → first boot):\n\n```bash\nvphone-cli vm create myphone -V jb        # -V / --variant\n\nvphone-cli vm launch myphone\n```\n\n## Commands\n\n`vphone-cli vm create` runs the whole pipeline; the individual steps below let you drive it manually or re-run one stage.\n\n### Manage\n\n```bash\nvphone-cli vm list                         # list VMs (--json for scripting)\nvphone-cli vm info myphone                  # show one VM\nvphone-cli vm new myphone                   # create an empty bundle (cpu/mem/disk options)\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       # fast APFS clone, fresh device identity\nvphone-cli vm export myphone --out myphone.tzst   # zstd fast by default (--max = xz -9); --out may be a dir (auto-names <vm>.tzst/.txz); skips restore dir + staging files\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16\n```\n\n### Build a VM manually (what `vm create` automates)\n\n```bash\nvphone-cli vm new myphone                              # 1. empty bundle\nvphone-cli fw prepare myphone --iphone-version 26.1     # 2. download + merge IPSWs\nvphone-cli fw patch myphone --variant jb                # 3. patch the boot chain\n\nvphone-cli vm launch myphone --dfu &                    # 4. boot into DFU (background)\nvphone-cli restore myphone --get-shsh                   #    fetch SHSH\nvphone-cli restore myphone                              #    DFU restore\nvphone-cli vm stop myphone                              #    stop the DFU boot\n\nvphone-cli cfw install myphone --variant jb             # 5. install CFW (host-mount; asks for sudo)\nvphone-cli vm launch myphone                            # 6. first boot\n```\n\nUpdate to a newer iOS by pointing `fw prepare` at an IPSW: `--iphone-source /path/to.ipsw --cloudos-source /path/to.ipsw`.\n\n## Firmware Variants\n\nFive patch variants with increasing security bypass — pass one to `--variant`:\n\n| Variant      | Boot Chain  | CFW       | Notes                                                              |\n| ------------ | ----------- | --------- | ----------------------------------------------------------------- |\n| `less`       | 4 patches   | 2 phases  | Patchless — keeps iOS mitigations enabled                         |\n| `regular`    | 42 patches  | 10 phases | AMFI/SSV/Img4/TXM bypass                                           |\n| `dev`        | 53 patches  | 12 phases | + TXM entitlement/debug bypass                                    |\n| `jb`         | 113 patches | 14 phases | + full jailbreak (Sileo, TrollStore auto-install on first boot)   |\n| `exp`        | 141 patches | 18 phases | JB superset + anti-VM-detection research patches                  |\n\nSee [`research/0_binary_patch_comparison.md`](./research/0_binary_patch_comparison.md) for the per-component breakdown.\n\n## Running & Connecting\n\n- **SSH (jailbreak):** `ssh -p 22222 mobile@<vm-ip>` (password `alpine`)\n- **SSH (regular/dev):** `ssh -p 22222 root@<vm-ip>`\n- **VNC:** `vnc://<vm-ip>:5901`\n\n## Locations\n\nEverything vphone-cli creates lives under `~/.vphone/` — kept outside the repo and the `.app` so the signed bundle stays portable. Redirect the whole tree with `$VPHONE_ROOT`:\n\n| Path              | Contents                                                                                     |\n| ----------------- | -------------------------------------------------------------------------------------------- |\n| `~/.vphone/`      | The per-user data root — override the entire location with `$VPHONE_ROOT`.                   |\n| `~/.vphone/VMs/`  | VM bundles — one directory per VM. This is the library; override with `$VPHONE_LIBRARY_ROOT`. |\n| `~/.vphone/ipsws/`| Downloaded iPhone + cloudOS IPSWs, cached and reused across VMs.                              |\n| `~/.vphone/tools/`| Cached APFS seal-volume artifacts (`apfs_sealvolume_<version>`) fetched during `fw prepare`.  |\n| `~/.vphone/debs/` | Cached `.deb` packages the `jb`/`exp` CFW install lays into the guest (Sileo, apt, …).        |\n| `~/.vphone/venv/` | Auto-provisioned Python environment (see [Python runtime](#python-runtime); override with `$VPHONE_VENV_DIR`). |\n\nPrecedence: the per-item overrides (`$VPHONE_LIBRARY_ROOT`, `$VPHONE_VENV_DIR`) win over `$VPHONE_ROOT`, which wins over the `~/.vphone` default. The `ipsws/`, `tools/`, and `debs/` caches always sit directly under whichever root is active.\n\n## SIP/AMFI Relaxation\n\n**Option A — fully disable SIP, then disable AMFI via boot-arg (most permissive).** \n\nIn Recovery (long-press power → Terminal):\n\n```bash\ncsrutil disable\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and set the AMFI boot-arg (needs SIP fully off to take effect):\n\n```bash\nsudo nvram boot-args=\"amfi_get_out_of_my_way=1 -v\"   # reboot after\n```\n\n**Option B — keep SIP on (debug-only relaxed), then allowlist the binary with amfidont** (leaves AMFI enabled system-wide). \n\nIn Recovery:\n\n```bash\ncsrutil enable --without debug\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and:\n\n```bash\nvphone-amfidont         # .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds\n```\n\n## Tested Environments\n\n| Host            | iPhone                | CloudOS         |\n| --------------- | --------------------- | --------------- |\n| Mac16,11 27.0b2 | `17,3_18.6.2_22G100`  | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0_23A341`    | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0.1_23A355`  | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.1_23B85`     | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.3-23D128`   |\n| Mac16,12 26.3   | `17,3_26.3.1_23D8133` | `26.3-23D128`   |\n| Mac16,11 26.2   | `17,3_26.4_23E246`    | `26.4-23E5207q` |\n| Mac16,11 26.2   | `17,3_26.5_23F77`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_26.5.2_23F84`   | `26.4-23E5207q` |\n| Mac16,6 26.4.1  | `17,3_26.6_23G71`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_26.6.1_23G83`   | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5380h`  | `26.4-23E5207q` |\n| Mac16,6 26.4.1  | `17,3_27.0_24A5390f`  | `26.4-23E5207q` |\n| Mac16,6 26.6.1  | `17,3_27.0_24A5408d`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5418b`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5424a`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5430a`  | `26.4-23E5207q` |\n\n## FAQ\n\n**`zsh: killed ./vphone-cli`** — AMFI/debug restrictions aren't bypassed; see [Prerequisites](#prerequisites) (`amfi_get_out_of_my_way=1` or `amfidont`).\n\n**`Virtualization is not available on this hardware`** — your Mac is itself a VM; PV=3 guest boot can't nest. Use a non-nested macOS 15+ host.\n\n**Stuck on \"Press home to continue\"** — connect via VNC and right-click (two-finger click) to simulate the home button.\n\n**System apps won't install** — during iOS setup, don't pick Japan or the EU as your region (extra regulatory checks the VM can't satisfy); pick e.g. United States.\n\n**App crashes on launch with `EXC_GUARD` / `GUARD_TYPE_MACH_PORT`** — re-patch with `vphone-cli fw patch <name> --variant <v> --force-exc-guard`, then re-restore/install ([#291](https://github.com/Lakr233/vphone-cli/issues/291)). Always on for iOS 18 bases.\n\n**Install a `.ipa`/`.tipa`** — use the running VM's Install menu (drag-drop or file picker).\n\n**`cfw install` hangs re-signing a system binary (e.g. `Campo`), memory climbing unbounded** — known bug in `ldid-procursus` up to `2.1.5-procursus7` (the current Homebrew `stable`): `bytes(uint64_t)` calls `__builtin_clzll(0)` with no zero-guard, which is undefined behavior, and on this build resolves to a `0`-length that underflows an unsigned loop counter — `ldid` spins writing one byte at a time into a growing buffer instead of terminating. Triggered by *any* entitlements plist containing an integer value of exactly `0` (some real Apple system binaries have these). Fixed upstream but not yet in a tagged release; rebuild from source: `brew install --HEAD ldid-procursus && brew link --overwrite ldid-procursus`. Kill the hung `ldid` process first (`sudo kill -9 <pid>`) if you already hit it.\n\n## Automation\n\n`vphone-cli` exposes a host control socket (`<bundle>/vphone.sock`) for programmatic control — screenshots, touch, swipes, hardware keys, clipboard — each action returning an inline screenshot for AI-driven E2E testing. See [vphone-mcp](https://github.com/pluginslab/vphone-mcp) for an MCP server wrapping it.\n\n## Acknowledgements\n\n- [wh1te4ever/super-tart-vphone-writeup](https://github.com/wh1te4ever/super-tart-vphone-writeup)\n",
-  "commitCount": 371,
+  "readmeExcerpt": "<div align=\"right\"><strong><a href=\"./docs/README_ko.md\">🇰🇷한국어</a></strong> | <strong><a href=\"./docs/README_ja.md\">🇯🇵日本語</a></strong> | <strong><a href=\"./docs/README_zh.md\">🇨🇳中文</a></strong> | <strong>🇬🇧English</strong></div>\n\n# vphone-cli\n\nBoot a virtual iPhone via Apple's Virtualization.framework using PCC research VM infrastructure.\n\n\n\n## Prerequisites\n\n**Host:**\n\n- Apple Silicon\n- macOS 15+ (Sequoia)\n- Xcode + iOS SDK (cross-compiles the guest daemon)\n- [SIP/AMFI relaxation to allow private PV=3 entitlements with unsigned-binary](#sipamfi-relaxation)\n\n**Dependencies:**\n\n```bash\nbrew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd\n```\n\n## Install\n\n```bash\nbrew install zqxwce/tap/vphone-cli\n```\n\n## Build\n\n```bash\ngit clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      # install deps, build toolchain submodules, create the Python venv\n./scripts/build.sh            # build + sign vphone-cli, bundle the .app, cross-compile vphoned\n\ncd .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help\n```\n\n## Quick Start\n\nOne command creates a VM end-to-end (download → patch → DFU restore → CFW install → first boot):\n\n```bash\nvphone-cli vm create myphone -V jb        # -V / --variant\n\nvphone-cli vm launch myphone\n```\n\n## Commands\n\n`vphone-cli vm create` runs the whole pipeline; the individual steps below let you drive it manually or re-run one stage.\n\n### Manage\n\n```bash\nvphone-cli vm list                         # list VMs (--json for scripting)\nvphone-cli vm info myphone                  # show one VM\nvphone-cli vm new myphone                   # create an empty bundle (cpu/mem/disk options)\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       # fast APFS clone, fresh device identity\nvphone-cli vm export myphone --out myphone.tzst   # zstd fast by default (--max = xz -9); --out may be a dir (auto-names <vm>.tzst/.txz); skips restore dir + staging files\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16\n```\n\n### Build a VM manually (what `vm create` automates)\n\n```bash\nvphone-cli vm new myphone                              # 1. empty bundle\nvphone-cli fw prepare myphone --iphone-version 26.1     # 2. download + merge IPSWs\nvphone-cli fw patch myphone --variant jb                # 3. patch the boot chain\n\nvphone-cli vm launch myphone --dfu &                    # 4. boot into DFU (background)\nvphone-cli restore myphone --get-shsh                   #    fetch SHSH\nvphone-cli restore myphone                              #    DFU restore\nvphone-cli vm stop myphone                              #    stop the DFU boot\n\nvphone-cli cfw install myphone --variant jb             # 5. install CFW (host-mount; asks for sudo)\nvphone-cli vm launch myphone                            # 6. first boot\n```\n\nUpdate to a newer iOS by pointing `fw prepare` at an IPSW: `--iphone-source /path/to.ipsw --cloudos-source /path/to.ipsw`.\n\n## Firmware Variants\n\nFive patch variants with increasing security bypass — pass one to `--variant`:\n\n| Variant      | Boot Chain  | CFW       | Notes                                                              |\n| ------------ | ----------- | --------- | ----------------------------------------------------------------- |\n| `less`       | 4 patches   | 2 phases  | Patchless — keeps iOS mitigations enabled                         |\n| `regular`    | 42 patches  | 10 phases | AMFI/SSV/Img4/TXM bypass                                           |\n| `dev`        | 53 patches  | 12 phases | + TXM entitlement/debug bypass                                    |\n| `jb`         | 113 patches | 14 phases | + full jailbreak (Sileo, TrollStore auto-install on first boot)   |\n| `exp`        | 141 patches | 18 phases | JB superset + anti-VM-detection research patches                  |\n\nSee [`research/0_binary_patch_comparison.md`](./research/0_binary_patch_comparison.md) for the per-component breakdown.\n\n## Running & Connecting\n\n- **SSH (jailbreak):** `ssh -p 22222 mobile@<vm-ip>` (password `alpine`)\n- **SSH (regular/dev):** `ssh -p 22222 root@<vm-ip>`\n- **VNC:** `vnc://<vm-ip>:5901`\n\n## Locations\n\nEverything vphone-cli creates lives under `~/.vphone/` — kept outside the repo and the `.app` so the signed bundle stays portable. Redirect the whole tree with `$VPHONE_ROOT`:\n\n| Path              | Contents                                                                                     |\n| ----------------- | -------------------------------------------------------------------------------------------- |\n| `~/.vphone/`      | The per-user data root — override the entire location with `$VPHONE_ROOT`.                   |\n| `~/.vphone/VMs/`  | VM bundles — one directory per VM. This is the library; override with `$VPHONE_LIBRARY_ROOT`. |\n| `~/.vphone/ipsws/`| Downloaded iPhone + cloudOS IPSWs, cached and reused across VMs.                              |\n| `~/.vphone/tools/`| Cached APFS seal-volume artifacts (`apfs_sealvolume_<version>`) fetched during `fw prepare`.  |\n| `~/.vphone/debs/` | Cached `.deb` packages the `jb`/`exp` CFW install lays into the guest (Sileo, apt, …).        |\n| `~/.vphone/venv/` | Auto-provisioned Python environment (see [Python runtime](#python-runtime); override with `$VPHONE_VENV_DIR`). |\n\nPrecedence: the per-item overrides (`$VPHONE_LIBRARY_ROOT`, `$VPHONE_VENV_DIR`) win over `$VPHONE_ROOT`, which wins over the `~/.vphone` default. The `ipsws/`, `tools/`, and `debs/` caches always sit directly under whichever root is active.\n\n## SIP/AMFI Relaxation\n\n**Option A — fully disable SIP, then disable AMFI via boot-arg (most permissive).** \n\nIn Recovery (long-press power → Terminal):\n\n```bash\ncsrutil disable\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and set the AMFI boot-arg (needs SIP fully off to take effect):\n\n```bash\nsudo nvram boot-args=\"amfi_get_out_of_my_way=1 -v\"   # reboot after\n```\n\n**Option B — keep SIP on (debug-only relaxed), then allowlist the binary with amfidont** (leaves AMFI enabled system-wide). \n\nIn Recovery:\n\n```bash\ncsrutil enable --without debug\ncsrutil allow-research-guests enable\n```\n\nThen reboot into macOS and:\n\n```bash\nvphone-amfidont         # .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds\n```\n\n## Tested Environments\n\n| Host            | iPhone                | CloudOS         |\n| --------------- | --------------------- | --------------- |\n| Mac16,11 27.0b2 | `17,3_18.6.2_22G100`  | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0_23A341`    | `26.1-23B85`    |\n| Mac16,8 26.5.1  | `17,3_26.0.1_23A355`  | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.1_23B85`     | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.1-23B85`    |\n| Mac16,12 26.3   | `17,3_26.3_23D127`    | `26.3-23D128`   |\n| Mac16,12 26.3   | `17,3_26.3.1_23D8133` | `26.3-23D128`   |\n| Mac16,11 26.2   | `17,3_26.4_23E246`    | `26.4-23E5207q` |\n| Mac16,11 26.2   | `17,3_26.5_23F77`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_26.5.2_23F84`   | `26.4-23E5207q` |\n| Mac16,6 26.4.1  | `17,3_26.6_23G71`     | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_26.6.1_23G83`   | `26.4-23E5207q` |\n| Mac16,6 26.6.1  | `17,3_26.6.2_23G90`   | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5380h`  | `26.4-23E5207q` |\n| Mac16,6 26.4.1  | `17,3_27.0_24A5390f`  | `26.4-23E5207q` |\n| Mac16,6 26.6.1  | `17,3_27.0_24A5408d`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5418b`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5424a`  | `26.4-23E5207q` |\n| Mac16,11 27.0b2 | `17,3_27.0_24A5430a`  | `26.4-23E5207q` |\n| Mac16,6 26.6.1  | `17,3_27.0_24A435`    | `26.4-23E5207q` |\n\n## FAQ\n\n**`zsh: killed ./vphone-cli`** — AMFI/debug restrictions aren't bypassed; see [Prerequisites](#prerequisites) (`amfi_get_out_of_my_way=1` or `amfidont`).\n\n**`Virtualization is not available on this hardware`** — your Mac is itself a VM; PV=3 guest boot can't nest. Use a non-nested macOS 15+ host.\n\n**Stuck on \"Press home to continue\"** — connect via VNC and right-click (two-finger click) to simulate the home button.\n\n**System apps won't install** — during iOS setup, don't pick Japan or the EU as your region (extra regulatory checks the VM can't satisfy); pick e.g. United States.\n\n**App crashes on launch with `EXC_GUARD` / `GUARD_TYPE_MACH_PORT`** — re-patch with `vphone-cli fw patch <name> --variant <v> --force-exc-guard`, then re-restore/install ([#291](https://github.com/Lakr233/vphone-cli/issues/291)). Always on for iOS 18 bases.\n\n**Install a `.ipa`/`.tipa`** — use the running VM's Install menu (drag-drop or file picker).\n\n**`cfw install` hangs re-signing a system binary (e.g. `Campo`), memory climbing unbounded** — known bug in `ldid-procursus` up to `2.1.5-procursus7` (the current Homebrew `stable`): `bytes(uint64_t)` calls `__builtin_clzll(0)` with no zero-guard, which is undefined behavior, and on this build resolves to a `0`-length that underflows an unsigned loop counter — `ldid` spins writing one byte at a time into a growing buffer instead of terminating. Triggered by *any* entitlements plist containing an integer value of exactly `0` (some real Apple system binaries have these). Fixed upstream but not yet in a tagged release; rebuild from source: `brew install --HEAD ldid-procursus && brew link --overwrite ldid-procursus`. Kill the hung `ldid` process first (`sudo kill -9 <pid>`) if you already hit it.\n\n## Automation\n\n`vphone-cli` exposes a host control socket (`<bundle>/vphone.sock`) for programmatic control — screenshots, touch, swipes, hardware keys, clipboard — each action returning an inline screenshot for AI-driven E2E testing. See [vphone-mcp](https://github.com/pluginslab/vphone-mcp) for an MCP server wrapping it.\n\n## Acknowledgements\n\n- [wh1te4ever/super-tart-vphone-writeup](https://github.com/wh1te4ever/super-tart-vphone-writeup)\n",
+  "commitCount": 373,
   "contributors": [
     {
       "login": "zqxwce",
       "url": "https://github.com/zqxwce",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4",
-      "contributions": 124
+      "contributions": 125
     },
     {
       "login": "Lakr233",
@@ -350,14 +355,24 @@
   ],
   "releases": [
     {
+      "name": "v1.0.14",
+      "tag": "1.0.14",
+      "url": "https://github.com/Lakr233/vphone-cli/releases/tag/1.0.14",
+      "publishedAt": "2026-09-10T08:13:01Z",
+      "prerelease": false,
+      "body": "## What's Changed\r\n* fix: validate imported VM manifest before moving into library by @morzelowski in https://github.com/Lakr233/vphone-cli/pull/453\r\n* catalog: Add iOS 26.6.2 + iOS 27.0 RC (cloudOS 26.4) pairings by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/459\r\n\r\n## New Contributors\r\n* @morzelowski made their first contribution in https://github.com/Lakr233/vphone-cli/pull/453\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.13...1.0.14",
+      "downloads": 560,
+      "reactions": 2
+    },
+    {
       "name": "v1.0.13",
       "tag": "1.0.13",
       "url": "https://github.com/Lakr233/vphone-cli/releases/tag/1.0.13",
       "publishedAt": "2026-08-31T22:34:36Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* catalog: Add iOS 27 beta 8 + cloudOS 26.4 firmware pairing by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/450\r\n* resources: Update resources reference (new rpcsercer_ios build)\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.12...1.0.13",
-      "downloads": 1827,
-      "reactions": 0
+      "downloads": 3465,
+      "reactions": 4
     },
     {
       "name": "v1.0.12",
@@ -366,7 +381,7 @@
       "publishedAt": "2026-08-29T00:45:34Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* resources: Point storage submodule to zqxwce fork by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/447\r\n* resources: Bump storage submodule to fork main (drop ramdisk_input.tar.zst) by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/448\r\n\r\nthis release is to address this https://github.com/Lakr233/vphone-cli/issues/446\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.11...1.0.12",
-      "downloads": 740,
+      "downloads": 747,
       "reactions": 0
     },
     {
@@ -376,7 +391,7 @@
       "publishedAt": "2026-08-25T09:19:33Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* catalog: Add iOS 27 beta 7 + cloudOS 26.4 firmware pairing by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/442\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.10...1.0.11",
-      "downloads": 734,
+      "downloads": 737,
       "reactions": 3
     },
     {
@@ -386,22 +401,12 @@
       "publishedAt": "2026-08-19T12:10:41Z",
       "prerelease": false,
       "body": "## What's Changed\r\n* catalog: Replace iOS 26.6.1 RC with release build 23G83 by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/437\r\n\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.9...1.0.10",
-      "downloads": 566,
-      "reactions": 0
-    },
-    {
-      "name": "v1.0.9",
-      "tag": "1.0.9",
-      "url": "https://github.com/Lakr233/vphone-cli/releases/tag/1.0.9",
-      "publishedAt": "2026-08-18T08:49:36Z",
-      "prerelease": false,
-      "body": "## What's Changed\r\n* catalog: Add iOS 27 beta 6 + cloudOS 26.4 firmware pairing by @zqxwce in https://github.com/Lakr233/vphone-cli/pull/434\r\n* Add VPHONE_ROOT env variable to override user data root by @RicBent in https://github.com/Lakr233/vphone-cli/pull/433\r\n\r\n## New Contributors\r\n* @RicBent made their first contribution in https://github.com/Lakr233/vphone-cli/pull/433\r\n\r\n**Full Changelog**: https://github.com/Lakr233/vphone-cli/compare/1.0.8...1.0.9",
-      "downloads": 158,
+      "downloads": 568,
       "reactions": 0
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div align=\"right\" dir=\"auto\"><strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_ko.md\">🇰🇷한국어</a></strong> | <strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_ja.md\">🇯🇵日本語</a></strong> | <strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_zh.md\">🇨🇳中文</a></strong> | <strong>🇬🇧English</strong></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">vphone-cli</h1></div>\n<p dir=\"auto\">Boot a virtual iPhone via Apple's Virtualization.framework using PCC research VM infrastructure.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/demo.jpeg\"><img src=\"https://raw.githubusercontent.com/Lakr233/vphone-cli/main/docs/demo.jpeg\" alt=\"poc\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Prerequisites</h2></div>\n<p dir=\"auto\"><strong>Host:</strong></p>\n<ul dir=\"auto\">\n<li>Apple Silicon</li>\n<li>macOS 15+ (Sequoia)</li>\n<li>Xcode + iOS SDK (cross-compiles the guest daemon)</li>\n<li><a href=\"#sipamfi-relaxation\">SIP/AMFI relaxation to allow private PV=3 entitlements with unsigned-binary</a></li>\n</ul>\n<p dir=\"auto\"><strong>Dependencies:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd\"><pre>brew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install zqxwce/tap/vphone-cli\"><pre>brew install zqxwce/tap/vphone-cli</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      # install deps, build toolchain submodules, create the Python venv\n./scripts/build.sh            # build + sign vphone-cli, bundle the .app, cross-compile vphoned\n\ncd .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help\"><pre>git clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      <span class=\"pl-c\"><span class=\"pl-c\">#</span> install deps, build toolchain submodules, create the Python venv</span>\n./scripts/build.sh            <span class=\"pl-c\"><span class=\"pl-c\">#</span> build + sign vphone-cli, bundle the .app, cross-compile vphoned</span>\n\n<span class=\"pl-c1\">cd</span> .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<p dir=\"auto\">One command creates a VM end-to-end (download → patch → DFU restore → CFW install → first boot):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm create myphone -V jb        # -V / --variant\n\nvphone-cli vm launch myphone\"><pre>vphone-cli vm create myphone -V jb        <span class=\"pl-c\"><span class=\"pl-c\">#</span> -V / --variant</span>\n\nvphone-cli vm launch myphone</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Commands</h2></div>\n<p dir=\"auto\"><code>vphone-cli vm create</code> runs the whole pipeline; the individual steps below let you drive it manually or re-run one stage.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Manage</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm list                         # list VMs (--json for scripting)\nvphone-cli vm info myphone                  # show one VM\nvphone-cli vm new myphone                   # create an empty bundle (cpu/mem/disk options)\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       # fast APFS clone, fresh device identity\nvphone-cli vm export myphone --out myphone.tzst   # zstd fast by default (--max = xz -9); --out may be a dir (auto-names &lt;vm&gt;.tzst/.txz); skips restore dir + staging files\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16\"><pre>vphone-cli vm list                         <span class=\"pl-c\"><span class=\"pl-c\">#</span> list VMs (--json for scripting)</span>\nvphone-cli vm info myphone                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> show one VM</span>\nvphone-cli vm new myphone                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> create an empty bundle (cpu/mem/disk options)</span>\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       <span class=\"pl-c\"><span class=\"pl-c\">#</span> fast APFS clone, fresh device identity</span>\nvphone-cli vm <span class=\"pl-k\">export</span> myphone --out myphone.tzst   <span class=\"pl-c\"><span class=\"pl-c\">#</span> zstd fast by default (--max = xz -9); --out may be a dir (auto-names &lt;vm&gt;.tzst/.txz); skips restore dir + staging files</span>\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Build a VM manually (what <code>vm create</code> automates)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm new myphone                              # 1. empty bundle\nvphone-cli fw prepare myphone --iphone-version 26.1     # 2. download + merge IPSWs\nvphone-cli fw patch myphone --variant jb                # 3. patch the boot chain\n\nvphone-cli vm launch myphone --dfu &amp;                    # 4. boot into DFU (background)\nvphone-cli restore myphone --get-shsh                   #    fetch SHSH\nvphone-cli restore myphone                              #    DFU restore\nvphone-cli vm stop myphone                              #    stop the DFU boot\n\nvphone-cli cfw install myphone --variant jb             # 5. install CFW (host-mount; asks for sudo)\nvphone-cli vm launch myphone                            # 6. first boot\"><pre>vphone-cli vm new myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. empty bundle</span>\nvphone-cli fw prepare myphone --iphone-version 26.1     <span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. download + merge IPSWs</span>\nvphone-cli fw patch myphone --variant jb                <span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. patch the boot chain</span>\n\nvphone-cli vm launch myphone --dfu <span class=\"pl-k\">&amp;</span>                    <span class=\"pl-c\"><span class=\"pl-c\">#</span> 4. boot into DFU (background)</span>\nvphone-cli restore myphone --get-shsh                   <span class=\"pl-c\"><span class=\"pl-c\">#</span>    fetch SHSH</span>\nvphone-cli restore myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span>    DFU restore</span>\nvphone-cli vm stop myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span>    stop the DFU boot</span>\n\nvphone-cli cfw install myphone --variant jb             <span class=\"pl-c\"><span class=\"pl-c\">#</span> 5. install CFW (host-mount; asks for sudo)</span>\nvphone-cli vm launch myphone                            <span class=\"pl-c\"><span class=\"pl-c\">#</span> 6. first boot</span></pre></div>\n<p dir=\"auto\">Update to a newer iOS by pointing <code>fw prepare</code> at an IPSW: <code>--iphone-source /path/to.ipsw --cloudos-source /path/to.ipsw</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Firmware Variants</h2></div>\n<p dir=\"auto\">Five patch variants with increasing security bypass — pass one to <code>--variant</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Variant</th>\n<th>Boot Chain</th>\n<th>CFW</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>less</code></td>\n<td>4 patches</td>\n<td>2 phases</td>\n<td>Patchless — keeps iOS mitigations enabled</td>\n</tr>\n<tr>\n<td><code>regular</code></td>\n<td>42 patches</td>\n<td>10 phases</td>\n<td>AMFI/SSV/Img4/TXM bypass</td>\n</tr>\n<tr>\n<td><code>dev</code></td>\n<td>53 patches</td>\n<td>12 phases</td>\n<td>+ TXM entitlement/debug bypass</td>\n</tr>\n<tr>\n<td><code>jb</code></td>\n<td>113 patches</td>\n<td>14 phases</td>\n<td>+ full jailbreak (Sileo, TrollStore auto-install on first boot)</td>\n</tr>\n<tr>\n<td><code>exp</code></td>\n<td>141 patches</td>\n<td>18 phases</td>\n<td>JB superset + anti-VM-detection research patches</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">See <a href=\"https://github.com/Lakr233/vphone-cli/blob/main/research/0_binary_patch_comparison.md\"><code>research/0_binary_patch_comparison.md</code></a> for the per-component breakdown.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running &amp; Connecting</h2></div>\n<ul dir=\"auto\">\n<li><strong>SSH (jailbreak):</strong> <code>ssh -p 22222 mobile@&lt;vm-ip&gt;</code> (password <code>alpine</code>)</li>\n<li><strong>SSH (regular/dev):</strong> <code>ssh -p 22222 root@&lt;vm-ip&gt;</code></li>\n<li><strong>VNC:</strong> <code>vnc://&lt;vm-ip&gt;:5901</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Locations</h2></div>\n<p dir=\"auto\">Everything vphone-cli creates lives under <code>~/.vphone/</code> — kept outside the repo and the <code>.app</code> so the signed bundle stays portable. Redirect the whole tree with <code>$VPHONE_ROOT</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>Contents</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>~/.vphone/</code></td>\n<td>The per-user data root — override the entire location with <code>$VPHONE_ROOT</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/VMs/</code></td>\n<td>VM bundles — one directory per VM. This is the library; override with <code>$VPHONE_LIBRARY_ROOT</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/ipsws/</code></td>\n<td>Downloaded iPhone + cloudOS IPSWs, cached and reused across VMs.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/tools/</code></td>\n<td>Cached APFS seal-volume artifacts (<code>apfs_sealvolume_&lt;version&gt;</code>) fetched during <code>fw prepare</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/debs/</code></td>\n<td>Cached <code>.deb</code> packages the <code>jb</code>/<code>exp</code> CFW install lays into the guest (Sileo, apt, …).</td>\n</tr>\n<tr>\n<td><code>~/.vphone/venv/</code></td>\n<td>Auto-provisioned Python environment (see <a href=\"#python-runtime\">Python runtime</a>; override with <code>$VPHONE_VENV_DIR</code>).</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Precedence: the per-item overrides (<code>$VPHONE_LIBRARY_ROOT</code>, <code>$VPHONE_VENV_DIR</code>) win over <code>$VPHONE_ROOT</code>, which wins over the <code>~/.vphone</code> default. The <code>ipsws/</code>, <code>tools/</code>, and <code>debs/</code> caches always sit directly under whichever root is active.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">SIP/AMFI Relaxation</h2></div>\n<p dir=\"auto\"><strong>Option A — fully disable SIP, then disable AMFI via boot-arg (most permissive).</strong></p>\n<p dir=\"auto\">In Recovery (long-press power → Terminal):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"csrutil disable\ncsrutil allow-research-guests enable\"><pre>csrutil disable\ncsrutil allow-research-guests <span class=\"pl-c1\">enable</span></pre></div>\n<p dir=\"auto\">Then reboot into macOS and set the AMFI boot-arg (needs SIP fully off to take effect):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sudo nvram boot-args=&quot;amfi_get_out_of_my_way=1 -v&quot;   # reboot after\"><pre>sudo nvram boot-args=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>amfi_get_out_of_my_way=1 -v<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> reboot after</span></pre></div>\n<p dir=\"auto\"><strong>Option B — keep SIP on (debug-only relaxed), then allowlist the binary with amfidont</strong> (leaves AMFI enabled system-wide).</p>\n<p dir=\"auto\">In Recovery:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"csrutil enable --without debug\ncsrutil allow-research-guests enable\"><pre>csrutil <span class=\"pl-c1\">enable</span> --without debug\ncsrutil allow-research-guests <span class=\"pl-c1\">enable</span></pre></div>\n<p dir=\"auto\">Then reboot into macOS and:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-amfidont         # .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds\"><pre>vphone-amfidont         <span class=\"pl-c\"><span class=\"pl-c\">#</span> .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Tested Environments</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Host</th>\n<th>iPhone</th>\n<th>CloudOS</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_18.6.2_22G100</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,8 26.5.1</td>\n<td><code>17,3_26.0_23A341</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,8 26.5.1</td>\n<td><code>17,3_26.0.1_23A355</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.1_23B85</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3_23D127</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3_23D127</code></td>\n<td><code>26.3-23D128</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3.1_23D8133</code></td>\n<td><code>26.3-23D128</code></td>\n</tr>\n<tr>\n<td>Mac16,11 26.2</td>\n<td><code>17,3_26.4_23E246</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 26.2</td>\n<td><code>17,3_26.5_23F77</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_26.5.2_23F84</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.4.1</td>\n<td><code>17,3_26.6_23G71</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_26.6.1_23G83</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5380h</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.4.1</td>\n<td><code>17,3_27.0_24A5390f</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.6.1</td>\n<td><code>17,3_27.0_24A5408d</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5418b</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5424a</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5430a</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">FAQ</h2></div>\n<p dir=\"auto\"><strong><code>zsh: killed ./vphone-cli</code></strong> — AMFI/debug restrictions aren't bypassed; see <a href=\"#prerequisites\">Prerequisites</a> (<code>amfi_get_out_of_my_way=1</code> or <code>amfidont</code>).</p>\n<p dir=\"auto\"><strong><code>Virtualization is not available on this hardware</code></strong> — your Mac is itself a VM; PV=3 guest boot can't nest. Use a non-nested macOS 15+ host.</p>\n<p dir=\"auto\"><strong>Stuck on \"Press home to continue\"</strong> — connect via VNC and right-click (two-finger click) to simulate the home button.</p>\n<p dir=\"auto\"><strong>System apps won't install</strong> — during iOS setup, don't pick Japan or the EU as your region (extra regulatory checks the VM can't satisfy); pick e.g. United States.</p>\n<p dir=\"auto\"><strong>App crashes on launch with <code>EXC_GUARD</code> / <code>GUARD_TYPE_MACH_PORT</code></strong> — re-patch with <code>vphone-cli fw patch &lt;name&gt; --variant &lt;v&gt; --force-exc-guard</code>, then re-restore/install (<a href=\"https://github.com/Lakr233/vphone-cli/issues/291\" data-hovercard-type=\"issue\" data-hovercard-url=\"/Lakr233/vphone-cli/issues/291/hovercard\">#291</a>). Always on for iOS 18 bases.</p>\n<p dir=\"auto\"><strong>Install a <code>.ipa</code>/<code>.tipa</code></strong> — use the running VM's Install menu (drag-drop or file picker).</p>\n<p dir=\"auto\"><strong><code>cfw install</code> hangs re-signing a system binary (e.g. <code>Campo</code>), memory climbing unbounded</strong> — known bug in <code>ldid-procursus</code> up to <code>2.1.5-procursus7</code> (the current Homebrew <code>stable</code>): <code>bytes(uint64_t)</code> calls <code>__builtin_clzll(0)</code> with no zero-guard, which is undefined behavior, and on this build resolves to a <code>0</code>-length that underflows an unsigned loop counter — <code>ldid</code> spins writing one byte at a time into a growing buffer instead of terminating. Triggered by <em>any</em> entitlements plist containing an integer value of exactly <code>0</code> (some real Apple system binaries have these). Fixed upstream but not yet in a tagged release; rebuild from source: <code>brew install --HEAD ldid-procursus &amp;&amp; brew link --overwrite ldid-procursus</code>. Kill the hung <code>ldid</code> process first (<code>sudo kill -9 &lt;pid&gt;</code>) if you already hit it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Automation</h2></div>\n<p dir=\"auto\"><code>vphone-cli</code> exposes a host control socket (<code>&lt;bundle&gt;/vphone.sock</code>) for programmatic control — screenshots, touch, swipes, hardware keys, clipboard — each action returning an inline screenshot for AI-driven E2E testing. See <a href=\"https://github.com/pluginslab/vphone-mcp\">vphone-mcp</a> for an MCP server wrapping it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Acknowledgements</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/wh1te4ever/super-tart-vphone-writeup\">wh1te4ever/super-tart-vphone-writeup</a></li>\n</ul>\n</article></div>",
-  "contributorCount": 38,
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div align=\"right\" dir=\"auto\"><strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_ko.md\">🇰🇷한국어</a></strong> | <strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_ja.md\">🇯🇵日本語</a></strong> | <strong><a href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/README_zh.md\">🇨🇳中文</a></strong> | <strong>🇬🇧English</strong></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">vphone-cli</h1></div>\n<p dir=\"auto\">Boot a virtual iPhone via Apple's Virtualization.framework using PCC research VM infrastructure.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/Lakr233/vphone-cli/blob/main/docs/demo.jpeg\"><img src=\"https://raw.githubusercontent.com/Lakr233/vphone-cli/main/docs/demo.jpeg\" alt=\"poc\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Prerequisites</h2></div>\n<p dir=\"auto\"><strong>Host:</strong></p>\n<ul dir=\"auto\">\n<li>Apple Silicon</li>\n<li>macOS 15+ (Sequoia)</li>\n<li>Xcode + iOS SDK (cross-compiles the guest daemon)</li>\n<li><a href=\"#sipamfi-relaxation\">SIP/AMFI relaxation to allow private PV=3 entitlements with unsigned-binary</a></li>\n</ul>\n<p dir=\"auto\"><strong>Dependencies:</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd\"><pre>brew install python@3.13 aria2 wget gnu-tar openssl@3 ldid-procursus sshpass keystone cmake libusb ipsw zstd</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"brew install zqxwce/tap/vphone-cli\"><pre>brew install zqxwce/tap/vphone-cli</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      # install deps, build toolchain submodules, create the Python venv\n./scripts/build.sh            # build + sign vphone-cli, bundle the .app, cross-compile vphoned\n\ncd .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help\"><pre>git clone --recurse-submodules https://github.com/Lakr233/vphone-cli.git\n\n./scripts/setup_tools.sh      <span class=\"pl-c\"><span class=\"pl-c\">#</span> install deps, build toolchain submodules, create the Python venv</span>\n./scripts/build.sh            <span class=\"pl-c\"><span class=\"pl-c\">#</span> build + sign vphone-cli, bundle the .app, cross-compile vphoned</span>\n\n<span class=\"pl-c1\">cd</span> .build/vphone-cli.app/Contents/MacOS/\nvphone-cli --help</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<p dir=\"auto\">One command creates a VM end-to-end (download → patch → DFU restore → CFW install → first boot):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm create myphone -V jb        # -V / --variant\n\nvphone-cli vm launch myphone\"><pre>vphone-cli vm create myphone -V jb        <span class=\"pl-c\"><span class=\"pl-c\">#</span> -V / --variant</span>\n\nvphone-cli vm launch myphone</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Commands</h2></div>\n<p dir=\"auto\"><code>vphone-cli vm create</code> runs the whole pipeline; the individual steps below let you drive it manually or re-run one stage.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Manage</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm list                         # list VMs (--json for scripting)\nvphone-cli vm info myphone                  # show one VM\nvphone-cli vm new myphone                   # create an empty bundle (cpu/mem/disk options)\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       # fast APFS clone, fresh device identity\nvphone-cli vm export myphone --out myphone.tzst   # zstd fast by default (--max = xz -9); --out may be a dir (auto-names &lt;vm&gt;.tzst/.txz); skips restore dir + staging files\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16\"><pre>vphone-cli vm list                         <span class=\"pl-c\"><span class=\"pl-c\">#</span> list VMs (--json for scripting)</span>\nvphone-cli vm info myphone                  <span class=\"pl-c\"><span class=\"pl-c\">#</span> show one VM</span>\nvphone-cli vm new myphone                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> create an empty bundle (cpu/mem/disk options)</span>\nvphone-cli vm config myphone --cpu 8 --memory 8192\nvphone-cli vm clone myphone myphone-2       <span class=\"pl-c\"><span class=\"pl-c\">#</span> fast APFS clone, fresh device identity</span>\nvphone-cli vm <span class=\"pl-k\">export</span> myphone --out myphone.tzst   <span class=\"pl-c\"><span class=\"pl-c\">#</span> zstd fast by default (--max = xz -9); --out may be a dir (auto-names &lt;vm&gt;.tzst/.txz); skips restore dir + staging files</span>\nvphone-cli vm import myphone.tzst --name restored\nvphone-cli vm rename myphone iphone16\nvphone-cli vm delete iphone16</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Build a VM manually (what <code>vm create</code> automates)</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-cli vm new myphone                              # 1. empty bundle\nvphone-cli fw prepare myphone --iphone-version 26.1     # 2. download + merge IPSWs\nvphone-cli fw patch myphone --variant jb                # 3. patch the boot chain\n\nvphone-cli vm launch myphone --dfu &amp;                    # 4. boot into DFU (background)\nvphone-cli restore myphone --get-shsh                   #    fetch SHSH\nvphone-cli restore myphone                              #    DFU restore\nvphone-cli vm stop myphone                              #    stop the DFU boot\n\nvphone-cli cfw install myphone --variant jb             # 5. install CFW (host-mount; asks for sudo)\nvphone-cli vm launch myphone                            # 6. first boot\"><pre>vphone-cli vm new myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. empty bundle</span>\nvphone-cli fw prepare myphone --iphone-version 26.1     <span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. download + merge IPSWs</span>\nvphone-cli fw patch myphone --variant jb                <span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. patch the boot chain</span>\n\nvphone-cli vm launch myphone --dfu <span class=\"pl-k\">&amp;</span>                    <span class=\"pl-c\"><span class=\"pl-c\">#</span> 4. boot into DFU (background)</span>\nvphone-cli restore myphone --get-shsh                   <span class=\"pl-c\"><span class=\"pl-c\">#</span>    fetch SHSH</span>\nvphone-cli restore myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span>    DFU restore</span>\nvphone-cli vm stop myphone                              <span class=\"pl-c\"><span class=\"pl-c\">#</span>    stop the DFU boot</span>\n\nvphone-cli cfw install myphone --variant jb             <span class=\"pl-c\"><span class=\"pl-c\">#</span> 5. install CFW (host-mount; asks for sudo)</span>\nvphone-cli vm launch myphone                            <span class=\"pl-c\"><span class=\"pl-c\">#</span> 6. first boot</span></pre></div>\n<p dir=\"auto\">Update to a newer iOS by pointing <code>fw prepare</code> at an IPSW: <code>--iphone-source /path/to.ipsw --cloudos-source /path/to.ipsw</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Firmware Variants</h2></div>\n<p dir=\"auto\">Five patch variants with increasing security bypass — pass one to <code>--variant</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Variant</th>\n<th>Boot Chain</th>\n<th>CFW</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>less</code></td>\n<td>4 patches</td>\n<td>2 phases</td>\n<td>Patchless — keeps iOS mitigations enabled</td>\n</tr>\n<tr>\n<td><code>regular</code></td>\n<td>42 patches</td>\n<td>10 phases</td>\n<td>AMFI/SSV/Img4/TXM bypass</td>\n</tr>\n<tr>\n<td><code>dev</code></td>\n<td>53 patches</td>\n<td>12 phases</td>\n<td>+ TXM entitlement/debug bypass</td>\n</tr>\n<tr>\n<td><code>jb</code></td>\n<td>113 patches</td>\n<td>14 phases</td>\n<td>+ full jailbreak (Sileo, TrollStore auto-install on first boot)</td>\n</tr>\n<tr>\n<td><code>exp</code></td>\n<td>141 patches</td>\n<td>18 phases</td>\n<td>JB superset + anti-VM-detection research patches</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">See <a href=\"https://github.com/Lakr233/vphone-cli/blob/main/research/0_binary_patch_comparison.md\"><code>research/0_binary_patch_comparison.md</code></a> for the per-component breakdown.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running &amp; Connecting</h2></div>\n<ul dir=\"auto\">\n<li><strong>SSH (jailbreak):</strong> <code>ssh -p 22222 mobile@&lt;vm-ip&gt;</code> (password <code>alpine</code>)</li>\n<li><strong>SSH (regular/dev):</strong> <code>ssh -p 22222 root@&lt;vm-ip&gt;</code></li>\n<li><strong>VNC:</strong> <code>vnc://&lt;vm-ip&gt;:5901</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Locations</h2></div>\n<p dir=\"auto\">Everything vphone-cli creates lives under <code>~/.vphone/</code> — kept outside the repo and the <code>.app</code> so the signed bundle stays portable. Redirect the whole tree with <code>$VPHONE_ROOT</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Path</th>\n<th>Contents</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>~/.vphone/</code></td>\n<td>The per-user data root — override the entire location with <code>$VPHONE_ROOT</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/VMs/</code></td>\n<td>VM bundles — one directory per VM. This is the library; override with <code>$VPHONE_LIBRARY_ROOT</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/ipsws/</code></td>\n<td>Downloaded iPhone + cloudOS IPSWs, cached and reused across VMs.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/tools/</code></td>\n<td>Cached APFS seal-volume artifacts (<code>apfs_sealvolume_&lt;version&gt;</code>) fetched during <code>fw prepare</code>.</td>\n</tr>\n<tr>\n<td><code>~/.vphone/debs/</code></td>\n<td>Cached <code>.deb</code> packages the <code>jb</code>/<code>exp</code> CFW install lays into the guest (Sileo, apt, …).</td>\n</tr>\n<tr>\n<td><code>~/.vphone/venv/</code></td>\n<td>Auto-provisioned Python environment (see <a href=\"#python-runtime\">Python runtime</a>; override with <code>$VPHONE_VENV_DIR</code>).</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Precedence: the per-item overrides (<code>$VPHONE_LIBRARY_ROOT</code>, <code>$VPHONE_VENV_DIR</code>) win over <code>$VPHONE_ROOT</code>, which wins over the <code>~/.vphone</code> default. The <code>ipsws/</code>, <code>tools/</code>, and <code>debs/</code> caches always sit directly under whichever root is active.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">SIP/AMFI Relaxation</h2></div>\n<p dir=\"auto\"><strong>Option A — fully disable SIP, then disable AMFI via boot-arg (most permissive).</strong></p>\n<p dir=\"auto\">In Recovery (long-press power → Terminal):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"csrutil disable\ncsrutil allow-research-guests enable\"><pre>csrutil disable\ncsrutil allow-research-guests <span class=\"pl-c1\">enable</span></pre></div>\n<p dir=\"auto\">Then reboot into macOS and set the AMFI boot-arg (needs SIP fully off to take effect):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"sudo nvram boot-args=&quot;amfi_get_out_of_my_way=1 -v&quot;   # reboot after\"><pre>sudo nvram boot-args=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>amfi_get_out_of_my_way=1 -v<span class=\"pl-pds\">\"</span></span>   <span class=\"pl-c\"><span class=\"pl-c\">#</span> reboot after</span></pre></div>\n<p dir=\"auto\"><strong>Option B — keep SIP on (debug-only relaxed), then allowlist the binary with amfidont</strong> (leaves AMFI enabled system-wide).</p>\n<p dir=\"auto\">In Recovery:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"csrutil enable --without debug\ncsrutil allow-research-guests enable\"><pre>csrutil <span class=\"pl-c1\">enable</span> --without debug\ncsrutil allow-research-guests <span class=\"pl-c1\">enable</span></pre></div>\n<p dir=\"auto\">Then reboot into macOS and:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"vphone-amfidont         # .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds\"><pre>vphone-amfidont         <span class=\"pl-c\"><span class=\"pl-c\">#</span> .build/vphone-cli.app/Contents/Resources/vphone-amfidont for local builds</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Tested Environments</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Host</th>\n<th>iPhone</th>\n<th>CloudOS</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_18.6.2_22G100</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,8 26.5.1</td>\n<td><code>17,3_26.0_23A341</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,8 26.5.1</td>\n<td><code>17,3_26.0.1_23A355</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.1_23B85</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3_23D127</code></td>\n<td><code>26.1-23B85</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3_23D127</code></td>\n<td><code>26.3-23D128</code></td>\n</tr>\n<tr>\n<td>Mac16,12 26.3</td>\n<td><code>17,3_26.3.1_23D8133</code></td>\n<td><code>26.3-23D128</code></td>\n</tr>\n<tr>\n<td>Mac16,11 26.2</td>\n<td><code>17,3_26.4_23E246</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 26.2</td>\n<td><code>17,3_26.5_23F77</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_26.5.2_23F84</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.4.1</td>\n<td><code>17,3_26.6_23G71</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_26.6.1_23G83</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.6.1</td>\n<td><code>17,3_26.6.2_23G90</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5380h</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.4.1</td>\n<td><code>17,3_27.0_24A5390f</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.6.1</td>\n<td><code>17,3_27.0_24A5408d</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5418b</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5424a</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,11 27.0b2</td>\n<td><code>17,3_27.0_24A5430a</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n<tr>\n<td>Mac16,6 26.6.1</td>\n<td><code>17,3_27.0_24A435</code></td>\n<td><code>26.4-23E5207q</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">FAQ</h2></div>\n<p dir=\"auto\"><strong><code>zsh: killed ./vphone-cli</code></strong> — AMFI/debug restrictions aren't bypassed; see <a href=\"#prerequisites\">Prerequisites</a> (<code>amfi_get_out_of_my_way=1</code> or <code>amfidont</code>).</p>\n<p dir=\"auto\"><strong><code>Virtualization is not available on this hardware</code></strong> — your Mac is itself a VM; PV=3 guest boot can't nest. Use a non-nested macOS 15+ host.</p>\n<p dir=\"auto\"><strong>Stuck on \"Press home to continue\"</strong> — connect via VNC and right-click (two-finger click) to simulate the home button.</p>\n<p dir=\"auto\"><strong>System apps won't install</strong> — during iOS setup, don't pick Japan or the EU as your region (extra regulatory checks the VM can't satisfy); pick e.g. United States.</p>\n<p dir=\"auto\"><strong>App crashes on launch with <code>EXC_GUARD</code> / <code>GUARD_TYPE_MACH_PORT</code></strong> — re-patch with <code>vphone-cli fw patch &lt;name&gt; --variant &lt;v&gt; --force-exc-guard</code>, then re-restore/install (<a href=\"https://github.com/Lakr233/vphone-cli/issues/291\" data-hovercard-type=\"issue\" data-hovercard-url=\"/Lakr233/vphone-cli/issues/291/hovercard\">#291</a>). Always on for iOS 18 bases.</p>\n<p dir=\"auto\"><strong>Install a <code>.ipa</code>/<code>.tipa</code></strong> — use the running VM's Install menu (drag-drop or file picker).</p>\n<p dir=\"auto\"><strong><code>cfw install</code> hangs re-signing a system binary (e.g. <code>Campo</code>), memory climbing unbounded</strong> — known bug in <code>ldid-procursus</code> up to <code>2.1.5-procursus7</code> (the current Homebrew <code>stable</code>): <code>bytes(uint64_t)</code> calls <code>__builtin_clzll(0)</code> with no zero-guard, which is undefined behavior, and on this build resolves to a <code>0</code>-length that underflows an unsigned loop counter — <code>ldid</code> spins writing one byte at a time into a growing buffer instead of terminating. Triggered by <em>any</em> entitlements plist containing an integer value of exactly <code>0</code> (some real Apple system binaries have these). Fixed upstream but not yet in a tagged release; rebuild from source: <code>brew install --HEAD ldid-procursus &amp;&amp; brew link --overwrite ldid-procursus</code>. Kill the hung <code>ldid</code> process first (<code>sudo kill -9 &lt;pid&gt;</code>) if you already hit it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Automation</h2></div>\n<p dir=\"auto\"><code>vphone-cli</code> exposes a host control socket (<code>&lt;bundle&gt;/vphone.sock</code>) for programmatic control — screenshots, touch, swipes, hardware keys, clipboard — each action returning an inline screenshot for AI-driven E2E testing. See <a href=\"https://github.com/pluginslab/vphone-mcp\">vphone-mcp</a> for an MCP server wrapping it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Acknowledgements</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/wh1te4ever/super-tart-vphone-writeup\">wh1te4ever/super-tart-vphone-writeup</a></li>\n</ul>\n</article></div>",
+  "contributorCount": 39,
   "firstCommitAt": "2026-02-26T15:56:38Z",
   "punchCard": [
     {
@@ -942,7 +947,7 @@
     {
       "day": 4,
       "hour": 11,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 4,
@@ -1232,7 +1237,7 @@
     {
       "day": 6,
       "hour": 21,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 6,
@@ -1246,6 +1251,15 @@
     }
   ],
   "recentIssues": [
+    {
+      "number": 456,
+      "title": "Can we use hosts camera?",
+      "url": "https://github.com/Lakr233/vphone-cli/issues/456",
+      "createdAt": "2026-09-09T21:39:22Z",
+      "comments": 1,
+      "labels": [],
+      "author": "7DSMeliodas"
+    },
     {
       "number": 445,
       "title": "How to set up SIP without disabling it?",
@@ -1278,7 +1292,7 @@
       "title": "Got Following error zsh: killed",
       "url": "https://github.com/Lakr233/vphone-cli/issues/435",
       "createdAt": "2026-08-18T16:16:02Z",
-      "comments": 3,
+      "comments": 7,
       "labels": [],
       "author": "0xbartita"
     },
@@ -1290,23 +1304,30 @@
       "comments": 0,
       "labels": [],
       "author": "NextFourYears"
-    },
-    {
-      "number": 355,
-      "title": "Device failed to enter recovery",
-      "url": "https://github.com/Lakr233/vphone-cli/issues/355",
-      "createdAt": "2026-06-22T21:19:01Z",
-      "comments": 5,
-      "labels": [],
-      "author": "Tuesui"
     }
   ],
   "participation": {
-    "all": 371,
+    "all": 373,
     "owner": 123,
-    "community": 248
+    "community": 250
   },
   "recentCommits": [
+    {
+      "sha": "9c23c8a",
+      "message": "catalog: Add iOS 26.6.2 + iOS 27.0 RC (cloudOS 26.4) pairings",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/9c23c8adcd4b362120988ab9d228b959bcc23ae3",
+      "date": "2026-09-10T08:11:12Z",
+      "author": "zqxwce",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
+    },
+    {
+      "sha": "b86dcaf",
+      "message": "fix: validate imported VM manifest before moving into library",
+      "url": "https://github.com/Lakr233/vphone-cli/commit/b86dcaf1b613c3d621865b64852aec1d03b7ac77",
+      "date": "2026-09-05T19:58:07Z",
+      "author": "morzelowski",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/63771477?v=4"
+    },
     {
       "sha": "87f796c",
       "message": "resources: Update resources reference",
@@ -1370,31 +1391,51 @@
       "date": "2026-08-18T08:39:56Z",
       "author": "zqxwce",
       "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "339719f",
-      "message": "catalog: Add iOS 26.6.1 + cloudOS 26.4 firmware pairing",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/339719f34df8a3b255545fbe4b49a46ecdbcbed0",
-      "date": "2026-08-13T14:57:19Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
-    },
-    {
-      "sha": "421cb7a",
-      "message": "docs: Update vm export/import examples for the reworked flags",
-      "url": "https://github.com/Lakr233/vphone-cli/commit/421cb7aa7a072aaf84a7c679080380b3f33ed6e0",
-      "date": "2026-08-12T13:14:32Z",
-      "author": "zqxwce",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/19415570?v=4"
     }
   ],
   "recentPulls": [
     {
+      "number": 461,
+      "title": "docs: add Portuguese (Brazilian) README translation",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/461",
+      "state": "open",
+      "updatedAt": "2026-09-12T04:15:22Z",
+      "author": "opastorello",
+      "draft": false
+    },
+    {
+      "number": 460,
+      "title": "docs: correct vm export/import help to the real archive formats",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/460",
+      "state": "open",
+      "updatedAt": "2026-09-11T10:51:28Z",
+      "author": "dajiaohuang",
+      "draft": false
+    },
+    {
+      "number": 459,
+      "title": "catalog: Add iOS 26.6.2 + iOS 27.0 RC (cloudOS 26.4) pairings",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/459",
+      "state": "merged",
+      "updatedAt": "2026-09-10T08:12:22Z",
+      "author": "zqxwce",
+      "draft": false
+    },
+    {
+      "number": 458,
+      "title": "Add README_ru.md ",
+      "url": "https://github.com/Lakr233/vphone-cli/pull/458",
+      "state": "open",
+      "updatedAt": "2026-09-10T01:59:55Z",
+      "author": "collectanos",
+      "draft": false
+    },
+    {
       "number": 453,
       "title": "fix: validate imported VM manifest before moving into library",
       "url": "https://github.com/Lakr233/vphone-cli/pull/453",
-      "state": "open",
-      "updatedAt": "2026-09-05T20:16:13Z",
+      "state": "merged",
+      "updatedAt": "2026-09-07T08:28:03Z",
       "author": "morzelowski",
       "draft": false
     },
@@ -1422,42 +1463,6 @@
       "url": "https://github.com/Lakr233/vphone-cli/pull/450",
       "state": "merged",
       "updatedAt": "2026-08-31T22:33:44Z",
-      "author": "zqxwce",
-      "draft": false
-    },
-    {
-      "number": 448,
-      "title": "resources: Bump storage submodule to fork main (drop ramdisk_input.tar.zst)",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/448",
-      "state": "merged",
-      "updatedAt": "2026-08-29T00:44:16Z",
-      "author": "zqxwce",
-      "draft": false
-    },
-    {
-      "number": 447,
-      "title": "resources: Point storage submodule to zqxwce fork",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/447",
-      "state": "merged",
-      "updatedAt": "2026-08-29T00:24:33Z",
-      "author": "zqxwce",
-      "draft": false
-    },
-    {
-      "number": 442,
-      "title": "catalog: Add iOS 27 beta 7 + cloudOS 26.4 firmware pairing",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/442",
-      "state": "merged",
-      "updatedAt": "2026-08-25T08:07:42Z",
-      "author": "zqxwce",
-      "draft": false
-    },
-    {
-      "number": 437,
-      "title": "catalog: Replace iOS 26.6.1 RC with release build 23G83",
-      "url": "https://github.com/Lakr233/vphone-cli/pull/437",
-      "state": "merged",
-      "updatedAt": "2026-08-19T12:09:39Z",
       "author": "zqxwce",
       "draft": false
     }
@@ -1568,7 +1573,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 9965,
+      "size": 10089,
       "url": "https://github.com/Lakr233/vphone-cli/blob/main/README.md"
     },
     {
@@ -1579,7 +1584,7 @@
     }
   ],
   "branchCount": 3,
-  "tagCount": 25,
+  "tagCount": 26,
   "community": {
     "healthPercentage": 28,
     "hasCodeOfConduct": false,
@@ -1625,18 +1630,25 @@
     {
       "name": "release",
       "status": "success",
-      "url": "https://github.com/Lakr233/vphone-cli/actions/runs/33446846379",
-      "branch": "1.0.13",
-      "updatedAt": "2026-08-31T22:38:38Z"
+      "url": "https://github.com/Lakr233/vphone-cli/actions/runs/34453969174",
+      "branch": "1.0.14",
+      "updatedAt": "2026-09-10T08:15:36Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 18,
-  "openPRs": 6,
-  "releaseCount": 22,
+  "openIssuesOnly": 19,
+  "openPRs": 8,
+  "releaseCount": 23,
   "discussionsEnabled": true,
-  "discussionCount": 18,
+  "discussionCount": 19,
   "discussions": [
+    {
+      "title": "Windows support or a Windows-compatible alternative?",
+      "url": "https://github.com/Lakr233/vphone-cli/discussions/455",
+      "createdAt": "2026-09-07T10:00:28Z",
+      "comments": 1,
+      "category": "General"
+    },
     {
       "title": "Does appstore work?",
       "url": "https://github.com/Lakr233/vphone-cli/discussions/418",
@@ -1664,31 +1676,20 @@
       "createdAt": "2026-08-25T13:09:51Z",
       "comments": 1,
       "category": "Q&A"
-    },
-    {
-      "title": "Change VM path?",
-      "url": "https://github.com/Lakr233/vphone-cli/discussions/436",
-      "createdAt": "2026-08-19T11:12:01Z",
-      "comments": 1,
-      "category": "Q&A"
     }
   ],
-  "closedIssues": 183,
-  "mergedPRs": 180,
+  "closedIssues": 186,
+  "mergedPRs": 182,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
   "securityPolicyUrl": null,
   "codeOfConduct": null,
   "latestRelease": {
-    "tag": "1.0.13",
-    "publishedAt": "2026-08-31T22:34:36Z"
+    "tag": "1.0.14",
+    "publishedAt": "2026-09-10T08:13:01Z"
   },
   "commitActivity": [
-    {
-      "week": "2025-09-06",
-      "commits": 0
-    },
     {
       "week": "2025-09-13",
       "commits": 0
@@ -1891,38 +1892,14 @@
     },
     {
       "week": "2026-08-30",
-      "commits": 2
+      "commits": 3
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 1
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-06",
-      "count": 0
-    },
-    {
-      "date": "2025-09-07",
-      "count": 0
-    },
-    {
-      "date": "2025-09-08",
-      "count": 0
-    },
-    {
-      "date": "2025-09-09",
-      "count": 0
-    },
-    {
-      "date": "2025-09-10",
-      "count": 0
-    },
-    {
-      "date": "2025-09-11",
-      "count": 0
-    },
-    {
-      "date": "2025-09-12",
-      "count": 0
-    },
     {
       "date": "2025-09-13",
       "count": 0
@@ -3349,11 +3326,39 @@
     },
     {
       "date": "2026-09-05",
+      "count": 1
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 1
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
       "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-05T22:35:38.432Z",
+  "factsUpdatedAt": "2026-09-12T23:36:33.731Z",
   "aiSummary": {
     "oneLiner": "A command-line tool for interacting with VirtualPhone, enabling automated management of virtual iOS devices.",
     "whatItDoes": "vphone-cli provides a terminal-based interface and automation toolkit for managing VirtualPhone instances (a platform for running virtualized iOS devices). It bridges the gap between the VirtualPhone GUI and automated CI/CD workflows by allowing developers to programmatically control device lifecycles. Users can use the CLI to create, start, stop, and snapshot virtual iPhones, as well as install applications, push files, and execute shell commands inside the virtual environment. This abstraction is critical for teams that need to integrate iOS testing, security analysis, or app deployment into headless scripts without relying on manual interaction.",
@@ -3536,8 +3541,13 @@
     },
     {
       "week": "2026-08-30",
-      "additions": 9,
-      "deletions": 4
+      "additions": 44,
+      "deletions": 5
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 13,
+      "deletions": 3
     }
   ]
 }
