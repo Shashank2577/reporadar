@@ -160,6 +160,11 @@
       "date": "2026-09-11",
       "stars": 50296,
       "forks": 2733
+    },
+    {
+      "date": "2026-09-13",
+      "stars": 50322,
+      "forks": 2736
     }
   ],
   "trendingHistory": [
@@ -309,27 +314,27 @@
   "license": "MIT",
   "language": "TypeScript",
   "topics": [],
-  "stars": 50296,
-  "forks": 2733,
-  "watchers": 153,
-  "openIssues": 81,
+  "stars": 50322,
+  "forks": 2736,
+  "watchers": 146,
+  "openIssues": 46,
   "createdAt": "2026-03-07T21:06:28Z",
-  "pushedAt": "2026-09-11T01:06:31Z",
+  "pushedAt": "2026-09-13T10:47:47Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-11T05:32:56.873Z",
+  "updatedAt": "2026-09-13T14:48:52.210Z",
   "languages": {
-    "TypeScript": 751893,
-    "HTML": 72311
+    "TypeScript": 1262407,
+    "HTML": 63956
   },
-  "commitCount": 419,
-  "readmeExcerpt": "# Pretext\n\nPure JavaScript/TypeScript library for multiline text measurement & layout. Fast, accurate & supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.\n\nPretext side-steps the need for DOM measurements (e.g. `getBoundingClientRect`, `offsetHeight`), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).\n\n## Installation\n\n```sh\nnpm install @chenglou/pretext\n```\n\n## Demos\n\nClone the repo, run `bun install`, then `bun start`, and open `/demos/index` in your browser. On Windows, use `bun run start:windows`.\nAlternatively, see them live at [chenglou.me/pretext](https://chenglou.me/pretext/). Some more at [somnai-dreams.github.io/pretext-demos](https://somnai-dreams.github.io/pretext-demos/)\n\n## API\n\nPretext serves 2 use cases:\n\n### 1. Measure a paragraph's height _without ever touching DOM_\n\n```ts\nimport { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout & reflow!\n```\n\n`prepare()` does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. `layout()` is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun `prepare()` for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun `layout()`.\n\nIf you want textarea-like text where ordinary spaces, `\\t` tabs, and `\\n` hard breaks stay visible, pass `{ whiteSpace: 'pre-wrap' }` to `prepare()`:\n\n```ts\nconst prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\n```\n\nOther `prepare()` options are `{ wordBreak: 'keep-all' }` for CSS-like `word-break: keep-all`, and `{ letterSpacing: n }` to match CSS `letter-spacing` (`n` is treated as a px value).\n\nThe returned height is the crucial last piece for unlocking web UIs:\n- proper virtualization/occlusion without guesstimates & caching\n- fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.\n- _development time_ verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free\n- prevent layout shift when new text loads and you wanna re-anchor the scroll position\n\n### 2. Lay out the paragraph lines manually yourself\n\nSwitch out `prepare` with `prepareWithSegments`, then:\n\n- `layoutWithLines()` gives you all the lines at a fixed width:\n\n```ts\nimport { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px \"Helvetica Neue\"')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i < lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\n```\n\n- `measureLineStats()` and `walkLineRanges()` give you line counts, widths and cursors without building the text strings:\n\n```ts\nimport { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line => { if (line.width > maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web\n```\n\n- `layoutNextLineRange()` lets you route text one row at a time when width changes as you go. If you want the actual string too, `materializeLineRange()` turns that one range back into a full line:\n\n```ts\nimport { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y < image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\n```\n\nThis usage allows rendering to canvas, SVG, WebGL and (eventually) server-side. See the `/demos/dynamic-layout` demo for a richer example.\n\nFor hyphenation in manual layout, insert soft hyphens before `prepare()` / `prepareWithSegments()`. Pretext treats them as optional break points: unchosen soft hyphens stay invisible, while chosen breaks materialize as a trailing `-`. A soft hyphen at the end of the paragraph is consumed without painting a hyphen. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation. Automatic hyphenation is not built in today.\n\nVery narrow SHY fallback remains approximate: Safari can overflow a prefix plus hyphen, while Chromium and Gecko may move part of the prefix to another line.\n\nIf your manual layout needs a small helper for rich-text inline flow, code spans, mentions, chips, and browser-like boundary whitespace collapse, there is a helper at `@chenglou/pretext/rich-inline`. It stays inline-only and `white-space: normal`-only on purpose:\n\n```ts\nimport { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: \"'s rich-note\", font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range => {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\n```\n\nIt is intentionally narrow:\n- raw inline text in, including boundary spaces\n- caller-owned `extraWidth` for pill chrome\n- `break: 'never'` for atomic items like chips and mentions\n- `white-space: normal` only\n- not a nested markup tree and not a general CSS inline formatting engine\n\n### API Glossary\n\nUse-case 1 APIs:\n```ts\nprepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\n```\n\nUse-case 2 APIs:\n```ts\nprepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) => void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // returns the widest forced line when width itself is not the thing causing wraps\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\n```\n\nHelper for rich-text inline flow:\n```ts\nprepareRichInline(items: RichInlineItem[]): PreparedRichInline // compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) => void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw author text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic, like a chi",
+  "commitCount": 626,
+  "readmeExcerpt": "# Pretext\n\nPure JavaScript/TypeScript library for multiline text measurement & layout. Fast, accurate & supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.\n\nPretext side-steps the need for DOM measurements (e.g. `getBoundingClientRect`, `offsetHeight`), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).\n\n## Installation\n\n```sh\nnpm install @chenglou/pretext\n```\n\n## Demos\n\nClone the repo, run `bun install`, then `bun start`, and open `/demos/index` in your browser. On Windows, use `bun run start:windows`.\nAlternatively, see them live at [chenglou.me/pretext](https://chenglou.me/pretext/). Some more at [somnai-dreams.github.io/pretext-demos](https://somnai-dreams.github.io/pretext-demos/)\n\n## API\n\nPretext serves 2 use cases:\n\n### 1. Measure a paragraph's height _without ever touching DOM_\n\n```ts\nimport { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout & reflow!\n```\n\n`prepare()` does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. `layout()` is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun `prepare()` for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun `layout()`.\n\nIf you want textarea-like text where ordinary spaces, `\\t` tabs, and `\\n` hard breaks stay visible, pass `{ whiteSpace: 'pre-wrap' }` to `prepare()`:\n\n```ts\nconst prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\n```\n\nOther `prepare()` options are `{ wordBreak: 'keep-all' }` for CSS-like `word-break: keep-all`, and `{ letterSpacing: n }` to match CSS `letter-spacing` (`n` is treated as a px value).\n\nThe returned height is the crucial last piece for unlocking web UIs:\n- proper virtualization/occlusion without guesstimates & caching\n- fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.\n- _development time_ verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free\n- prevent layout shift when new text loads and you wanna re-anchor the scroll position\n\n### 2. Lay out the paragraph lines manually yourself\n\nSwitch out `prepare` with `prepareWithSegments`, then:\n\n- `layoutWithLines()` gives you all the lines at a fixed width:\n\n```ts\nimport { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px \"Helvetica Neue\"')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i < lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\n```\n\n- `measureLineStats()` and `walkLineRanges()` give you line counts, widths and cursors without building the text strings:\n\n```ts\nimport { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line => { if (line.width > maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web\n```\n\n- `layoutNextLineRange()` lets you route text one row at a time when width changes as you go:\n\n```ts\nimport { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y < image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\n```\n\nSee the `/demos/dynamic-layout` demo for a richer example.\n\nFor hyphenation, insert soft hyphens before calling `prepare()` or `prepareWithSegments()`. They stay invisible unless the line breaks there, in which case it ends with `-`. Pretext doesn't insert soft hyphens for you. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation.\n\nTo lay out text with mixed fonts, code spans, mentions, or chips, use `@chenglou/pretext/rich-inline`:\n\n```ts\nimport { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: \"'s rich-note\", font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range => {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\n```\n\nPass a flat list of text items. Only `white-space: normal` is supported. This is not a general CSS inline formatting engine.\n\n### API Glossary\n\nUse-case 1 APIs:\n```ts\nprepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\n```\n\nUse-case 2 APIs:\n```ts\nprepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) => void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // Returns the width of the widest line when only explicit line breaks apply.\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\n```\n\nHelper for rich-text inline flow:\n```ts\nprepareRichInline(items: RichInlineItem[]): PreparedRichInline // prepares the items for layout and collapses spaces between them\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) => void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic (aka on one line), like a chip\n  extraWidth?: number // extra width around the text, e.g. padding and borders\n}\ntype RichInlineCursor = {\n  itemIndex: number // Which source RichInlineItem this cursor is currently in\n  segmentIndex: number // Segment index within that item's prepared text\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\ntype RichInlineFragment = {\n  itemIndex: number // index back into the original RichInlineItem array\n  text: string // Text slice for this fragment\n  gapBefore: number // collapsed space before this fragment, in pixels; can be zero or negative\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLine = {\n  fragments: RichInlineFragment[] // Materialized fragments ",
   "contributors": [
     {
       "login": "chenglou",
       "url": "https://github.com/chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4",
-      "contributions": 412
+      "contributions": 617
     },
     {
       "login": "bg-l2norm",
@@ -350,6 +355,12 @@
       "contributions": 1
     },
     {
+      "login": "mvanhorn",
+      "url": "https://github.com/mvanhorn",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/455140?v=4",
+      "contributions": 1
+    },
+    {
       "login": "threepointone",
       "url": "https://github.com/threepointone",
       "avatarUrl": "https://avatars.githubusercontent.com/u/18808?v=4",
@@ -366,84 +377,81 @@
       "url": "https://github.com/somnai-dreams",
       "avatarUrl": "https://avatars.githubusercontent.com/u/8848417?v=4",
       "contributions": 1
+    },
+    {
+      "login": "hiSandog",
+      "url": "https://github.com/hiSandog",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/24449799?v=4",
+      "contributions": 1
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pretext</h1></div>\n<p dir=\"auto\">Pure JavaScript/TypeScript library for multiline text measurement &amp; layout. Fast, accurate &amp; supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.</p>\n<p dir=\"auto\">Pretext side-steps the need for DOM measurements (e.g. <code>getBoundingClientRect</code>, <code>offsetHeight</code>), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @chenglou/pretext\"><pre>npm install @chenglou/pretext</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Demos</h2></div>\n<p dir=\"auto\">Clone the repo, run <code>bun install</code>, then <code>bun start</code>, and open <code>/demos/index</code> in your browser. On Windows, use <code>bun run start:windows</code>.\nAlternatively, see them live at <a href=\"https://chenglou.me/pretext/\" rel=\"nofollow\">chenglou.me/pretext</a>. Some more at <a href=\"https://somnai-dreams.github.io/pretext-demos/\" rel=\"nofollow\">somnai-dreams.github.io/pretext-demos</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">API</h2></div>\n<p dir=\"auto\">Pretext serves 2 use cases:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Measure a paragraph's height <em>without ever touching DOM</em></h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout &amp; reflow!\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepare</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layout</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀‎'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height<span class=\"pl-kos\">,</span> lineCount <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// pure arithmetic. No DOM layout &amp; reflow!</span></pre></div>\n<p dir=\"auto\"><code>prepare()</code> does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. <code>layout()</code> is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun <code>prepare()</code> for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun <code>layout()</code>.</p>\n<p dir=\"auto\">If you want textarea-like text where ordinary spaces, <code>\\t</code> tabs, and <code>\\n</code> hard breaks stay visible, pass <code>{ whiteSpace: 'pre-wrap' }</code> to <code>prepare()</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">textareaValue</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">whiteSpace</span>: <span class=\"pl-s\">'pre-wrap'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">textareaWidth</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Other <code>prepare()</code> options are <code>{ wordBreak: 'keep-all' }</code> for CSS-like <code>word-break: keep-all</code>, and <code>{ letterSpacing: n }</code> to match CSS <code>letter-spacing</code> (<code>n</code> is treated as a px value).</p>\n<p dir=\"auto\">The returned height is the crucial last piece for unlocking web UIs:</p>\n<ul dir=\"auto\">\n<li>proper virtualization/occlusion without guesstimates &amp; caching</li>\n<li>fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.</li>\n<li><em>development time</em> verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free</li>\n<li>prevent layout shift when new text loads and you wanna re-anchor the scroll position</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Lay out the paragraph lines manually yourself</h3></div>\n<p dir=\"auto\">Switch out <code>prepare</code> with <code>prepareWithSegments</code>, then:</p>\n<ul dir=\"auto\">\n<li><code>layoutWithLines()</code> gives you all the lines at a fixed width:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px &quot;Helvetica Neue&quot;')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i &lt; lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layoutWithLines</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'18px \"Helvetica Neue\"'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lines <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// 320px max width, 26px line height</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">let</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">lines</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">length</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span><span class=\"pl-c1\">++</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">lines</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">i</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">*</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span></pre></div>\n<ul dir=\"auto\">\n<li><code>measureLineStats()</code> and <code>walkLineRanges()</code> give you line counts, widths and cursors without building the text strings:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line =&gt; { if (line.width &gt; maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline &quot;shrink wrap&quot; has been missing from web\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">measureLineStats</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lineCount<span class=\"pl-kos\">,</span> maxLineWidth <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n<span class=\"pl-en\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-c1\">&gt;</span> <span class=\"pl-s1\">maxW</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web</span></pre></div>\n<ul dir=\"auto\">\n<li><code>layoutNextLineRange()</code> lets you route text one row at a time when width changes as you go. If you want the actual string too, <code>materializeLineRange()</code> turns that one range back into a full line:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y &lt; image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">layoutNextLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">materializeLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">article</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">BODY_FONT</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">cursor</span>: <span class=\"pl-smi\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">segmentIndex</span>: <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">graphemeIndex</span>: <span class=\"pl-c1\">0</span> <span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n\n<span class=\"pl-c\">// Flow text around a floated image: lines beside the image are narrower</span>\n<span class=\"pl-k\">while</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">width</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">bottom</span> ? <span class=\"pl-s1\">columnWidth</span> <span class=\"pl-c1\">-</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> : <span class=\"pl-s1\">columnWidth</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">cursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">width</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">range</span> <span class=\"pl-c1\">===</span> <span class=\"pl-c1\">null</span><span class=\"pl-kos\">)</span> <span class=\"pl-k\">break</span>\n\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">cursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">end</span>\n  <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">+=</span> <span class=\"pl-c1\">26</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">This usage allows rendering to canvas, SVG, WebGL and (eventually) server-side. See the <code>/demos/dynamic-layout</code> demo for a richer example.</p>\n<p dir=\"auto\">For hyphenation in manual layout, insert soft hyphens before <code>prepare()</code> / <code>prepareWithSegments()</code>. Pretext treats them as optional break points: unchosen soft hyphens stay invisible, while chosen breaks materialize as a trailing <code>-</code>. A soft hyphen at the end of the paragraph is consumed without painting a hyphen. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation. Automatic hyphenation is not built in today.</p>\n<p dir=\"auto\">Very narrow SHY fallback remains approximate: Safari can overflow a prefix plus hyphen, while Chromium and Gecko may move part of the prefix to another line.</p>\n<p dir=\"auto\">If your manual layout needs a small helper for rich-text inline flow, code spans, mentions, chips, and browser-like boundary whitespace collapse, there is a helper at <code>@chenglou/pretext/rich-inline</code>. It stays inline-only and <code>white-space: normal</code>-only on purpose:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: &quot;'s rich-note&quot;, font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range =&gt; {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">materializeRichInlineLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkRichInlineLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext/rich-inline'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">[</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'Ship '</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'@maya'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'700 12px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">break</span>: <span class=\"pl-s\">'never'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">extraWidth</span>: <span class=\"pl-c1\">22</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">\"'s rich-note\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-en\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-c\">// each fragment keeps its source item index, text slice, gapBefore, and cursors</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">It is intentionally narrow:</p>\n<ul dir=\"auto\">\n<li>raw inline text in, including boundary spaces</li>\n<li>caller-owned <code>extraWidth</code> for pill chrome</li>\n<li><code>break: 'never'</code> for atomic items like chips and mentions</li>\n<li><code>white-space: normal</code> only</li>\n<li>not a nested markup tree and not a general CSS inline formatting engine</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">API Glossary</h3></div>\n<p dir=\"auto\">Use-case 1 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\"><pre><span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedText</span> <span class=\"pl-c\">// one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.</span>\n<span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedText</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.</span></pre></div>\n<p dir=\"auto\">Use-case 2 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) =&gt; void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is &quot;nice&quot; too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // returns the widest forced line when width itself is not the thing causing wraps\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\"><pre><span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedTextWithSegments</span> <span class=\"pl-c\">// same as `prepare()`, but returns a richer structure for manual line layout needs</span>\n<span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lines</span>: <span class=\"pl-v\">LayoutLine</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info</span>\n<span class=\"pl-s1\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-c\">// low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.</span><span class=\"pl-kos\"></span>\n<span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">lineCount</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.</span>\n<span class=\"pl-en\">measureNaturalWidth</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// returns the widest forced line when width itself is not the thing causing wraps</span>\n<span class=\"pl-en\">layoutNextLine</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.</span>\n<span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.</span>\n<span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c\">// turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Full text content of this line, e.g. 'hello world'</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index in prepareWithSegments' prepared rich segment stream</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Helper for rich-text inline flow:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareRichInline(items: RichInlineItem[]): PreparedRichInline // compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) =&gt; void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw author text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic, like a chip\n  extraWidth?: number // caller-owned horizontal chrome, e.g. padding + border width\n}\ntype RichInlineCursor = {\n  itemIndex: number // Which source RichInlineItem this cursor is currently in\n  segmentIndex: number // Segment index within that item's prepared text\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\ntype RichInlineFragment = {\n  itemIndex: number // index back into the original RichInlineItem array\n  text: string // Text slice for this fragment\n  gapBefore: number // collapsed boundary gap paid before this fragment on this line\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLine = {\n  fragments: RichInlineFragment[] // Materialized fragments on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineFragmentRange = {\n  itemIndex: number // index back into the original RichInlineItem array\n  gapBefore: number // collapsed boundary gap paid before this fragment on this line\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLineRange = {\n  fragments: RichInlineFragmentRange[] // Non-materialized fragment ownership/ranges on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\"><pre><span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">items</span>: <span class=\"pl-v\">RichInlineItem</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedRichInline</span> <span class=\"pl-c\">// compile raw inline items with their original text. The compiler owns cross-item collapsed whitespace and caches each item's natural width</span>\n<span class=\"pl-en\">layoutNextRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>?: <span class=\"pl-v\">RichInlineCursor</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// stream one line of rich-text inline flow at a time without building fragment text strings</span>\n<span class=\"pl-s1\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// non-materializing line walker for rich-text inline flow shrinkwrap/stats work</span>\n<span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c\">// turns one previously computed rich-inline line range back into full fragment text</span>\n<span class=\"pl-s1\">measureRichInlineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">maxLineWidth</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineItem</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">text</span>: string <span class=\"pl-c\">// raw author text, including leading/trailing collapsible spaces</span>\n  <span class=\"pl-s1\">font</span>: string <span class=\"pl-c\">// canvas font shorthand for this item</span>\n  <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-c\">// extra horizontal spacing between graphemes, in CSS px</span>\n  <span class=\"pl-k\">break</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'never'</span> <span class=\"pl-c\">// `never` keeps the item atomic, like a chip</span>\n  <span class=\"pl-s1\">extraWidth</span>?: number <span class=\"pl-c\">// caller-owned horizontal chrome, e.g. padding + border width</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// Which source RichInlineItem this cursor is currently in</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index within that item's prepared text</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragment</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Text slice for this fragment</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed boundary gap paid before this fragment on this line</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragment</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Materialized fragments on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragmentRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed boundary gap paid before this fragment on this line</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragmentRange</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Non-materialized fragment ownership/ranges on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Other helpers:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"clearCache(): void // clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache\nsetLocale(locale?: string): void // optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)\"><pre><span class=\"pl-en\">clearCache</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache</span>\n<span class=\"pl-en\">setLocale</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">locale</span>?: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)</span></pre></div>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li><code>PreparedText</code> is the opaque fast-path handle. <code>PreparedTextWithSegments</code> is the richer manual-layout handle.</li>\n<li><code>LayoutCursor</code> is a segment/grapheme cursor, not a raw string offset.</li>\n<li><code>layout()</code> with an empty string returns <code>{ lineCount: 0, height: 0 }</code>. Browsers still size an empty block to one <code>line-height</code>, so clamp with <code>Math.max(1, lineCount) * lineHeight</code> if you need that behavior.</li>\n<li>The richer handle also includes approximate <code>segLevels</code> for custom bidi-aware rendering. Base direction and weak/neutral state restart at Unicode bidi paragraph separators in the normalized text. In <code>pre-wrap</code>, normalized newlines start fresh paragraphs; in <code>normal</code>, ASCII newlines collapse to spaces first. Tabs and U+2028 LINE SEPARATOR do not restart paragraph direction. This is not a full Unicode Bidirectional Algorithm implementation, and the line-breaking APIs do not read these levels.</li>\n<li>Segment widths are browser-canvas widths for line breaking, not exact glyph-position data for custom Arabic or mixed-direction x-coordinate reconstruction.</li>\n<li>If a soft hyphen wins the break, materialized line text includes the visible trailing <code>-</code>.</li>\n<li><code>measureNaturalWidth()</code> returns the widest forced line. Hard breaks still count.</li>\n<li><code>prepare()</code> and <code>prepareWithSegments()</code> do horizontal-only work. <code>lineHeight</code> stays a layout-time input.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Caveats</h2></div>\n<p dir=\"auto\">Pretext doesn't try to be a full font rendering engine (yet?). It currently targets the common text setup:</p>\n<ul dir=\"auto\">\n<li><code>white-space: normal</code> and <code>pre-wrap</code></li>\n<li><code>word-break: normal</code> and <code>keep-all</code></li>\n<li><code>overflow-wrap: break-word</code>. Very narrow widths can still break inside words, but only at grapheme boundaries.</li>\n<li><code>line-break: auto</code></li>\n<li><code>letter-spacing</code> as a numeric pixel value passed to <code>prepare()</code> / <code>prepareWithSegments()</code></li>\n<li>Tabs follow the default browser-style <code>tab-size: 8</code></li>\n<li><code>{ wordBreak: 'keep-all' }</code> is supported too. It behaves like you'd expect for CJK/Hangul and no-space mixed Latin/numeric/CJK text, while keeping the same <code>overflow-wrap: break-word</code> fallback for overlong runs.</li>\n<li><code>system-ui</code> and <code>-apple-system</code> are unsafe for <code>layout()</code> accuracy on macOS. Use a named font. See the <a href=\"https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md\">platform bug ledger</a> for the Chrome and Firefox issues.</li>\n<li>Contextual font spacing can still change emergency breaks inside long words. Shantell Sans is one known example. Generic fonts can also resolve differently under a DOM <code>lang</code> setting that the measurement canvas does not share; use a named font and verify the actual text in the target browser.</li>\n<li>Runtime requires <code>Intl.Segmenter</code> and Canvas 2D text measurement. Browsers or runtimes without <code>Intl.Segmenter</code> are currently unsupported.</li>\n<li>CSS text features outside the canvas <code>font</code> shorthand, such as <code>font-optical-sizing</code>, <code>font-feature-settings</code>, and standalone <code>font-variation-settings</code>, are not modeled separately. Variable-font axes only help when the active axis is reflected in the canvas font string, for example via weight.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Develop</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/chenglou/pretext/blob/main/DEVELOPMENT.md\">DEVELOPMENT.md</a> for the dev setup and commands.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits</h2></div>\n<p dir=\"auto\">Sebastian Markbage first planted the seed with <a href=\"https://github.com/chenglou/text-layout\">text-layout</a> last decade. His design — canvas <code>measureText</code> for shaping, bidi from pdf.js, streaming line breaking — informed the architecture we kept pushing forward here.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Pretext</h1></div>\n<p dir=\"auto\">Pure JavaScript/TypeScript library for multiline text measurement &amp; layout. Fast, accurate &amp; supports all the languages you didn't even know about. Allows rendering to DOM, Canvas, SVG and soon, server-side.</p>\n<p dir=\"auto\">Pretext side-steps the need for DOM measurements (e.g. <code>getBoundingClientRect</code>, <code>offsetHeight</code>), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @chenglou/pretext\"><pre>npm install @chenglou/pretext</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Demos</h2></div>\n<p dir=\"auto\">Clone the repo, run <code>bun install</code>, then <code>bun start</code>, and open <code>/demos/index</code> in your browser. On Windows, use <code>bun run start:windows</code>.\nAlternatively, see them live at <a href=\"https://chenglou.me/pretext/\" rel=\"nofollow\">chenglou.me/pretext</a>. Some more at <a href=\"https://somnai-dreams.github.io/pretext-demos/\" rel=\"nofollow\">somnai-dreams.github.io/pretext-demos</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">API</h2></div>\n<p dir=\"auto\">Pretext serves 2 use cases:</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Measure a paragraph's height <em>without ever touching DOM</em></h3></div>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout &amp; reflow!\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepare</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layout</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀‎'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height<span class=\"pl-kos\">,</span> lineCount <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// pure arithmetic. No DOM layout &amp; reflow!</span></pre></div>\n<p dir=\"auto\"><code>prepare()</code> does the one-time work: normalize whitespace, segment the text, apply glue rules, measure the segments with canvas, and return an opaque handle. <code>layout()</code> is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun <code>prepare()</code> for the same text and configs; that'd defeat its precomputation. For example, on resize, only rerun <code>layout()</code>.</p>\n<p dir=\"auto\">If you want textarea-like text where ordinary spaces, <code>\\t</code> tabs, and <code>\\n</code> hard breaks stay visible, pass <code>{ whiteSpace: 'pre-wrap' }</code> to <code>prepare()</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">textareaValue</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'16px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">whiteSpace</span>: <span class=\"pl-s\">'pre-wrap'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> height <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">textareaWidth</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">20</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Other <code>prepare()</code> options are <code>{ wordBreak: 'keep-all' }</code> for CSS-like <code>word-break: keep-all</code>, and <code>{ letterSpacing: n }</code> to match CSS <code>letter-spacing</code> (<code>n</code> is treated as a px value).</p>\n<p dir=\"auto\">The returned height is the crucial last piece for unlocking web UIs:</p>\n<ul dir=\"auto\">\n<li>proper virtualization/occlusion without guesstimates &amp; caching</li>\n<li>fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.</li>\n<li><em>development time</em> verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free</li>\n<li>prevent layout shift when new text loads and you wanna re-anchor the scroll position</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Lay out the paragraph lines manually yourself</h3></div>\n<p dir=\"auto\">Switch out <code>prepare</code> with <code>prepareWithSegments</code>, then:</p>\n<ul dir=\"auto\">\n<li><code>layoutWithLines()</code> gives you all the lines at a fixed width:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px &quot;Helvetica Neue&quot;')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i &lt; lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">layoutWithLines</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'AGI 春天到了. بدأت الرحلة 🚀'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">'18px \"Helvetica Neue\"'</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lines <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span> <span class=\"pl-c\">// 320px max width, 26px line height</span>\n<span class=\"pl-k\">for</span> <span class=\"pl-kos\">(</span><span class=\"pl-k\">let</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">lines</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">length</span><span class=\"pl-kos\">;</span> <span class=\"pl-s1\">i</span><span class=\"pl-c1\">++</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">lines</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\">i</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">i</span> <span class=\"pl-c1\">*</span> <span class=\"pl-c1\">26</span><span class=\"pl-kos\">)</span></pre></div>\n<ul dir=\"auto\">\n<li><code>measureLineStats()</code> and <code>walkLineRanges()</code> give you line counts, widths and cursors without building the text strings:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line =&gt; { if (line.width &gt; maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline &quot;shrink wrap&quot; has been missing from web\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">measureLineStats</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> lineCount<span class=\"pl-kos\">,</span> maxLineWidth <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n<span class=\"pl-en\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span> <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-c1\">&gt;</span> <span class=\"pl-s1\">maxW</span><span class=\"pl-kos\">)</span> <span class=\"pl-s1\">maxW</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-c\">// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web</span></pre></div>\n<ul dir=\"auto\">\n<li><code>layoutNextLineRange()</code> lets you route text one row at a time when width changes as you go:</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y &lt; image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, cursor, width)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">layoutNextLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">materializeLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">article</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">BODY_FONT</span><span class=\"pl-kos\">)</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">cursor</span>: <span class=\"pl-smi\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">segmentIndex</span>: <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">graphemeIndex</span>: <span class=\"pl-c1\">0</span> <span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">let</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span>\n\n<span class=\"pl-c\">// Flow text around a floated image: lines beside the image are narrower</span>\n<span class=\"pl-k\">while</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">width</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">&lt;</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">bottom</span> ? <span class=\"pl-s1\">columnWidth</span> <span class=\"pl-c1\">-</span> <span class=\"pl-s1\">image</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">width</span> : <span class=\"pl-s1\">columnWidth</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">cursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">width</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">range</span> <span class=\"pl-c1\">===</span> <span class=\"pl-c1\">null</span><span class=\"pl-kos\">)</span> <span class=\"pl-k\">break</span>\n\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">ctx</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">fillText</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">text</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">y</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-s1\">cursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">end</span>\n  <span class=\"pl-s1\">y</span> <span class=\"pl-c1\">+=</span> <span class=\"pl-c1\">26</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">See the <code>/demos/dynamic-layout</code> demo for a richer example.</p>\n<p dir=\"auto\">For hyphenation, insert soft hyphens before calling <code>prepare()</code> or <code>prepareWithSegments()</code>. They stay invisible unless the line breaks there, in which case it ends with <code>-</code>. Pretext doesn't insert soft hyphens for you. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation.</p>\n<p dir=\"auto\">To lay out text with mixed fonts, code spans, mentions, or chips, use <code>@chenglou/pretext/rich-inline</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: &quot;'s rich-note&quot;, font: '500 17px Inter' },\n])\n\nwalkRichInlineLineRanges(prepared, 320, range =&gt; {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, gapBefore, and cursors\n})\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">materializeRichInlineLineRange</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">prepareRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">walkRichInlineLineRanges</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@chenglou/pretext/rich-inline'</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">prepared</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">[</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'Ship '</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">'@maya'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'700 12px Inter'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">break</span>: <span class=\"pl-s\">'never'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">extraWidth</span>: <span class=\"pl-c1\">22</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">text</span>: <span class=\"pl-s\">\"'s rich-note\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">font</span>: <span class=\"pl-s\">'500 17px Inter'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>\n\n<span class=\"pl-en\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">320</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">line</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">range</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-c\">// each fragment keeps its source item index, text slice, gapBefore, and cursors</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span></pre></div>\n<p dir=\"auto\">Pass a flat list of text items. Only <code>white-space: normal</code> is supported. This is not a general CSS inline formatting engine.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">API Glossary</h3></div>\n<p dir=\"auto\">Use-case 1 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\"><pre><span class=\"pl-en\">prepare</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedText</span> <span class=\"pl-c\">// one-time text analysis + measurement pass, returns an opaque value to pass to `layout()`. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value.</span>\n<span class=\"pl-en\">layout</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedText</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.</span></pre></div>\n<p dir=\"auto\">Use-case 2 APIs:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedTextWithSegments, maxWidth: number, onLine: (line: LayoutLineRange) =&gt; void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is &quot;nice&quot; too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedTextWithSegments, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedTextWithSegments): number // Returns the width of the widest line when only explicit line breaks apply.\nlayoutNextLine(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedTextWithSegments, start: LayoutCursor, maxWidth: number): LayoutLineRange | null // same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.\nmaterializeLineRange(prepared: PreparedTextWithSegments, line: LayoutLineRange): LayoutLine // turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text\ntype LineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\ntype LayoutLine = {\n  text: string // Full text content of this line, e.g. 'hello world'\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutLineRange = {\n  width: number // Measured width of this line, e.g. 87.5\n  start: LayoutCursor // Inclusive start cursor in prepared segments/graphemes\n  end: LayoutCursor // Exclusive end cursor in prepared segments/graphemes\n}\ntype LayoutCursor = {\n  segmentIndex: number // Segment index in prepareWithSegments' prepared rich segment stream\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\"><pre><span class=\"pl-en\">prepareWithSegments</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">text</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">font</span>: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">options</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">whiteSpace</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'pre-wrap'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">wordBreak</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'keep-all'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedTextWithSegments</span> <span class=\"pl-c\">// same as `prepare()`, but returns a richer structure for manual line layout needs</span>\n<span class=\"pl-en\">layoutWithLines</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">lineHeight</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">height</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">lines</span>: <span class=\"pl-v\">LayoutLine</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info</span>\n<span class=\"pl-s1\">walkLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-c\">// low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.</span><span class=\"pl-kos\"></span>\n<span class=\"pl-en\">measureLineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">lineCount</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.</span>\n<span class=\"pl-en\">measureNaturalWidth</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// Returns the width of the widest line when only explicit line breaks apply.</span>\n<span class=\"pl-en\">layoutNextLine</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.</span>\n<span class=\"pl-en\">layoutNextLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// same as layoutNextLine(), but without allocating line text strings. Useful for variable-width manual layout, occlusion, and virtualization measurements.</span>\n<span class=\"pl-en\">materializeLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedTextWithSegments</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">LayoutLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c\">// turns a LayoutLineRange from layoutNextLineRange() or walkLineRanges() into a full line with text</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Full text content of this line, e.g. 'hello world'</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, e.g. 87.5</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Inclusive start cursor in prepared segments/graphemes</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Exclusive end cursor in prepared segments/graphemes</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index in prepareWithSegments' prepared rich segment stream</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Helper for rich-text inline flow:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"prepareRichInline(items: RichInlineItem[]): PreparedRichInline // prepares the items for layout and collapses spaces between them\nlayoutNextRichInlineLineRange(prepared: PreparedRichInline, maxWidth: number, start?: RichInlineCursor): RichInlineLineRange | null // stream one line of rich-text inline flow at a time without building fragment text strings\nwalkRichInlineLineRanges(prepared: PreparedRichInline, maxWidth: number, onLine: (line: RichInlineLineRange) =&gt; void): number // non-materializing line walker for rich-text inline flow shrinkwrap/stats work\nmaterializeRichInlineLineRange(prepared: PreparedRichInline, line: RichInlineLineRange): RichInlineLine // turns one previously computed rich-inline line range back into full fragment text\nmeasureRichInlineStats(prepared: PreparedRichInline, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.\ntype RichInlineItem = {\n  text: string // raw text, including leading/trailing collapsible spaces\n  font: string // canvas font shorthand for this item\n  letterSpacing?: number // extra horizontal spacing between graphemes, in CSS px\n  break?: 'normal' | 'never' // `never` keeps the item atomic (aka on one line), like a chip\n  extraWidth?: number // extra width around the text, e.g. padding and borders\n}\ntype RichInlineCursor = {\n  itemIndex: number // Which source RichInlineItem this cursor is currently in\n  segmentIndex: number // Segment index within that item's prepared text\n  graphemeIndex: number // Grapheme index within that segment; `0` at segment boundaries\n}\ntype RichInlineFragment = {\n  itemIndex: number // index back into the original RichInlineItem array\n  text: string // Text slice for this fragment\n  gapBefore: number // collapsed space before this fragment, in pixels; can be zero or negative\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLine = {\n  fragments: RichInlineFragment[] // Materialized fragments on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineFragmentRange = {\n  itemIndex: number // index back into the original RichInlineItem array\n  gapBefore: number // collapsed space before this fragment, in pixels; can be zero or negative\n  occupiedWidth: number // text width plus extraWidth\n  start: LayoutCursor // Start cursor within the item's prepared text\n  end: LayoutCursor // End cursor within the item's prepared text\n}\ntype RichInlineLineRange = {\n  fragments: RichInlineFragmentRange[] // Non-materialized fragment ownership/ranges on this line\n  width: number // Measured width of this line, including gapBefore/extraWidth\n  end: RichInlineCursor // Exclusive end cursor for continuing the next line\n}\ntype RichInlineStats = {\n  lineCount: number // Number of wrapped lines, e.g. 3\n  maxLineWidth: number // Widest wrapped line, e.g. 192.5\n}\"><pre><span class=\"pl-en\">prepareRichInline</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">items</span>: <span class=\"pl-v\">RichInlineItem</span><span class=\"pl-kos\">[</span><span class=\"pl-s1\"></span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">PreparedRichInline</span> <span class=\"pl-c\">// prepares the items for layout and collapses spaces between them</span>\n<span class=\"pl-en\">layoutNextRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-s1\">start</span>?: <span class=\"pl-v\">RichInlineCursor</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span> <span class=\"pl-c\">// stream one line of rich-text inline flow at a time without building fragment text strings</span>\n<span class=\"pl-s1\">walkRichInlineLineRanges</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">,</span> <span class=\"pl-en\">onLine</span>: <span class=\"pl-kos\">(</span><span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=</span><span class=\"pl-c1\">&gt;</span> <span class=\"pl-k\">void</span><span class=\"pl-kos\">)</span>: number <span class=\"pl-c\">// non-materializing line walker for rich-text inline flow shrinkwrap/stats work</span>\n<span class=\"pl-en\">materializeRichInlineLineRange</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">line</span>: <span class=\"pl-v\">RichInlineLineRange</span><span class=\"pl-kos\">)</span>: <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c\">// turns one previously computed rich-inline line range back into full fragment text</span>\n<span class=\"pl-s1\">measureRichInlineStats</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">prepared</span>: <span class=\"pl-v\">PreparedRichInline</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">maxWidth</span>: number<span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">lineCount</span>: <span class=\"pl-s1\">number</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">maxLineWidth</span>: <span class=\"pl-s1\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c\">// returns only how many lines this width produces, and how wide the widest one is. Avoids fragment-text allocations.</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineItem</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">text</span>: string <span class=\"pl-c\">// raw text, including leading/trailing collapsible spaces</span>\n  <span class=\"pl-s1\">font</span>: string <span class=\"pl-c\">// canvas font shorthand for this item</span>\n  <span class=\"pl-s1\">letterSpacing</span>?: number <span class=\"pl-c\">// extra horizontal spacing between graphemes, in CSS px</span>\n  <span class=\"pl-k\">break</span>?: <span class=\"pl-s\">'normal'</span> <span class=\"pl-c1\">|</span> <span class=\"pl-s\">'never'</span> <span class=\"pl-c\">// `never` keeps the item atomic (aka on one line), like a chip</span>\n  <span class=\"pl-s1\">extraWidth</span>?: number <span class=\"pl-c\">// extra width around the text, e.g. padding and borders</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-s1\">type</span> <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// Which source RichInlineItem this cursor is currently in</span>\n  <span class=\"pl-s1\">segmentIndex</span>: number <span class=\"pl-c\">// Segment index within that item's prepared text</span>\n  <span class=\"pl-s1\">graphemeIndex</span>: number <span class=\"pl-c\">// Grapheme index within that segment; `0` at segment boundaries</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragment</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">text</span>: string <span class=\"pl-c\">// Text slice for this fragment</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed space before this fragment, in pixels; can be zero or negative</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLine</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragment</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Materialized fragments on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineFragmentRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">itemIndex</span>: number <span class=\"pl-c\">// index back into the original RichInlineItem array</span>\n  <span class=\"pl-s1\">gapBefore</span>: number <span class=\"pl-c\">// collapsed space before this fragment, in pixels; can be zero or negative</span>\n  <span class=\"pl-s1\">occupiedWidth</span>: number <span class=\"pl-c\">// text width plus extraWidth</span>\n  <span class=\"pl-s1\">start</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// Start cursor within the item's prepared text</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">LayoutCursor</span> <span class=\"pl-c\">// End cursor within the item's prepared text</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineLineRange</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">fragments</span>: <span class=\"pl-v\">RichInlineFragmentRange</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-c\">// Non-materialized fragment ownership/ranges on this line</span>\n  <span class=\"pl-s1\">width</span>: number <span class=\"pl-c\">// Measured width of this line, including gapBefore/extraWidth</span>\n  <span class=\"pl-s1\">end</span>: <span class=\"pl-v\">RichInlineCursor</span> <span class=\"pl-c\">// Exclusive end cursor for continuing the next line</span>\n<span class=\"pl-kos\">}</span>\n<span class=\"pl-k\">type</span> <span class=\"pl-v\">RichInlineStats</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-s1\">lineCount</span>: number <span class=\"pl-c\">// Number of wrapped lines, e.g. 3</span>\n  <span class=\"pl-s1\">maxLineWidth</span>: number <span class=\"pl-c\">// Widest wrapped line, e.g. 192.5</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Other helpers:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"clearCache(): void // clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache\nsetLocale(locale?: string): void // optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)\"><pre><span class=\"pl-en\">clearCache</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// clears Pretext's shared internal caches used by prepare() and prepareWithSegments(). Useful if your app cycles through many different fonts or text variants and you want to release the accumulated cache</span>\n<span class=\"pl-en\">setLocale</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">locale</span>?: <span class=\"pl-s1\">string</span><span class=\"pl-kos\">)</span>: <span class=\"pl-k\">void</span> <span class=\"pl-c\">// optional (by default we use the current locale). Sets locale for future prepare() and prepareWithSegments(). Internally, it also calls clearCache(). Setting a new locale doesn't affect existing prepare() and prepareWithSegments() states (no mutations to them)</span></pre></div>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li><code>LayoutCursor</code> is a segment/grapheme cursor, not a raw string offset.</li>\n<li><code>layout()</code> with an empty string returns <code>{ lineCount: 0, height: 0 }</code>. Browsers still size an empty block to one <code>line-height</code>, so clamp with <code>Math.max(1, lineCount) * lineHeight</code> if you need that behavior.</li>\n<li>If you're drawing mixed bidi text, like English and Arabic, <code>prepareWithSegments()</code> includes <code>segLevels</code>: approximate bidi levels for each text segment, or <code>null</code> when no bidi metadata is needed. Levels describe direction and nesting for drawing; they don't affect where lines wrap. This is not a full Unicode Bidirectional Algorithm implementation.</li>\n<li>Segment widths are browser-canvas widths for line breaking. They aren't enough to position individual characters correctly in Arabic or mixed bidi text.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Caveats</h2></div>\n<p dir=\"auto\">Pretext doesn't try to be a full font rendering engine (yet?). It currently targets the common text setup:</p>\n<ul dir=\"auto\">\n<li><code>white-space: normal</code> and <code>pre-wrap</code></li>\n<li><code>word-break: normal</code> and <code>keep-all</code></li>\n<li><code>overflow-wrap: break-word</code>. Very narrow widths can still break inside words and independent symbol runs, but only at grapheme boundaries.</li>\n<li><code>line-break: auto</code></li>\n<li><code>letter-spacing</code> as a numeric pixel value passed to <code>prepare()</code> / <code>prepareWithSegments()</code></li>\n<li>Tabs follow the default browser-style <code>tab-size: 8</code></li>\n<li>In <code>pre-wrap</code>, Pretext treats a lone <code>\\r</code> as a line break, but browsers don't. Normalize <code>\\r</code> to <code>\\n</code> in the text you render, not just the text you measure.</li>\n<li><code>system-ui</code> and <code>-apple-system</code> are unsafe for <code>layout()</code> accuracy on macOS. Use a named font. See the <a href=\"https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md\">platform bug ledger</a> for the Chrome and Firefox issues.</li>\n<li>Page language changes fonts and line breaks, and without <code>lang</code> Chrome and Firefox use the browser's or system's language. A generic font like <code>sans-serif</code>, or a character missing from a named font, may use a different font from the one Pretext measures, and curly quotes can wrap differently per language. Set <code>lang</code> on <code>&lt;html&gt;</code>, use a named font that covers your text, and check the result in your browser. If you change <code>&lt;html lang&gt;</code>, prepare your text again; existing prepared handles keep the widths and line-break rules from before the change.</li>\n<li>Runtime requires <code>Intl.Segmenter</code>, Canvas 2D text measurement, and Unicode property escapes (<code>\\p{...}</code>). Browsers without these features aren't supported. Without Unicode property escapes, Pretext can't load and throws a <code>SyntaxError</code>.</li>\n<li>Pretext uses the canvas <code>font</code> string. Separate CSS settings such as <code>font-optical-sizing</code>, <code>font-feature-settings</code>, and <code>font-variation-settings</code> aren't supported. Variable-font settings only apply when expressed through that string, such as font weight.</li>\n<li>Pass font sizes in px. If your CSS sizes text in <code>rem</code> or <code>em</code>, resolve them to px once, higher up in your app (for example, when the root font size changes), and pass that string to Pretext.</li>\n<li>Pretext assumes default font kerning. Text painted with a different <code>font-kerning</code> can wrap differently.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Develop</h2></div>\n<p dir=\"auto\">See <a href=\"https://github.com/chenglou/pretext/blob/main/DEVELOPMENT.md\">DEVELOPMENT.md</a> for the dev setup and commands.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits</h2></div>\n<p dir=\"auto\">Sebastian Markbage first planted the seed with <a href=\"https://github.com/chenglou/text-layout\">text-layout</a> last decade. His design — canvas <code>measureText</code> for shaping, bidi from pdf.js, streaming line breaking — informed the architecture we kept pushing forward here.</p>\n</article></div>",
   "releases": [],
   "firstCommitAt": "2026-03-03T09:14:22Z",
-  "contributorCount": 7,
+  "contributorCount": 9,
   "recentIssues": [
     {
-      "number": 214,
-      "title": "BUG: CJK text can wrap with an ASCII hyphen at the start of a line",
-      "url": "https://github.com/chenglou/pretext/issues/214",
-      "createdAt": "2026-07-22T07:54:47Z",
-      "comments": 0,
-      "labels": [],
-      "author": "ChuanfengZhang"
-    },
-    {
-      "number": 212,
-      "title": "Bug: numeric minus sign is treated as a preferred break point (`-0.475`, `≥-100nA`)",
-      "url": "https://github.com/chenglou/pretext/issues/212",
-      "createdAt": "2026-07-21T09:40:34Z",
-      "comments": 0,
-      "labels": [],
-      "author": "ChuanfengZhang"
-    },
-    {
-      "number": 210,
-      "title": "Bug: leading ZWSP (U+200B) is consumed at line start, one line undercounted vs. browsers",
-      "url": "https://github.com/chenglou/pretext/issues/210",
-      "createdAt": "2026-07-21T07:00:32Z",
-      "comments": 0,
-      "labels": [],
-      "author": "ChuanfengZhang"
-    },
-    {
-      "number": 206,
-      "title": "\"overflow-wrap: break-word;\" not working as expected",
-      "url": "https://github.com/chenglou/pretext/issues/206",
-      "createdAt": "2026-07-02T15:20:05Z",
-      "comments": 0,
+      "number": 201,
+      "title": "Specify customWidth instead of extraWidth for elements like custom emoji",
+      "url": "https://github.com/chenglou/pretext/issues/201",
+      "createdAt": "2026-06-23T14:48:40Z",
+      "comments": 1,
       "labels": [],
       "author": "Stubenhocker1399"
     },
     {
-      "number": 203,
-      "title": "Chips not \"staying whole\" in Firefox",
-      "url": "https://github.com/chenglou/pretext/issues/203",
-      "createdAt": "2026-06-24T16:23:51Z",
-      "comments": 0,
+      "number": 199,
+      "title": "Expose fontKerning option in prepare() — align measurement with rendering",
+      "url": "https://github.com/chenglou/pretext/issues/199",
+      "createdAt": "2026-06-14T14:26:53Z",
+      "comments": 1,
       "labels": [],
-      "author": "brandonzylstra"
+      "author": "immaemi"
+    },
+    {
+      "number": 198,
+      "title": "Feature suggestion: Return font size and copy text.",
+      "url": "https://github.com/chenglou/pretext/issues/198",
+      "createdAt": "2026-06-10T01:19:43Z",
+      "comments": 1,
+      "labels": [],
+      "author": "wy2010344"
+    },
+    {
+      "number": 195,
+      "title": "`canvas.measureText` disagrees with DOM on `Shantell Sans weight 700` in Chrome and Firefox",
+      "url": "https://github.com/chenglou/pretext/issues/195",
+      "createdAt": "2026-06-03T18:41:58Z",
+      "comments": 2,
+      "labels": [],
+      "author": "arnaud-secondlayer"
     }
   ],
   "punchCard": [
     {
       "day": 0,
       "hour": 0,
-      "commits": 2
+      "commits": 10
     },
     {
       "day": 0,
       "hour": 1,
-      "commits": 9
+      "commits": 13
     },
     {
       "day": 0,
       "hour": 2,
-      "commits": 6
+      "commits": 15
     },
     {
       "day": 0,
       "hour": 3,
-      "commits": 4
+      "commits": 9
     },
     {
       "day": 0,
       "hour": 4,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 0,
@@ -488,7 +496,7 @@
     {
       "day": 0,
       "hour": 13,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 0,
@@ -528,7 +536,7 @@
     {
       "day": 0,
       "hour": 21,
-      "commits": 7
+      "commits": 8
     },
     {
       "day": 0,
@@ -553,7 +561,7 @@
     {
       "day": 1,
       "hour": 2,
-      "commits": 10
+      "commits": 12
     },
     {
       "day": 1,
@@ -648,7 +656,7 @@
     {
       "day": 1,
       "hour": 21,
-      "commits": 4
+      "commits": 6
     },
     {
       "day": 1,
@@ -763,7 +771,7 @@
     {
       "day": 2,
       "hour": 20,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 2,
@@ -773,7 +781,7 @@
     {
       "day": 2,
       "hour": 22,
-      "commits": 11
+      "commits": 12
     },
     {
       "day": 2,
@@ -793,7 +801,7 @@
     {
       "day": 3,
       "hour": 2,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 3,
@@ -993,7 +1001,7 @@
     {
       "day": 4,
       "hour": 18,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 4,
@@ -1018,7 +1026,7 @@
     {
       "day": 4,
       "hour": 23,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 5,
@@ -1038,12 +1046,12 @@
     {
       "day": 5,
       "hour": 3,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 5,
       "hour": 4,
-      "commits": 3
+      "commits": 6
     },
     {
       "day": 5,
@@ -1053,7 +1061,7 @@
     {
       "day": 5,
       "hour": 6,
-      "commits": 0
+      "commits": 3
     },
     {
       "day": 5,
@@ -1073,7 +1081,7 @@
     {
       "day": 5,
       "hour": 10,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 5,
@@ -1098,7 +1106,7 @@
     {
       "day": 5,
       "hour": 15,
-      "commits": 1
+      "commits": 3
     },
     {
       "day": 5,
@@ -1108,12 +1116,12 @@
     {
       "day": 5,
       "hour": 17,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 5,
       "hour": 18,
-      "commits": 1
+      "commits": 3
     },
     {
       "day": 5,
@@ -1123,7 +1131,7 @@
     {
       "day": 5,
       "hour": 20,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 5,
@@ -1143,52 +1151,52 @@
     {
       "day": 6,
       "hour": 0,
-      "commits": 11
+      "commits": 17
     },
     {
       "day": 6,
       "hour": 1,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 7,
       "commits": 7
     },
     {
       "day": 6,
-      "hour": 2,
-      "commits": 4
-    },
-    {
-      "day": 6,
-      "hour": 3,
-      "commits": 1
-    },
-    {
-      "day": 6,
-      "hour": 4,
-      "commits": 1
-    },
-    {
-      "day": 6,
-      "hour": 5,
-      "commits": 0
-    },
-    {
-      "day": 6,
-      "hour": 6,
-      "commits": 0
-    },
-    {
-      "day": 6,
-      "hour": 7,
-      "commits": 1
-    },
-    {
-      "day": 6,
       "hour": 8,
-      "commits": 0
+      "commits": 5
     },
     {
       "day": 6,
       "hour": 9,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -1203,73 +1211,65 @@
     {
       "day": 6,
       "hour": 12,
-      "commits": 2
-    },
-    {
-      "day": 6,
-      "hour": 13,
-      "commits": 6
-    },
-    {
-      "day": 6,
-      "hour": 14,
-      "commits": 5
-    },
-    {
-      "day": 6,
-      "hour": 15,
-      "commits": 0
-    },
-    {
-      "day": 6,
-      "hour": 16,
       "commits": 4
     },
     {
       "day": 6,
+      "hour": 13,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 6,
       "hour": 17,
-      "commits": 3
+      "commits": 5
     },
     {
       "day": 6,
       "hour": 18,
-      "commits": 0
+      "commits": 8
     },
     {
       "day": 6,
       "hour": 19,
-      "commits": 0
+      "commits": 2
     },
     {
       "day": 6,
       "hour": 20,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
       "hour": 21,
-      "commits": 2
+      "commits": 6
     },
     {
       "day": 6,
       "hour": 22,
-      "commits": 2
+      "commits": 6
     },
     {
       "day": 6,
       "hour": 23,
-      "commits": 2
+      "commits": 5
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-09-06",
-      "commits": 0
-    },
-    {
-      "week": "2025-09-13",
-      "commits": 0
-    },
     {
       "week": "2025-09-20",
       "commits": 0
@@ -1468,66 +1468,18 @@
     },
     {
       "week": "2026-08-30",
-      "commits": 6
+      "commits": 10
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 107
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 24
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-06",
-      "count": 0
-    },
-    {
-      "date": "2025-09-07",
-      "count": 0
-    },
-    {
-      "date": "2025-09-08",
-      "count": 0
-    },
-    {
-      "date": "2025-09-09",
-      "count": 0
-    },
-    {
-      "date": "2025-09-10",
-      "count": 0
-    },
-    {
-      "date": "2025-09-11",
-      "count": 0
-    },
-    {
-      "date": "2025-09-12",
-      "count": 0
-    },
-    {
-      "date": "2025-09-13",
-      "count": 0
-    },
-    {
-      "date": "2025-09-14",
-      "count": 0
-    },
-    {
-      "date": "2025-09-15",
-      "count": 0
-    },
-    {
-      "date": "2025-09-16",
-      "count": 0
-    },
-    {
-      "date": "2025-09-17",
-      "count": 0
-    },
-    {
-      "date": "2025-09-18",
-      "count": 0
-    },
-    {
-      "date": "2025-09-19",
-      "count": 0
-    },
     {
       "date": "2025-09-20",
       "count": 0
@@ -2922,171 +2874,227 @@
     },
     {
       "date": "2026-09-04",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-09-05",
+      "count": 3
+    },
+    {
+      "date": "2026-09-06",
+      "count": 5
+    },
+    {
+      "date": "2026-09-07",
+      "count": 4
+    },
+    {
+      "date": "2026-09-08",
+      "count": 2
+    },
+    {
+      "date": "2026-09-09",
+      "count": 1
+    },
+    {
+      "date": "2026-09-10",
+      "count": 2
+    },
+    {
+      "date": "2026-09-11",
+      "count": 13
+    },
+    {
+      "date": "2026-09-12",
+      "count": 80
+    },
+    {
+      "date": "2026-09-13",
+      "count": 24
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
       "count": 0
     }
   ],
   "participation": {
-    "all": 419,
-    "owner": 412,
-    "community": 7
+    "all": 559,
+    "owner": 550,
+    "community": 9
   },
   "recentCommits": [
     {
-      "sha": "871e48f",
-      "message": "Fix Markdown chat font mismatch in Firefox",
-      "url": "https://github.com/chenglou/pretext/commit/871e48f7ca6a4a260508ec5d7f9e58ab19ab4e65",
-      "date": "2026-09-03T21:50:07Z",
+      "sha": "477510e",
+      "message": "Merge pull request #256 from chenglou/dedupe-docs",
+      "url": "https://github.com/chenglou/pretext/commit/477510e4f0d3cce34100b202a9e91f1ed940b07b",
+      "date": "2026-09-13T10:47:47Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "614b116",
-      "message": "Add font-context diagnostics and document measurement limits",
-      "url": "https://github.com/chenglou/pretext/commit/614b116375f5d9fa8dca1ca59afbac843cf3d42b",
-      "date": "2026-09-03T13:43:00Z",
+      "sha": "578643a",
+      "message": "Merge remote-tracking branch 'origin/main' into dedupe-docs",
+      "url": "https://github.com/chenglou/pretext/commit/578643a79e90e2f04ab99bd951c672ef930c3938",
+      "date": "2026-09-13T10:47:36Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "e8908a5",
-      "message": "Fit justification candidates to the spacing actually painted",
-      "url": "https://github.com/chenglou/pretext/commit/e8908a58fcd5d7d47b1fc1163b84d350b46a99f7",
-      "date": "2026-09-03T13:26:56Z",
+      "sha": "190d71a",
+      "message": "Merge pull request #255 from chenglou/simplify-prepare-state",
+      "url": "https://github.com/chenglou/pretext/commit/190d71ab1d4398f3b852e187e162a932eb8e2e33",
+      "date": "2026-09-13T10:46:20Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "4acfd86",
-      "message": "Reset rich bidi metadata independently for each paragraph",
-      "url": "https://github.com/chenglou/pretext/commit/4acfd86118336033ed035757f6dfaec610dbf23b",
-      "date": "2026-09-03T13:24:41Z",
+      "sha": "b10bec9",
+      "message": "Refresh benchmark snapshots for the smaller prepare state",
+      "url": "https://github.com/chenglou/pretext/commit/b10bec95577cd31a52153ce681e1c681f03e384b",
+      "date": "2026-09-13T10:46:10Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "582fcb2",
-      "message": "Keep terminal soft hyphens invisible across rich layout APIs",
-      "url": "https://github.com/chenglou/pretext/commit/582fcb261f3bf53c1d0de5d52fa2c121bb0edecf",
-      "date": "2026-09-03T13:21:40Z",
+      "sha": "4f16bb2",
+      "message": "Pin the smaller prepare state and refresh validation snapshots",
+      "url": "https://github.com/chenglou/pretext/commit/4f16bb23b10fb3ad89c8265a2514199c227ca310",
+      "date": "2026-09-13T10:44:30Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "1c53c4c",
-      "message": "Share compact browser checks and simplify portable setup",
-      "url": "https://github.com/chenglou/pretext/commit/1c53c4c5348f705b0abf1a51735ee3ecca0af9dd",
-      "date": "2026-09-03T13:06:19Z",
+      "sha": "cc2328b",
+      "message": "Merge remote-tracking branch 'origin/main' into simplify-prepare-state",
+      "url": "https://github.com/chenglou/pretext/commit/cc2328bdd9f323e13a336cab834bea842cbe7d6d",
+      "date": "2026-09-13T10:39:13Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "bf99ef6",
-      "message": "Ignore local Claude workspace",
-      "url": "https://github.com/chenglou/pretext/commit/bf99ef655daa0668b5719e275278264ee562fcd4",
-      "date": "2026-07-14T13:37:30Z",
+      "sha": "146364a",
+      "message": "Merge pull request #257 from chenglou/safari-window-by-marker",
+      "url": "https://github.com/chenglou/pretext/commit/146364abe172d261a4ecc7b203c9db404f704aac",
+      "date": "2026-09-13T10:38:12Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "887d411",
-      "message": "Limit root TypeScript inputs",
-      "url": "https://github.com/chenglou/pretext/commit/887d4116d4453d81b9d7eb8ee03cd672f354586f",
-      "date": "2026-07-14T13:34:16Z",
+      "sha": "2f15cf7",
+      "message": "Find the Safari automation window by its marker URL",
+      "url": "https://github.com/chenglou/pretext/commit/2f15cf79a044d142f065618855ec69c91a260c5c",
+      "date": "2026-09-13T10:10:52Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "a2a1600",
-      "message": "Trim unused gitignore entries",
-      "url": "https://github.com/chenglou/pretext/commit/a2a1600f6b58367ebb7dae71c4e732393b09c84c",
-      "date": "2026-07-14T13:28:53Z",
+      "sha": "ddc746b",
+      "message": "Name the retained fixture in INVENTORY.md's recipe reduction section",
+      "url": "https://github.com/chenglou/pretext/commit/ddc746ba5efcfc6a4e329b066d63074de8a6b97e",
+      "date": "2026-09-13T09:32:27Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "ac49b09",
-      "message": "Simplify analysis policy passes",
-      "url": "https://github.com/chenglou/pretext/commit/ac49b09b7d83ede19581fa94a8b892b07d309baf",
-      "date": "2026-06-23T04:50:36Z",
+      "sha": "d246089",
+      "message": "Keep the aligned break semantics rule in AGENTS.md",
+      "url": "https://github.com/chenglou/pretext/commit/d2460894fc238aaf7ee56d9937dd0232a1ee917e",
+      "date": "2026-09-13T09:32:27Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 166,
-      "title": "chore: support Chrome browser checks on Windows",
-      "url": "https://github.com/chenglou/pretext/pull/166",
-      "state": "closed",
-      "updatedAt": "2026-09-03T13:18:41Z",
-      "author": "syahmiharith",
+      "number": 256,
+      "title": "Deduplicate the docs and trim AGENTS.md to project rules",
+      "url": "https://github.com/chenglou/pretext/pull/256",
+      "state": "merged",
+      "updatedAt": "2026-09-13T10:47:47Z",
+      "author": "chenglou",
       "draft": false
     },
     {
-      "number": 219,
-      "title": "docs+test: break:'never' chips stay atomic; demo pre-wrap is not a chip",
-      "url": "https://github.com/chenglou/pretext/pull/219",
-      "state": "open",
-      "updatedAt": "2026-09-03T11:13:49Z",
-      "author": "Dahhrk",
-      "draft": true
-    },
-    {
-      "number": 218,
-      "title": "fix: break overlong symbol runs at grapheme boundaries",
-      "url": "https://github.com/chenglou/pretext/pull/218",
-      "state": "open",
-      "updatedAt": "2026-09-03T11:02:51Z",
-      "author": "Dahhrk",
-      "draft": true
-    },
-    {
-      "number": 217,
-      "title": "perf: minor optimizations in benchmark and build scripts",
-      "url": "https://github.com/chenglou/pretext/pull/217",
-      "state": "open",
-      "updatedAt": "2026-08-24T05:42:47Z",
-      "author": "3ni8ma",
+      "number": 255,
+      "title": "Simplify prepare state without changing output",
+      "url": "https://github.com/chenglou/pretext/pull/255",
+      "state": "merged",
+      "updatedAt": "2026-09-13T10:46:25Z",
+      "author": "chenglou",
       "draft": false
     },
     {
-      "number": 45,
-      "title": "Add intrinsic sizing APIs: minContentWidth and maxContentWidth",
-      "url": "https://github.com/chenglou/pretext/pull/45",
-      "state": "closed",
-      "updatedAt": "2026-08-11T03:28:21Z",
-      "author": "ishtihoss",
+      "number": 257,
+      "title": "Find the Safari automation window by its marker URL",
+      "url": "https://github.com/chenglou/pretext/pull/257",
+      "state": "merged",
+      "updatedAt": "2026-09-13T10:38:13Z",
+      "author": "chenglou",
       "draft": false
     },
     {
-      "number": 216,
-      "title": "feat: expose fontKerning option in prepare()",
-      "url": "https://github.com/chenglou/pretext/pull/216",
-      "state": "open",
-      "updatedAt": "2026-08-08T15:00:15Z",
-      "author": "alexiskowalski",
+      "number": 254,
+      "title": "Remove the derived dashboards and collapse the numeric companion to five profiles",
+      "url": "https://github.com/chenglou/pretext/pull/254",
+      "state": "merged",
+      "updatedAt": "2026-09-13T07:53:29Z",
+      "author": "chenglou",
       "draft": false
     },
     {
-      "number": 109,
-      "title": "feat: resolve rem/em font units to px before canvas measurement",
-      "url": "https://github.com/chenglou/pretext/pull/109",
-      "state": "open",
-      "updatedAt": "2026-07-26T13:21:47Z",
-      "author": "okaris",
+      "number": 253,
+      "title": "Collapse the boundary-policy test profiles into one base",
+      "url": "https://github.com/chenglou/pretext/pull/253",
+      "state": "merged",
+      "updatedAt": "2026-09-13T07:37:39Z",
+      "author": "chenglou",
       "draft": false
     },
     {
-      "number": 215,
-      "title": "fix: align CJK ASCII hyphen wrapping with browsers",
-      "url": "https://github.com/chenglou/pretext/pull/215",
-      "state": "open",
-      "updatedAt": "2026-07-23T11:59:48Z",
-      "author": "ChuanfengZhang",
+      "number": 252,
+      "title": "Trim VALIDATION's historical landing sections and stale TODO items",
+      "url": "https://github.com/chenglou/pretext/pull/252",
+      "state": "merged",
+      "updatedAt": "2026-09-13T07:37:33Z",
+      "author": "chenglou",
+      "draft": false
+    },
+    {
+      "number": 251,
+      "title": "Delete unread harness files, stale pages and Safari script aliases",
+      "url": "https://github.com/chenglou/pretext/pull/251",
+      "state": "merged",
+      "updatedAt": "2026-09-13T07:37:27Z",
+      "author": "chenglou",
+      "draft": false
+    },
+    {
+      "number": 250,
+      "title": "Resolve small kana and the prolonged sound mark from Chrome's and Firefox's ICU rules",
+      "url": "https://github.com/chenglou/pretext/pull/250",
+      "state": "merged",
+      "updatedAt": "2026-09-13T07:15:55Z",
+      "author": "chenglou",
       "draft": false
     }
   ],
@@ -3128,12 +3136,6 @@
       "url": "https://github.com/chenglou/pretext/tree/main/pages"
     },
     {
-      "name": "research-data",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/chenglou/pretext/tree/main/research-data"
-    },
-    {
       "name": "scripts",
       "type": "dir",
       "size": 0,
@@ -3152,21 +3154,21 @@
       "url": "https://github.com/chenglou/pretext/tree/main/src"
     },
     {
-      "name": "status",
+      "name": "tests",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/chenglou/pretext/tree/main/status"
+      "url": "https://github.com/chenglou/pretext/tree/main/tests"
     },
     {
       "name": ".gitignore",
       "type": "file",
-      "size": 56,
+      "size": 67,
       "url": "https://github.com/chenglou/pretext/blob/main/.gitignore"
     },
     {
       "name": "AGENTS.md",
       "type": "file",
-      "size": 17662,
+      "size": 5783,
       "url": "https://github.com/chenglou/pretext/blob/main/AGENTS.md"
     },
     {
@@ -3178,7 +3180,7 @@
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 4979,
+      "size": 11468,
       "url": "https://github.com/chenglou/pretext/blob/main/CHANGELOG.md"
     },
     {
@@ -3190,19 +3192,25 @@
     {
       "name": "DEVELOPMENT.md",
       "type": "file",
-      "size": 6874,
+      "size": 7874,
       "url": "https://github.com/chenglou/pretext/blob/main/DEVELOPMENT.md"
+    },
+    {
+      "name": "ENGINE_FOLLOWUPS.md",
+      "type": "file",
+      "size": 19085,
+      "url": "https://github.com/chenglou/pretext/blob/main/ENGINE_FOLLOWUPS.md"
     },
     {
       "name": "FONT_DIAGNOSTICS.md",
       "type": "file",
-      "size": 3950,
+      "size": 5237,
       "url": "https://github.com/chenglou/pretext/blob/main/FONT_DIAGNOSTICS.md"
     },
     {
       "name": "knip.config.ts",
       "type": "file",
-      "size": 1294,
+      "size": 1463,
       "url": "https://github.com/chenglou/pretext/blob/main/knip.config.ts"
     },
     {
@@ -3220,25 +3228,25 @@
     {
       "name": "package.json",
       "type": "file",
-      "size": 4677,
+      "size": 3003,
       "url": "https://github.com/chenglou/pretext/blob/main/package.json"
     },
     {
       "name": "PLATFORM_BUGS.md",
       "type": "file",
-      "size": 10059,
+      "size": 12926,
       "url": "https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 17793,
+      "size": 16981,
       "url": "https://github.com/chenglou/pretext/blob/main/README.md"
     },
     {
       "name": "RESEARCH.md",
       "type": "file",
-      "size": 9093,
+      "size": 52903,
       "url": "https://github.com/chenglou/pretext/blob/main/RESEARCH.md"
     },
     {
@@ -3256,7 +3264,7 @@
     {
       "name": "TODO.md",
       "type": "file",
-      "size": 2288,
+      "size": 1654,
       "url": "https://github.com/chenglou/pretext/blob/main/TODO.md"
     },
     {
@@ -3268,7 +3276,7 @@
     {
       "name": "tsconfig.json",
       "type": "file",
-      "size": 785,
+      "size": 802,
       "url": "https://github.com/chenglou/pretext/blob/main/tsconfig.json"
     }
   ],
@@ -3276,13 +3284,13 @@
     {
       "name": "Publish Demo Site",
       "status": "success",
-      "url": "https://github.com/chenglou/pretext/actions/runs/33810123136",
+      "url": "https://github.com/chenglou/pretext/actions/runs/34752779354",
       "branch": "main",
-      "updatedAt": "2026-09-03T21:51:33Z"
+      "updatedAt": "2026-09-13T10:48:17Z"
     }
   ],
-  "branchCount": 7,
-  "tagCount": 5,
+  "branchCount": 32,
+  "tagCount": 6,
   "community": {
     "healthPercentage": 57,
     "hasCodeOfConduct": false,
@@ -3291,14 +3299,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 44,
-  "openPRs": 47,
+  "openIssuesOnly": 27,
+  "openPRs": 19,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 52,
-  "mergedPRs": 7,
+  "closedIssues": 70,
+  "mergedPRs": 45,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
@@ -3438,12 +3446,22 @@
     },
     {
       "week": "2026-08-30",
-      "additions": 1619,
-      "deletions": 1268
+      "additions": 16079,
+      "deletions": 236416
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 50958,
+      "deletions": 34487
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 2090,
+      "deletions": 8332
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-04T14:42:45.023Z",
+  "factsUpdatedAt": "2026-09-13T14:48:55.422Z",
   "aiSummary": {
     "oneLiner": "Pure JS/TS library for extremely fast, DOM-free multiline text measurement and layout.",
     "whatItDoes": "Pretext is a highly optimized JavaScript/TypeScript library specifically designed to handle complex multiline text measurement and layout entirely outside the DOM. By completely avoiding expensive DOM operations like `getBoundingClientRect`, which famously trigger massive layout reflows, Pretext offers dramatically faster performance. It ingeniously uses the browser's own font engine via the Canvas API as the absolute ground truth to accurately measure text segments, smoothly handling complex scripts and whitespace normalization. This highly predictable approach allows developers to pre-calculate layouts for DOM, SVG, Canvas, or even server-side rendering with pure arithmetic speed.",
