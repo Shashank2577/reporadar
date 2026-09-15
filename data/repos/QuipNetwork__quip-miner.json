@@ -160,6 +160,11 @@
       "date": "2026-09-13",
       "stars": 11596,
       "forks": 161
+    },
+    {
+      "date": "2026-09-15",
+      "stars": 11597,
+      "forks": 162
     }
   ],
   "trendingHistory": [],
@@ -187,31 +192,29 @@
     "quantum-simulator",
     "quantum-simulators"
   ],
-  "stars": 11596,
-  "forks": 161,
+  "stars": 11597,
+  "forks": 162,
   "watchers": 35,
   "openIssues": 4,
   "createdAt": "2026-01-16T05:39:29Z",
-  "pushedAt": "2026-09-13T00:26:28Z",
+  "pushedAt": "2026-09-15T14:30:00Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-13T00:33:50.927Z",
+  "updatedAt": "2026-09-15T15:24:44.258Z",
   "languages": {
-    "Python": 3924992,
-    "Shell": 76895,
-    "Metal": 67704,
-    "Cuda": 35600
+    "Rust": 1000304,
+    "Shell": 11446
   },
-  "commitCount": 1447,
+  "commitCount": 1862,
   "releases": [],
-  "readmeExcerpt": "# quip-miner\n\n> **Experimental software.** Use at your own risk. No production warranties.\n\nA Python mining stack for the [quip-protocol-rs](https://gitlab.com/quip.network/quip-protocol-rs) Substrate chain. Drives CPU SA, GPU (CUDA / Metal / Modal), and QPU (D-Wave) miners against the chain's `QuantumPow` pallet — fetch the mining snapshot at each new chain head, search for valid Ising solutions, submit `QuantumPow.submit_proof` extrinsics, repeat.\n\nThis is the `v0.2` line of the repository (formerly `quip-protocol`). In `v0.1` this codebase shipped its own consensus, P2P (QUIC), block store, REST API, and SPHINCS+ block signer. `v0.2` removes all of that — the chain is the source of truth, miners attach to it.\n\n## Architecture\n\n```\n                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\n```\n\nComponent responsibilities (`shared/`):\n\n| module | role |\n|--------|------|\n| `signer.py` | Abstract `Signer` + `Sr25519Signer`. Phase 7 adds `HybridSigner` (sr25519 + ML-DSA-44). |\n| `keystore.py` | sr25519 keystore (`0o600` JSON; plaintext seed for dev). |\n| `substrate_client.py` | `py-substrate-interface` async wrapper; `state_call` for the mining snapshot. |\n| `substrate_types.py` | `SubstrateMiningContext`, `SubstrateDifficulty`, `MinerInfo`, `ExtrinsicReceipt`. |\n| `substrate_submitter.py` | `MiningResult` → `QuantumProof` SCALE encoding + submission. |\n| `substrate_miner_controller.py` | Head subscription, snapshot fetch, dispatch, receipt classification. |\n| `miner_core.py` | Owns persistent `MinerHandle` workers, hardware descriptor cache, aggregate stats. |\n| `miner_bootstrap.py` | Idempotent fund + register pipeline. |\n| `telemetry_api.py` | HTTP REST surface (`/api/v1/status`, `/system`, `/stats`, `/block/*`). |\n| `base_miner.py` | Protocol-neutral `mine_work_item(context, stop_event)` loop. |\n| `miner_worker.py` | 2-process worker scaffolding (parent ↔ child mp.Queue + stop_event). |\n| `quantum_proof_of_work.py` | `derive_nonce`, `generate_ising_model_from_nonce`, `evaluate_sampleset`. |\n\nStandalone scripts at repo root:\n\n| file | role |\n|------|------|\n| `quip_cli.py` | `quip-miner` CLI dispatch (keygen / bootstrap / cpu / gpu / qpu). |\n\n## Installation\n\n```bash\npython3 -m venv .quip\nsource .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e .\n```\n\nDependencies pulled in by `pyproject.toml`:\n- `substrate-interface>=1.7.4`, `scalecodec>=1.2` — chain RPC + SCALE\n- `dwave-ocean-sdk>=9.0.0,<10`, `numpy>=1.24.0` — Ising sampling\n- `aiohttp>=3.9.0` — telemetry server + faucet\n- `click>=8.1.7` — CLI\n- `blake3>=1.0.5` — nonce derivation\n\nD-Wave QPU access requires `DWAVE_API_KEY` in `.env` (loaded via `python-dotenv`).\n\n## Quick start\n\nIn one terminal, bring up the chain:\n\n```bash\ncd ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   # confirm blocks being produced\n```\n\nThe dev faucet now lives in its own repository (`gitlab.com/quip.network/faucet`);\nlocal-network setup (node + faucet + chain seeding) is handled by the testing\nrepo at `nodes.quip.network`. Point the miner at a running faucet with\n`--faucet-url`; it self-funds and self-registers on first run.\n\nBootstrap a miner account (generates a keystore, funds it via the faucet, sudo-seeds `Difficulty` + `DefaultTopology` on a fresh chain, then submits `register_miner`):\n\n```bash\nquip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain\n```\n\nRun the miner:\n\n```bash\nquip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086\n```\n\nIn a third terminal, watch chain events for `QuantumPow.ProofAccepted` (via [polkadot.js](https://polkadot.js.org/apps/#/explorer) pointed at `ws://localhost:9944`), or hit the local telemetry API:\n\n```bash\ncurl http://localhost:8086/api/v1/status   | jq\ncurl http://localhost:8086/api/v1/stats    | jq\ncurl http://localhost:8086/api/v1/system   | jq\n```\n\n## CLI reference\n\n### `quip-miner keygen`\n\nGenerate a fresh sr25519 signing key. Writes a `0o600` JSON keystore with the seed in plaintext (passphrase-encrypted keystores ship in Phase 7).\n\n```\nquip-miner keygen --out ~/.quip-miner/signing.json\n```\n\n### `quip-miner bootstrap`\n\nIdempotent setup: generate keystore (if missing) → request funds from the faucet → submit `register_miner`. With `--seed-chain`, also sudo-submits `set_difficulty` + `register_topology` if missing.\n\n```\nquip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\n```\n\nRe-runs are no-ops that just verify state.\n\n### `quip-miner cpu | gpu | qpu`\n\nRun the mining controller. All three subcommands share these flags:\n\n- `--node-url ws://...` (required) — substrate WS endpoint\n- `--signer-key ~/.quip-miner/signing.json` — keystore path\n- `--topology zephyr:M,T` — sampler topology (defaults to `zephyr:9,2`)\n- `--rest-port 8086` — HTTP telemetry port (`-1` disables)\n\nThe `cpu` subcommand adds `--num-cpus N`; `gpu` adds `--gpu-backend {local,metal,modal}`; `qpu` adds `--qpu-type` and `--daily-budget`.\n\nTopology binding is enforced at startup: the CLI hashes the configured topology with the same `blake2_256(SCALE((sorted_nodes, canonical_edges)))` recipe the chain uses, and refuses to start if the hash doesn't match the chain's registered topology.\n\n## Telemetry REST API\n\n```\nGET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\n```\n\nResponse envelope: `{\"success\": bool, \"data\": ..., \"error\": ..., \"timestamp\": int}`.\n\nThe legacy `/api/v1/peers`, `/api/v1/join`, `/api/v1/gossip`, `/api/v1/heartbeat`, and `POST /api/v1/block` paths are removed — they were P2P / consensus surfaces with no equivalent in substrate mode. The legacy `/telemetry/*` SSE stream and per-peer aggregator also moved out; consumers should switch to substrate-side events and Prometheus (`http://localhost:9615/metrics`).\n\n## Topology\n\nMining works against any `BoundedVec`-bounded graph registered on chain (`QuantumPow.RegisteredTopologies`). The CLI's `--topology zephyr:M,T` constructs a [dwave-networkx](https://docs.ocean.dwavesys.com/projects/dwave-networkx/) Zephyr graph; the chain's `pallets/quantum-pow/src/topology.rs::hash_topology` canonicalizes and `blake2_256`-hashes the result.\n\n`bootstrap --seed-chain --seed-topology 9,2` registers Zephyr Z(9,2) (1368 nodes / 7692 edges — the legacy default that matches the chain's difficulty calibration of `max_energy_milli=-2_500_000`). Smaller graphs (Z(2,2), Z(3,2)) work too but need their own difficulty calibration since their ground-state energy range is much narrower.\n\n## Running tests\n\n```bash\npython -m pytest tests/ -v\n```\n\nIntegration tests against the docker chain auto-skip if `ws://localhost:9944` isn't reachable. The end-to-end controller test (`test_controller_submits_proof_end_to_end`) bootstraps inline and asserts at least one `QuantumPow.ProofAccepted` event lands within 120 seconds.\n\nThe cross-language nonce-parity test (`test_derive_nonce_parity.py`) reads `crates/quantum-validation/tests/fixtures/python_parity.json` from a sibling `quip-protocol-rs` checkout. Set `QUIP_RUST_FIXTURE_DIR` if your checkout is elsewhere.\n\n## What changed from v0.1\n\nRemoved entirely:\n\n- The local blockchain stack: `shared/block.py`, `shared/node.py`, `shared/network_node.py`, `shared/block_store.py`, `shared/block_synchronizer.py`, `shared/block_requirements.py`, `genesis_block_public.json`.\n- The P2P stack: QUIC client/server, SWIM failure detector, peer scorer / ban list, gossip telemetry aggregator, sync wire codecs.\n- The legacy signing path: SPHINCS+ block signer + certificate manager.\n- CLI: `quip-network-node` and `quip-network-simulator` are gone. Use `quip-miner` instead.\n\nKept (with rewired backends):\n\n- `/api/v1/status`, `/system`, `/stats`, `/block/*` (now substrate-backed)\n- The 2-process worker model (`MinerHandle` ↔ child mp.Queue + stop_event)\n- The Ising sampling code (`BaseMiner.mine_work_item`, `quantum_proof_of_work.*`, CPU/GPU/QPU subclasses)\n- The hardware descriptor / aggregate stats (now exposed via `MinerCore`)\n\nMigration:\n\n- A `v0.1` miner that ran a single mining node now runs a chain node (quip-protocol-rs docker compose) + `quip-miner cpu|gpu|qpu` against it.\n- Mining rewards now accrue on chain to the registered sr25519 account, not as v0.1 block-proposer credit.\n\n## License\n\nAGPL-3.0-or-later. See LICENSE.\n",
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">quip-miner</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Experimental software.</strong> Use at your own risk. No production warranties.</p>\n</blockquote>\n<p dir=\"auto\">A Python mining stack for the <a href=\"https://gitlab.com/quip.network/quip-protocol-rs\" rel=\"nofollow\">quip-protocol-rs</a> Substrate chain. Drives CPU SA, GPU (CUDA / Metal / Modal), and QPU (D-Wave) miners against the chain's <code>QuantumPow</code> pallet — fetch the mining snapshot at each new chain head, search for valid Ising solutions, submit <code>QuantumPow.submit_proof</code> extrinsics, repeat.</p>\n<p dir=\"auto\">This is the <code>v0.2</code> line of the repository (formerly <code>quip-protocol</code>). In <code>v0.1</code> this codebase shipped its own consensus, P2P (QUIC), block store, REST API, and SPHINCS+ block signer. <code>v0.2</code> removes all of that — the chain is the source of truth, miners attach to it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Architecture</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\"><pre class=\"notranslate\"><code>                              chain (substrate)\n                                     │\n                              ws://localhost:9944\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │       SubstrateClient (read)         │\n                  │   - get_mining_snapshot              │\n                  │   - subscribe_new_heads              │\n                  │   - submit_extrinsic                 │\n                  └──────────────────┬──────────────────┘\n                                     │\n                  ┌──────────────────┴──────────────────┐\n                  │  SubstrateMinerController            │\n                  │   - on new head: cancel + fetch +    │\n                  │     dispatch                         │\n                  │   - on result: encode + submit       │\n                  │   - classify receipts                │\n                  └──────┬────────────────────┬──────────┘\n                         │                    │\n                  ┌──────┴──────┐      ┌──────┴──────┐\n                  │ MinerCore   │      │ TelemetryApi│\n                  │ - handles[] │      │ /api/v1/*   │\n                  │ - stats     │      └─────────────┘\n                  │ - descriptor│\n                  └──────┬──────┘\n                         │\n                  MinerHandle (per worker process)\n                         │\n                  BaseMiner.mine_work_item\n                  (CPU SA / GPU CUDA|Metal|Modal / QPU)\n</code></pre></div>\n<p dir=\"auto\">Component responsibilities (<code>shared/</code>):</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>module</th>\n<th>role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>signer.py</code></td>\n<td>Abstract <code>Signer</code> + <code>Sr25519Signer</code>. Phase 7 adds <code>HybridSigner</code> (sr25519 + ML-DSA-44).</td>\n</tr>\n<tr>\n<td><code>keystore.py</code></td>\n<td>sr25519 keystore (<code>0o600</code> JSON; plaintext seed for dev).</td>\n</tr>\n<tr>\n<td><code>substrate_client.py</code></td>\n<td><code>py-substrate-interface</code> async wrapper; <code>state_call</code> for the mining snapshot.</td>\n</tr>\n<tr>\n<td><code>substrate_types.py</code></td>\n<td><code>SubstrateMiningContext</code>, <code>SubstrateDifficulty</code>, <code>MinerInfo</code>, <code>ExtrinsicReceipt</code>.</td>\n</tr>\n<tr>\n<td><code>substrate_submitter.py</code></td>\n<td><code>MiningResult</code> → <code>QuantumProof</code> SCALE encoding + submission.</td>\n</tr>\n<tr>\n<td><code>substrate_miner_controller.py</code></td>\n<td>Head subscription, snapshot fetch, dispatch, receipt classification.</td>\n</tr>\n<tr>\n<td><code>miner_core.py</code></td>\n<td>Owns persistent <code>MinerHandle</code> workers, hardware descriptor cache, aggregate stats.</td>\n</tr>\n<tr>\n<td><code>miner_bootstrap.py</code></td>\n<td>Idempotent fund + register pipeline.</td>\n</tr>\n<tr>\n<td><code>telemetry_api.py</code></td>\n<td>HTTP REST surface (<code>/api/v1/status</code>, <code>/system</code>, <code>/stats</code>, <code>/block/*</code>).</td>\n</tr>\n<tr>\n<td><code>base_miner.py</code></td>\n<td>Protocol-neutral <code>mine_work_item(context, stop_event)</code> loop.</td>\n</tr>\n<tr>\n<td><code>miner_worker.py</code></td>\n<td>2-process worker scaffolding (parent ↔ child mp.Queue + stop_event).</td>\n</tr>\n<tr>\n<td><code>quantum_proof_of_work.py</code></td>\n<td><code>derive_nonce</code>, <code>generate_ising_model_from_nonce</code>, <code>evaluate_sampleset</code>.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Standalone scripts at repo root:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>file</th>\n<th>role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>quip_cli.py</code></td>\n<td><code>quip-miner</code> CLI dispatch (keygen / bootstrap / cpu / gpu / qpu).</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python3 -m venv .quip\nsource .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e .\"><pre>python3 -m venv .quip\n<span class=\"pl-c1\">source</span> .quip/bin/activate\npip install -U pip setuptools wheel\npip install -e <span class=\"pl-c1\">.</span></pre></div>\n<p dir=\"auto\">Dependencies pulled in by <code>pyproject.toml</code>:</p>\n<ul dir=\"auto\">\n<li><code>substrate-interface&gt;=1.7.4</code>, <code>scalecodec&gt;=1.2</code> — chain RPC + SCALE</li>\n<li><code>dwave-ocean-sdk&gt;=9.0.0,&lt;10</code>, <code>numpy&gt;=1.24.0</code> — Ising sampling</li>\n<li><code>aiohttp&gt;=3.9.0</code> — telemetry server + faucet</li>\n<li><code>click&gt;=8.1.7</code> — CLI</li>\n<li><code>blake3&gt;=1.0.5</code> — nonce derivation</li>\n</ul>\n<p dir=\"auto\">D-Wave QPU access requires <code>DWAVE_API_KEY</code> in <code>.env</code> (loaded via <code>python-dotenv</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<p dir=\"auto\">In one terminal, bring up the chain:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   # confirm blocks being produced\"><pre><span class=\"pl-c1\">cd</span> ../quip-protocol-rs\ndocker compose up -d\ndocker compose logs -f node1   <span class=\"pl-c\"><span class=\"pl-c\">#</span> confirm blocks being produced</span></pre></div>\n<p dir=\"auto\">The dev faucet now lives in its own repository (<code>gitlab.com/quip.network/faucet</code>);\nlocal-network setup (node + faucet + chain seeding) is handled by the testing\nrepo at <code>nodes.quip.network</code>. Point the miner at a running faucet with\n<code>--faucet-url</code>; it self-funds and self-registers on first run.</p>\n<p dir=\"auto\">Bootstrap a miner account (generates a keystore, funds it via the faucet, sudo-seeds <code>Difficulty</code> + <code>DefaultTopology</code> on a fresh chain, then submits <code>register_miner</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain\"><pre>quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain</pre></div>\n<p dir=\"auto\">Run the miner:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086\"><pre>quip-miner cpu \\\n    --node-url ws://localhost:9944 \\\n    --num-cpus 4 \\\n    --topology zephyr:9,2 \\\n    --rest-port 8086</pre></div>\n<p dir=\"auto\">In a third terminal, watch chain events for <code>QuantumPow.ProofAccepted</code> (via <a href=\"https://polkadot.js.org/apps/#/explorer\" rel=\"nofollow\">polkadot.js</a> pointed at <code>ws://localhost:9944</code>), or hit the local telemetry API:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"curl http://localhost:8086/api/v1/status   | jq\ncurl http://localhost:8086/api/v1/stats    | jq\ncurl http://localhost:8086/api/v1/system   | jq\"><pre>curl http://localhost:8086/api/v1/status   <span class=\"pl-k\">|</span> jq\ncurl http://localhost:8086/api/v1/stats    <span class=\"pl-k\">|</span> jq\ncurl http://localhost:8086/api/v1/system   <span class=\"pl-k\">|</span> jq</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CLI reference</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner keygen</code></h3></div>\n<p dir=\"auto\">Generate a fresh sr25519 signing key. Writes a <code>0o600</code> JSON keystore with the seed in plaintext (passphrase-encrypted keystores ship in Phase 7).</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"quip-miner keygen --out ~/.quip-miner/signing.json\"><pre class=\"notranslate\"><code>quip-miner keygen --out ~/.quip-miner/signing.json\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner bootstrap</code></h3></div>\n<p dir=\"auto\">Idempotent setup: generate keystore (if missing) → request funds from the faucet → submit <code>register_miner</code>. With <code>--seed-chain</code>, also sudo-submits <code>set_difficulty</code> + <code>register_topology</code> if missing.</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\"><pre class=\"notranslate\"><code>quip-miner bootstrap \\\n    --node-url ws://localhost:9944 \\\n    --signer-key ~/.quip-miner/signing.json \\\n    --faucet-url http://127.0.0.1:8087 \\\n    --seed-chain \\\n    --seed-topology 9,2\n</code></pre></div>\n<p dir=\"auto\">Re-runs are no-ops that just verify state.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\"><code>quip-miner cpu | gpu | qpu</code></h3></div>\n<p dir=\"auto\">Run the mining controller. All three subcommands share these flags:</p>\n<ul dir=\"auto\">\n<li><code>--node-url ws://...</code> (required) — substrate WS endpoint</li>\n<li><code>--signer-key ~/.quip-miner/signing.json</code> — keystore path</li>\n<li><code>--topology zephyr:M,T</code> — sampler topology (defaults to <code>zephyr:9,2</code>)</li>\n<li><code>--rest-port 8086</code> — HTTP telemetry port (<code>-1</code> disables)</li>\n</ul>\n<p dir=\"auto\">The <code>cpu</code> subcommand adds <code>--num-cpus N</code>; <code>gpu</code> adds <code>--gpu-backend {local,metal,modal}</code>; <code>qpu</code> adds <code>--qpu-type</code> and <code>--daily-budget</code>.</p>\n<p dir=\"auto\">Topology binding is enforced at startup: the CLI hashes the configured topology with the same <code>blake2_256(SCALE((sorted_nodes, canonical_edges)))</code> recipe the chain uses, and refuses to start if the hash doesn't match the chain's registered topology.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Telemetry REST API</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"GET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\"><pre class=\"notranslate\"><code>GET  /health\nGET  /api/v1/status                        chain head + miner identity + is_mining\nGET  /api/v1/system                        hardware descriptor (cached)\nGET  /api/v1/stats                         aggregate MinerCore + controller stats\nGET  /api/v1/block/latest                  substrate-fetched chain head\nGET  /api/v1/block/{n}                     substrate-fetched block by number\nGET  /api/v1/block/{n}/header              header subset\nPOST /api/v1/solve                         disabled in v0.2 (was direct DWave sample)\n</code></pre></div>\n<p dir=\"auto\">Response envelope: <code>{\"success\": bool, \"data\": ..., \"error\": ..., \"timestamp\": int}</code>.</p>\n<p dir=\"auto\">The legacy <code>/api/v1/peers</code>, <code>/api/v1/join</code>, <code>/api/v1/gossip</code>, <code>/api/v1/heartbeat</code>, and <code>POST /api/v1/block</code> paths are removed — they were P2P / consensus surfaces with no equivalent in substrate mode. The legacy <code>/telemetry/*</code> SSE stream and per-peer aggregator also moved out; consumers should switch to substrate-side events and Prometheus (<code>http://localhost:9615/metrics</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Topology</h2></div>\n<p dir=\"auto\">Mining works against any <code>BoundedVec</code>-bounded graph registered on chain (<code>QuantumPow.RegisteredTopologies</code>). The CLI's <code>--topology zephyr:M,T</code> constructs a <a href=\"https://docs.ocean.dwavesys.com/projects/dwave-networkx/\" rel=\"nofollow\">dwave-networkx</a> Zephyr graph; the chain's <code>pallets/quantum-pow/src/topology.rs::hash_topology</code> canonicalizes and <code>blake2_256</code>-hashes the result.</p>\n<p dir=\"auto\"><code>bootstrap --seed-chain --seed-topology 9,2</code> registers Zephyr Z(9,2) (1368 nodes / 7692 edges — the legacy default that matches the chain's difficulty calibration of <code>max_energy_milli=-2_500_000</code>). Smaller graphs (Z(2,2), Z(3,2)) work too but need their own difficulty calibration since their ground-state energy range is much narrower.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Running tests</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"python -m pytest tests/ -v\"><pre>python -m pytest tests/ -v</pre></div>\n<p dir=\"auto\">Integration tests against the docker chain auto-skip if <code>ws://localhost:9944</code> isn't reachable. The end-to-end controller test (<code>test_controller_submits_proof_end_to_end</code>) bootstraps inline and asserts at least one <code>QuantumPow.ProofAccepted</code> event lands within 120 seconds.</p>\n<p dir=\"auto\">The cross-language nonce-parity test (<code>test_derive_nonce_parity.py</code>) reads <code>crates/quantum-validation/tests/fixtures/python_parity.json</code> from a sibling <code>quip-protocol-rs</code> checkout. Set <code>QUIP_RUST_FIXTURE_DIR</code> if your checkout is elsewhere.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What changed from v0.1</h2></div>\n<p dir=\"auto\">Removed entirely:</p>\n<ul dir=\"auto\">\n<li>The local blockchain stack: <code>shared/block.py</code>, <code>shared/node.py</code>, <code>shared/network_node.py</code>, <code>shared/block_store.py</code>, <code>shared/block_synchronizer.py</code>, <code>shared/block_requirements.py</code>, <code>genesis_block_public.json</code>.</li>\n<li>The P2P stack: QUIC client/server, SWIM failure detector, peer scorer / ban list, gossip telemetry aggregator, sync wire codecs.</li>\n<li>The legacy signing path: SPHINCS+ block signer + certificate manager.</li>\n<li>CLI: <code>quip-network-node</code> and <code>quip-network-simulator</code> are gone. Use <code>quip-miner</code> instead.</li>\n</ul>\n<p dir=\"auto\">Kept (with rewired backends):</p>\n<ul dir=\"auto\">\n<li><code>/api/v1/status</code>, <code>/system</code>, <code>/stats</code>, <code>/block/*</code> (now substrate-backed)</li>\n<li>The 2-process worker model (<code>MinerHandle</code> ↔ child mp.Queue + stop_event)</li>\n<li>The Ising sampling code (<code>BaseMiner.mine_work_item</code>, <code>quantum_proof_of_work.*</code>, CPU/GPU/QPU subclasses)</li>\n<li>The hardware descriptor / aggregate stats (now exposed via <code>MinerCore</code>)</li>\n</ul>\n<p dir=\"auto\">Migration:</p>\n<ul dir=\"auto\">\n<li>A <code>v0.1</code> miner that ran a single mining node now runs a chain node (quip-protocol-rs docker compose) + <code>quip-miner cpu|gpu|qpu</code> against it.</li>\n<li>Mining rewards now accrue on chain to the registered sr25519 account, not as v0.1 block-proposer credit.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0-or-later. See LICENSE.</p>\n</article></div>",
+  "readmeExcerpt": "# quip-miner\n\n> **Experimental software.** Use at your own risk. No production warranties.\n\nThe v0.3 mining stack for the\n[quip-validator](https://gitlab.com/quip.network/quip-validator) Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a `QuantumPow.submit_proof` extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.\n\nThis is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core) and is\nconsumed from crates.io. The miner binaries ship from their own repositories.\n\n## Repository layout\n\n- `crates/` — the Cargo workspace: `quip-coordinator` (the binary),\n  `quip-miner-exec` (a miner that shells out to an external solver), and\n  `quip-mock-miner` (the miner test double).\n- `docker/` — image builds and the example coordinator config.\n\nThe miner binaries live in `quip.network/quip-miner-{cpu,cuda,metal,dwave}`.\nThe `quip-proto`, `quip-protocol`, and `quip-solver-core` dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n`quip.network/quip-solver-core`.\n\n## CUDA card support\n\nThe CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n`__nanosleep`, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n`quip-miner-cuda` image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(`--gpus all`). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.\n\n## Documentation\n\n- `AGENTS.md` — build, test, and run commands; repository conventions.\n- `COORDINATOR.md` — how the coordinator works (chain access, feeder, routing,\n  supervision, session protocol).\n- `NEWMINER.md` — how to add a new miner and wire it into the coordinator.\n- `docs/VERSIONING.md` — the release-tag standard.\n\nThe solver contract — the wire protocol, the `Sampler` trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core)\nrepository (`SPEC.md`).\n\n## Build and run\n\nThe workspace builds from the repository root (toolchain pinned in\n`rust-toolchain.toml`):\n\n```bash\ncargo build --workspace\n```\n\nRun the coordinator against a config that lists the miners and the validators:\n\n```bash\nquip-coordinator --config ./docker/config.toml\n```\n\nSee `AGENTS.md` for the full command set and `COORDINATOR.md` for the run model.\n\n## Testing\n\nThe workspace tests run offline by default:\n\n```bash\ncargo test --workspace\n```\n\n### Live devnet integration tests\n\n`crates/quip-coordinator/tests/devnet_submit.rs` drives the real chain client\nagainst a running node. The tests are `#[ignore]`d and gated on the\n`QUIP_DEVNET` environment variable, so the default `cargo test` run stays\noffline. Three milestones:\n\n- **M1 — snapshot read:** decode a live `MiningSnapshot` (runtime API +\n  SCALE).\n- **M2 — proof submit:** register `//Alice`, solve the PoW Ising locally, and\n  submit a `QuantumPow.submit_proof` extrinsic; assert on-chain acceptance.\n- **M3 — mempool decode:** propose a `QuantumComputeMempool` job order, then\n  confirm `fetch_mempool_orders` discovers its `order_id` from the head-block\n  `JobProposed` event, storage-reads `JobOrders(order_id)`, and builds a Job.\n\nStart a local devnet from the chain repo\n([quip-validator](https://gitlab.com/quip.network/quip-validator)) with\n`make local-3-node` or `docker compose up`. Both publish node RPC on\n`ws://127.0.0.1:9944`. Then run:\n\n```bash\nQUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\n```\n\nOne constraint: **use a loopback URL** (`ws://127.0.0.1:…`) or `wss://`. subxt\nrejects plain `ws://` to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.\n\nM3 self-seeds — it proposes its own order against the canonical `plain-ising-v1`\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.\n\n## What changed from v0.2\n\nIn v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:\n\n- The coordinator and chain integration are Rust (`crates/`), talking to the\n  node over subxt.\n- Each miner is a standalone binary in its own repository, supervised by the\n  coordinator over a local socket. The Python miner stack is gone.\n- The solver contract — proto, consensus primitives, harness, and the Python\n  wheel — moved to `quip.network/quip-solver-core`. This repository holds no\n  Python.\n\n## License\n\nAGPL-3.0-or-later. See LICENSE.\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">quip-miner</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Experimental software.</strong> Use at your own risk. No production warranties.</p>\n</blockquote>\n<p dir=\"auto\">The v0.3 mining stack for the\n<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a> Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a <code>QuantumPow.submit_proof</code> extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.</p>\n<p dir=\"auto\">This is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a> and is\nconsumed from crates.io. The miner binaries ship from their own repositories.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository layout</h2></div>\n<ul dir=\"auto\">\n<li><code>crates/</code> — the Cargo workspace: <code>quip-coordinator</code> (the binary),\n<code>quip-miner-exec</code> (a miner that shells out to an external solver), and\n<code>quip-mock-miner</code> (the miner test double).</li>\n<li><code>docker/</code> — image builds and the example coordinator config.</li>\n</ul>\n<p dir=\"auto\">The miner binaries live in <code>quip.network/quip-miner-{cpu,cuda,metal,dwave}</code>.\nThe <code>quip-proto</code>, <code>quip-protocol</code>, and <code>quip-solver-core</code> dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n<code>quip.network/quip-solver-core</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CUDA card support</h2></div>\n<p dir=\"auto\">The CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n<code>__nanosleep</code>, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n<code>quip-miner-cuda</code> image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(<code>--gpus all</code>). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<ul dir=\"auto\">\n<li><code>AGENTS.md</code> — build, test, and run commands; repository conventions.</li>\n<li><code>COORDINATOR.md</code> — how the coordinator works (chain access, feeder, routing,\nsupervision, session protocol).</li>\n<li><code>NEWMINER.md</code> — how to add a new miner and wire it into the coordinator.</li>\n<li><code>docs/VERSIONING.md</code> — the release-tag standard.</li>\n</ul>\n<p dir=\"auto\">The solver contract — the wire protocol, the <code>Sampler</code> trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a>\nrepository (<code>SPEC.md</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build and run</h2></div>\n<p dir=\"auto\">The workspace builds from the repository root (toolchain pinned in\n<code>rust-toolchain.toml</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --workspace\"><pre>cargo build --workspace</pre></div>\n<p dir=\"auto\">Run the coordinator against a config that lists the miners and the validators:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-coordinator --config ./docker/config.toml\"><pre>quip-coordinator --config ./docker/config.toml</pre></div>\n<p dir=\"auto\">See <code>AGENTS.md</code> for the full command set and <code>COORDINATOR.md</code> for the run model.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<p dir=\"auto\">The workspace tests run offline by default:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --workspace\"><pre>cargo <span class=\"pl-c1\">test</span> --workspace</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Live devnet integration tests</h3></div>\n<p dir=\"auto\"><code>crates/quip-coordinator/tests/devnet_submit.rs</code> drives the real chain client\nagainst a running node. The tests are <code>#[ignore]</code>d and gated on the\n<code>QUIP_DEVNET</code> environment variable, so the default <code>cargo test</code> run stays\noffline. Three milestones:</p>\n<ul dir=\"auto\">\n<li><strong>M1 — snapshot read:</strong> decode a live <code>MiningSnapshot</code> (runtime API +\nSCALE).</li>\n<li><strong>M2 — proof submit:</strong> register <code>//Alice</code>, solve the PoW Ising locally, and\nsubmit a <code>QuantumPow.submit_proof</code> extrinsic; assert on-chain acceptance.</li>\n<li><strong>M3 — mempool decode:</strong> propose a <code>QuantumComputeMempool</code> job order, then\nconfirm <code>fetch_mempool_orders</code> discovers its <code>order_id</code> from the head-block\n<code>JobProposed</code> event, storage-reads <code>JobOrders(order_id)</code>, and builds a Job.</li>\n</ul>\n<p dir=\"auto\">Start a local devnet from the chain repo\n(<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a>) with\n<code>make local-3-node</code> or <code>docker compose up</code>. Both publish node RPC on\n<code>ws://127.0.0.1:9944</code>. Then run:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\"><pre>QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo <span class=\"pl-c1\">test</span> -p quip-coordinator --test devnet_submit -- --ignored --nocapture</pre></div>\n<p dir=\"auto\">One constraint: <strong>use a loopback URL</strong> (<code>ws://127.0.0.1:…</code>) or <code>wss://</code>. subxt\nrejects plain <code>ws://</code> to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.</p>\n<p dir=\"auto\">M3 self-seeds — it proposes its own order against the canonical <code>plain-ising-v1</code>\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What changed from v0.2</h2></div>\n<p dir=\"auto\">In v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:</p>\n<ul dir=\"auto\">\n<li>The coordinator and chain integration are Rust (<code>crates/</code>), talking to the\nnode over subxt.</li>\n<li>Each miner is a standalone binary in its own repository, supervised by the\ncoordinator over a local socket. The Python miner stack is gone.</li>\n<li>The solver contract — proto, consensus primitives, harness, and the Python\nwheel — moved to <code>quip.network/quip-solver-core</code>. This repository holds no\nPython.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0-or-later. See LICENSE.</p>\n</article></div>",
   "contributors": [
     {
       "login": "rcarback",
       "url": "https://github.com/rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4",
-      "contributions": 1432
+      "contributions": 1846
     },
     {
       "login": "cadillion",
@@ -223,19 +226,11 @@
       "login": "ruseinov",
       "url": "https://github.com/ruseinov",
       "avatarUrl": "https://avatars.githubusercontent.com/u/327569?v=4",
-      "contributions": 1
+      "contributions": 2
     }
   ],
   "firstCommitAt": "2025-07-09T13:25:19Z",
   "commitActivity": [
-    {
-      "week": "2025-09-07",
-      "commits": 49
-    },
-    {
-      "week": "2025-09-14",
-      "commits": 20
-    },
     {
       "week": "2025-09-21",
       "commits": 7
@@ -410,23 +405,23 @@
     },
     {
       "week": "2026-07-19",
-      "commits": 6
+      "commits": 129
     },
     {
       "week": "2026-07-26",
-      "commits": 0
+      "commits": 33
     },
     {
       "week": "2026-08-02",
-      "commits": 0
+      "commits": 13
     },
     {
       "week": "2026-08-09",
-      "commits": 0
+      "commits": 78
     },
     {
       "week": "2026-08-16",
-      "commits": 0
+      "commits": 5
     },
     {
       "week": "2026-08-23",
@@ -434,66 +429,18 @@
     },
     {
       "week": "2026-08-30",
-      "commits": 0
+      "commits": 17
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 13
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 1
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-07",
-      "count": 0
-    },
-    {
-      "date": "2025-09-08",
-      "count": 8
-    },
-    {
-      "date": "2025-09-09",
-      "count": 7
-    },
-    {
-      "date": "2025-09-10",
-      "count": 27
-    },
-    {
-      "date": "2025-09-11",
-      "count": 7
-    },
-    {
-      "date": "2025-09-12",
-      "count": 0
-    },
-    {
-      "date": "2025-09-13",
-      "count": 0
-    },
-    {
-      "date": "2025-09-14",
-      "count": 0
-    },
-    {
-      "date": "2025-09-15",
-      "count": 0
-    },
-    {
-      "date": "2025-09-16",
-      "count": 5
-    },
-    {
-      "date": "2025-09-17",
-      "count": 12
-    },
-    {
-      "date": "2025-09-18",
-      "count": 0
-    },
-    {
-      "date": "2025-09-19",
-      "count": 3
-    },
-    {
-      "date": "2025-09-20",
-      "count": 0
-    },
     {
       "date": "2025-09-21",
       "count": 2
@@ -1704,35 +1651,35 @@
     },
     {
       "date": "2026-07-20",
-      "count": 0
+      "count": 16
     },
     {
       "date": "2026-07-21",
-      "count": 1
+      "count": 3
     },
     {
       "date": "2026-07-22",
-      "count": 0
+      "count": 25
     },
     {
       "date": "2026-07-23",
-      "count": 0
+      "count": 40
     },
     {
       "date": "2026-07-24",
-      "count": 0
+      "count": 15
     },
     {
       "date": "2026-07-25",
-      "count": 0
+      "count": 25
     },
     {
       "date": "2026-07-26",
-      "count": 0
+      "count": 32
     },
     {
       "date": "2026-07-27",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-07-28",
@@ -1760,11 +1707,11 @@
     },
     {
       "date": "2026-08-03",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-08-04",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-08-05",
@@ -1772,11 +1719,11 @@
     },
     {
       "date": "2026-08-06",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-08-07",
-      "count": 0
+      "count": 6
     },
     {
       "date": "2026-08-08",
@@ -1792,27 +1739,27 @@
     },
     {
       "date": "2026-08-11",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-08-12",
-      "count": 0
+      "count": 14
     },
     {
       "date": "2026-08-13",
-      "count": 0
+      "count": 31
     },
     {
       "date": "2026-08-14",
-      "count": 0
+      "count": 9
     },
     {
       "date": "2026-08-15",
-      "count": 0
+      "count": 21
     },
     {
       "date": "2026-08-16",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-08-17",
@@ -1828,7 +1775,7 @@
     },
     {
       "date": "2026-08-20",
-      "count": 0
+      "count": 4
     },
     {
       "date": "2026-08-21",
@@ -1868,7 +1815,7 @@
     },
     {
       "date": "2026-08-30",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-08-31",
@@ -1880,28 +1827,111 @@
     },
     {
       "date": "2026-09-02",
-      "count": 0
+      "count": 2
     },
     {
       "date": "2026-09-03",
-      "count": 0
+      "count": 11
     },
     {
       "date": "2026-09-04",
-      "count": 0
+      "count": 2
     },
     {
       "date": "2026-09-05",
+      "count": 1
+    },
+    {
+      "date": "2026-09-06",
+      "count": 3
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 3
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 2
+    },
+    {
+      "date": "2026-09-12",
+      "count": 5
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 1
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
       "count": 0
     }
   ],
   "recentIssues": [
     {
+      "number": 34,
+      "title": "Invite to launch",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/34",
+      "createdAt": "2026-09-13T17:14:27Z",
+      "comments": 0,
+      "labels": [],
+      "author": "arash-jahani"
+    },
+    {
+      "number": 33,
+      "title": "Round transition leaves the GPU idle for 4-87s (avg ~37s) between `new round` and the miner actually starting work",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/33",
+      "createdAt": "2026-09-11T15:10:30Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ntllinh2511"
+    },
+    {
+      "number": 31,
+      "title": "CPU scaling issue: 4 vs 8 vs 10 CPUs — quip-miner-cpu 0.3.2-rc3",
+      "url": "https://github.com/QuipNetwork/quip-miner/issues/31",
+      "createdAt": "2026-09-06T22:47:24Z",
+      "comments": 0,
+      "labels": [],
+      "author": "subzeroua"
+    },
+    {
       "number": 27,
       "title": "Add last_successful_submission timestamp to /api/v1/status",
       "url": "https://github.com/QuipNetwork/quip-miner/issues/27",
       "createdAt": "2026-07-19T16:20:31Z",
-      "comments": 1,
+      "comments": 2,
       "labels": [],
       "author": "rcarback"
     }
@@ -1911,319 +1941,319 @@
     {
       "day": 0,
       "hour": 0,
-      "commits": 2
-    },
-    {
-      "day": 0,
-      "hour": 1,
-      "commits": 1
-    },
-    {
-      "day": 0,
-      "hour": 2,
-      "commits": 2
-    },
-    {
-      "day": 0,
-      "hour": 3,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 4,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 5,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 6,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 7,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 8,
-      "commits": 0
-    },
-    {
-      "day": 0,
-      "hour": 9,
-      "commits": 1
-    },
-    {
-      "day": 0,
-      "hour": 10,
-      "commits": 12
-    },
-    {
-      "day": 0,
-      "hour": 11,
-      "commits": 8
-    },
-    {
-      "day": 0,
-      "hour": 12,
-      "commits": 1
-    },
-    {
-      "day": 0,
-      "hour": 13,
-      "commits": 12
-    },
-    {
-      "day": 0,
-      "hour": 14,
-      "commits": 6
-    },
-    {
-      "day": 0,
-      "hour": 15,
-      "commits": 6
-    },
-    {
-      "day": 0,
-      "hour": 16,
-      "commits": 10
-    },
-    {
-      "day": 0,
-      "hour": 17,
-      "commits": 9
-    },
-    {
-      "day": 0,
-      "hour": 18,
-      "commits": 8
-    },
-    {
-      "day": 0,
-      "hour": 19,
-      "commits": 9
-    },
-    {
-      "day": 0,
-      "hour": 20,
-      "commits": 5
-    },
-    {
-      "day": 0,
-      "hour": 21,
-      "commits": 6
-    },
-    {
-      "day": 0,
-      "hour": 22,
-      "commits": 6
-    },
-    {
-      "day": 0,
-      "hour": 23,
       "commits": 11
     },
     {
-      "day": 1,
-      "hour": 0,
-      "commits": 4
-    },
-    {
-      "day": 1,
+      "day": 0,
       "hour": 1,
-      "commits": 4
+      "commits": 7
     },
     {
-      "day": 1,
+      "day": 0,
       "hour": 2,
-      "commits": 1
-    },
-    {
-      "day": 1,
-      "hour": 3,
-      "commits": 1
-    },
-    {
-      "day": 1,
-      "hour": 4,
-      "commits": 2
-    },
-    {
-      "day": 1,
-      "hour": 5,
       "commits": 3
     },
     {
-      "day": 1,
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
       "hour": 6,
       "commits": 0
     },
     {
-      "day": 1,
+      "day": 0,
       "hour": 7,
       "commits": 0
     },
     {
-      "day": 1,
+      "day": 0,
       "hour": 8,
-      "commits": 2
+      "commits": 0
     },
     {
-      "day": 1,
+      "day": 0,
       "hour": 9,
-      "commits": 3
+      "commits": 1
     },
     {
-      "day": 1,
+      "day": 0,
       "hour": 10,
-      "commits": 2
-    },
-    {
-      "day": 1,
-      "hour": 11,
-      "commits": 3
-    },
-    {
-      "day": 1,
-      "hour": 12,
-      "commits": 6
-    },
-    {
-      "day": 1,
-      "hour": 13,
-      "commits": 15
-    },
-    {
-      "day": 1,
-      "hour": 14,
-      "commits": 9
-    },
-    {
-      "day": 1,
-      "hour": 15,
       "commits": 13
     },
     {
-      "day": 1,
-      "hour": 16,
-      "commits": 14
-    },
-    {
-      "day": 1,
-      "hour": 17,
-      "commits": 12
-    },
-    {
-      "day": 1,
-      "hour": 18,
+      "day": 0,
+      "hour": 11,
       "commits": 9
     },
     {
-      "day": 1,
-      "hour": 19,
-      "commits": 3
-    },
-    {
-      "day": 1,
-      "hour": 20,
-      "commits": 8
-    },
-    {
-      "day": 1,
-      "hour": 21,
-      "commits": 10
-    },
-    {
-      "day": 1,
-      "hour": 22,
-      "commits": 5
-    },
-    {
-      "day": 1,
-      "hour": 23,
-      "commits": 2
-    },
-    {
-      "day": 2,
-      "hour": 0,
-      "commits": 4
-    },
-    {
-      "day": 2,
-      "hour": 1,
-      "commits": 2
-    },
-    {
-      "day": 2,
-      "hour": 2,
-      "commits": 2
-    },
-    {
-      "day": 2,
-      "hour": 3,
-      "commits": 3
-    },
-    {
-      "day": 2,
-      "hour": 4,
-      "commits": 2
-    },
-    {
-      "day": 2,
-      "hour": 5,
-      "commits": 1
-    },
-    {
-      "day": 2,
-      "hour": 6,
-      "commits": 0
-    },
-    {
-      "day": 2,
-      "hour": 7,
-      "commits": 1
-    },
-    {
-      "day": 2,
-      "hour": 8,
-      "commits": 4
-    },
-    {
-      "day": 2,
-      "hour": 9,
-      "commits": 0
-    },
-    {
-      "day": 2,
-      "hour": 10,
-      "commits": 3
-    },
-    {
-      "day": 2,
-      "hour": 11,
-      "commits": 1
-    },
-    {
-      "day": 2,
+      "day": 0,
       "hour": 12,
-      "commits": 1
+      "commits": 3
     },
     {
-      "day": 2,
+      "day": 0,
       "hour": 13,
-      "commits": 1
+      "commits": 17
     },
     {
-      "day": 2,
+      "day": 0,
       "hour": 14,
       "commits": 7
     },
     {
+      "day": 0,
+      "hour": 15,
+      "commits": 7
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 9
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 10
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 15
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 12
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 18
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 8
+    },
+    {
       "day": 2,
       "hour": 15,
       "commits": 3
@@ -2251,7 +2281,7 @@
     {
       "day": 2,
       "hour": 20,
-      "commits": 3
+      "commits": 5
     },
     {
       "day": 2,
@@ -2261,22 +2291,22 @@
     {
       "day": 2,
       "hour": 22,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 2,
       "hour": 23,
-      "commits": 18
+      "commits": 22
     },
     {
       "day": 3,
       "hour": 0,
-      "commits": 12
+      "commits": 21
     },
     {
       "day": 3,
       "hour": 1,
-      "commits": 11
+      "commits": 12
     },
     {
       "day": 3,
@@ -2321,7 +2351,7 @@
     {
       "day": 3,
       "hour": 10,
-      "commits": 13
+      "commits": 14
     },
     {
       "day": 3,
@@ -2336,32 +2366,32 @@
     {
       "day": 3,
       "hour": 13,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 3,
       "hour": 14,
-      "commits": 14
+      "commits": 19
     },
     {
       "day": 3,
       "hour": 15,
-      "commits": 12
+      "commits": 16
     },
     {
       "day": 3,
       "hour": 16,
-      "commits": 11
+      "commits": 17
     },
     {
       "day": 3,
       "hour": 17,
-      "commits": 54
+      "commits": 55
     },
     {
       "day": 3,
       "hour": 18,
-      "commits": 63
+      "commits": 65
     },
     {
       "day": 3,
@@ -2376,37 +2406,37 @@
     {
       "day": 3,
       "hour": 21,
-      "commits": 30
+      "commits": 34
     },
     {
       "day": 3,
       "hour": 22,
-      "commits": 20
+      "commits": 25
     },
     {
       "day": 3,
       "hour": 23,
-      "commits": 22
+      "commits": 24
     },
     {
       "day": 4,
       "hour": 0,
-      "commits": 20
+      "commits": 22
     },
     {
       "day": 4,
       "hour": 1,
-      "commits": 7
+      "commits": 8
     },
     {
       "day": 4,
       "hour": 2,
-      "commits": 1
+      "commits": 5
     },
     {
       "day": 4,
       "hour": 3,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 4,
@@ -2441,52 +2471,52 @@
     {
       "day": 4,
       "hour": 10,
-      "commits": 22
+      "commits": 28
     },
     {
       "day": 4,
       "hour": 11,
-      "commits": 17
+      "commits": 26
     },
     {
       "day": 4,
       "hour": 12,
-      "commits": 13
-    },
-    {
-      "day": 4,
-      "hour": 13,
-      "commits": 18
-    },
-    {
-      "day": 4,
-      "hour": 14,
-      "commits": 12
-    },
-    {
-      "day": 4,
-      "hour": 15,
-      "commits": 10
-    },
-    {
-      "day": 4,
-      "hour": 16,
-      "commits": 6
-    },
-    {
-      "day": 4,
-      "hour": 17,
       "commits": 21
     },
     {
       "day": 4,
+      "hour": 13,
+      "commits": 35
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 18
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 16
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 8
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 23
+    },
+    {
+      "day": 4,
       "hour": 18,
-      "commits": 13
+      "commits": 19
     },
     {
       "day": 4,
       "hour": 19,
-      "commits": 4
+      "commits": 11
     },
     {
       "day": 4,
@@ -2496,27 +2526,27 @@
     {
       "day": 4,
       "hour": 21,
-      "commits": 3
+      "commits": 7
     },
     {
       "day": 4,
       "hour": 22,
-      "commits": 6
+      "commits": 8
     },
     {
       "day": 4,
       "hour": 23,
-      "commits": 17
+      "commits": 23
     },
     {
       "day": 5,
       "hour": 0,
-      "commits": 9
+      "commits": 17
     },
     {
       "day": 5,
       "hour": 1,
-      "commits": 7
+      "commits": 13
     },
     {
       "day": 5,
@@ -2526,7 +2556,7 @@
     {
       "day": 5,
       "hour": 3,
-      "commits": 0
+      "commits": 4
     },
     {
       "day": 5,
@@ -2541,12 +2571,12 @@
     {
       "day": 5,
       "hour": 6,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 5,
       "hour": 7,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 5,
@@ -2571,7 +2601,7 @@
     {
       "day": 5,
       "hour": 12,
-      "commits": 11
+      "commits": 12
     },
     {
       "day": 5,
@@ -2581,22 +2611,22 @@
     {
       "day": 5,
       "hour": 14,
-      "commits": 7
+      "commits": 11
     },
     {
       "day": 5,
       "hour": 15,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 5,
       "hour": 16,
-      "commits": 12
+      "commits": 14
     },
     {
       "day": 5,
       "hour": 17,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 5,
@@ -2606,7 +2636,7 @@
     {
       "day": 5,
       "hour": 19,
-      "commits": 12
+      "commits": 14
     },
     {
       "day": 5,
@@ -2616,12 +2646,12 @@
     {
       "day": 5,
       "hour": 21,
-      "commits": 9
+      "commits": 10
     },
     {
       "day": 5,
       "hour": 22,
-      "commits": 10
+      "commits": 12
     },
     {
       "day": 5,
@@ -2631,22 +2661,22 @@
     {
       "day": 6,
       "hour": 0,
-      "commits": 14
+      "commits": 19
     },
     {
       "day": 6,
       "hour": 1,
-      "commits": 7
+      "commits": 14
     },
     {
       "day": 6,
       "hour": 2,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 6,
       "hour": 3,
-      "commits": 3
+      "commits": 4
     },
     {
       "day": 6,
@@ -2681,57 +2711,57 @@
     {
       "day": 6,
       "hour": 10,
-      "commits": 2
-    },
-    {
-      "day": 6,
-      "hour": 11,
-      "commits": 8
-    },
-    {
-      "day": 6,
-      "hour": 12,
-      "commits": 8
-    },
-    {
-      "day": 6,
-      "hour": 13,
       "commits": 10
     },
     {
       "day": 6,
-      "hour": 14,
-      "commits": 9
+      "hour": 11,
+      "commits": 14
     },
     {
       "day": 6,
-      "hour": 15,
-      "commits": 23
-    },
-    {
-      "day": 6,
-      "hour": 16,
-      "commits": 20
-    },
-    {
-      "day": 6,
-      "hour": 17,
-      "commits": 20
-    },
-    {
-      "day": 6,
-      "hour": 18,
-      "commits": 3
-    },
-    {
-      "day": 6,
-      "hour": 19,
+      "hour": 12,
       "commits": 13
     },
     {
       "day": 6,
+      "hour": 13,
+      "commits": 11
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 13
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 24
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 21
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 22
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 15
+    },
+    {
+      "day": 6,
       "hour": 20,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 6,
@@ -2746,92 +2776,92 @@
     {
       "day": 6,
       "hour": 23,
-      "commits": 2
+      "commits": 7
     }
   ],
   "participation": {
-    "all": 1303,
+    "all": 1669,
     "owner": 0,
-    "community": 1303
+    "community": 1669
   },
   "recentCommits": [
     {
-      "sha": "72a7e77",
-      "message": "Merge branch 'v0.2' into 'main'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/72a7e77a31fbbf6797d63dd9462b9038fb19b710",
-      "date": "2026-07-21T20:44:44Z",
+      "sha": "b8a6f09",
+      "message": "Merge branch 'chore/release-0.3.4' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/b8a6f09a2953fede85145895d39539aa2f6630f5",
+      "date": "2026-09-14T19:55:07Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "8ce541c",
-      "message": "Release v0.2.1: version drift fix and Docker tag policy",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/8ce541c8b134ce516a9b76b9fc63ea598ad9453e",
-      "date": "2026-07-21T20:36:13Z",
+      "sha": "d695b4d",
+      "message": "chore(release): v0.3.4",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/d695b4d41043ab335d8e8f78de72c8d60e0f04d6",
+      "date": "2026-09-14T17:52:13Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "a49bdc6",
-      "message": "Merge branch 'chore/release-v0.2.1-rc54' into 'v0.2'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/a49bdc632ede2fe1a0f4935e7306844975d56a16",
-      "date": "2026-07-19T20:58:38Z",
+      "sha": "3a751bb",
+      "message": "Merge branch 'chore/release-0.3.4-rc4' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/3a751bb3278b914e78517573dc574ccaf37e298f",
+      "date": "2026-09-13T01:52:31Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "d43ef1b",
-      "message": "chore(release): v0.2.1-rc54",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/d43ef1b705d6a428ac22f55f3a1e853c15945f58",
-      "date": "2026-07-19T20:54:20Z",
+      "sha": "bcd5c12",
+      "message": "chore(release): v0.3.4-rc4",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/bcd5c12082f489f912e3a9adda7c694336174f0f",
+      "date": "2026-09-13T00:25:59Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "86b1271",
-      "message": "Merge branch 'fix/qui-825-startup-sync-gate' into 'v0.2'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/86b1271109e5ef8b685425888f78f81cac9dead3",
-      "date": "2026-07-19T20:52:25Z",
+      "sha": "e7fbdbd",
+      "message": "Merge branch 'chore/release-0.3.4-rc3' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/e7fbdbdb20563dd16abc438987bf35ca75810ea1",
+      "date": "2026-09-12T23:30:43Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "0efbc4c",
-      "message": "fix(startup): gate mining on validator sync before funding check",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/0efbc4c6c207eb616cf859d1ddf5e3968e7084d5",
-      "date": "2026-07-19T20:52:25Z",
+      "sha": "7cf20aa",
+      "message": "chore(release): v0.3.4-rc3",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/7cf20aa90eb15ca57b48c5217922f47276504b4f",
+      "date": "2026-09-12T23:25:06Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "d480fce",
-      "message": "Merge branch 'feature/qui-896' into 'v0.2'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/d480fce15cc77794c1a33c14fa4435dec4b053b8",
-      "date": "2026-07-19T20:48:42Z",
+      "sha": "9c914f9",
+      "message": "Merge branch 'chore/release-0.3.4-rc2' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/9c914f9e356a6a2d3b93a8d0daf62b46e3837fb3",
+      "date": "2026-09-12T17:38:11Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "525700c",
-      "message": "fix(cuda): neutralize forward-compat libs on consumer GPUs",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/525700cd92416a28559e4fdc0c11dd1cfe953728",
-      "date": "2026-07-19T20:43:16Z",
+      "sha": "6d61b68",
+      "message": "chore(release): v0.3.4-rc2",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/6d61b68e94b2e5ca057ec1d6e6dad2a0e25de683",
+      "date": "2026-09-12T17:25:57Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "7094d1c",
-      "message": "Merge branch 'fix/qui-899-submit-failure-telemetry' into 'v0.2'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/7094d1ca743d936cd5fd30fbece9f2da8a02b7dc",
-      "date": "2026-07-19T19:18:11Z",
+      "sha": "516d703",
+      "message": "Merge branch 'fix/participate-after-first-result' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/516d7034177df0e29a956ec1c9c1e2a3f0dc6dc1",
+      "date": "2026-09-12T17:09:20Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "a96a2d2",
-      "message": "fix(substrate): make the QUI-899 fix verifiable + close two related holes",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/a96a2d21c225c109461aa61b1f25c94ed895b0a0",
-      "date": "2026-07-19T19:18:11Z",
+      "sha": "bfacde2",
+      "message": "fix(coordinator): declare participation only after a miner returns a Result",
+      "url": "https://github.com/QuipNetwork/quip-miner/commit/bfacde266955740137422164c44b0d44ef642ebb",
+      "date": "2026-09-12T16:19:11Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     }
@@ -2844,16 +2874,16 @@
       "url": "https://github.com/QuipNetwork/quip-miner/tree/main/.github"
     },
     {
-      "name": "benchmarks",
+      "name": ".serena",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/benchmarks"
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/.serena"
     },
     {
-      "name": "CPU",
+      "name": "crates",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/CPU"
+      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/crates"
     },
     {
       "name": "docker",
@@ -2868,100 +2898,58 @@
       "url": "https://github.com/QuipNetwork/quip-miner/tree/main/docs"
     },
     {
-      "name": "dwave_topologies",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/dwave_topologies"
-    },
-    {
-      "name": "gibbs",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/gibbs"
-    },
-    {
-      "name": "GPU",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/GPU"
-    },
-    {
-      "name": "minertest",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/minertest"
-    },
-    {
-      "name": "pyinstaller",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/pyinstaller"
-    },
-    {
-      "name": "QPU",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/QPU"
-    },
-    {
-      "name": "shared",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/shared"
-    },
-    {
-      "name": "substrate",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/substrate"
-    },
-    {
-      "name": "systemd-linux",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/systemd-linux"
-    },
-    {
-      "name": "tests",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/tests"
-    },
-    {
-      "name": "tools",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/tools"
-    },
-    {
       "name": ".dockerignore",
       "type": "file",
-      "size": 698,
+      "size": 578,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.dockerignore"
     },
     {
       "name": ".gitignore",
       "type": "file",
-      "size": 1179,
+      "size": 1257,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitignore"
     },
     {
       "name": ".gitlab-ci.yml",
       "type": "file",
-      "size": 11475,
+      "size": 21373,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitlab-ci.yml"
     },
     {
       "name": "AGENTS.md",
       "type": "file",
-      "size": 16383,
+      "size": 5820,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/AGENTS.md"
     },
     {
       "name": "ARCHITECTURE.md",
       "type": "file",
-      "size": 23893,
+      "size": 9942,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/ARCHITECTURE.md"
+    },
+    {
+      "name": "Cargo.lock",
+      "type": "file",
+      "size": 137153,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Cargo.lock"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 1677,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Cargo.toml"
+    },
+    {
+      "name": "clippy.toml",
+      "type": "file",
+      "size": 112,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/clippy.toml"
+    },
+    {
+      "name": "COORDINATOR.md",
+      "type": "file",
+      "size": 26604,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/COORDINATOR.md"
     },
     {
       "name": "genesis_block.json",
@@ -2976,88 +2964,28 @@
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/LICENSE"
     },
     {
-      "name": "MANIFEST.in",
+      "name": "NEWMINER.md",
       "type": "file",
-      "size": 44,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/MANIFEST.in"
+      "size": 4106,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/NEWMINER.md"
     },
     {
-      "name": "MINER_README.md",
+      "name": "newplan.md",
       "type": "file",
-      "size": 2177,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/MINER_README.md"
-    },
-    {
-      "name": "Mining.sh",
-      "type": "file",
-      "size": 3078,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Mining.sh"
-    },
-    {
-      "name": "pyproject.toml",
-      "type": "file",
-      "size": 2637,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/pyproject.toml"
-    },
-    {
-      "name": "quip_cli.py",
-      "type": "file",
-      "size": 114119,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip_cli.py"
-    },
-    {
-      "name": "quip-miner.example.toml",
-      "type": "file",
-      "size": 7371,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip-miner.example.toml"
-    },
-    {
-      "name": "quip.network.cpu.example.toml",
-      "type": "file",
-      "size": 1039,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.cpu.example.toml"
-    },
-    {
-      "name": "quip.network.gpu.example.toml",
-      "type": "file",
-      "size": 3067,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.gpu.example.toml"
-    },
-    {
-      "name": "quip.network.qpu.example.toml",
-      "type": "file",
-      "size": 5630,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/quip.network.qpu.example.toml"
+      "size": 11891,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/newplan.md"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 10972,
+      "size": 5133,
       "url": "https://github.com/QuipNetwork/quip-miner/blob/main/README.md"
     },
     {
-      "name": "reload.sh",
+      "name": "rust-toolchain.toml",
       "type": "file",
-      "size": 703,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/reload.sh"
-    },
-    {
-      "name": "SOLVE.md",
-      "type": "file",
-      "size": 3067,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/SOLVE.md"
-    },
-    {
-      "name": "TESTSTOEVAL.md",
-      "type": "file",
-      "size": 2337,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/TESTSTOEVAL.md"
-    },
-    {
-      "name": "uv.lock",
-      "type": "file",
-      "size": 1098634,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/uv.lock"
+      "size": 66,
+      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/rust-toolchain.toml"
     }
   ],
   "manifestDependencies": {
@@ -3107,8 +3035,17 @@
     "total": 10
   },
   "branchCount": 15,
-  "tagCount": 105,
+  "tagCount": 128,
   "recentPulls": [
+    {
+      "number": 32,
+      "title": "feat(telemetry): ISO-8601 last_successful_submission on /api/v1/status",
+      "url": "https://github.com/QuipNetwork/quip-miner/pull/32",
+      "state": "closed",
+      "updatedAt": "2026-09-13T11:21:28Z",
+      "author": "erkancamli",
+      "draft": false
+    },
     {
       "number": 30,
       "title": "Split miner/coordinator stream reads from writes",
@@ -3184,13 +3121,13 @@
     {
       "name": "CI",
       "status": "failure",
-      "url": "https://github.com/QuipNetwork/quip-miner/actions/runs/29867113419",
+      "url": "https://github.com/QuipNetwork/quip-miner/actions/runs/34889806032",
       "branch": "main",
-      "updatedAt": "2026-07-21T20:45:32Z"
+      "updatedAt": "2026-09-14T19:55:36Z"
     }
   ],
   "fundingLinks": [],
-  "openIssuesOnly": 1,
+  "openIssuesOnly": 4,
   "openPRs": 0,
   "releaseCount": 0,
   "discussionsEnabled": false,
@@ -3205,11 +3142,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "codeFrequency": [
-    {
-      "week": "2025-09-14",
-      "additions": 6213,
-      "deletions": 2941
-    },
     {
       "week": "2025-09-21",
       "additions": 2556,
@@ -3427,28 +3359,28 @@
     },
     {
       "week": "2026-07-19",
-      "additions": 868,
-      "deletions": 77
+      "additions": 58745,
+      "deletions": 286149
     },
     {
       "week": "2026-07-26",
-      "additions": 0,
-      "deletions": 0
+      "additions": 9183,
+      "deletions": 3261
     },
     {
       "week": "2026-08-02",
-      "additions": 0,
-      "deletions": 0
+      "additions": 665,
+      "deletions": 207
     },
     {
       "week": "2026-08-09",
-      "additions": 0,
-      "deletions": 0
+      "additions": 15718,
+      "deletions": 3275
     },
     {
       "week": "2026-08-16",
-      "additions": 0,
-      "deletions": 0
+      "additions": 842,
+      "deletions": 14484
     },
     {
       "week": "2026-08-23",
@@ -3457,17 +3389,22 @@
     },
     {
       "week": "2026-08-30",
-      "additions": 0,
-      "deletions": 0
+      "additions": 2356,
+      "deletions": 339
     },
     {
       "week": "2026-09-06",
-      "additions": 0,
-      "deletions": 0
+      "additions": 481,
+      "deletions": 177
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 2,
+      "deletions": 2
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-06T05:26:05.792Z",
+  "factsUpdatedAt": "2026-09-15T15:24:47.555Z",
   "aiSummary": {
     "oneLiner": "A Python mining stack for the Quip network that solves Ising models using CPU, GPU, and D-Wave QPU backends.",
     "whatItDoes": "quip-miner is the official mining software for the quip-protocol-rs Substrate chain, built to solve complex Quantum Proof of Work challenges. The miner continuously fetches the latest mining snapshot from the chain, derives a cryptographic nonce, and generates an Ising model based on that nonce. It then dispatches this model to specialized worker processes targeting CPU (Simulated Annealing), GPU (CUDA/Metal/Modal), or quantum hardware (D-Wave QPUs) to search for valid solutions. Once a valid sample set is found, the miner encodes the result and submits a QuantumPow.submit_proof extrinsic back to the chain, handling all necessary telemetry and receipt classification.",
