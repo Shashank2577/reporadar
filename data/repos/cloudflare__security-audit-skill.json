@@ -1,0 +1,2929 @@
+{
+  "id": "cloudflare/security-audit-skill",
+  "snapshots": [
+    {
+      "date": "2026-09-16",
+      "stars": 5443,
+      "forks": 332
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-09-16",
+      "period": "daily",
+      "rank": 2,
+      "starsGained": 1434
+    }
+  ],
+  "owner": "cloudflare",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/314135?v=4",
+  "ownerType": "Organization",
+  "name": "security-audit-skill",
+  "description": "A coding-agent skill for multi-phase security audits with independently verified, machine-readable findings",
+  "url": "https://github.com/cloudflare/security-audit-skill",
+  "homepage": null,
+  "license": "MIT",
+  "language": "JavaScript",
+  "topics": [],
+  "stars": 5443,
+  "forks": 332,
+  "watchers": 25,
+  "openIssues": 6,
+  "createdAt": "2026-06-18T14:08:44Z",
+  "pushedAt": "2026-09-14T19:29:02Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-09-16T11:36:35.043Z",
+  "readmeExcerpt": "# security-audit\n\nA coding-agent skill that turns your agent into a security auditor. It orchestrates isolated agents through reconnaissance, coverage-led hunting, candidate validation, structured output, independent record verification, and target-neutral reporting.\n\nThis is the skill that seeded Cloudflare's vulnerability discovery harness, described in [Build your own vulnerability harness](https://blog.cloudflare.com/build-your-own-vulnerability-harness). The harness grew into a multi-stage, fleet-wide system; this skill is the single-repo starting point it evolved from.\n\n## What it does\n\nThe skill runs a structured audit in six phases:\n\n1. **Reconnaissance** -- map architecture, trust boundaries, input surfaces, prior evidence, and deterministic coverage in `architecture.md` and `coverage-ledger.json`.\n2. **Coverage-led hunting** -- assign isolated hunters from ledger units, record their checks, and use coverage critics to find gaps.\n3. **Candidate validation** -- give every unique candidate to a fresh verifier that tries to disprove it.\n4. **Structured output** -- write `confirmed`, `needs_validation`, and `rejected` records to `findings.json` and validate them against `report-schema.json`.\n5. **Independent record verification** -- fresh agents verify final source claims. Material replacements receive another independent verifier.\n6. **Target-neutral reporting** -- derive `REPORT.md`, `FINDINGS-DETAIL.md`, and `NEEDS-VALIDATION.md` from the verified records and coverage ledger.\n\nThe parent runs `validate-coverage-ledger.cjs` after creating the ledger and after each later ledger update. It runs `validate-findings.cjs` in Phase 4 and again after every Phase 5 replacement.\n\nThe verdicts are distinct: `confirmed` has a complete source trace and bounded observed result, `needs_validation` has an exact unresolved fact and no severity, and `rejected` records a disproved candidate.\n\nMultiple runs against the same repo are additive. The skill uses prior ledgers and findings to target gaps, revalidate changed source, and carry forward current-source evidence without treating stale or unresolved work as covered.\n\n## Files\n\n| File | Purpose |\n|------|---------|\n| `SKILL.md` | Setup, core principles, platform terminology, workflow overview, and audit anti-patterns |\n| `RECONNAISSANCE.md` | Phase 1 reconnaissance prompts and synthesis instructions |\n| `HUNTING.md` | Phase 2 orchestration, hunting methodology, and validation rules |\n| `ATTACK-CLASSES.md` | Core, wildcard, and obvious-things attack prompts |\n| `MEMORY-SAFETY-AND-BINARY.md` | Memory-safety, binary, and kernel hunting classes for native targets |\n| `AI-AND-LLM.md` | Prompt-injection, agent/tool, and output-handling hunting classes for LLM-backed targets |\n| `WEB-PROTOCOL-AND-AUTH.md` | HTTP request-framing, cache, and authentication-protocol hunting classes for HTTP-protocol and auth targets |\n| `CLIENT-SIDE.md` | DOM-injection, messaging-trust, UI-redress, and prototype-pollution hunting classes for client-side/browser targets |\n| `SUPPLY-CHAIN-AND-RELEASE.md` | Dependency, CI, release, signing, update, plugin, and extension hunting classes |\n| `CLOUD-AND-DEPLOYMENT.md` | IAM, infrastructure-as-code, container, serverless, ingress, and runtime-configuration hunting classes |\n| `PROTOCOLS-RPC-AND-MESSAGING.md` | RPC, serialization, queue, broker, webhook, and streaming-protocol hunting classes |\n| `RESOURCE-EXHAUSTION-AND-AVAILABILITY.md` | Shared resource, quota, queue, worker, and operator-spend hunting classes |\n| `DATA-ISOLATION-AND-LIFECYCLE.md` | Tenant isolation, cache, search, export, backup, migration, deletion, and restore hunting classes |\n| `DESKTOP-MOBILE-AND-LOCAL-IPC.md` | Native app, deep-link, webview, exported-component, helper, daemon, and local-IPC hunting classes |\n| `VALIDATION-AND-REPORTING.md` | Phases 3–6 candidate validation, structured output, record verification, and reporting |\n| `report-schema.json` | JSON schema for all three `findings.json` verdicts |\n| `validate-findings.cjs` | Zero-dependency validator for `findings.json` in Phases 4 and 5 |\n| `validate-findings.test.cjs` | Findings-validator tests and producer-compatible fixture checks |\n| `validate-coverage-ledger.cjs` | Zero-dependency validator for `coverage-ledger.json` in Phases 1–5 |\n| `validate-coverage-ledger.test.cjs` | Coverage-ledger validator tests |\n\n## Installation\n\nInstall the skill with the [Skills CLI](https://skills.sh):\n\n```bash\nnpx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit\n```\n\nUse `--global` for a user-level installation:\n\n```bash\nnpx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit \\\n  --global\n```\n\nRun `npx skills --help` for agent-selection and non-interactive options.\n\n## Usage\n\nStart your coding agent in (or pointed at) the codebase you want to audit, then ask it to do a security audit:\n\n```\nsecurity audit this codebase\n```\n\n```\nfind security vulnerabilities in ./src\n```\n\n```\ndo a security review, output to ~/audits/my-project\n```\n\nThe skill activates automatically when the request matches its trigger (security audit, find vulnerabilities, pen-test the code, etc.). A direct codebase audit or pen-test request uses full audit mode. Security questions and focused vulnerability work use guidance mode unless you request report artifacts. In full audit mode, an unspecified output directory defaults to `~/security-audit-skill/<repo-name>/run-<N>`. The workflow writes inside the target repository only when you explicitly select a directory that version control ignores.\n\n## Requirements\n\n- A coding agent with a model that supports tool use and parallel sub-agents\n- Node.js for the zero-dependency findings and coverage-ledger validators\n- An OS-enforced sandbox for target-controlled builds, tests, processes, browsers, emulators, fuzzers, and fixtures. It must disable external networking, use a sanitized allowlisted environment, enforce resource limits, and allow writes only to assigned scratch paths. Without these controls, the workflow keeps the lead as `needs_validation` instead of executing target code.\n\n## Design principles\n\n- **Only confirm established boundary failures.** Keep a source-grounded blocked lead as `needs_validation` with its exact unresolved fact.\n- **Adversarial validation.** The agent that checks a finding is never the agent that found it.\n- **Severity requires impact.** Likelihood x impact, not deviation from a checklist.\n- **Defense-in-depth gaps are not vulnerabilities.** If Layer A prevents the attack, the absence of Layer B is a hardening note.\n- **Multiple runs improve coverage.** In our test runs, a single run found roughly half of the vulnerabilities that repeated runs found in total.\n\n## Contact\n\nQuestions, feedback, or comparing notes on AI-driven security tooling: security-ai-research@cloudflare.com\n\n## License\n\nMIT -- see [LICENSE](LICENSE).\n",
+  "languages": {
+    "JavaScript": 117195
+  },
+  "commitCount": 14,
+  "contributors": [
+    {
+      "login": "literally-dan",
+      "url": "https://github.com/literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4",
+      "contributions": 11
+    },
+    {
+      "login": "CooperSheroy",
+      "url": "https://github.com/CooperSheroy",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/59650384?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "kennysarnoski-jarvis",
+      "url": "https://github.com/kennysarnoski-jarvis",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/228360615?v=4",
+      "contributions": 1
+    }
+  ],
+  "releases": [],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">security-audit</h1></div>\n<p dir=\"auto\">A coding-agent skill that turns your agent into a security auditor. It orchestrates isolated agents through reconnaissance, coverage-led hunting, candidate validation, structured output, independent record verification, and target-neutral reporting.</p>\n<p dir=\"auto\">This is the skill that seeded Cloudflare's vulnerability discovery harness, described in <a href=\"https://blog.cloudflare.com/build-your-own-vulnerability-harness\" rel=\"nofollow\">Build your own vulnerability harness</a>. The harness grew into a multi-stage, fleet-wide system; this skill is the single-repo starting point it evolved from.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What it does</h2></div>\n<p dir=\"auto\">The skill runs a structured audit in six phases:</p>\n<ol dir=\"auto\">\n<li><strong>Reconnaissance</strong> -- map architecture, trust boundaries, input surfaces, prior evidence, and deterministic coverage in <code>architecture.md</code> and <code>coverage-ledger.json</code>.</li>\n<li><strong>Coverage-led hunting</strong> -- assign isolated hunters from ledger units, record their checks, and use coverage critics to find gaps.</li>\n<li><strong>Candidate validation</strong> -- give every unique candidate to a fresh verifier that tries to disprove it.</li>\n<li><strong>Structured output</strong> -- write <code>confirmed</code>, <code>needs_validation</code>, and <code>rejected</code> records to <code>findings.json</code> and validate them against <code>report-schema.json</code>.</li>\n<li><strong>Independent record verification</strong> -- fresh agents verify final source claims. Material replacements receive another independent verifier.</li>\n<li><strong>Target-neutral reporting</strong> -- derive <code>REPORT.md</code>, <code>FINDINGS-DETAIL.md</code>, and <code>NEEDS-VALIDATION.md</code> from the verified records and coverage ledger.</li>\n</ol>\n<p dir=\"auto\">The parent runs <code>validate-coverage-ledger.cjs</code> after creating the ledger and after each later ledger update. It runs <code>validate-findings.cjs</code> in Phase 4 and again after every Phase 5 replacement.</p>\n<p dir=\"auto\">The verdicts are distinct: <code>confirmed</code> has a complete source trace and bounded observed result, <code>needs_validation</code> has an exact unresolved fact and no severity, and <code>rejected</code> records a disproved candidate.</p>\n<p dir=\"auto\">Multiple runs against the same repo are additive. The skill uses prior ledgers and findings to target gaps, revalidate changed source, and carry forward current-source evidence without treating stale or unresolved work as covered.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Files</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>File</th>\n<th>Purpose</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>SKILL.md</code></td>\n<td>Setup, core principles, platform terminology, workflow overview, and audit anti-patterns</td>\n</tr>\n<tr>\n<td><code>RECONNAISSANCE.md</code></td>\n<td>Phase 1 reconnaissance prompts and synthesis instructions</td>\n</tr>\n<tr>\n<td><code>HUNTING.md</code></td>\n<td>Phase 2 orchestration, hunting methodology, and validation rules</td>\n</tr>\n<tr>\n<td><code>ATTACK-CLASSES.md</code></td>\n<td>Core, wildcard, and obvious-things attack prompts</td>\n</tr>\n<tr>\n<td><code>MEMORY-SAFETY-AND-BINARY.md</code></td>\n<td>Memory-safety, binary, and kernel hunting classes for native targets</td>\n</tr>\n<tr>\n<td><code>AI-AND-LLM.md</code></td>\n<td>Prompt-injection, agent/tool, and output-handling hunting classes for LLM-backed targets</td>\n</tr>\n<tr>\n<td><code>WEB-PROTOCOL-AND-AUTH.md</code></td>\n<td>HTTP request-framing, cache, and authentication-protocol hunting classes for HTTP-protocol and auth targets</td>\n</tr>\n<tr>\n<td><code>CLIENT-SIDE.md</code></td>\n<td>DOM-injection, messaging-trust, UI-redress, and prototype-pollution hunting classes for client-side/browser targets</td>\n</tr>\n<tr>\n<td><code>SUPPLY-CHAIN-AND-RELEASE.md</code></td>\n<td>Dependency, CI, release, signing, update, plugin, and extension hunting classes</td>\n</tr>\n<tr>\n<td><code>CLOUD-AND-DEPLOYMENT.md</code></td>\n<td>IAM, infrastructure-as-code, container, serverless, ingress, and runtime-configuration hunting classes</td>\n</tr>\n<tr>\n<td><code>PROTOCOLS-RPC-AND-MESSAGING.md</code></td>\n<td>RPC, serialization, queue, broker, webhook, and streaming-protocol hunting classes</td>\n</tr>\n<tr>\n<td><code>RESOURCE-EXHAUSTION-AND-AVAILABILITY.md</code></td>\n<td>Shared resource, quota, queue, worker, and operator-spend hunting classes</td>\n</tr>\n<tr>\n<td><code>DATA-ISOLATION-AND-LIFECYCLE.md</code></td>\n<td>Tenant isolation, cache, search, export, backup, migration, deletion, and restore hunting classes</td>\n</tr>\n<tr>\n<td><code>DESKTOP-MOBILE-AND-LOCAL-IPC.md</code></td>\n<td>Native app, deep-link, webview, exported-component, helper, daemon, and local-IPC hunting classes</td>\n</tr>\n<tr>\n<td><code>VALIDATION-AND-REPORTING.md</code></td>\n<td>Phases 3–6 candidate validation, structured output, record verification, and reporting</td>\n</tr>\n<tr>\n<td><code>report-schema.json</code></td>\n<td>JSON schema for all three <code>findings.json</code> verdicts</td>\n</tr>\n<tr>\n<td><code>validate-findings.cjs</code></td>\n<td>Zero-dependency validator for <code>findings.json</code> in Phases 4 and 5</td>\n</tr>\n<tr>\n<td><code>validate-findings.test.cjs</code></td>\n<td>Findings-validator tests and producer-compatible fixture checks</td>\n</tr>\n<tr>\n<td><code>validate-coverage-ledger.cjs</code></td>\n<td>Zero-dependency validator for <code>coverage-ledger.json</code> in Phases 1–5</td>\n</tr>\n<tr>\n<td><code>validate-coverage-ledger.test.cjs</code></td>\n<td>Coverage-ledger validator tests</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<p dir=\"auto\">Install the skill with the <a href=\"https://skills.sh\" rel=\"nofollow\">Skills CLI</a>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit\"><pre>npx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit</pre></div>\n<p dir=\"auto\">Use <code>--global</code> for a user-level installation:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit \\\n  --global\"><pre>npx skills add https://github.com/cloudflare/security-audit-skill \\\n  --skill security-audit \\\n  --global</pre></div>\n<p dir=\"auto\">Run <code>npx skills --help</code> for agent-selection and non-interactive options.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<p dir=\"auto\">Start your coding agent in (or pointed at) the codebase you want to audit, then ask it to do a security audit:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"security audit this codebase\"><pre class=\"notranslate\"><code>security audit this codebase\n</code></pre></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"find security vulnerabilities in ./src\"><pre class=\"notranslate\"><code>find security vulnerabilities in ./src\n</code></pre></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"do a security review, output to ~/audits/my-project\"><pre class=\"notranslate\"><code>do a security review, output to ~/audits/my-project\n</code></pre></div>\n<p dir=\"auto\">The skill activates automatically when the request matches its trigger (security audit, find vulnerabilities, pen-test the code, etc.). A direct codebase audit or pen-test request uses full audit mode. Security questions and focused vulnerability work use guidance mode unless you request report artifacts. In full audit mode, an unspecified output directory defaults to <code>~/security-audit-skill/&lt;repo-name&gt;/run-&lt;N&gt;</code>. The workflow writes inside the target repository only when you explicitly select a directory that version control ignores.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Requirements</h2></div>\n<ul dir=\"auto\">\n<li>A coding agent with a model that supports tool use and parallel sub-agents</li>\n<li>Node.js for the zero-dependency findings and coverage-ledger validators</li>\n<li>An OS-enforced sandbox for target-controlled builds, tests, processes, browsers, emulators, fuzzers, and fixtures. It must disable external networking, use a sanitized allowlisted environment, enforce resource limits, and allow writes only to assigned scratch paths. Without these controls, the workflow keeps the lead as <code>needs_validation</code> instead of executing target code.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design principles</h2></div>\n<ul dir=\"auto\">\n<li><strong>Only confirm established boundary failures.</strong> Keep a source-grounded blocked lead as <code>needs_validation</code> with its exact unresolved fact.</li>\n<li><strong>Adversarial validation.</strong> The agent that checks a finding is never the agent that found it.</li>\n<li><strong>Severity requires impact.</strong> Likelihood x impact, not deviation from a checklist.</li>\n<li><strong>Defense-in-depth gaps are not vulnerabilities.</strong> If Layer A prevents the attack, the absence of Layer B is a hardening note.</li>\n<li><strong>Multiple runs improve coverage.</strong> In our test runs, a single run found roughly half of the vulnerabilities that repeated runs found in total.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contact</h2></div>\n<p dir=\"auto\">Questions, feedback, or comparing notes on AI-driven security tooling: <a href=\"mailto:security-ai-research@cloudflare.com\">security-ai-research@cloudflare.com</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT -- see <a href=\"https://github.com/cloudflare/security-audit-skill/blob/main/LICENSE\">LICENSE</a>.</p>\n</article></div>",
+  "firstCommitAt": "2026-06-18T16:20:36Z",
+  "contributorCount": 4,
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 2
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 2
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 2
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 1
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 1
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 1
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 1
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 1
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 1
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 1
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 2
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 1
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 1
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 11,
+      "title": "Antigravity kills the parallel subagents",
+      "url": "https://github.com/cloudflare/security-audit-skill/issues/11",
+      "createdAt": "2026-08-20T12:35:24Z",
+      "comments": 0,
+      "labels": [],
+      "author": "samiternity"
+    },
+    {
+      "number": 10,
+      "title": "Consider licensing skills under MIT-0 instead of MIT",
+      "url": "https://github.com/cloudflare/security-audit-skill/issues/10",
+      "createdAt": "2026-08-12T12:12:04Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Tolsto"
+    },
+    {
+      "number": 5,
+      "title": "Support command directly",
+      "url": "https://github.com/cloudflare/security-audit-skill/issues/5",
+      "createdAt": "2026-07-02T07:18:19Z",
+      "comments": 1,
+      "labels": [],
+      "author": "terrylinooo"
+    }
+  ],
+  "participation": {
+    "all": 14,
+    "owner": 0,
+    "community": 14
+  },
+  "recentCommits": [
+    {
+      "sha": "c1c8a8c",
+      "message": "Clarify guidance and full audit modes",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "date": "2026-09-14T19:28:54Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "d24bc26",
+      "message": "Merge pull request #12 from cloudflare/harden-audit-workflow-and-validators",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/d24bc269171a9171fac58493e0ffba511d571a4a",
+      "date": "2026-09-10T11:45:47Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "158eb44",
+      "message": "Rework the audit workflow, findings contract, and validators end to end",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/158eb448038e65f05bc5f2ba36c7e981e6890cea",
+      "date": "2026-09-10T10:11:38Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "8bac420",
+      "message": "Merge pull request #6 from cloudflare/add-ai-web-protocol-attack-classes",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/8bac42001ddd90a4dcd8d5a5045199283a8eba75",
+      "date": "2026-07-06T13:36:00Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "c1239b9",
+      "message": "Bring the whole skill into one coherent house style",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/c1239b903704f5ea063b6dc0de3ba905f4cca3e4",
+      "date": "2026-07-06T13:25:33Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "b6b3f15",
+      "message": "Add AI/LLM, HTTP-protocol/auth, and client-side attack-class companions",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/b6b3f15a81f248779882e798bed8044c49778960",
+      "date": "2026-07-06T13:25:33Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "642fbad",
+      "message": "Merge pull request #3 from kennysarnoski-jarvis/add-memory-safety-and-binary",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/642fbadc37da5587b3b49dcc988633654b5d268d",
+      "date": "2026-07-04T08:19:58Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "78d28fa",
+      "message": "fix: move MEMORY-SAFETY-AND-BINARY.md to skills/security-audit/",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/78d28faf8ecd5cfe957d0037c799e356e3fe0ac0",
+      "date": "2026-07-04T08:19:40Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    },
+    {
+      "sha": "f5c2df0",
+      "message": "Add memory-safety, binary, and kernel hunting classes for native targets",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/f5c2df0a3f355818ed2c440e43f5e1527936257b",
+      "date": "2026-06-26T14:28:24Z",
+      "author": "kennysarnoski-jarvis",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/228360615?v=4"
+    },
+    {
+      "sha": "fc70ead",
+      "message": "Merge pull request #4 from CooperSheroy/catalina/validate-trace-sequence-20260702",
+      "url": "https://github.com/cloudflare/security-audit-skill/commit/fc70eadbf6ef7e86129cd88f94a8641c247dae83",
+      "date": "2026-07-03T11:35:33Z",
+      "author": "literally-dan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9935415?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "skills",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/security-audit-skill/tree/main/skills"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1078,
+      "url": "https://github.com/cloudflare/security-audit-skill/blob/main/LICENSE"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 6950,
+      "url": "https://github.com/cloudflare/security-audit-skill/blob/main/README.md"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Push on main",
+      "status": "success",
+      "url": "https://github.com/cloudflare/security-audit-skill/actions/runs/34887162291",
+      "branch": "main",
+      "updatedAt": "2026-09-14T19:30:28Z"
+    },
+    {
+      "name": "Scheduled",
+      "status": "success",
+      "url": "https://github.com/cloudflare/security-audit-skill/actions/runs/34630130325",
+      "branch": "main",
+      "updatedAt": "2026-09-11T17:53:59Z"
+    },
+    {
+      "name": "PR #12",
+      "status": "success",
+      "url": "https://github.com/cloudflare/security-audit-skill/actions/runs/34472908873",
+      "branch": "refs/pull/12/head",
+      "updatedAt": "2026-09-10T11:46:03Z"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 12,
+      "title": "Rework the audit workflow, findings contract, and validators end to end",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/12",
+      "state": "merged",
+      "updatedAt": "2026-09-10T11:45:50Z",
+      "author": "literally-dan",
+      "draft": false
+    },
+    {
+      "number": 9,
+      "title": "fix: reject invalid trace line numbers",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/9",
+      "state": "open",
+      "updatedAt": "2026-08-11T13:05:09Z",
+      "author": "badmuriss",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "feat: add findings.json → SARIF 2.1.0 converter",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/8",
+      "state": "open",
+      "updatedAt": "2026-07-23T19:18:33Z",
+      "author": "ppcvote",
+      "draft": false
+    },
+    {
+      "number": 7,
+      "title": "Add a real /cloudflare-security-audit slash command",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/7",
+      "state": "open",
+      "updatedAt": "2026-07-11T15:03:57Z",
+      "author": "MayVerse4",
+      "draft": false
+    },
+    {
+      "number": 6,
+      "title": "Add ai web protocol attack classes",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/6",
+      "state": "merged",
+      "updatedAt": "2026-07-06T13:36:03Z",
+      "author": "literally-dan",
+      "draft": false
+    },
+    {
+      "number": 3,
+      "title": "Add memory-safety, binary, and kernel hunting classes for native targets",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/3",
+      "state": "merged",
+      "updatedAt": "2026-07-04T08:19:59Z",
+      "author": "kennysarnoski-jarvis",
+      "draft": false
+    },
+    {
+      "number": 4,
+      "title": "fix: validate trace step ordering",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/4",
+      "state": "merged",
+      "updatedAt": "2026-07-03T11:35:33Z",
+      "author": "CooperSheroy",
+      "draft": false
+    },
+    {
+      "number": 2,
+      "title": "fix: move skill files to separate folder to make it compatible with npx skills add",
+      "url": "https://github.com/cloudflare/security-audit-skill/pull/2",
+      "state": "merged",
+      "updatedAt": "2026-06-29T13:48:06Z",
+      "author": "lambda0xyz",
+      "draft": false
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 87,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 3,
+  "openPRs": 3,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 1,
+  "mergedPRs": 5,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/cloudflare/security-audit-skill/security/policy",
+  "codeOfConduct": {
+    "name": "Contributor Covenant",
+    "url": "https://github.com/cloudflare/.github/blob/master/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-06-14",
+      "additions": 982,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 934,
+      "deletions": 873
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 70,
+      "deletions": 63
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 262,
+      "deletions": 22
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-16",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 4792,
+      "deletions": 701
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 43,
+      "deletions": 21
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-09-16T11:36:38.322Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2026-06-14",
+        "stars": 363
+      },
+      {
+        "date": "2026-06-21",
+        "stars": 2540
+      },
+      {
+        "date": "2026-06-28",
+        "stars": 5443
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 120.956,
+    "sampledAt": "2026-09-16T11:36:58.258Z"
+  }
+}
