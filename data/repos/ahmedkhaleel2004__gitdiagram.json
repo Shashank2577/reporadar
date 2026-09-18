@@ -1,0 +1,3235 @@
+{
+  "id": "ahmedkhaleel2004/gitdiagram",
+  "snapshots": [
+    {
+      "date": "2026-09-18",
+      "stars": 16233,
+      "forks": 1250
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-09-18",
+      "period": "daily",
+      "rank": 14,
+      "starsGained": 145
+    }
+  ],
+  "owner": "ahmedkhaleel2004",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4",
+  "ownerType": "User",
+  "name": "gitdiagram",
+  "description": "Free, simple, fast interactive diagrams for any GitHub repository",
+  "url": "https://github.com/ahmedkhaleel2004/gitdiagram",
+  "homepage": "https://gitdiagram.com",
+  "license": "MIT",
+  "language": "TypeScript",
+  "topics": [
+    "ai",
+    "code",
+    "github",
+    "system-design"
+  ],
+  "stars": 16233,
+  "forks": 1250,
+  "watchers": 58,
+  "openIssues": 40,
+  "createdAt": "2024-12-15T10:32:03Z",
+  "pushedAt": "2026-09-18T11:13:54Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-09-18T11:17:15.244Z",
+  "languages": {
+    "TypeScript": 1067958,
+    "CSS": 27488,
+    "JavaScript": 8576,
+    "Dockerfile": 1051,
+    "Shell": 604
+  },
+  "commitCount": 380,
+  "contributors": [
+    {
+      "login": "ahmedkhaleel2004",
+      "url": "https://github.com/ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4",
+      "contributions": 354
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 17
+    },
+    {
+      "login": "jasminaaa20",
+      "url": "https://github.com/jasminaaa20",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/110975832?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "martin226",
+      "url": "https://github.com/martin226",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/46298951?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeExcerpt": "\n\n\n\n\n# GitDiagram\n\nTurn any public or private GitHub repository into an interactive architecture diagram in seconds.\n\nYou can also replace `hub` with `diagram` in a GitHub URL to open its diagram.\n\n> **Sponsor slot:** Reach developers while they are actively exploring codebases. [Sponsor GitDiagram](https://gitdiagram.com/sponsor).\n\n## Features\n\n- **Architecture-first diagrams:** converts a repository tree, README, and bounded source excerpts into a system-level graph instead of merely drawing folders.\n- **Interactive source links:** click a component to open its real file or directory on GitHub.\n- **Streaming generation:** see the explanation arrive while the graph is planned.\n- **Private repositories:** provide a GitHub token locally in the browser; private artifacts use a separate protected storage namespace.\n- **Export:** copy Mermaid source or download the rendered diagram as PNG.\n- **Provider choice:** OpenAI by default, with OpenRouter available for self-hosted deployments.\n\n## Stack\n\n- **Application:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS, and Radix UI\n- **Generation API:** same-origin Next.js Route Handlers running on Vercel's Bun runtime\n- **Storage:** Cloudflare R2 for diagram artifacts\n- **Coordination:** Upstash Redis for quota accounting, cancellation, locks, and short-lived failure state\n- **AI:** OpenAI or OpenRouter through `AI_PROVIDER`\n- **Analytics:** PostHog\n- **Deployment:** Vercel is the only live runtime; an offline Railway/Docker recipe is retained for disaster recovery\n\nThere is no separate FastAPI implementation, Postgres database, or Neon runtime.\n\n## Production architecture\n\nVercel serves both the UI and the generation endpoints:\n\n- `/api/generate/cost` estimates a run after bounded GitHub ingestion, same-origin and rate limited.\n- `/api/generate/stream` streams Server-Sent Events for explanation and graph progress.\n- `/api/generate/cancel` records authenticated, same-origin cancellation signals.\n- `/api/diagram-state` reads and writes the persisted result contract.\n- `/api/healthz` provides a lightweight deployment health check.\n\nLong-running generation uses a 300-second Vercel function budget with a shorter application deadline so quota reconciliation and persistence still have time to finish. Requests use explicit upstream deadlines, retries, structured logs, heartbeats, and distributed cancellation rather than process-local state.\n\nThe default managed OpenAI pipeline uses one GPT-5.6 Luna request at medium reasoning to produce a source-grounded graph and short streamed overview. The model returns a compact graph without redundant descriptions or type captions. Graphs are validated and compiled deterministically; additional Luna calls are reserved for structural repairs or one recovery after an 18-second slow request. The slow connection is cancelled before its replacement starts; its unavailable partial usage is included as an estimated cost. Managed GPT-5.6 requests explicitly use Fast mode (`service_tier: \"priority\"`); estimates include its premium, and final costs use the model and tier actually served. User-supplied keys retain standard service and their configured model. Explicit model overrides and OpenRouter retain the two-stage pipeline. Output token estimates reserve quota but do not cap provider output.\n\nThe same Next.js application can also build into a minimal, non-root standalone Docker image for Railway. No Railway service, source connection, or Railway domain is kept live. The checked-in `Dockerfile` and `railway.json` are a cold recovery recipe that can recreate the full application later without reviving a second backend implementation. See [docs/deployment-failover.md](docs/deployment-failover.md).\n\n## How generation works\n\n1. GitDiagram fetches the repository's default branch, recursive tree, and README through the GitHub API. Truncated trees and oversized inputs are rejected before model work begins.\n2. GitDiagram fetches bounded, integrity-checked source excerpts. Selection favors substantive runtime modules, distributes excerpts across long files, and preserves import bindings for sampled calls.\n3. One managed Luna request streams a short architecture overview followed by a strict graph: groups, nodes, edges, shapes, labels, and repository paths. Explicit model overrides and user-supplied keys retain the separate explanation/graph flow.\n4. The server validates identifiers, graph connectivity, limits, and every linked path against the actual repository. Invalid output is retried with focused feedback.\n5. A deterministic compiler converts the validated AST to Mermaid with total text escaping and GitHub-only links.\n6. The browser sanitizes the source, renders Mermaid in strict security mode, sanitizes the resulting SVG, and enforces the link allowlist again.\n7. Successful artifacts and terminal audit state are persisted so later visits can reopen the diagram without another model call.\n\nThe full Mermaid parser remains in the test suite as a compiler contract test. It is deliberately not loaded into the production generation function, keeping the server bundle small without weakening diagram validation or browser safety.\n\n## State\n\n- **Successful public generations:** R2 object keyed by repository\n- **Successful private generations:** separate R2 namespace derived with a server-side secret\n- **Complimentary quota and active cancellation tokens:** Upstash Redis\n- **Terminal failures without a saved artifact:** short-lived Upstash state\n- **Concurrent writes:** distributed lock plus newest-session-wins persistence\n\n## Private repositories\n\nSelect **Private Repos** in the header and provide a fine-grained GitHub personal access token that can read the target repository. The token is sent only with the relevant same-origin request and is never embedded in public diagram links.\n\n## Local development\n\nFor exact prerequisites and environment details, see [docs/dev-setup.md](docs/dev-setup.md).\n\n```bash\ngit clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\nbun run dev\n```\n\nOpen [http://localhost:3000](http://localhost:3000).\n\nAt minimum, configure R2, Upstash, and one AI provider in `.env`. A GitHub PAT or GitHub App is optional but strongly recommended for higher GitHub API limits.\n\nRun the complete local gate before opening a pull request:\n\n```bash\nbun run lint\nbun run typecheck\nbun run test\nbun run build\n```\n\n## Contributing\n\nContributions are welcome. Please open an issue or pull request with a focused description and verification notes.\n\n## Acknowledgements\n\nInspired by [Romain Courtois](https://github.com/cyclotruc)'s [Gitingest](https://gitingest.com/).\n",
+  "releases": [],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a href=\"https://gitdiagram.com/\" rel=\"nofollow\"><img src=\"https://raw.githubusercontent.com/ahmedkhaleel2004/gitdiagram/main/docs/readme_img.png\" alt=\"GitDiagram front page\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://ko-fi.com/ahmedkhaleel2004\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/eedfd801bf0295d9607435e3eb3a1ad35c6c2eb59e20210dcc029d339d444f6a/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4b6f2d2d66692d4631363036312e7376673f6c6f676f3d6b6f2d6669266c6f676f436f6c6f723d7768697465\" alt=\"Ko-fi\" data-canonical-src=\"https://img.shields.io/badge/Ko--fi-F16061.svg?logo=ko-fi&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">GitDiagram</h1></div>\n<p dir=\"auto\">Turn any public or private GitHub repository into an interactive architecture diagram in seconds.</p>\n<p dir=\"auto\">You can also replace <code>hub</code> with <code>diagram</code> in a GitHub URL to open its diagram.</p>\n<blockquote>\n<p dir=\"auto\"><strong>Sponsor slot:</strong> Reach developers while they are actively exploring codebases. <a href=\"https://gitdiagram.com/sponsor\" rel=\"nofollow\">Sponsor GitDiagram</a>.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li><strong>Architecture-first diagrams:</strong> converts a repository tree, README, and bounded source excerpts into a system-level graph instead of merely drawing folders.</li>\n<li><strong>Interactive source links:</strong> click a component to open its real file or directory on GitHub.</li>\n<li><strong>Streaming generation:</strong> see the explanation arrive while the graph is planned.</li>\n<li><strong>Private repositories:</strong> provide a GitHub token locally in the browser; private artifacts use a separate protected storage namespace.</li>\n<li><strong>Export:</strong> copy Mermaid source or download the rendered diagram as PNG.</li>\n<li><strong>Provider choice:</strong> OpenAI by default, with OpenRouter available for self-hosted deployments.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Stack</h2></div>\n<ul dir=\"auto\">\n<li><strong>Application:</strong> Next.js 16 App Router, React 19, TypeScript, Tailwind CSS, and Radix UI</li>\n<li><strong>Generation API:</strong> same-origin Next.js Route Handlers running on Vercel's Bun runtime</li>\n<li><strong>Storage:</strong> Cloudflare R2 for diagram artifacts</li>\n<li><strong>Coordination:</strong> Upstash Redis for quota accounting, cancellation, locks, and short-lived failure state</li>\n<li><strong>AI:</strong> OpenAI or OpenRouter through <code>AI_PROVIDER</code></li>\n<li><strong>Analytics:</strong> PostHog</li>\n<li><strong>Deployment:</strong> Vercel is the only live runtime; an offline Railway/Docker recipe is retained for disaster recovery</li>\n</ul>\n<p dir=\"auto\">There is no separate FastAPI implementation, Postgres database, or Neon runtime.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Production architecture</h2></div>\n<p dir=\"auto\">Vercel serves both the UI and the generation endpoints:</p>\n<ul dir=\"auto\">\n<li><code>/api/generate/cost</code> estimates a run after bounded GitHub ingestion, same-origin and rate limited.</li>\n<li><code>/api/generate/stream</code> streams Server-Sent Events for explanation and graph progress.</li>\n<li><code>/api/generate/cancel</code> records authenticated, same-origin cancellation signals.</li>\n<li><code>/api/diagram-state</code> reads and writes the persisted result contract.</li>\n<li><code>/api/healthz</code> provides a lightweight deployment health check.</li>\n</ul>\n<p dir=\"auto\">Long-running generation uses a 300-second Vercel function budget with a shorter application deadline so quota reconciliation and persistence still have time to finish. Requests use explicit upstream deadlines, retries, structured logs, heartbeats, and distributed cancellation rather than process-local state.</p>\n<p dir=\"auto\">The default managed OpenAI pipeline uses one GPT-5.6 Luna request at medium reasoning to produce a source-grounded graph and short streamed overview. The model returns a compact graph without redundant descriptions or type captions. Graphs are validated and compiled deterministically; additional Luna calls are reserved for structural repairs or one recovery after an 18-second slow request. The slow connection is cancelled before its replacement starts; its unavailable partial usage is included as an estimated cost. Managed GPT-5.6 requests explicitly use Fast mode (<code>service_tier: \"priority\"</code>); estimates include its premium, and final costs use the model and tier actually served. User-supplied keys retain standard service and their configured model. Explicit model overrides and OpenRouter retain the two-stage pipeline. Output token estimates reserve quota but do not cap provider output.</p>\n<p dir=\"auto\">The same Next.js application can also build into a minimal, non-root standalone Docker image for Railway. No Railway service, source connection, or Railway domain is kept live. The checked-in <code>Dockerfile</code> and <code>railway.json</code> are a cold recovery recipe that can recreate the full application later without reviving a second backend implementation. See <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/deployment-failover.md\">docs/deployment-failover.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How generation works</h2></div>\n<ol dir=\"auto\">\n<li>GitDiagram fetches the repository's default branch, recursive tree, and README through the GitHub API. Truncated trees and oversized inputs are rejected before model work begins.</li>\n<li>GitDiagram fetches bounded, integrity-checked source excerpts. Selection favors substantive runtime modules, distributes excerpts across long files, and preserves import bindings for sampled calls.</li>\n<li>One managed Luna request streams a short architecture overview followed by a strict graph: groups, nodes, edges, shapes, labels, and repository paths. Explicit model overrides and user-supplied keys retain the separate explanation/graph flow.</li>\n<li>The server validates identifiers, graph connectivity, limits, and every linked path against the actual repository. Invalid output is retried with focused feedback.</li>\n<li>A deterministic compiler converts the validated AST to Mermaid with total text escaping and GitHub-only links.</li>\n<li>The browser sanitizes the source, renders Mermaid in strict security mode, sanitizes the resulting SVG, and enforces the link allowlist again.</li>\n<li>Successful artifacts and terminal audit state are persisted so later visits can reopen the diagram without another model call.</li>\n</ol>\n<p dir=\"auto\">The full Mermaid parser remains in the test suite as a compiler contract test. It is deliberately not loaded into the production generation function, keeping the server bundle small without weakening diagram validation or browser safety.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">State</h2></div>\n<ul dir=\"auto\">\n<li><strong>Successful public generations:</strong> R2 object keyed by repository</li>\n<li><strong>Successful private generations:</strong> separate R2 namespace derived with a server-side secret</li>\n<li><strong>Complimentary quota and active cancellation tokens:</strong> Upstash Redis</li>\n<li><strong>Terminal failures without a saved artifact:</strong> short-lived Upstash state</li>\n<li><strong>Concurrent writes:</strong> distributed lock plus newest-session-wins persistence</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Private repositories</h2></div>\n<p dir=\"auto\">Select <strong>Private Repos</strong> in the header and provide a fine-grained GitHub personal access token that can read the target repository. The token is sent only with the relevant same-origin request and is never embedded in public diagram links.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Local development</h2></div>\n<p dir=\"auto\">For exact prerequisites and environment details, see <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md\">docs/dev-setup.md</a>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\nbun run dev\"><pre>git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\n<span class=\"pl-c1\">cd</span> gitdiagram\nbun install\ncp .env.example .env\nbun run dev</pre></div>\n<p dir=\"auto\">Open <a href=\"http://localhost:3000\" rel=\"nofollow\">http://localhost:3000</a>.</p>\n<p dir=\"auto\">At minimum, configure R2, Upstash, and one AI provider in <code>.env</code>. A GitHub PAT or GitHub App is optional but strongly recommended for higher GitHub API limits.</p>\n<p dir=\"auto\">Run the complete local gate before opening a pull request:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"bun run lint\nbun run typecheck\nbun run test\nbun run build\"><pre>bun run lint\nbun run typecheck\nbun run <span class=\"pl-c1\">test</span>\nbun run build</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Contributions are welcome. Please open an issue or pull request with a focused description and verification notes.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Acknowledgements</h2></div>\n<p dir=\"auto\">Inspired by <a href=\"https://github.com/cyclotruc\">Romain Courtois</a>'s <a href=\"https://gitingest.com/\" rel=\"nofollow\">Gitingest</a>.</p>\n</article></div>",
+  "firstCommitAt": "2024-12-15T10:32:37Z",
+  "contributorCount": 4,
+  "recentIssues": [
+    {
+      "number": 215,
+      "title": "Diagram shows connections that do not exist in the scanned code",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/215",
+      "createdAt": "2026-09-08T01:06:36Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Andrea-Bruno"
+    },
+    {
+      "number": 213,
+      "title": "Diagram looks like not consolidating frontend components properly and creating unified diagram",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/213",
+      "createdAt": "2026-08-19T13:35:32Z",
+      "comments": 0,
+      "labels": [],
+      "author": "nagappan080810"
+    },
+    {
+      "number": 179,
+      "title": "Adding OpenRouter as LLM providers with option to add desired LLM model",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/179",
+      "createdAt": "2026-06-01T05:32:06Z",
+      "comments": 3,
+      "labels": [],
+      "author": "zahidpichen"
+    },
+    {
+      "number": 175,
+      "title": "New concept Mr Ahmed",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/175",
+      "createdAt": "2026-05-20T11:42:26Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Noorababi"
+    }
+  ],
+  "commitActivity": [
+    {
+      "week": "2025-09-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 3
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 7
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 1
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 2
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 1
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 16
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 31
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 13
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 2
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 1
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 4
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 7
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 8
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 1
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 2
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 1
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 31
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 20
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 4
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 2
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 3
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 1
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 36
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 0
+    },
+    {
+      "date": "2025-09-23",
+      "count": 0
+    },
+    {
+      "date": "2025-09-24",
+      "count": 0
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 0
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 3
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 1
+    },
+    {
+      "date": "2026-02-18",
+      "count": 1
+    },
+    {
+      "date": "2026-02-19",
+      "count": 5
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 1
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 2
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 1
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 16
+    },
+    {
+      "date": "2026-03-29",
+      "count": 6
+    },
+    {
+      "date": "2026-03-30",
+      "count": 23
+    },
+    {
+      "date": "2026-03-31",
+      "count": 1
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 1
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 6
+    },
+    {
+      "date": "2026-04-07",
+      "count": 6
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 1
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 2
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 1
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 2
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 2
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 3
+    },
+    {
+      "date": "2026-05-05",
+      "count": 1
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 3
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 1
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 5
+    },
+    {
+      "date": "2026-05-14",
+      "count": 2
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 1
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 1
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 1
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 1
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 1
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 3
+    },
+    {
+      "date": "2026-07-13",
+      "count": 18
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 2
+    },
+    {
+      "date": "2026-07-16",
+      "count": 5
+    },
+    {
+      "date": "2026-07-17",
+      "count": 1
+    },
+    {
+      "date": "2026-07-18",
+      "count": 2
+    },
+    {
+      "date": "2026-07-19",
+      "count": 1
+    },
+    {
+      "date": "2026-07-20",
+      "count": 4
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 2
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 11
+    },
+    {
+      "date": "2026-07-25",
+      "count": 2
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 1
+    },
+    {
+      "date": "2026-07-28",
+      "count": 1
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 1
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 1
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 3
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 1
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 2
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 4
+    },
+    {
+      "date": "2026-09-17",
+      "count": 12
+    },
+    {
+      "date": "2026-09-18",
+      "count": 18
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 14
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 10
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 2
+    }
+  ],
+  "participation": {
+    "all": 202,
+    "owner": 182,
+    "community": 20
+  },
+  "recentCommits": [
+    {
+      "sha": "eef003b",
+      "message": "Record live Luna latency, quality, and cost verification",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/eef003bb2d5837f69dc4f8ad6a7e583ba012a661",
+      "date": "2026-09-18T11:13:53Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "d439b64",
+      "message": "Recover slow Luna requests and preserve major architecture capabilities",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/d439b6484a602437b6160867f35143988ffd322a",
+      "date": "2026-09-18T11:08:16Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "75e5448",
+      "message": "Improve Luna architecture quality with compact output and stronger source evidence",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/75e5448c2f588bf526fe62f09e3e68660b2a01b8",
+      "date": "2026-09-18T10:52:04Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "a09b1f8",
+      "message": "Restore Luna generation to contain public API costs",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/a09b1f89f38d4af79224e640a6ffcca1ec12c53b",
+      "date": "2026-09-18T10:34:50Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "494ab33",
+      "message": "Use Sol consistently for architecture quality on small repositories",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/494ab3397d345f655b2ffd36bcbb97af4db56101",
+      "date": "2026-09-18T10:21:38Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "9b90615",
+      "message": "Generate source-grounded architecture in one fast model pass",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/9b90615683325c4951669214b4bfc3dd153f5cbf",
+      "date": "2026-09-18T10:19:31Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "315365e",
+      "message": "Remove unused generation tester helpers",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/315365e6d30e8a33af8067231607cb820878b593",
+      "date": "2026-09-18T09:49:13Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "117ac39",
+      "message": "Remove generation UI tester before release",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/117ac392756c45015bb1ec65faa7fb0438dfd3dd",
+      "date": "2026-09-18T09:48:45Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "4fe2396",
+      "message": "Expire saved diagram cache immediately after regeneration",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/4fe2396baaa5e116aabee704e726c7740acdbf61",
+      "date": "2026-09-18T09:41:42Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    },
+    {
+      "sha": "afc8514",
+      "message": "Match repository link sizing to toolbar buttons",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/afc85144e2b64d6b9d2bb83dfce7d5bc569df085",
+      "date": "2026-09-18T09:29:45Z",
+      "author": "ahmedkhaleel2004",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/.github"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/docs"
+    },
+    {
+      "name": "patches",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/patches"
+    },
+    {
+      "name": "public",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/public"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/scripts"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/src"
+    },
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "size": 120,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.dockerignore"
+    },
+    {
+      "name": ".env.example",
+      "type": "file",
+      "size": 1553,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.env.example"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 897,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.gitignore"
+    },
+    {
+      "name": ".vercelignore",
+      "type": "file",
+      "size": 278,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.vercelignore"
+    },
+    {
+      "name": "bun.lock",
+      "type": "file",
+      "size": 198761,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/bun.lock"
+    },
+    {
+      "name": "CLAUDE.md",
+      "type": "file",
+      "size": 6613,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/CLAUDE.md"
+    },
+    {
+      "name": "components.json",
+      "type": "file",
+      "size": 450,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/components.json"
+    },
+    {
+      "name": "Dockerfile",
+      "type": "file",
+      "size": 1051,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/Dockerfile"
+    },
+    {
+      "name": "eslint.config.mjs",
+      "type": "file",
+      "size": 989,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/eslint.config.mjs"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1070,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/LICENSE"
+    },
+    {
+      "name": "next.config.js",
+      "type": "file",
+      "size": 2984,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/next.config.js"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 2792,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/package.json"
+    },
+    {
+      "name": "postcss.config.js",
+      "type": "file",
+      "size": 94,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/postcss.config.js"
+    },
+    {
+      "name": "prettier.config.js",
+      "type": "file",
+      "size": 183,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/prettier.config.js"
+    },
+    {
+      "name": "railway.json",
+      "type": "file",
+      "size": 302,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/railway.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 6959,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/README.md"
+    },
+    {
+      "name": "tailwind.config.ts",
+      "type": "file",
+      "size": 1157,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/tailwind.config.ts"
+    },
+    {
+      "name": "tsconfig.json",
+      "type": "file",
+      "size": 1030,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/tsconfig.json"
+    },
+    {
+      "name": "vercel.json",
+      "type": "file",
+      "size": 192,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/vercel.json"
+    },
+    {
+      "name": "vitest.config.ts",
+      "type": "file",
+      "size": 787,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/vitest.config.ts"
+    },
+    {
+      "name": "vitest.setup.ts",
+      "type": "file",
+      "size": 43,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/vitest.setup.ts"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 217,
+      "title": "Optimize Generation Pipeline and Cache Performance",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/217",
+      "state": "open",
+      "updatedAt": "2026-09-17T09:30:58Z",
+      "author": "AnandkumarMall",
+      "draft": false
+    },
+    {
+      "number": 216,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/216",
+      "state": "open",
+      "updatedAt": "2026-09-14T13:09:04Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 214,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/214",
+      "state": "merged",
+      "updatedAt": "2026-09-13T09:47:29Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 177,
+      "title": "Adding support for local repos and running against an AI cli",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/177",
+      "state": "open",
+      "updatedAt": "2026-09-11T23:22:47Z",
+      "author": "Leiyiliro",
+      "draft": false
+    },
+    {
+      "number": 197,
+      "title": "Add Requesty as an OpenAI-compatible provider",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/197",
+      "state": "open",
+      "updatedAt": "2026-09-11T18:35:14Z",
+      "author": "Thibaultjaigu",
+      "draft": false
+    },
+    {
+      "number": 212,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/212",
+      "state": "merged",
+      "updatedAt": "2026-09-02T00:38:46Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 185,
+      "title": "feat: add PDF Export feature and fix GitHub PAT authentication bug",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/185",
+      "state": "closed",
+      "updatedAt": "2026-08-29T16:17:32Z",
+      "author": "shantopaul",
+      "draft": false
+    },
+    {
+      "number": 210,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/210",
+      "state": "merged",
+      "updatedAt": "2026-08-12T02:03:55Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    }
+  ],
+  "community": {
+    "healthPercentage": 42,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "workflowRuns": [
+    {
+      "name": "CI",
+      "status": "success",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/actions/runs/35338602055",
+      "branch": "main",
+      "updatedAt": "2026-09-18T11:16:20Z"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "package.json",
+    "dependencies": [
+      {
+        "name": "@aws-sdk/client-s3",
+        "version": "^3.1131.0"
+      },
+      {
+        "name": "@mermaid-js/layout-elk",
+        "version": "^0.2.3"
+      },
+      {
+        "name": "@radix-ui/react-dialog",
+        "version": "^1.1.23"
+      },
+      {
+        "name": "@radix-ui/react-switch",
+        "version": "^1.3.7"
+      },
+      {
+        "name": "@radix-ui/react-tooltip",
+        "version": "^1.2.16"
+      },
+      {
+        "name": "clsx",
+        "version": "^2.1.1"
+      },
+      {
+        "name": "dompurify",
+        "version": "^3.4.15"
+      },
+      {
+        "name": "geist",
+        "version": "^1.7.2"
+      },
+      {
+        "name": "lucide-react",
+        "version": "^1.45.0"
+      },
+      {
+        "name": "mermaid",
+        "version": "^11.17.2"
+      },
+      {
+        "name": "next",
+        "version": "^16.3.5"
+      },
+      {
+        "name": "next-themes",
+        "version": "^0.4.6"
+      },
+      {
+        "name": "openai",
+        "version": "^7.15.0"
+      },
+      {
+        "name": "posthog-js",
+        "version": "^1.430.3"
+      },
+      {
+        "name": "react",
+        "version": "^19.3.0"
+      },
+      {
+        "name": "react-dom",
+        "version": "^19.3.0"
+      },
+      {
+        "name": "server-only",
+        "version": "^0.0.1"
+      },
+      {
+        "name": "sonner",
+        "version": "^2.0.8"
+      },
+      {
+        "name": "tailwind-merge",
+        "version": "^3.7.0"
+      },
+      {
+        "name": "zod",
+        "version": "^4.6.4"
+      }
+    ],
+    "total": 20
+  },
+  "branchCount": 2,
+  "tagCount": 1,
+  "fundingLinks": [
+    {
+      "platform": "KO_FI",
+      "url": "https://ko-fi.com/ahmedkhaleel2004"
+    }
+  ],
+  "openIssuesOnly": 23,
+  "openPRs": 17,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 89,
+  "mergedPRs": 50,
+  "environmentCount": 4,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-09-18T11:17:26.699Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2025-09-21",
+        "stars": 369
+      },
+      {
+        "date": "2025-09-28",
+        "stars": 1181
+      },
+      {
+        "date": "2025-10-05",
+        "stars": 1550
+      },
+      {
+        "date": "2025-10-12",
+        "stars": 2140
+      },
+      {
+        "date": "2025-10-19",
+        "stars": 3874
+      },
+      {
+        "date": "2025-10-26",
+        "stars": 4612
+      },
+      {
+        "date": "2025-11-02",
+        "stars": 5534
+      },
+      {
+        "date": "2025-11-09",
+        "stars": 5903
+      },
+      {
+        "date": "2025-11-16",
+        "stars": 6530
+      },
+      {
+        "date": "2025-11-23",
+        "stars": 7969
+      },
+      {
+        "date": "2025-11-30",
+        "stars": 9297
+      },
+      {
+        "date": "2025-12-07",
+        "stars": 9924
+      },
+      {
+        "date": "2025-12-14",
+        "stars": 10183
+      },
+      {
+        "date": "2025-12-21",
+        "stars": 10773
+      },
+      {
+        "date": "2025-12-28",
+        "stars": 11363
+      },
+      {
+        "date": "2026-01-04",
+        "stars": 11769
+      },
+      {
+        "date": "2026-01-11",
+        "stars": 12138
+      },
+      {
+        "date": "2026-01-18",
+        "stars": 12581
+      },
+      {
+        "date": "2026-01-25",
+        "stars": 12913
+      },
+      {
+        "date": "2026-02-01",
+        "stars": 13208
+      },
+      {
+        "date": "2026-02-08",
+        "stars": 13429
+      },
+      {
+        "date": "2026-02-15",
+        "stars": 13650
+      },
+      {
+        "date": "2026-02-22",
+        "stars": 13761
+      },
+      {
+        "date": "2026-03-01",
+        "stars": 13909
+      },
+      {
+        "date": "2026-03-08",
+        "stars": 14278
+      },
+      {
+        "date": "2026-03-15",
+        "stars": 14720
+      },
+      {
+        "date": "2026-03-22",
+        "stars": 14942
+      },
+      {
+        "date": "2026-03-29",
+        "stars": 15089
+      },
+      {
+        "date": "2026-04-05",
+        "stars": 15237
+      },
+      {
+        "date": "2026-04-12",
+        "stars": 15348
+      },
+      {
+        "date": "2026-04-19",
+        "stars": 15532
+      },
+      {
+        "date": "2026-04-26",
+        "stars": 15716
+      },
+      {
+        "date": "2026-05-03",
+        "stars": 15938
+      },
+      {
+        "date": "2026-05-10",
+        "stars": 16012
+      },
+      {
+        "date": "2026-05-17",
+        "stars": 16085
+      },
+      {
+        "date": "2026-05-31",
+        "stars": 16159
+      },
+      {
+        "date": "2026-06-07",
+        "stars": 16233
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 36.893,
+    "sampledAt": "2026-09-18T11:17:39.398Z"
+  }
+}
