@@ -1,0 +1,3551 @@
+{
+  "id": "cloudflare/quiche",
+  "snapshots": [
+    {
+      "date": "2026-09-19",
+      "stars": 11852,
+      "forks": 1098
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-09-19",
+      "period": "daily",
+      "rank": 8,
+      "starsGained": 5
+    }
+  ],
+  "owner": "cloudflare",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/314135?v=4",
+  "ownerType": "Organization",
+  "name": "quiche",
+  "description": "🥧 Savoury implementation of the QUIC transport protocol and HTTP/3",
+  "url": "https://github.com/cloudflare/quiche",
+  "homepage": "https://docs.quic.tech/quiche/",
+  "license": "BSD-2-Clause",
+  "language": "Rust",
+  "topics": [
+    "http3",
+    "network-programming",
+    "protocol",
+    "quic",
+    "rust"
+  ],
+  "stars": 11852,
+  "forks": 1098,
+  "watchers": 168,
+  "openIssues": 361,
+  "createdAt": "2018-09-29T18:22:05Z",
+  "pushedAt": "2026-09-18T10:10:05Z",
+  "defaultBranch": "master",
+  "archived": false,
+  "updatedAt": "2026-09-19T11:01:23.388Z",
+  "languages": {
+    "Rust": 4657770,
+    "C": 112302,
+    "JavaScript": 28744,
+    "Shell": 11076,
+    "HTML": 9173,
+    "Makefile": 3160,
+    "Dockerfile": 2535,
+    "CSS": 2053
+  },
+  "commitCount": 2534,
+  "readmeExcerpt": "\n\n\n\n\n\n\n[quiche] is an implementation of the QUIC transport protocol and HTTP/3 as\nspecified by the [IETF]. It provides a low level API for processing QUIC packets\nand handling connection state. The application is responsible for providing I/O\n(e.g. sockets handling) as well as an event loop with support for timers.\n\nFor more information on how quiche came about and some insights into its design\nyou can read a [post] on Cloudflare's blog that goes into some more detail.\n\n[quiche]: https://docs.quic.tech/quiche/\n[ietf]: https://quicwg.org/\n[post]: https://blog.cloudflare.com/enjoy-a-slice-of-quic-and-rust/\n\nWho uses quiche?\n----------------\n\n### Cloudflare\n\nquiche powers Cloudflare edge network's [HTTP/3 support][cloudflare-http3]. The\n[cloudflare-quic.com](https://cloudflare-quic.com) website can be used for\ntesting and experimentation.\n\n### Android\n\nAndroid's DNS resolver uses quiche to [implement DNS over HTTP/3][android-http3].\n\n### curl\n\nquiche can be [integrated into curl][curl-http3] to provide support for HTTP/3.\n\n[cloudflare-http3]: https://blog.cloudflare.com/http3-the-past-present-and-future/\n[android-http3]: https://security.googleblog.com/2022/07/dns-over-http3-in-android.html\n[curl-http3]: https://github.com/curl/curl/blob/master/docs/HTTP3.md#quiche-version\n\nGetting Started\n---------------\n\n### Command-line apps\n\nBefore diving into the quiche API, here are a few examples on how to use the\nquiche tools provided as part of the [quiche-apps](apps/) crate. These are not\nsuitable for production environments; see [disclaimers and\nnotes](#disclaimers-and-notes).\n\nAfter cloning the project according to the command mentioned in the [building](#building) section, the client can be run as follows:\n\n```bash\n $ cargo run --bin quiche-client -- https://cloudflare-quic.com/\n```\n\nwhile the server can be run as follows:\n\n```bash\n $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key\n```\n\n(note that the certificate provided is self-signed and should not be used in\nproduction)\n\nUse the `--help` command-line flag to get a more detailed description of each\ntool's options.\n\n### Configuring connections\n\nThe first step in establishing a QUIC connection using quiche is creating a\n[`Config`] object:\n\n```rust\nlet mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;\nconfig.set_application_protos(&[b\"example-proto\"]);\n\n// Additional configuration specific to application and use case...\n```\n\nThe [`Config`] object controls important aspects of the QUIC connection such\nas QUIC version, ALPN IDs, flow control, congestion control, idle timeout\nand other properties or features.\n\nQUIC is a general-purpose transport protocol and there are several\nconfiguration properties where there is no reasonable default value. For\nexample, the permitted number of concurrent streams of any particular type\nis dependent on the application running over QUIC, and other use-case\nspecific concerns.\n\nquiche defaults several properties to zero, applications most likely need\nto set these to something else to satisfy their needs using the following:\n\n- [`set_initial_max_streams_bidi()`]\n- [`set_initial_max_streams_uni()`]\n- [`set_initial_max_data()`]\n- [`set_initial_max_stream_data_bidi_local()`]\n- [`set_initial_max_stream_data_bidi_remote()`]\n- [`set_initial_max_stream_data_uni()`]\n\n[`Config`] also holds TLS configuration. This can be changed by mutators on\nthe an existing object, or by constructing a TLS context manually and\ncreating a configuration using [`with_boring_ssl_ctx_builder()`].\n\nA configuration object can be shared among multiple connections.\n\n### Connection setup\n\nOn the client-side the [`connect()`] utility function can be used to create\na new connection, while [`accept()`] is for servers:\n\n```rust\n// Client connection.\nlet conn = quiche::connect(Some(&server_name), &scid, local, peer, &mut config)?;\n\n// Server connection.\nlet conn = quiche::accept(&scid, None, local, peer, &mut config)?;\n```\n\n### Handling incoming packets\n\nUsing the connection's [`recv()`] method the application can process\nincoming packets that belong to that connection from the network:\n\n```rust\nlet to = socket.local_addr().unwrap();\n\nloop {\n    let (read, from) = socket.recv_from(&mut buf).unwrap();\n\n    let recv_info = quiche::RecvInfo { from, to };\n\n    let read = match conn.recv(&mut buf[..read], recv_info) {\n        Ok(v) => v,\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n}\n```\n\n### Generating outgoing packets\n\nOutgoing packet are generated using the connection's [`send()`] method\ninstead:\n\n```rust\nloop {\n    let (write, send_info) = match conn.send(&mut out) {\n        Ok(v) => v,\n\n        Err(quiche::Error::Done) => {\n            // Done writing.\n            break;\n        },\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&out[..write], &send_info.to).unwrap();\n}\n```\n\nWhen packets are sent, the application is responsible for maintaining a\ntimer to react to time-based connection events. The timer expiration can be\nobtained using the connection's [`timeout()`] method.\n\n```rust\nlet timeout = conn.timeout();\n```\n\nThe application is responsible for providing a timer implementation, which\ncan be specific to the operating system or networking framework used. When\na timer expires, the connection's [`on_timeout()`] method should be called,\nafter which additional packets might need to be sent on the network:\n\n```rust\n// Timeout expired, handle it.\nconn.on_timeout();\n\n// Send more packets as needed after timeout.\nloop {\n    let (write, send_info) = match conn.send(&mut out) {\n        Ok(v) => v,\n\n        Err(quiche::Error::Done) => {\n            // Done writing.\n            break;\n        },\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&out[..write], &send_info.to).unwrap();\n}\n```\n\n#### Pacing\n\nIt is recommended that applications [pace] sending of outgoing packets to\navoid creating packet bursts that could cause short-term congestion and\nlosses in the network.\n\nquiche exposes pacing hints for outgoing packets through the [`at`] field\nof the [`SendInfo`] structure that is returned by the [`send()`] method.\nThis field represents the time when a specific packet should be sent into\nthe network.\n\nApplications can use these hints by artificially delaying the sending of\npackets through platform-specific mechanisms (such as the [`SO_TXTIME`]\nsocket option on Linux), or custom methods (for example by using user-space\ntimers).\n\n[pace]: https://datatracker.ietf.org/doc/html/rfc9002#section-7.7\n[`SO_TXTIME`]: https://man7.org/linux/man-pages/man8/tc-etf.8.html\n\n### Sending and receiving stream data\n\nAfter some back and forth, the connection will complete its handshake and\nwill be ready for sending or receiving application data.\n\nData can be sent on a stream by using the [`stream_send()`] method:\n\n```rust\nif conn.is_established() {\n    // Handshake completed, send some data on stream 0.\n    conn.stream_send(0, b\"hello\", true)?;\n}\n```\n\nThe application can check whether there are any readable streams by using\nthe connection's [`readable()`] method, which returns an iterator over all\nthe streams that have outstanding data to read.\n\nThe [`stream_recv()`] method can then be used to retrieve the application\ndata from the readable stream:\n\n```rust\nif conn.is_established() {\n    // Iterate over readable streams.\n    for stream_id in conn.readable() {\n        // Stream is readable, read until there's no more data.\n        while let Ok((read, fin)) = conn.stream_recv(stream_id, &mut buf) {\n            println!(\"Got {} bytes on stream {}\", read, stream_id);\n        }\n    }\n}\n```\n\n### HTTP/3\n\nThe quiche [HTTP/3 module] provides a high level API for sending and\nreceiving HTTP requests and responses on top of the QUIC transport protocol.\n\n[`Config`]: https://docs.quic.tech/quiche/struct.Config.html\n[`set_initial_max_streams_bidi()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_bidi\n[`set_initial_max_streams_uni()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_uni\n[`set_initial_max_data()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_data\n[`set_initial_max_stream_data_bidi_local()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_local\n[`set_initial_max_stream_data_bidi_remote()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_remote\n[`set_initial_max_stream_data_uni()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_uni\n[`with_boring_ssl_ctx_builder()`]: https://docs.quic.tech/quiche/struct.Config.html#method.with_boring_ssl_ctx_builder\n[`connect()`]: https://docs.quic.tech/quiche/fn.connect.html\n[`accept()`]: https://docs.quic.tech/quiche/fn.accept.html\n[`recv()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.recv\n[`send()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.send\n[`timeout()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.timeout\n[`on_timeout()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.on_timeout\n[`stream_send()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.stream_send\n[`readable()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.readable\n[`stream_recv()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.stream_recv\n[HTTP/3 module]: https://docs.quic.tech/quiche/h3/index.html\n\nHave a look at the [quiche/examples/] directory for more complete examples on\nhow to use the quiche API, including examples on how to use quiche in C/C++\napplications (see below for more information).\n\n[examples/]: quiche/examples/\n\nCalling quiche from C/C++\n-------------------------\n\nquiche exposes a [thin C API] on top of the Rust API that can be used to more\neasily integrate quiche into C/C++ applications (as well as in other languages\nthat allow calling C APIs via some form of FFI). The C API follows the same\ndesign of the Rust one, modulo the constraints imposed by the C language itself.\n\nWhen running ``cargo build``, a static library called ``libquiche.a`` will be\nbuilt automatically alongside the Rust one. This is fully stand-alone and can\nbe linked directly into C/C++ applications.\n\nNote that in order to enable the FFI API, the ``ffi`` feature must be enabled (it\nis disabled by default), by passing ``--features ffi`` to ``cargo``.\n\n[thin C API]: https://github.com/cloudflare/quiche/blob/master/quiche/include/quiche.h\n\nBuilding\n--------\n\nquiche requires Rust 1.88 or later to build. The latest stable Rust release can\nbe installed using [rustup](https://rustup.rs/).\n\nOnce the Rust build environment is setup, the quiche source code can be fetched\nusing git:\n\n```bash\n $ git clone https://github.com/cloudflare/quiche\n```\n\nand then built using cargo:\n\n```bash\n $ cargo build --examples\n```\n\ncargo can also be used to run the testsuite:\n\n```bash\n $ cargo test\n```\n\nNote that [BoringSSL], which is used to implement QUIC's cryptographic handshake\nbased on TLS, needs to be built and linked to quiche. This is done automatically\nby the [boring-sys] crate when building with cargo, but requires the `cmake`\ncommand to be available during the build process.\n\nOn Windows [NASM](https://www.nasm.us/) is also required. The [official BoringSSL\ndocumentation](https://github.com/google/boringssl/blob/master/BUILDING.md) has\nmore details.\n\nIn alternative you can use your own custom build of BoringSSL by configuring\nthe BoringSSL directory with the ``BORING_BSSL_PATH`` environment variable:\n\n```bash\n $ BORING_BSSL_PATH=\"/path/to/boringssl\" cargo build --examples\n```\n\n[BoringSSL]: https://boringssl.googlesource.com/boringssl/\n[boring-sys]: https://crates.io/crates/boring-sys\n\n##",
+  "releases": [
+    {
+      "name": "📏 0.30.0",
+      "tag": "0.30.0",
+      "url": "https://github.com/cloudflare/quiche/releases/tag/0.30.0",
+      "publishedAt": "2026-09-17T16:16:12Z",
+      "prerelease": false,
+      "body": "**Breaking Changes**:\r\n\r\n- [`PathEvent`](https://docs.rs/quiche/0.30.0/quiche/enum.PathEvent.html) is now `#[non_exhaustive]` and adds [`PmtuUpdated`](https://docs.rs/quiche/0.30.0/quiche/enum.PathEvent.html#variant.PmtuUpdated). Rust applications that exhaustively match path events must add a wildcard arm. C applications should handle `QUICHE_PATH_EVENT_PMTU_UPDATED` when PMTU discovery is enabled.\r\n- The supported `boring` range is now `>=4.19,<6`, so fresh dependency resolution uses 5.x by default while consumers pinned to 4.19 remain supported. Static C applications linking `libquiche.a` must use a C++ linker driver or otherwise link the C++ runtime. Boring 5 enables post-quantum groups by default, which can split the ClientHello across multiple Initial packets. Applications that need smaller or deterministic ClientHellos can use [`Config::set_curves_list()`](https://docs.rs/quiche/0.30.0/quiche/struct.Config.html#method.set_curves_list) or `quiche_config_set_curves_list()`.\r\n\r\n**Highlights**:\r\n\r\n- Added [`Connection::stream_readable_len()`](https://docs.rs/quiche/0.30.0/quiche/struct.Connection.html#method.stream_readable_len) to report the contiguous bytes currently readable ",
+      "downloads": 0,
+      "reactions": 2
+    },
+    {
+      "name": "⚔️ 0.29.3",
+      "tag": "0.29.3",
+      "url": "https://github.com/cloudflare/quiche/releases/tag/0.29.3",
+      "publishedAt": "2026-07-14T15:22:50Z",
+      "prerelease": false,
+      "body": "**⚠️ Security**:\r\n\r\n- Fixed unbounded `PathEvent` queue growth when an authenticated peer sends valid packets from rapidly changing source ports. Path events are now bounded by the configured path capacity.\r\n- Hardened HTTP/3 frame parsing against memory exhaustion by enforcing payload limits as soon as frame lengths are known, allocating frame buffers incrementally, and skipping unknown frame payloads without buffering them.\r\n- Fixed HTTP/3 field-section size enforcement to include the 32-byte per-field overhead required by RFC 9114, preventing the configured limit from being bypassed with many small fields.\r\n\r\n**Highlights**:\r\n\r\n- [`h3::Config::new()`](https://docs.rs/quiche/0.29.3/quiche/h3/struct.Config.html#method.new) now advertises and enforces a default `SETTINGS_MAX_FIELD_SECTION_SIZE` of 32 KiB. Applications that accept larger field sections must configure a higher limit with [`h3::Config::set_max_field_section_size()`](https://docs.rs/quiche/0.29.3/quiche/h3/struct.Config.html#method.set_max_field_section_size).\r\n- Added [`h3::Config::set_max_priority_update_size()`](https://docs.rs/quiche/0.29.3/quiche/h3/struct.Config.html#method.set_max_priority_update_size) to config",
+      "downloads": 0,
+      "reactions": 5
+    },
+    {
+      "name": "🛡️ 0.29.2",
+      "tag": "0.29.2",
+      "url": "https://github.com/cloudflare/quiche/releases/tag/0.29.2",
+      "publishedAt": "2026-06-19T08:27:17Z",
+      "prerelease": false,
+      "body": "**⚠️ Security**:\r\n\r\n- Fixed a use-after-free in `quiche_connection_id_iter_next()`, which is part of quiche's C FFI API. The iterator previously returned a pointer to a cloned connection ID whose backing storage was dropped before the caller could read it. It now returns pointers to connection IDs owned by the iterator.\r\n- Fixed a use-after-free in `quiche_conn_retired_scid_next()`, which is also part of the C FFI API. The function previously returned a pointer to a retired source connection ID whose backing storage was dropped before the caller could read it. It has been replaced by `quiche_conn_retired_scid_iter()`, which drains retired source connection IDs into an iterator before exposing them to callers.\r\n\r\nThe C FFI API is disabled by default via the `ffi` feature. The normal Rust API is not affected by these issues.\r\n\r\n**Breaking changes**:\r\n\r\n- The C API function `quiche_conn_retired_scid_next()` was removed and replaced with `quiche_conn_retired_scid_iter()` to avoid returning pointers to temporary memory. Applications using `quiche_conn_retired_scid_next()` should call `quiche_conn_retired_scid_iter(conn)`, iterate with `quiche_connection_id_iter_next()`, and release the ",
+      "downloads": 0,
+      "reactions": 4
+    },
+    {
+      "name": "🩹 0.29.1",
+      "tag": "0.29.1",
+      "url": "https://github.com/cloudflare/quiche/releases/tag/0.29.1",
+      "publishedAt": "2026-06-18T14:10:44Z",
+      "prerelease": false,
+      "body": "**Highlights**:\r\n\r\n- Added [`Connection::stream_closed()`](https://docs.rs/quiche/0.29.1/quiche/struct.Connection.html#method.stream_closed) to query whether a stream is fully closed.\r\n- Fixed bandwidth arithmetic overflow in recovery and pacing calculations at high bandwidth or over long time periods.\r\n- Fixed PTO retransmission bookkeeping so consecutive PTOs do not duplicate pending lost frames, while preserving overflow protection.\r\n- Increased the PTO backoff cap to allow longer exponential backoff before hitting the cap.\r\n- Fixed HTTP/3 stream cleanup when the local send side finishes before the receive side, avoiding stream state leaks.\r\n- Late `PRIORITY_UPDATE` frames for closed streams are now ignored instead of recreating HTTP/3 stream state.\r\n- Other bug fixes and performance improvements.\r\n\r\nFull changelog at [0.29.0...0.29.1](https://github.com/cloudflare/quiche/compare/0.29.0...0.29.1)\r\n",
+      "downloads": 0,
+      "reactions": 1
+    },
+    {
+      "name": "🧱 0.29.0",
+      "tag": "0.29.0",
+      "url": "https://github.com/cloudflare/quiche/releases/tag/0.29.0",
+      "publishedAt": "2026-06-18T14:10:32Z",
+      "prerelease": false,
+      "body": "**Breaking Changes**:\r\n\r\n- Removed the `openssl` and `boringssl-vendored` features, as well as the vendored BoringSSL source. The default TLS backend is now `boringssl-boring-crate`.\r\n- The minimum supported Rust version was raised to 1.88.\r\n- [`Connection::stream_send_zc()`](https://docs.rs/quiche/0.29.0/quiche/struct.Connection.html#method.stream_send_zc) no longer takes the `len` argument. Callers now pass the stream ID, buffer, and FIN flag.\r\n- [`Stats`](https://docs.rs/quiche/0.29.0/quiche/struct.Stats.html), [`PathStats`](https://docs.rs/quiche/0.29.0/quiche/struct.PathStats.html), and [`h3::Stats`](https://docs.rs/quiche/0.29.0/quiche/h3/struct.Stats.html) are now marked `#[non_exhaustive]`, so downstream code should not construct or exhaustively match them.\r\n\r\n**Highlights**:\r\n\r\n- Added [`Stats::amplification_limited_count`](https://docs.rs/quiche/0.29.0/quiche/struct.Stats.html#structfield.amplification_limited_count) to count sends blocked by the anti-amplification limit.\r\n- Added [`PathStats::dgram_lost`](https://docs.rs/quiche/0.29.0/quiche/struct.PathStats.html#structfield.dgram_lost) to track lost DATAGRAM frames per path.\r\n- Added the C API `quiche_config_set_use_ini",
+      "downloads": 0,
+      "reactions": 1
+    }
+  ],
+  "contributors": [
+    {
+      "login": "ghedo",
+      "url": "https://github.com/ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4",
+      "contributions": 1412
+    },
+    {
+      "login": "LPardue",
+      "url": "https://github.com/LPardue",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6571445?v=4",
+      "contributions": 302
+    },
+    {
+      "login": "antoniovicente",
+      "url": "https://github.com/antoniovicente",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/28556681?v=4",
+      "contributions": 108
+    },
+    {
+      "login": "junhochoi",
+      "url": "https://github.com/junhochoi",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1229714?v=4",
+      "contributions": 94
+    },
+    {
+      "login": "evanrittenhouse",
+      "url": "https://github.com/evanrittenhouse",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/84083822?v=4",
+      "contributions": 60
+    },
+    {
+      "login": "toidiu",
+      "url": "https://github.com/toidiu",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4350690?v=4",
+      "contributions": 42
+    },
+    {
+      "login": "vkrasnov",
+      "url": "https://github.com/vkrasnov",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7411662?v=4",
+      "contributions": 34
+    },
+    {
+      "login": "normanmaurer",
+      "url": "https://github.com/normanmaurer",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/439362?v=4",
+      "contributions": 33
+    },
+    {
+      "login": "ehaydenr",
+      "url": "https://github.com/ehaydenr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/5506220?v=4",
+      "contributions": 31
+    },
+    {
+      "login": "TheJokr",
+      "url": "https://github.com/TheJokr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7347535?v=4",
+      "contributions": 21
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cloudflare/quiche/blob/master/quiche.svg\"><img src=\"https://raw.githubusercontent.com/cloudflare/quiche/master/quiche.svg\" alt=\"quiche\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://crates.io/crates/quiche\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/09a33f8095652cd252543d88df3fba08eba4a4791d855b822fd198e7e0835f57/68747470733a2f2f696d672e736869656c64732e696f2f6372617465732f762f7175696368652e737667\" alt=\"crates.io\" data-canonical-src=\"https://img.shields.io/crates/v/quiche.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://docs.rs/quiche\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8963f896c9e983f89c32e6317d66db8f85e07d3013db26260baa970e61dac544/68747470733a2f2f646f63732e72732f7175696368652f62616467652e737667\" alt=\"docs.rs\" data-canonical-src=\"https://docs.rs/quiche/badge.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://opensource.org/licenses/BSD-2-Clause\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/ba160bfc62df73ef0338e9f26d246fa254b399a5802653767c032408df057176/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f636c6f7564666c6172652f7175696368652e737667\" alt=\"license\" data-canonical-src=\"https://img.shields.io/github/license/cloudflare/quiche.svg\" style=\"max-width: 100%;\"></a>\n<a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/e5891469c3a415c43e7b7419b1da0bcacdb369176215d708395df693dadca085/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f636c6f7564666c6172652f7175696368652f737461626c652e796d6c3f6272616e63683d6d6173746572\"><img src=\"https://camo.githubusercontent.com/e5891469c3a415c43e7b7419b1da0bcacdb369176215d708395df693dadca085/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f636c6f7564666c6172652f7175696368652f737461626c652e796d6c3f6272616e63683d6d6173746572\" alt=\"build\" data-canonical-src=\"https://img.shields.io/github/actions/workflow/status/cloudflare/quiche/stable.yml?branch=master\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://docs.quic.tech/quiche/\" rel=\"nofollow\">quiche</a> is an implementation of the QUIC transport protocol and HTTP/3 as\nspecified by the <a href=\"https://quicwg.org/\" rel=\"nofollow\">IETF</a>. It provides a low level API for processing QUIC packets\nand handling connection state. The application is responsible for providing I/O\n(e.g. sockets handling) as well as an event loop with support for timers.</p>\n<p dir=\"auto\">For more information on how quiche came about and some insights into its design\nyou can read a <a href=\"https://blog.cloudflare.com/enjoy-a-slice-of-quic-and-rust/\" rel=\"nofollow\">post</a> on Cloudflare's blog that goes into some more detail.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Who uses quiche?</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Cloudflare</h3></div>\n<p dir=\"auto\">quiche powers Cloudflare edge network's <a href=\"https://blog.cloudflare.com/http3-the-past-present-and-future/\" rel=\"nofollow\">HTTP/3 support</a>. The\n<a href=\"https://cloudflare-quic.com\" rel=\"nofollow\">cloudflare-quic.com</a> website can be used for\ntesting and experimentation.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Android</h3></div>\n<p dir=\"auto\">Android's DNS resolver uses quiche to <a href=\"https://security.googleblog.com/2022/07/dns-over-http3-in-android.html\" rel=\"nofollow\">implement DNS over HTTP/3</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">curl</h3></div>\n<p dir=\"auto\">quiche can be <a href=\"https://github.com/curl/curl/blob/master/docs/HTTP3.md#quiche-version\">integrated into curl</a> to provide support for HTTP/3.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Getting Started</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Command-line apps</h3></div>\n<p dir=\"auto\">Before diving into the quiche API, here are a few examples on how to use the\nquiche tools provided as part of the <a href=\"https://github.com/cloudflare/quiche/blob/master/apps/\">quiche-apps</a> crate. These are not\nsuitable for production environments; see <a href=\"#disclaimers-and-notes\">disclaimers and\nnotes</a>.</p>\n<p dir=\"auto\">After cloning the project according to the command mentioned in the <a href=\"#building\">building</a> section, the client can be run as follows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo run --bin quiche-client -- https://cloudflare-quic.com/\"><pre> $ cargo run --bin quiche-client -- https://cloudflare-quic.com/</pre></div>\n<p dir=\"auto\">while the server can be run as follows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key\"><pre> $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key</pre></div>\n<p dir=\"auto\">(note that the certificate provided is self-signed and should not be used in\nproduction)</p>\n<p dir=\"auto\">Use the <code>--help</code> command-line flag to get a more detailed description of each\ntool's options.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Configuring connections</h3></div>\n<p dir=\"auto\">The first step in establishing a QUIC connection using quiche is creating a\n<a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> object:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;\nconfig.set_application_protos(&amp;[b&quot;example-proto&quot;]);\n\n// Additional configuration specific to application and use case...\"><pre><span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-v\">PROTOCOL_VERSION</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">set_application_protos</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-kos\">[</span><span class=\"pl-s\">b\"example-proto\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Additional configuration specific to application and use case...</span></pre></div>\n<p dir=\"auto\">The <a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> object controls important aspects of the QUIC connection such\nas QUIC version, ALPN IDs, flow control, congestion control, idle timeout\nand other properties or features.</p>\n<p dir=\"auto\">QUIC is a general-purpose transport protocol and there are several\nconfiguration properties where there is no reasonable default value. For\nexample, the permitted number of concurrent streams of any particular type\nis dependent on the application running over QUIC, and other use-case\nspecific concerns.</p>\n<p dir=\"auto\">quiche defaults several properties to zero, applications most likely need\nto set these to something else to satisfy their needs using the following:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_bidi\" rel=\"nofollow\"><code>set_initial_max_streams_bidi()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_uni\" rel=\"nofollow\"><code>set_initial_max_streams_uni()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_data\" rel=\"nofollow\"><code>set_initial_max_data()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_local\" rel=\"nofollow\"><code>set_initial_max_stream_data_bidi_local()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_remote\" rel=\"nofollow\"><code>set_initial_max_stream_data_bidi_remote()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_uni\" rel=\"nofollow\"><code>set_initial_max_stream_data_uni()</code></a></li>\n</ul>\n<p dir=\"auto\"><a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> also holds TLS configuration. This can be changed by mutators on\nthe an existing object, or by constructing a TLS context manually and\ncreating a configuration using <a href=\"https://docs.quic.tech/quiche/struct.Config.html#method.with_boring_ssl_ctx_builder\" rel=\"nofollow\"><code>with_boring_ssl_ctx_builder()</code></a>.</p>\n<p dir=\"auto\">A configuration object can be shared among multiple connections.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection setup</h3></div>\n<p dir=\"auto\">On the client-side the <a href=\"https://docs.quic.tech/quiche/fn.connect.html\" rel=\"nofollow\"><code>connect()</code></a> utility function can be used to create\na new connection, while <a href=\"https://docs.quic.tech/quiche/fn.accept.html\" rel=\"nofollow\"><code>accept()</code></a> is for servers:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Client connection.\nlet conn = quiche::connect(Some(&amp;server_name), &amp;scid, local, peer, &amp;mut config)?;\n\n// Server connection.\nlet conn = quiche::accept(&amp;scid, None, local, peer, &amp;mut config)?;\"><pre><span class=\"pl-c\">// Client connection.</span>\n<span class=\"pl-k\">let</span> conn = quiche<span class=\"pl-kos\">::</span><span class=\"pl-en\">connect</span><span class=\"pl-kos\">(</span><span class=\"pl-en\">Some</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>server_name<span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>scid<span class=\"pl-kos\">,</span> local<span class=\"pl-kos\">,</span> peer<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> config<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Server connection.</span>\n<span class=\"pl-k\">let</span> conn = quiche<span class=\"pl-kos\">::</span><span class=\"pl-en\">accept</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>scid<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span> local<span class=\"pl-kos\">,</span> peer<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> config<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Handling incoming packets</h3></div>\n<p dir=\"auto\">Using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.recv\" rel=\"nofollow\"><code>recv()</code></a> method the application can process\nincoming packets that belong to that connection from the network:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let to = socket.local_addr().unwrap();\n\nloop {\n    let (read, from) = socket.recv_from(&amp;mut buf).unwrap();\n\n    let recv_info = quiche::RecvInfo { from, to };\n\n    let read = match conn.recv(&amp;mut buf[..read], recv_info) {\n        Ok(v) =&gt; v,\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n}\"><pre><span class=\"pl-k\">let</span> to = socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">local_addr</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>read<span class=\"pl-kos\">,</span> from<span class=\"pl-kos\">)</span> = socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">recv_from</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n    <span class=\"pl-k\">let</span> recv_info = quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">RecvInfo</span> <span class=\"pl-kos\">{</span> from<span class=\"pl-kos\">,</span> to <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    <span class=\"pl-k\">let</span> read = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">recv</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">[</span>..read<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> recv_info<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Generating outgoing packets</h3></div>\n<p dir=\"auto\">Outgoing packet are generated using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.send\" rel=\"nofollow\"><code>send()</code></a> method\ninstead:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"loop {\n    let (write, send_info) = match conn.send(&amp;mut out) {\n        Ok(v) =&gt; v,\n\n        Err(quiche::Error::Done) =&gt; {\n            // Done writing.\n            break;\n        },\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&amp;out[..write], &amp;send_info.to).unwrap();\n}\"><pre><span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>write<span class=\"pl-kos\">,</span> send_info<span class=\"pl-kos\">)</span> = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> out<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Error</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Done</span><span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// Done writing.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">send_to</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>out<span class=\"pl-kos\">[</span>..write<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>send_info<span class=\"pl-kos\">.</span><span class=\"pl-c1\">to</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">When packets are sent, the application is responsible for maintaining a\ntimer to react to time-based connection events. The timer expiration can be\nobtained using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.timeout\" rel=\"nofollow\"><code>timeout()</code></a> method.</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let timeout = conn.timeout();\"><pre><span class=\"pl-k\">let</span> timeout = conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">timeout</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">The application is responsible for providing a timer implementation, which\ncan be specific to the operating system or networking framework used. When\na timer expires, the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.on_timeout\" rel=\"nofollow\"><code>on_timeout()</code></a> method should be called,\nafter which additional packets might need to be sent on the network:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Timeout expired, handle it.\nconn.on_timeout();\n\n// Send more packets as needed after timeout.\nloop {\n    let (write, send_info) = match conn.send(&amp;mut out) {\n        Ok(v) =&gt; v,\n\n        Err(quiche::Error::Done) =&gt; {\n            // Done writing.\n            break;\n        },\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&amp;out[..write], &amp;send_info.to).unwrap();\n}\"><pre><span class=\"pl-c\">// Timeout expired, handle it.</span>\nconn<span class=\"pl-kos\">.</span><span class=\"pl-en\">on_timeout</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Send more packets as needed after timeout.</span>\n<span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>write<span class=\"pl-kos\">,</span> send_info<span class=\"pl-kos\">)</span> = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> out<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Error</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Done</span><span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// Done writing.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">send_to</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>out<span class=\"pl-kos\">[</span>..write<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>send_info<span class=\"pl-kos\">.</span><span class=\"pl-c1\">to</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Pacing</h4></div>\n<p dir=\"auto\">It is recommended that applications <a href=\"https://datatracker.ietf.org/doc/html/rfc9002#section-7.7\" rel=\"nofollow\">pace</a> sending of outgoing packets to\navoid creating packet bursts that could cause short-term congestion and\nlosses in the network.</p>\n<p dir=\"auto\">quiche exposes pacing hints for outgoing packets through the [<code>at</code>] field\nof the [<code>SendInfo</code>] structure that is returned by the <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.send\" rel=\"nofollow\"><code>send()</code></a> method.\nThis field represents the time when a specific packet should be sent into\nthe network.</p>\n<p dir=\"auto\">Applications can use these hints by artificially delaying the sending of\npackets through platform-specific mechanisms (such as the <a href=\"https://man7.org/linux/man-pages/man8/tc-etf.8.html\" rel=\"nofollow\"><code>SO_TXTIME</code></a>\nsocket option on Linux), or custom methods (for example by using user-space\ntimers).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Sending and receiving stream data</h3></div>\n<p dir=\"auto\">After some back and forth, the connection will complete its handshake and\nwill be ready for sending or receiving application data.</p>\n<p dir=\"auto\">Data can be sent on a stream by using the <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.stream_send\" rel=\"nofollow\"><code>stream_send()</code></a> method:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"if conn.is_established() {\n    // Handshake completed, send some data on stream 0.\n    conn.stream_send(0, b&quot;hello&quot;, true)?;\n}\"><pre><span class=\"pl-k\">if</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">is_established</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Handshake completed, send some data on stream 0.</span>\n    conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">stream_send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"hello\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">The application can check whether there are any readable streams by using\nthe connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.readable\" rel=\"nofollow\"><code>readable()</code></a> method, which returns an iterator over all\nthe streams that have outstanding data to read.</p>\n<p dir=\"auto\">The <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.stream_recv\" rel=\"nofollow\"><code>stream_recv()</code></a> method can then be used to retrieve the application\ndata from the readable stream:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"if conn.is_established() {\n    // Iterate over readable streams.\n    for stream_id in conn.readable() {\n        // Stream is readable, read until there's no more data.\n        while let Ok((read, fin)) = conn.stream_recv(stream_id, &amp;mut buf) {\n            println!(&quot;Got {} bytes on stream {}&quot;, read, stream_id);\n        }\n    }\n}\"><pre><span class=\"pl-k\">if</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">is_established</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Iterate over readable streams.</span>\n    <span class=\"pl-k\">for</span> stream_id <span class=\"pl-k\">in</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">readable</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-c\">// Stream is readable, read until there's no more data.</span>\n        <span class=\"pl-k\">while</span> <span class=\"pl-k\">let</span> <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span>read<span class=\"pl-kos\">,</span> fin<span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> = conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">stream_recv</span><span class=\"pl-kos\">(</span>stream_id<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n            <span class=\"pl-en\">println</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"Got {} bytes on stream {}\"</span><span class=\"pl-kos\">,</span> read<span class=\"pl-kos\">,</span> stream_id<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span>\n    <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">HTTP/3</h3></div>\n<p dir=\"auto\">The quiche <a href=\"https://docs.quic.tech/quiche/h3/index.html\" rel=\"nofollow\">HTTP/3 module</a> provides a high level API for sending and\nreceiving HTTP requests and responses on top of the QUIC transport protocol.</p>\n<p dir=\"auto\">Have a look at the [quiche/examples/] directory for more complete examples on\nhow to use the quiche API, including examples on how to use quiche in C/C++\napplications (see below for more information).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Calling quiche from C/C++</h2></div>\n<p dir=\"auto\">quiche exposes a <a href=\"https://github.com/cloudflare/quiche/blob/master/quiche/include/quiche.h\">thin C API</a> on top of the Rust API that can be used to more\neasily integrate quiche into C/C++ applications (as well as in other languages\nthat allow calling C APIs via some form of FFI). The C API follows the same\ndesign of the Rust one, modulo the constraints imposed by the C language itself.</p>\n<p dir=\"auto\">When running <code>cargo build</code>, a static library called <code>libquiche.a</code> will be\nbuilt automatically alongside the Rust one. This is fully stand-alone and can\nbe linked directly into C/C++ applications.</p>\n<p dir=\"auto\">Note that in order to enable the FFI API, the <code>ffi</code> feature must be enabled (it\nis disabled by default), by passing <code>--features ffi</code> to <code>cargo</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<p dir=\"auto\">quiche requires Rust 1.88 or later to build. The latest stable Rust release can\nbe installed using <a href=\"https://rustup.rs/\" rel=\"nofollow\">rustup</a>.</p>\n<p dir=\"auto\">Once the Rust build environment is setup, the quiche source code can be fetched\nusing git:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ git clone https://github.com/cloudflare/quiche\"><pre> $ git clone https://github.com/cloudflare/quiche</pre></div>\n<p dir=\"auto\">and then built using cargo:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo build --examples\"><pre> $ cargo build --examples</pre></div>\n<p dir=\"auto\">cargo can also be used to run the testsuite:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo test\"><pre> $ cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">Note that <a href=\"https://boringssl.googlesource.com/boringssl/\" rel=\"nofollow\">BoringSSL</a>, which is used to implement QUIC's cryptographic handshake\nbased on TLS, needs to be built and linked to quiche. This is done automatically\nby the <a href=\"https://crates.io/crates/boring-sys\" rel=\"nofollow\">boring-sys</a> crate when building with cargo, but requires the <code>cmake</code>\ncommand to be available during the build process.</p>\n<p dir=\"auto\">On Windows <a href=\"https://www.nasm.us/\" rel=\"nofollow\">NASM</a> is also required. The <a href=\"https://github.com/google/boringssl/blob/master/BUILDING.md\">official BoringSSL\ndocumentation</a> has\nmore details.</p>\n<p dir=\"auto\">In alternative you can use your own custom build of BoringSSL by configuring\nthe BoringSSL directory with the <code>BORING_BSSL_PATH</code> environment variable:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ BORING_BSSL_PATH=&quot;/path/to/boringssl&quot; cargo build --examples\"><pre> $ BORING_BSSL_PATH=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/path/to/boringssl<span class=\"pl-pds\">\"</span></span> cargo build --examples</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for Android</h3></div>\n<p dir=\"auto\">Building quiche for Android (NDK version 19 or higher, 21 recommended), can be\ndone using <a href=\"https://docs.rs/crate/cargo-ndk\" rel=\"nofollow\">cargo-ndk</a> (v2.0 or later).</p>\n<p dir=\"auto\">First the <a href=\"https://developer.android.com/ndk\" rel=\"nofollow\">Android NDK</a> needs to be installed, either using Android Studio or\ndirectly, and the <code>ANDROID_NDK_HOME</code> environment variable needs to be set to the\nNDK installation path, e.g.:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ export ANDROID_NDK_HOME=/usr/local/share/android-ndk\"><pre> $ <span class=\"pl-k\">export</span> ANDROID_NDK_HOME=/usr/local/share/android-ndk</pre></div>\n<p dir=\"auto\">Then the Rust toolchain for the Android architectures needed can be installed as\nfollows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android\"><pre> $ rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android</pre></div>\n<p dir=\"auto\">Note that the minimum API level is 21 for all target architectures.</p>\n<p dir=\"auto\"><a href=\"https://docs.rs/crate/cargo-ndk\" rel=\"nofollow\">cargo-ndk</a> (v2.0 or later) also needs to be installed:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo install cargo-ndk\"><pre> $ cargo install cargo-ndk</pre></div>\n<p dir=\"auto\">Finally the quiche library can be built using the following procedure. Note that\nthe <code>-t &lt;architecture&gt;</code> and <code>-p &lt;NDK version&gt;</code> options are mandatory.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo ndk -t arm64-v8a -p 21 -- build --features ffi\"><pre> $ cargo ndk -t arm64-v8a -p 21 -- build --features ffi</pre></div>\n<p dir=\"auto\">See <a href=\"https://github.com/cloudflare/quiche/blob/master/tools/android/build_android_ndk19.sh\">build_android_ndk19.sh</a> for more information.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for iOS</h3></div>\n<p dir=\"auto\">To build quiche for iOS, you need the following:</p>\n<ul dir=\"auto\">\n<li>Install Xcode command-line tools. You can install them with Xcode or with the\nfollowing command:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ xcode-select --install\"><pre> $ xcode-select --install</pre></div>\n<ul dir=\"auto\">\n<li>Install the Rust toolchain for iOS architectures:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ rustup target add aarch64-apple-ios x86_64-apple-ios\"><pre> $ rustup target add aarch64-apple-ios x86_64-apple-ios</pre></div>\n<ul dir=\"auto\">\n<li>Install <code>cargo-lipo</code>:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo install cargo-lipo\"><pre> $ cargo install cargo-lipo</pre></div>\n<p dir=\"auto\">To build libquiche, run the following command:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo lipo --features ffi\"><pre> $ cargo lipo --features ffi</pre></div>\n<p dir=\"auto\">or</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo lipo --features ffi --release\"><pre> $ cargo lipo --features ffi --release</pre></div>\n<p dir=\"auto\">iOS build is tested in Xcode 10.1 and Xcode 11.2.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building Docker images</h3></div>\n<p dir=\"auto\">In order to build the Docker images, simply run the following command:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ make docker-build\"><pre> $ make docker-build</pre></div>\n<p dir=\"auto\">You can find the quiche Docker images on the following Docker Hub repositories:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://hub.docker.com/repository/docker/cloudflare/quiche\" rel=\"nofollow\">cloudflare/quiche</a></li>\n<li><a href=\"https://hub.docker.com/repository/docker/cloudflare/quiche-qns\" rel=\"nofollow\">cloudflare/quiche-qns</a></li>\n</ul>\n<p dir=\"auto\">The <code>latest</code> tag will be updated whenever quiche master branch updates.</p>\n<p dir=\"auto\"><strong>cloudflare/quiche</strong></p>\n<p dir=\"auto\">Provides a server and client installed in /usr/local/bin.</p>\n<p dir=\"auto\"><strong>cloudflare/quiche-qns</strong></p>\n<p dir=\"auto\">Provides the script to test quiche within the <a href=\"https://github.com/marten-seemann/quic-interop-runner\">quic-interop-runner</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Disclaimers and Notes</h2></div>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji> This repository includes a number of client and server example\napplications that are provided to demonstrate simple usage of the quiche library\nAPI. They are not intended to be used in production environments; no\nperformance, security or reliability guarantees are provided.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Copyright</h2></div>\n<p dir=\"auto\">Copyright (C) 2018-2019, Cloudflare, Inc.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/cloudflare/quiche/tree/master/COPYING\">COPYING</a> for the license.</p>\n</article></div>",
+  "firstCommitAt": "2018-10-16T20:08:00Z",
+  "recentIssues": [],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 14
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 17
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 16
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 15
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 13
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 11
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 3
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 26
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 24
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 32
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 39
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 35
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 40
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 28
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 38
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 19
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 16
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 10
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 10
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 4
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 11
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 12
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 28
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 34
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 54
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 45
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 32
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 41
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 25
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 38
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 16
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 17
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 22
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 9
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 13
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 15
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 8
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 33
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 30
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 23
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 28
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 35
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 37
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 41
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 33
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 39
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 17
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 15
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 12
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 11
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 24
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 39
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 35
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 38
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 38
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 55
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 39
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 31
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 20
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 14
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 16
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 13
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 16
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 15
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 16
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 30
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 33
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 35
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 66
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 44
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 47
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 33
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 21
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 19
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 25
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 15
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 20
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 26
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 23
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 10
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 15
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 22
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 5
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 5
+    }
+  ],
+  "contributorCount": 151,
+  "participation": {
+    "all": 307,
+    "owner": 0,
+    "community": 307
+  },
+  "recentCommits": [
+    {
+      "sha": "4d23d85",
+      "message": "opencode: replace .opencode/skills/ with symlink to .codex",
+      "url": "https://github.com/cloudflare/quiche/commit/4d23d859166a2eab86286eb77a836111938abf68",
+      "date": "2026-09-18T09:05:01Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "1c8e976",
+      "message": "h3i: release 0.7.0",
+      "url": "https://github.com/cloudflare/quiche/commit/1c8e976173eef59ae9672c3cfec90167be890c0f",
+      "date": "2026-09-17T16:17:49Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "540d33a",
+      "message": "tokio-quiche: release 0.20.0",
+      "url": "https://github.com/cloudflare/quiche/commit/540d33aa3d93a1471bea4fce0decbdfc7e2f0a31",
+      "date": "2026-09-17T16:16:50Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "be47c50",
+      "message": "quiche: release 0.30.0",
+      "url": "https://github.com/cloudflare/quiche/commit/be47c5011215b9f13bad06bd7627d3ae49888a19",
+      "date": "2026-09-17T16:00:29Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "b6281fb",
+      "message": "recovery: emit app-limited state in qlog",
+      "url": "https://github.com/cloudflare/quiche/commit/b6281fbf2423776c87a2cf93308fc38e815a37a4",
+      "date": "2026-09-17T14:43:41Z",
+      "author": "estcarisimo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/32495768?v=4"
+    },
+    {
+      "sha": "ad2fabd",
+      "message": "tokio-quiche: make Http3Settings non-exhaustive",
+      "url": "https://github.com/cloudflare/quiche/commit/ad2fabd1db2299eea1493a513b6612058ed3a876",
+      "date": "2026-09-17T15:10:01Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "a64d972",
+      "message": "fix connection flow-control double-counting from zero-length STREAM frames",
+      "url": "https://github.com/cloudflare/quiche/commit/a64d972144803ed2db22aaeeca76ed07cfe5c138",
+      "date": "2026-09-17T14:08:36Z",
+      "author": "jbaldassari",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/307312?v=4"
+    },
+    {
+      "sha": "5aff70b",
+      "message": "build(deps): update intrusive-collections to 0.10.3",
+      "url": "https://github.com/cloudflare/quiche/commit/5aff70b3a90b5cd391c71f9f6063f350670a8e96",
+      "date": "2026-09-17T09:33:53Z",
+      "author": "ghedo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
+    },
+    {
+      "sha": "8b9a03c",
+      "message": "build(deps): update table_to_html requirement from 0.9.0 to 0.11.0",
+      "url": "https://github.com/cloudflare/quiche/commit/8b9a03ca1b51dece69833458fe394f52ba64214d",
+      "date": "2026-09-11T13:05:30Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    },
+    {
+      "sha": "d7c7f26",
+      "message": "build(deps): update wasm-streams requirement from 0.4 to 0.6",
+      "url": "https://github.com/cloudflare/quiche/commit/d7c7f26afe162c5f73558ef291d3a977a761e2c3",
+      "date": "2026-09-04T13:03:30Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".codex",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/.codex"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/.github"
+    },
+    {
+      "name": ".opencode",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/.opencode"
+    },
+    {
+      "name": "apps",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/apps"
+    },
+    {
+      "name": "buffer-pool",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/buffer-pool"
+    },
+    {
+      "name": "datagram-socket",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/datagram-socket"
+    },
+    {
+      "name": "fuzz",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/fuzz"
+    },
+    {
+      "name": "h3i",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/h3i"
+    },
+    {
+      "name": "netlog",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/netlog"
+    },
+    {
+      "name": "octets",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/octets"
+    },
+    {
+      "name": "qlog",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/qlog"
+    },
+    {
+      "name": "qlog-dancer",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/qlog-dancer"
+    },
+    {
+      "name": "quiche",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/quiche"
+    },
+    {
+      "name": "task-killswitch",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/task-killswitch"
+    },
+    {
+      "name": "tokio-quiche",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/tokio-quiche"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/cloudflare/quiche/tree/master/tools"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 46,
+      "url": "https://github.com/cloudflare/quiche/blob/master/.gitignore"
+    },
+    {
+      "name": ".gitlab-ci.yml",
+      "type": "file",
+      "size": 71,
+      "url": "https://github.com/cloudflare/quiche/blob/master/.gitlab-ci.yml"
+    },
+    {
+      "name": ".semgrepignore",
+      "type": "file",
+      "size": 56,
+      "url": "https://github.com/cloudflare/quiche/blob/master/.semgrepignore"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 7206,
+      "url": "https://github.com/cloudflare/quiche/blob/master/AGENTS.md"
+    },
+    {
+      "name": "Cargo.toml",
+      "type": "file",
+      "size": 3474,
+      "url": "https://github.com/cloudflare/quiche/blob/master/Cargo.toml"
+    },
+    {
+      "name": "catalog-info.yaml",
+      "type": "file",
+      "size": 621,
+      "url": "https://github.com/cloudflare/quiche/blob/master/catalog-info.yaml"
+    },
+    {
+      "name": "clippy.toml",
+      "type": "file",
+      "size": 37,
+      "url": "https://github.com/cloudflare/quiche/blob/master/clippy.toml"
+    },
+    {
+      "name": "CODEOWNERS",
+      "type": "file",
+      "size": 24,
+      "url": "https://github.com/cloudflare/quiche/blob/master/CODEOWNERS"
+    },
+    {
+      "name": "COPYING",
+      "type": "file",
+      "size": 1306,
+      "url": "https://github.com/cloudflare/quiche/blob/master/COPYING"
+    },
+    {
+      "name": "Cross.toml",
+      "type": "file",
+      "size": 1949,
+      "url": "https://github.com/cloudflare/quiche/blob/master/Cross.toml"
+    },
+    {
+      "name": "Dockerfile",
+      "type": "file",
+      "size": 1485,
+      "url": "https://github.com/cloudflare/quiche/blob/master/Dockerfile"
+    },
+    {
+      "name": "Makefile",
+      "type": "file",
+      "size": 1612,
+      "url": "https://github.com/cloudflare/quiche/blob/master/Makefile"
+    },
+    {
+      "name": "quiche.svg",
+      "type": "file",
+      "size": 10305,
+      "url": "https://github.com/cloudflare/quiche/blob/master/quiche.svg"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 15440,
+      "url": "https://github.com/cloudflare/quiche/blob/master/README.md"
+    },
+    {
+      "name": "RELEASING.md",
+      "type": "file",
+      "size": 4379,
+      "url": "https://github.com/cloudflare/quiche/blob/master/RELEASING.md"
+    },
+    {
+      "name": "rustfmt.toml",
+      "type": "file",
+      "size": 1583,
+      "url": "https://github.com/cloudflare/quiche/blob/master/rustfmt.toml"
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Nightly",
+      "status": "action_required",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/35430295054",
+      "branch": "fix/pad-path-response",
+      "updatedAt": "2026-09-19T07:47:50Z"
+    },
+    {
+      "name": "Stable",
+      "status": "action_required",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/35430295022",
+      "branch": "fix/pad-path-response",
+      "updatedAt": "2026-09-19T07:47:50Z"
+    },
+    {
+      "name": "Semgrep config",
+      "status": "action_required",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/35430295016",
+      "branch": "fix/pad-path-response",
+      "updatedAt": "2026-09-19T07:47:50Z"
+    },
+    {
+      "name": "Bonk",
+      "status": "action_required",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/35430143578",
+      "branch": "fix/pad-path-response",
+      "updatedAt": "2026-09-19T07:44:30Z"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 2747,
+      "title": "expand datagrams carrying PATH_CHALLENGE or PATH_RESPONSE on validated paths",
+      "url": "https://github.com/cloudflare/quiche/pull/2747",
+      "state": "open",
+      "updatedAt": "2026-09-19T07:52:56Z",
+      "author": "m1el",
+      "draft": false
+    },
+    {
+      "number": 2746,
+      "title": "tls: add APIs to load the certificate and private key from memory",
+      "url": "https://github.com/cloudflare/quiche/pull/2746",
+      "state": "open",
+      "updatedAt": "2026-09-18T19:58:54Z",
+      "author": "MelodicAlbuild",
+      "draft": false
+    },
+    {
+      "number": 2745,
+      "title": "tls: add Config::verify_peer_optional()",
+      "url": "https://github.com/cloudflare/quiche/pull/2745",
+      "state": "open",
+      "updatedAt": "2026-09-18T18:09:38Z",
+      "author": "MelodicAlbuild",
+      "draft": false
+    },
+    {
+      "number": 2744,
+      "title": "ffi: populate max_rtt in quiche_conn_path_stats",
+      "url": "https://github.com/cloudflare/quiche/pull/2744",
+      "state": "open",
+      "updatedAt": "2026-09-18T18:03:39Z",
+      "author": "MelodicAlbuild",
+      "draft": false
+    },
+    {
+      "number": 2743,
+      "title": "path: evict superseded paths when the path table is full",
+      "url": "https://github.com/cloudflare/quiche/pull/2743",
+      "state": "open",
+      "updatedAt": "2026-09-18T18:02:51Z",
+      "author": "MelodicAlbuild",
+      "draft": false
+    },
+    {
+      "number": 2741,
+      "title": "path: evict superseded paths when the path table is full",
+      "url": "https://github.com/cloudflare/quiche/pull/2741",
+      "state": "closed",
+      "updatedAt": "2026-09-18T17:31:12Z",
+      "author": "MelodicAlbuild",
+      "draft": false
+    },
+    {
+      "number": 2102,
+      "title": "Add unchecked congestion window algorithm",
+      "url": "https://github.com/cloudflare/quiche/pull/2102",
+      "state": "open",
+      "updatedAt": "2026-09-18T17:14:28Z",
+      "author": "cf-rhett",
+      "draft": false
+    },
+    {
+      "number": 2740,
+      "title": "Fix STREAM frame emission when near packet or cwnd capacity",
+      "url": "https://github.com/cloudflare/quiche/pull/2740",
+      "state": "open",
+      "updatedAt": "2026-09-18T15:28:35Z",
+      "author": "gregor-cf",
+      "draft": false
+    }
+  ],
+  "branchCount": 145,
+  "tagCount": 143,
+  "community": {
+    "healthPercentage": 87,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 196,
+  "openPRs": 165,
+  "releaseCount": 51,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 619,
+  "mergedPRs": 1456,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/cloudflare/quiche/security/policy",
+  "codeOfConduct": {
+    "name": "Contributor Covenant",
+    "url": "https://github.com/cloudflare/.github/blob/master/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": {
+    "tag": "0.30.0",
+    "publishedAt": "2026-09-17T16:16:12Z"
+  },
+  "commitActivity": [
+    {
+      "week": "2025-09-21",
+      "commits": 6
+    },
+    {
+      "week": "2025-09-28",
+      "commits": 5
+    },
+    {
+      "week": "2025-10-05",
+      "commits": 5
+    },
+    {
+      "week": "2025-10-12",
+      "commits": 16
+    },
+    {
+      "week": "2025-10-19",
+      "commits": 4
+    },
+    {
+      "week": "2025-10-26",
+      "commits": 7
+    },
+    {
+      "week": "2025-11-02",
+      "commits": 6
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 7
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 1
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 7
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 6
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 7
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 5
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 12
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 12
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 11
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 10
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 13
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 7
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 11
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 7
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 10
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 5
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 10
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 10
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 2
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 5
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 7
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 6
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 6
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 18
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 7
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 3
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 3
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 1
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 4
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 3
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 3
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 7
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 4
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 5
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 1
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 2
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 7
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 13
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-09-21",
+      "count": 0
+    },
+    {
+      "date": "2025-09-22",
+      "count": 2
+    },
+    {
+      "date": "2025-09-23",
+      "count": 2
+    },
+    {
+      "date": "2025-09-24",
+      "count": 1
+    },
+    {
+      "date": "2025-09-25",
+      "count": 0
+    },
+    {
+      "date": "2025-09-26",
+      "count": 1
+    },
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 4
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 1
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 3
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 1
+    },
+    {
+      "date": "2025-10-11",
+      "count": 1
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 2
+    },
+    {
+      "date": "2025-10-14",
+      "count": 2
+    },
+    {
+      "date": "2025-10-15",
+      "count": 3
+    },
+    {
+      "date": "2025-10-16",
+      "count": 4
+    },
+    {
+      "date": "2025-10-17",
+      "count": 5
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 2
+    },
+    {
+      "date": "2025-10-22",
+      "count": 1
+    },
+    {
+      "date": "2025-10-23",
+      "count": 1
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 2
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 1
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 4
+    },
+    {
+      "date": "2025-11-02",
+      "count": 1
+    },
+    {
+      "date": "2025-11-03",
+      "count": 1
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 1
+    },
+    {
+      "date": "2025-11-06",
+      "count": 1
+    },
+    {
+      "date": "2025-11-07",
+      "count": 2
+    },
+    {
+      "date": "2025-11-08",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 4
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 3
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 1
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 1
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 2
+    },
+    {
+      "date": "2025-12-05",
+      "count": 4
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 1
+    },
+    {
+      "date": "2025-12-11",
+      "count": 2
+    },
+    {
+      "date": "2025-12-12",
+      "count": 3
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 1
+    },
+    {
+      "date": "2025-12-16",
+      "count": 1
+    },
+    {
+      "date": "2025-12-17",
+      "count": 2
+    },
+    {
+      "date": "2025-12-18",
+      "count": 3
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 1
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 4
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 2
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 4
+    },
+    {
+      "date": "2026-01-16",
+      "count": 6
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 9
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 2
+    },
+    {
+      "date": "2026-01-23",
+      "count": 1
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 3
+    },
+    {
+      "date": "2026-01-27",
+      "count": 2
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 3
+    },
+    {
+      "date": "2026-01-30",
+      "count": 3
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 1
+    },
+    {
+      "date": "2026-02-03",
+      "count": 4
+    },
+    {
+      "date": "2026-02-04",
+      "count": 2
+    },
+    {
+      "date": "2026-02-05",
+      "count": 1
+    },
+    {
+      "date": "2026-02-06",
+      "count": 2
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 2
+    },
+    {
+      "date": "2026-02-10",
+      "count": 5
+    },
+    {
+      "date": "2026-02-11",
+      "count": 5
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 1
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 1
+    },
+    {
+      "date": "2026-02-16",
+      "count": 2
+    },
+    {
+      "date": "2026-02-17",
+      "count": 3
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 1
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 2
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 2
+    },
+    {
+      "date": "2026-02-26",
+      "count": 4
+    },
+    {
+      "date": "2026-02-27",
+      "count": 3
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 2
+    },
+    {
+      "date": "2026-03-05",
+      "count": 3
+    },
+    {
+      "date": "2026-03-06",
+      "count": 2
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 1
+    },
+    {
+      "date": "2026-03-10",
+      "count": 3
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 2
+    },
+    {
+      "date": "2026-03-13",
+      "count": 4
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 2
+    },
+    {
+      "date": "2026-03-17",
+      "count": 2
+    },
+    {
+      "date": "2026-03-18",
+      "count": 1
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 3
+    },
+    {
+      "date": "2026-03-27",
+      "count": 7
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 1
+    },
+    {
+      "date": "2026-03-31",
+      "count": 7
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 2
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 2
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 4
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 1
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 1
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 2
+    },
+    {
+      "date": "2026-04-24",
+      "count": 4
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 3
+    },
+    {
+      "date": "2026-04-28",
+      "count": 1
+    },
+    {
+      "date": "2026-04-29",
+      "count": 1
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 1
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 3
+    },
+    {
+      "date": "2026-05-06",
+      "count": 3
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 3
+    },
+    {
+      "date": "2026-05-12",
+      "count": 4
+    },
+    {
+      "date": "2026-05-13",
+      "count": 5
+    },
+    {
+      "date": "2026-05-14",
+      "count": 6
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 3
+    },
+    {
+      "date": "2026-05-19",
+      "count": 1
+    },
+    {
+      "date": "2026-05-20",
+      "count": 3
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 3
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 2
+    },
+    {
+      "date": "2026-06-05",
+      "count": 1
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 1
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 1
+    },
+    {
+      "date": "2026-06-18",
+      "count": 2
+    },
+    {
+      "date": "2026-06-19",
+      "count": 1
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 1
+    },
+    {
+      "date": "2026-06-24",
+      "count": 2
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 3
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 4
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 3
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 3
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 1
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 2
+    },
+    {
+      "date": "2026-07-28",
+      "count": 1
+    },
+    {
+      "date": "2026-07-29",
+      "count": 1
+    },
+    {
+      "date": "2026-07-30",
+      "count": 1
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 1
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 2
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 1
+    },
+    {
+      "date": "2026-09-08",
+      "count": 2
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 2
+    },
+    {
+      "date": "2026-09-11",
+      "count": 2
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 1
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 1
+    },
+    {
+      "date": "2026-09-17",
+      "count": 10
+    },
+    {
+      "date": "2026-09-18",
+      "count": 1
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-09-19T11:01:34.968Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2023-01-08",
+        "stars": 20
+      },
+      {
+        "date": "2023-01-15",
+        "stars": 112
+      },
+      {
+        "date": "2023-01-22",
+        "stars": 213
+      },
+      {
+        "date": "2023-01-29",
+        "stars": 315
+      },
+      {
+        "date": "2023-02-05",
+        "stars": 416
+      },
+      {
+        "date": "2023-02-12",
+        "stars": 548
+      },
+      {
+        "date": "2023-02-19",
+        "stars": 721
+      },
+      {
+        "date": "2023-02-26",
+        "stars": 980
+      },
+      {
+        "date": "2023-03-05",
+        "stars": 1233
+      },
+      {
+        "date": "2023-03-12",
+        "stars": 1482
+      },
+      {
+        "date": "2023-03-19",
+        "stars": 1690
+      },
+      {
+        "date": "2023-03-26",
+        "stars": 1868
+      },
+      {
+        "date": "2023-04-02",
+        "stars": 2000
+      },
+      {
+        "date": "2023-04-09",
+        "stars": 2122
+      },
+      {
+        "date": "2023-04-16",
+        "stars": 2254
+      },
+      {
+        "date": "2023-04-23",
+        "stars": 2452
+      },
+      {
+        "date": "2023-04-30",
+        "stars": 2568
+      },
+      {
+        "date": "2023-05-07",
+        "stars": 2721
+      },
+      {
+        "date": "2023-05-14",
+        "stars": 2858
+      },
+      {
+        "date": "2023-05-21",
+        "stars": 3076
+      },
+      {
+        "date": "2023-05-28",
+        "stars": 3198
+      },
+      {
+        "date": "2023-06-04",
+        "stars": 3360
+      },
+      {
+        "date": "2023-06-11",
+        "stars": 3472
+      },
+      {
+        "date": "2023-06-18",
+        "stars": 3568
+      },
+      {
+        "date": "2023-06-25",
+        "stars": 3680
+      },
+      {
+        "date": "2023-07-02",
+        "stars": 3832
+      },
+      {
+        "date": "2023-07-09",
+        "stars": 3934
+      },
+      {
+        "date": "2023-07-16",
+        "stars": 4010
+      },
+      {
+        "date": "2023-07-23",
+        "stars": 4122
+      },
+      {
+        "date": "2023-07-30",
+        "stars": 4223
+      },
+      {
+        "date": "2023-08-06",
+        "stars": 4411
+      },
+      {
+        "date": "2023-08-13",
+        "stars": 4502
+      },
+      {
+        "date": "2023-08-20",
+        "stars": 4670
+      },
+      {
+        "date": "2023-08-27",
+        "stars": 4756
+      },
+      {
+        "date": "2023-09-03",
+        "stars": 4817
+      },
+      {
+        "date": "2023-09-10",
+        "stars": 4934
+      },
+      {
+        "date": "2023-09-17",
+        "stars": 5045
+      },
+      {
+        "date": "2023-09-24",
+        "stars": 5106
+      },
+      {
+        "date": "2023-10-01",
+        "stars": 5208
+      },
+      {
+        "date": "2023-10-08",
+        "stars": 5436
+      },
+      {
+        "date": "2023-10-15",
+        "stars": 5578
+      },
+      {
+        "date": "2023-10-22",
+        "stars": 5989
+      },
+      {
+        "date": "2023-10-29",
+        "stars": 6182
+      },
+      {
+        "date": "2023-11-05",
+        "stars": 6345
+      },
+      {
+        "date": "2023-11-12",
+        "stars": 6461
+      },
+      {
+        "date": "2023-11-19",
+        "stars": 6573
+      },
+      {
+        "date": "2023-11-26",
+        "stars": 6731
+      },
+      {
+        "date": "2023-12-03",
+        "stars": 6878
+      },
+      {
+        "date": "2023-12-10",
+        "stars": 7040
+      },
+      {
+        "date": "2023-12-17",
+        "stars": 7187
+      },
+      {
+        "date": "2023-12-24",
+        "stars": 7263
+      },
+      {
+        "date": "2023-12-31",
+        "stars": 7375
+      },
+      {
+        "date": "2024-01-07",
+        "stars": 7456
+      },
+      {
+        "date": "2024-01-14",
+        "stars": 7578
+      },
+      {
+        "date": "2024-01-21",
+        "stars": 7649
+      },
+      {
+        "date": "2024-01-28",
+        "stars": 7730
+      },
+      {
+        "date": "2024-02-04",
+        "stars": 7888
+      },
+      {
+        "date": "2024-02-11",
+        "stars": 7944
+      },
+      {
+        "date": "2024-02-18",
+        "stars": 8096
+      },
+      {
+        "date": "2024-02-25",
+        "stars": 8340
+      },
+      {
+        "date": "2024-03-03",
+        "stars": 8563
+      },
+      {
+        "date": "2024-03-10",
+        "stars": 8705
+      },
+      {
+        "date": "2024-03-17",
+        "stars": 8801
+      },
+      {
+        "date": "2024-03-24",
+        "stars": 8918
+      },
+      {
+        "date": "2024-03-31",
+        "stars": 9020
+      },
+      {
+        "date": "2024-04-07",
+        "stars": 9142
+      },
+      {
+        "date": "2024-04-14",
+        "stars": 9339
+      },
+      {
+        "date": "2024-04-21",
+        "stars": 9456
+      },
+      {
+        "date": "2024-04-28",
+        "stars": 9553
+      },
+      {
+        "date": "2024-05-05",
+        "stars": 9669
+      },
+      {
+        "date": "2024-05-12",
+        "stars": 9776
+      },
+      {
+        "date": "2024-05-19",
+        "stars": 9883
+      },
+      {
+        "date": "2024-05-26",
+        "stars": 9989
+      },
+      {
+        "date": "2024-06-02",
+        "stars": 10025
+      },
+      {
+        "date": "2025-09-21",
+        "stars": 10050
+      },
+      {
+        "date": "2025-09-28",
+        "stars": 10136
+      },
+      {
+        "date": "2025-10-05",
+        "stars": 10147
+      },
+      {
+        "date": "2025-10-12",
+        "stars": 10172
+      },
+      {
+        "date": "2025-10-19",
+        "stars": 10213
+      },
+      {
+        "date": "2025-10-26",
+        "stars": 10289
+      },
+      {
+        "date": "2025-11-02",
+        "stars": 10563
+      },
+      {
+        "date": "2025-11-09",
+        "stars": 10685
+      },
+      {
+        "date": "2025-11-16",
+        "stars": 10771
+      },
+      {
+        "date": "2025-11-23",
+        "stars": 10827
+      },
+      {
+        "date": "2025-11-30",
+        "stars": 10933
+      },
+      {
+        "date": "2025-12-07",
+        "stars": 10984
+      },
+      {
+        "date": "2025-12-14",
+        "stars": 11035
+      },
+      {
+        "date": "2025-12-21",
+        "stars": 11096
+      },
+      {
+        "date": "2025-12-28",
+        "stars": 11248
+      },
+      {
+        "date": "2026-01-04",
+        "stars": 11314
+      },
+      {
+        "date": "2026-01-11",
+        "stars": 11360
+      },
+      {
+        "date": "2026-01-18",
+        "stars": 11390
+      },
+      {
+        "date": "2026-01-25",
+        "stars": 11436
+      },
+      {
+        "date": "2026-02-01",
+        "stars": 11497
+      },
+      {
+        "date": "2026-02-08",
+        "stars": 11532
+      },
+      {
+        "date": "2026-02-15",
+        "stars": 11547
+      },
+      {
+        "date": "2026-02-22",
+        "stars": 11598
+      },
+      {
+        "date": "2026-03-01",
+        "stars": 11639
+      },
+      {
+        "date": "2026-03-08",
+        "stars": 11669
+      },
+      {
+        "date": "2026-03-15",
+        "stars": 11674
+      },
+      {
+        "date": "2026-03-22",
+        "stars": 11710
+      },
+      {
+        "date": "2026-03-29",
+        "stars": 11730
+      },
+      {
+        "date": "2026-04-05",
+        "stars": 11750
+      },
+      {
+        "date": "2026-04-12",
+        "stars": 11756
+      },
+      {
+        "date": "2026-04-19",
+        "stars": 11796
+      },
+      {
+        "date": "2026-04-26",
+        "stars": 11811
+      },
+      {
+        "date": "2026-05-03",
+        "stars": 11822
+      },
+      {
+        "date": "2026-05-10",
+        "stars": 11837
+      },
+      {
+        "date": "2026-05-31",
+        "stars": 11842
+      },
+      {
+        "date": "2026-06-14",
+        "stars": 11847
+      },
+      {
+        "date": "2026-06-21",
+        "stars": 11852
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 5.076,
+    "sampledAt": "2026-09-19T11:01:53.869Z"
+  }
+}
