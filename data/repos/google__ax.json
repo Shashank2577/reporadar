@@ -1,0 +1,3375 @@
+{
+  "id": "google/ax",
+  "snapshots": [
+    {
+      "date": "2026-09-22",
+      "stars": 6734,
+      "forks": 318
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-09-22",
+      "period": "daily",
+      "rank": 4,
+      "starsGained": 2324
+    }
+  ],
+  "owner": "google",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/1342004?v=4",
+  "ownerType": "Organization",
+  "name": "ax",
+  "description": "Google's open agentic orchestration runtime",
+  "url": "https://github.com/google/ax",
+  "homepage": "https://agentexecutor.io",
+  "license": "Apache-2.0",
+  "language": "Go",
+  "topics": [],
+  "stars": 6734,
+  "forks": 318,
+  "watchers": 32,
+  "openIssues": 21,
+  "createdAt": "2026-03-30T17:55:01Z",
+  "pushedAt": "2026-09-20T03:33:20Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-09-22T11:40:44.120Z",
+  "languages": {
+    "Go": 299270,
+    "Shell": 6237,
+    "Python": 4981,
+    "Makefile": 3580
+  },
+  "commitCount": 625,
+  "readmeExcerpt": "<h1>\n  <img src=\"assets/axolotl.svg\" width=\"70\" align=\"absmiddle\" alt=\"AX axolotl\">\n  AX\n</h1>\n\n> [!WARNING]\n> We are still actively refining our core concepts, protocols,\n> and specifications. We will likely to introduce major breaking\n> changes prior to a stable release.\n\n**Declare an agentic task with workspaces and gateway specifications. AX sandboxes it, wires up its workspace, fences its network, and helps running it at scale.**\n\nAX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.\n\n```yaml\n# task.yaml\napiVersion: ax.io/v1alpha1\nkind: Workspace\nmetadata:\n  name: golang\nspec:\n  git:\n    - repo: https://github.com/golang/go.git\n      branch: \"my-fix\"\n---\napiVersion: ax.io/v1alpha1\nkind: Task\nmetadata:\n  name: test\nspec:\n  workspaces:\n    - name: golang\n      goal: \"Ensure that Go tool chain is available and is built from source\"\n  debug: true   # lets you `ax ssh` into the sandbox\n```\n\nThen apply it, watch it come up, and look over the agent's shoulder:\n\n```bash\nax apply -f task.yaml\nax watch task test\nax ssh test -- ls -al /workspace\n```\n\n## Why?\n\nAgents are a new kind of workload. They are neither stateless microservices nor run-to-completion batch jobs. They accumulate state, need strict isolation, call out to model APIs and tool servers, and can burn money in a loop if nobody is watching. AX gives you four small primitives that handle all of that declaratively:\n\n| You want to... | AX gives you |\n|---|---|\n| Run untrusted agent code in an isolated sandbox with CPU/memory limits | **`Task`** |\n| Pre-wire Git repos, MCP servers, and skill packages so every agent starts warm | **`Workspace`** |\n| Lock outbound traffic down to an explicit host allowlist | **`Gateway`** |\n| Configure which LLM the platform itself uses, with credentials from a Kubernetes secret | **`Model`** |\n| Pause an idle agent and pick up exactly where it left off | `ax suspend` / `ax resume` |\n| Shell into a running agent to see what it is doing | `ax ssh` |\n\nEverything is expressed as `ax.io/v1alpha1` manifests and applied with a single command.\n\n## Quick start\n\n### 1. Install the CLI\n\n```bash\ngo install github.com/google/ax/cmd/ax@latest\n```\n\nThis puts the `ax` binary in `$(go env GOPATH)/bin`. Make sure that directory is on your `PATH`.\n\n### 2. Deploy the control plane\n\nYou need a Kubernetes cluster, [`ko`](https://ko.build/) (`brew install ko`), a container registry your cluster can pull from, and a reachable Agent Substrate Control API (in-cluster default: `api.ate-system.svc.cluster.local:443`).\n\n```bash\nmake deploy AX_IMAGE_REPO=<your-registry>\n```\n\nThis deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.\n\n### 3. Run your first task\n\n```bash\nax apply -f examples/task.yaml       # Task + Workspace + Gateway + Model in one file\nax get tasks\n# NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE\n# task123   default    Running   task123         10.20.3.67   1m\n\nax watch task task123                # stream phase and condition changes live\nax ssh task123 -- ls -la /workspace  # poke around inside the sandbox\nax suspend task task123              # checkpoint and pause\nax resume task task123               # pick up where it left off\n```\n\nWant to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.\n\n## Documentation\n\n| Guide | Read it to... |\n|---|---|\n| [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, `Gateway`, and `Model` each do, and how a task moves through phases and conditions. |\n| [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |\n| [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |\n| [Runners](docs/runner.md) | Understand the contract between the control plane and the task container, and build your own runner image to replace the default. |\n| [Networking](docs/networking.md) | Reach a running task through the atenet router from the cluster, your laptop, or a gRPC client. |\n| [Architecture](DESIGN.md) | Understand how the control plane fits together, plus the [API reference](DESIGN.md#api-reference). |\n| [Development](docs/development.md) | Build, test, and ship changes to AX itself. |\n\n## CLI usage\n\n`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs.\n\n### Everyday commands\n\n```bash\n# Apply anything (multi-document YAML, file or stdin)\nax apply -f examples/task.yaml\n\n# Tasks\nax get tasks                          # list\nax get tasks -a my-atespace           # list in another atespace\nax get task task123                   # full spec + live status as YAML\nax describe task task123              # human-readable detail\nax watch task task123                 # stream status and condition transitions\nax suspend task task123               # checkpoint actor state and pause\nax resume task task123                # resume a suspended task\nax delete task task123\n\n# Shell into the running sandbox\nax ssh task123                        # interactive shell (task needs spec.debug: true)\nax ssh task123 -- ls -la /workspace   # one-off command\nax ssh task123 -- python3 main.py\n\n# Gateways, workspaces, models follow the same pattern\nax get gateways\n# NAME              ATESPACE   LISTENERS             EGRESS-HOSTS\n# default-gateway   default    8494/gRPC,8080/HTTP   *\nax describe gateway default-gateway\nax delete gateway default-gateway\n\nax get workspaces\n# NAME                ATESPACE   GIT-REPOS   MCP-SERVERS\n# default-workspace   default    1           1\nax describe workspace default-workspace\nax delete workspace default-workspace\n\nax get models\n# NAME            ATESPACE   PROVIDER   MODEL\n# default-model   default    google     gemini-3.8-flash\nax describe model default-model\nax delete model default-model\n\n# Connection plumbing\nax ctx                                # active kube context and how ax is reaching the control plane\nax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)\nax tunnel stop\nax version\n```\n\n### Works with `kubectx`\n\n`ax` follows your active Kubernetes context. Switch clusters and `ax` resolves and tunnels to that cluster's control plane in the background.\n\n```bash\nkubectx staging-cluster\nax get tasks\n\nkubectx prod-cluster\nax get tasks\n\n# Or target a context without switching\nax --context=dev-cluster get tasks\n```\n\n### Global flags\n\n| Flag | Description | Default |\n|---|---|---|\n| `-a`, `--atespace` | Atespace scope for the command | `default` |\n| `-n`, `--namespace` | Kubernetes namespace where AX is installed | `ax-system` |\n| `--context` | Kubernetes context to target | active `kubectx` / `current-context` |\n| `--server` | Control plane address, bypassing auto-detection | derived from kube context, or `$AX_SERVER` |\n\n## License\n\nApache License 2.0. See [LICENSE](LICENSE) for details.\n",
+  "contributors": [
+    {
+      "login": "rakyll",
+      "url": "https://github.com/rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4",
+      "contributions": 472
+    },
+    {
+      "login": "joycel-github",
+      "url": "https://github.com/joycel-github",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/11900208?v=4",
+      "contributions": 56
+    },
+    {
+      "login": "wjjclaud",
+      "url": "https://github.com/wjjclaud",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/14038238?v=4",
+      "contributions": 45
+    },
+    {
+      "login": "anj-s",
+      "url": "https://github.com/anj-s",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/32556631?v=4",
+      "contributions": 30
+    },
+    {
+      "login": "zbl94",
+      "url": "https://github.com/zbl94",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/106645026?v=4",
+      "contributions": 13
+    },
+    {
+      "login": "dberkov",
+      "url": "https://github.com/dberkov",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/54346214?v=4",
+      "contributions": 3
+    },
+    {
+      "login": "hyangah",
+      "url": "https://github.com/hyangah",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/4999471?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "dqyi11",
+      "url": "https://github.com/dqyi11",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/3580385?v=4",
+      "contributions": 1
+    },
+    {
+      "login": "paramgo",
+      "url": "https://github.com/paramgo",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/33885930?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/google/ax/blob/main/assets/axolotl.svg\"><img src=\"https://raw.githubusercontent.com/google/ax/main/assets/axolotl.svg\" width=\"70\" align=\"absmiddle\" alt=\"AX axolotl\" style=\"max-width: 100%;\"></a>\n  AX\n</h1></div>\n<div class=\"markdown-alert markdown-alert-warning\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-alert mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"></path></svg>Warning</p><p dir=\"auto\">We are still actively refining our core concepts, protocols,\nand specifications. We will likely to introduce major breaking\nchanges prior to a stable release.</p>\n</div>\n<p dir=\"auto\"><strong>Declare an agentic task with workspaces and gateway specifications. AX sandboxes it, wires up its workspace, fences its network, and helps running it at scale.</strong></p>\n<p dir=\"auto\">AX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of <a href=\"https://github.com/agent-substrate/substrate\">Agent Substrate</a> for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, <code>ax</code> will feel similar.</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# task.yaml\napiVersion: ax.io/v1alpha1\nkind: Workspace\nmetadata:\n  name: golang\nspec:\n  git:\n    - repo: https://github.com/golang/go.git\n      branch: &quot;my-fix&quot;\n---\napiVersion: ax.io/v1alpha1\nkind: Task\nmetadata:\n  name: test\nspec:\n  workspaces:\n    - name: golang\n      goal: &quot;Ensure that Go tool chain is available and is built from source&quot;\n  debug: true   # lets you `ax ssh` into the sandbox\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> task.yaml</span>\n<span class=\"pl-ent\">apiVersion</span>: <span class=\"pl-s\">ax.io/v1alpha1</span>\n<span class=\"pl-ent\">kind</span>: <span class=\"pl-s\">Workspace</span>\n<span class=\"pl-ent\">metadata</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\">golang</span>\n<span class=\"pl-ent\">spec</span>:\n  <span class=\"pl-ent\">git</span>:\n    - <span class=\"pl-ent\">repo</span>: <span class=\"pl-s\">https://github.com/golang/go.git</span>\n      <span class=\"pl-ent\">branch</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-fix<span class=\"pl-pds\">\"</span></span>\n---\n<span class=\"pl-ent\">apiVersion</span>: <span class=\"pl-s\">ax.io/v1alpha1</span>\n<span class=\"pl-ent\">kind</span>: <span class=\"pl-s\">Task</span>\n<span class=\"pl-ent\">metadata</span>:\n  <span class=\"pl-ent\">name</span>: <span class=\"pl-s\">test</span>\n<span class=\"pl-ent\">spec</span>:\n  <span class=\"pl-ent\">workspaces</span>:\n    - <span class=\"pl-ent\">name</span>: <span class=\"pl-s\">golang</span>\n      <span class=\"pl-ent\">goal</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Ensure that Go tool chain is available and is built from source<span class=\"pl-pds\">\"</span></span>\n  <span class=\"pl-ent\">debug</span>: <span class=\"pl-s\">true   </span><span class=\"pl-c\"><span class=\"pl-c\">#</span> lets you `ax ssh` into the sandbox</span></pre></div>\n<p dir=\"auto\">Then apply it, watch it come up, and look over the agent's shoulder:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"ax apply -f task.yaml\nax watch task test\nax ssh test -- ls -al /workspace\"><pre>ax apply -f task.yaml\nax watch task <span class=\"pl-c1\">test</span>\nax ssh <span class=\"pl-c1\">test</span> -- ls -al /workspace</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Why?</h2></div>\n<p dir=\"auto\">Agents are a new kind of workload. They are neither stateless microservices nor run-to-completion batch jobs. They accumulate state, need strict isolation, call out to model APIs and tool servers, and can burn money in a loop if nobody is watching. AX gives you four small primitives that handle all of that declaratively:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>You want to...</th>\n<th>AX gives you</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Run untrusted agent code in an isolated sandbox with CPU/memory limits</td>\n<td><strong><code>Task</code></strong></td>\n</tr>\n<tr>\n<td>Pre-wire Git repos, MCP servers, and skill packages so every agent starts warm</td>\n<td><strong><code>Workspace</code></strong></td>\n</tr>\n<tr>\n<td>Lock outbound traffic down to an explicit host allowlist</td>\n<td><strong><code>Gateway</code></strong></td>\n</tr>\n<tr>\n<td>Configure which LLM the platform itself uses, with credentials from a Kubernetes secret</td>\n<td><strong><code>Model</code></strong></td>\n</tr>\n<tr>\n<td>Pause an idle agent and pick up exactly where it left off</td>\n<td><code>ax suspend</code> / <code>ax resume</code></td>\n</tr>\n<tr>\n<td>Shell into a running agent to see what it is doing</td>\n<td><code>ax ssh</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Everything is expressed as <code>ax.io/v1alpha1</code> manifests and applied with a single command.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Install the CLI</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go install github.com/google/ax/cmd/ax@latest\"><pre>go install github.com/google/ax/cmd/ax@latest</pre></div>\n<p dir=\"auto\">This puts the <code>ax</code> binary in <code>$(go env GOPATH)/bin</code>. Make sure that directory is on your <code>PATH</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Deploy the control plane</h3></div>\n<p dir=\"auto\">You need a Kubernetes cluster, <a href=\"https://ko.build/\" rel=\"nofollow\"><code>ko</code></a> (<code>brew install ko</code>), a container registry your cluster can pull from, and a reachable Agent Substrate Control API (in-cluster default: <code>api.ate-system.svc.cluster.local:443</code>).</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make deploy AX_IMAGE_REPO=&lt;your-registry&gt;\"><pre>make deploy AX_IMAGE_REPO=<span class=\"pl-k\">&lt;</span>your-registry<span class=\"pl-k\">&gt;</span></pre></div>\n<p dir=\"auto\">This deploys Redis, then builds and deploys the control plane images with <code>ko</code>. Everything lands in the <code>ax-system</code> namespace.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3. Run your first task</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"ax apply -f examples/task.yaml       # Task + Workspace + Gateway + Model in one file\nax get tasks\n# NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE\n# task123   default    Running   task123         10.20.3.67   1m\n\nax watch task task123                # stream phase and condition changes live\nax ssh task123 -- ls -la /workspace  # poke around inside the sandbox\nax suspend task task123              # checkpoint and pause\nax resume task task123               # pick up where it left off\"><pre>ax apply -f examples/task.yaml       <span class=\"pl-c\"><span class=\"pl-c\">#</span> Task + Workspace + Gateway + Model in one file</span>\nax get tasks\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> task123   default    Running   task123         10.20.3.67   1m</span>\n\nax watch task task123                <span class=\"pl-c\"><span class=\"pl-c\">#</span> stream phase and condition changes live</span>\nax ssh task123 -- ls -la /workspace  <span class=\"pl-c\"><span class=\"pl-c\">#</span> poke around inside the sandbox</span>\nax <span class=\"pl-c1\">suspend</span> task task123              <span class=\"pl-c\"><span class=\"pl-c\">#</span> checkpoint and pause</span>\nax resume task task123               <span class=\"pl-c\"><span class=\"pl-c\">#</span> pick up where it left off</span></pre></div>\n<p dir=\"auto\">Want to see the whole lifecycle end to end? Run <a href=\"https://github.com/google/ax/blob/main/demo.sh\"><code>./demo.sh</code></a>. It applies a custom workspace, waits for readiness, runs commands over <code>ax ssh</code>, and suspends the task.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Guide</th>\n<th>Read it to...</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/concepts.md\">Concepts</a></td>\n<td>Learn what a <code>Task</code>, <code>Workspace</code>, <code>Gateway</code>, and <code>Model</code> each do, and how a task moves through phases and conditions.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/manifests.md\">Manifests</a></td>\n<td>Write your own YAML, with an annotated example of every kind.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/sandbox.md\">Sandbox</a></td>\n<td>See what the runner does on boot and what your command can rely on: metadata server, guest services, environment.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/runner.md\">Runners</a></td>\n<td>Understand the contract between the control plane and the task container, and build your own runner image to replace the default.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/networking.md\">Networking</a></td>\n<td>Reach a running task through the atenet router from the cluster, your laptop, or a gRPC client.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/DESIGN.md\">Architecture</a></td>\n<td>Understand how the control plane fits together, plus the <a href=\"https://github.com/google/ax/blob/main/DESIGN.md#api-reference\">API reference</a>.</td>\n</tr>\n<tr>\n<td><a href=\"https://github.com/google/ax/blob/main/docs/development.md\">Development</a></td>\n<td>Build, test, and ship changes to AX itself.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CLI usage</h2></div>\n<p dir=\"auto\"><code>ax</code> talks to the control plane over gRPC. It is deliberately <code>kubectl</code>-shaped: <code>apply</code>, <code>get</code>, <code>describe</code>, <code>watch</code>, <code>delete</code>, plus a few agent-specific verbs.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Everyday commands</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Apply anything (multi-document YAML, file or stdin)\nax apply -f examples/task.yaml\n\n# Tasks\nax get tasks                          # list\nax get tasks -a my-atespace           # list in another atespace\nax get task task123                   # full spec + live status as YAML\nax describe task task123              # human-readable detail\nax watch task task123                 # stream status and condition transitions\nax suspend task task123               # checkpoint actor state and pause\nax resume task task123                # resume a suspended task\nax delete task task123\n\n# Shell into the running sandbox\nax ssh task123                        # interactive shell (task needs spec.debug: true)\nax ssh task123 -- ls -la /workspace   # one-off command\nax ssh task123 -- python3 main.py\n\n# Gateways, workspaces, models follow the same pattern\nax get gateways\n# NAME              ATESPACE   LISTENERS             EGRESS-HOSTS\n# default-gateway   default    8494/gRPC,8080/HTTP   *\nax describe gateway default-gateway\nax delete gateway default-gateway\n\nax get workspaces\n# NAME                ATESPACE   GIT-REPOS   MCP-SERVERS\n# default-workspace   default    1           1\nax describe workspace default-workspace\nax delete workspace default-workspace\n\nax get models\n# NAME            ATESPACE   PROVIDER   MODEL\n# default-model   default    google     gemini-3.8-flash\nax describe model default-model\nax delete model default-model\n\n# Connection plumbing\nax ctx                                # active kube context and how ax is reaching the control plane\nax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)\nax tunnel stop\nax version\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Apply anything (multi-document YAML, file or stdin)</span>\nax apply -f examples/task.yaml\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Tasks</span>\nax get tasks                          <span class=\"pl-c\"><span class=\"pl-c\">#</span> list</span>\nax get tasks -a my-atespace           <span class=\"pl-c\"><span class=\"pl-c\">#</span> list in another atespace</span>\nax get task task123                   <span class=\"pl-c\"><span class=\"pl-c\">#</span> full spec + live status as YAML</span>\nax describe task task123              <span class=\"pl-c\"><span class=\"pl-c\">#</span> human-readable detail</span>\nax watch task task123                 <span class=\"pl-c\"><span class=\"pl-c\">#</span> stream status and condition transitions</span>\nax <span class=\"pl-c1\">suspend</span> task task123               <span class=\"pl-c\"><span class=\"pl-c\">#</span> checkpoint actor state and pause</span>\nax resume task task123                <span class=\"pl-c\"><span class=\"pl-c\">#</span> resume a suspended task</span>\nax delete task task123\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Shell into the running sandbox</span>\nax ssh task123                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> interactive shell (task needs spec.debug: true)</span>\nax ssh task123 -- ls -la /workspace   <span class=\"pl-c\"><span class=\"pl-c\">#</span> one-off command</span>\nax ssh task123 -- python3 main.py\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Gateways, workspaces, models follow the same pattern</span>\nax get gateways\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> NAME              ATESPACE   LISTENERS             EGRESS-HOSTS</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> default-gateway   default    8494/gRPC,8080/HTTP   *</span>\nax describe gateway default-gateway\nax delete gateway default-gateway\n\nax get workspaces\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> NAME                ATESPACE   GIT-REPOS   MCP-SERVERS</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> default-workspace   default    1           1</span>\nax describe workspace default-workspace\nax delete workspace default-workspace\n\nax get models\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> NAME            ATESPACE   PROVIDER   MODEL</span>\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> default-model   default    google     gemini-3.8-flash</span>\nax describe model default-model\nax delete model default-model\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Connection plumbing</span>\nax ctx                                <span class=\"pl-c\"><span class=\"pl-c\">#</span> active kube context and how ax is reaching the control plane</span>\nax tunnel list                        <span class=\"pl-c\"><span class=\"pl-c\">#</span> background tunnels (state lives in ~/.ax/tunnels)</span>\nax tunnel stop\nax version</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Works with <code>kubectx</code></h3></div>\n<p dir=\"auto\"><code>ax</code> follows your active Kubernetes context. Switch clusters and <code>ax</code> resolves and tunnels to that cluster's control plane in the background.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"kubectx staging-cluster\nax get tasks\n\nkubectx prod-cluster\nax get tasks\n\n# Or target a context without switching\nax --context=dev-cluster get tasks\"><pre>kubectx staging-cluster\nax get tasks\n\nkubectx prod-cluster\nax get tasks\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Or target a context without switching</span>\nax --context=dev-cluster get tasks</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Global flags</h3></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Flag</th>\n<th>Description</th>\n<th>Default</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>-a</code>, <code>--atespace</code></td>\n<td>Atespace scope for the command</td>\n<td><code>default</code></td>\n</tr>\n<tr>\n<td><code>-n</code>, <code>--namespace</code></td>\n<td>Kubernetes namespace where AX is installed</td>\n<td><code>ax-system</code></td>\n</tr>\n<tr>\n<td><code>--context</code></td>\n<td>Kubernetes context to target</td>\n<td>active <code>kubectx</code> / <code>current-context</code></td>\n</tr>\n<tr>\n<td><code>--server</code></td>\n<td>Control plane address, bypassing auto-detection</td>\n<td>derived from kube context, or <code>$AX_SERVER</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Apache License 2.0. See <a href=\"https://github.com/google/ax/blob/main/LICENSE\">LICENSE</a> for details.</p>\n</article></div>",
+  "releases": [
+    {
+      "name": "v0.3.0",
+      "tag": "v0.3.0",
+      "url": "https://github.com/google/ax/releases/tag/v0.3.0",
+      "publishedAt": "2026-09-20T03:33:20Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 0,
+      "reactions": 2
+    },
+    {
+      "name": "v0.2.3",
+      "tag": "v0.2.3",
+      "url": "https://github.com/google/ax/releases/tag/v0.2.3",
+      "publishedAt": "2026-08-13T18:52:36Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.2",
+      "tag": "v0.2.2",
+      "url": "https://github.com/google/ax/releases/tag/v0.2.2",
+      "publishedAt": "2026-07-23T01:31:48Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.1",
+      "tag": "v0.2.1",
+      "url": "https://github.com/google/ax/releases/tag/v0.2.1",
+      "publishedAt": "2026-07-22T18:57:14Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 0,
+      "reactions": 0
+    },
+    {
+      "name": "v0.2.0",
+      "tag": "v0.2.0",
+      "url": "https://github.com/google/ax/releases/tag/v0.2.0",
+      "publishedAt": "2026-07-21T17:47:22Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 0,
+      "reactions": 0
+    }
+  ],
+  "firstCommitAt": "2026-01-22T00:09:22Z",
+  "commitActivity": [
+    {
+      "week": "2025-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2025-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-01",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-09",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 20
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 30
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 23
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 83
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 17
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 17
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 18
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 12
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 1
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 11
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 31
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 24
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 3
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 10
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 29
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 13
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 24
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 35
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 25
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 23
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 8
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 9
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 9
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 22
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 29
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 13
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 27
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 17
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 24
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 1
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 12
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 3
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 2
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-09-27",
+      "count": 0
+    },
+    {
+      "date": "2025-09-28",
+      "count": 0
+    },
+    {
+      "date": "2025-09-29",
+      "count": 0
+    },
+    {
+      "date": "2025-09-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-01",
+      "count": 0
+    },
+    {
+      "date": "2025-10-02",
+      "count": 0
+    },
+    {
+      "date": "2025-10-03",
+      "count": 0
+    },
+    {
+      "date": "2025-10-04",
+      "count": 0
+    },
+    {
+      "date": "2025-10-05",
+      "count": 0
+    },
+    {
+      "date": "2025-10-06",
+      "count": 0
+    },
+    {
+      "date": "2025-10-07",
+      "count": 0
+    },
+    {
+      "date": "2025-10-08",
+      "count": 0
+    },
+    {
+      "date": "2025-10-09",
+      "count": 0
+    },
+    {
+      "date": "2025-10-10",
+      "count": 0
+    },
+    {
+      "date": "2025-10-11",
+      "count": 0
+    },
+    {
+      "date": "2025-10-12",
+      "count": 0
+    },
+    {
+      "date": "2025-10-13",
+      "count": 0
+    },
+    {
+      "date": "2025-10-14",
+      "count": 0
+    },
+    {
+      "date": "2025-10-15",
+      "count": 0
+    },
+    {
+      "date": "2025-10-16",
+      "count": 0
+    },
+    {
+      "date": "2025-10-17",
+      "count": 0
+    },
+    {
+      "date": "2025-10-18",
+      "count": 0
+    },
+    {
+      "date": "2025-10-19",
+      "count": 0
+    },
+    {
+      "date": "2025-10-20",
+      "count": 0
+    },
+    {
+      "date": "2025-10-21",
+      "count": 0
+    },
+    {
+      "date": "2025-10-22",
+      "count": 0
+    },
+    {
+      "date": "2025-10-23",
+      "count": 0
+    },
+    {
+      "date": "2025-10-24",
+      "count": 0
+    },
+    {
+      "date": "2025-10-25",
+      "count": 0
+    },
+    {
+      "date": "2025-10-26",
+      "count": 0
+    },
+    {
+      "date": "2025-10-27",
+      "count": 0
+    },
+    {
+      "date": "2025-10-28",
+      "count": 0
+    },
+    {
+      "date": "2025-10-29",
+      "count": 0
+    },
+    {
+      "date": "2025-10-30",
+      "count": 0
+    },
+    {
+      "date": "2025-10-31",
+      "count": 0
+    },
+    {
+      "date": "2025-11-01",
+      "count": 0
+    },
+    {
+      "date": "2025-11-02",
+      "count": 0
+    },
+    {
+      "date": "2025-11-03",
+      "count": 0
+    },
+    {
+      "date": "2025-11-04",
+      "count": 0
+    },
+    {
+      "date": "2025-11-05",
+      "count": 0
+    },
+    {
+      "date": "2025-11-06",
+      "count": 0
+    },
+    {
+      "date": "2025-11-07",
+      "count": 0
+    },
+    {
+      "date": "2025-11-09",
+      "count": 0
+    },
+    {
+      "date": "2025-11-10",
+      "count": 0
+    },
+    {
+      "date": "2025-11-11",
+      "count": 0
+    },
+    {
+      "date": "2025-11-12",
+      "count": 0
+    },
+    {
+      "date": "2025-11-13",
+      "count": 0
+    },
+    {
+      "date": "2025-11-14",
+      "count": 0
+    },
+    {
+      "date": "2025-11-15",
+      "count": 0
+    },
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 20
+    },
+    {
+      "date": "2026-01-11",
+      "count": 1
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 16
+    },
+    {
+      "date": "2026-01-17",
+      "count": 13
+    },
+    {
+      "date": "2026-01-18",
+      "count": 4
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 5
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 14
+    },
+    {
+      "date": "2026-01-25",
+      "count": 10
+    },
+    {
+      "date": "2026-01-26",
+      "count": 16
+    },
+    {
+      "date": "2026-01-27",
+      "count": 9
+    },
+    {
+      "date": "2026-01-28",
+      "count": 20
+    },
+    {
+      "date": "2026-01-29",
+      "count": 14
+    },
+    {
+      "date": "2026-01-30",
+      "count": 14
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 4
+    },
+    {
+      "date": "2026-02-03",
+      "count": 4
+    },
+    {
+      "date": "2026-02-04",
+      "count": 6
+    },
+    {
+      "date": "2026-02-05",
+      "count": 2
+    },
+    {
+      "date": "2026-02-06",
+      "count": 1
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 5
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 1
+    },
+    {
+      "date": "2026-02-12",
+      "count": 3
+    },
+    {
+      "date": "2026-02-13",
+      "count": 8
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 10
+    },
+    {
+      "date": "2026-02-18",
+      "count": 4
+    },
+    {
+      "date": "2026-02-19",
+      "count": 2
+    },
+    {
+      "date": "2026-02-20",
+      "count": 2
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 3
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 1
+    },
+    {
+      "date": "2026-02-26",
+      "count": 6
+    },
+    {
+      "date": "2026-02-27",
+      "count": 2
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 1
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 2
+    },
+    {
+      "date": "2026-03-11",
+      "count": 9
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 13
+    },
+    {
+      "date": "2026-03-17",
+      "count": 1
+    },
+    {
+      "date": "2026-03-18",
+      "count": 7
+    },
+    {
+      "date": "2026-03-19",
+      "count": 8
+    },
+    {
+      "date": "2026-03-20",
+      "count": 2
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 9
+    },
+    {
+      "date": "2026-03-24",
+      "count": 7
+    },
+    {
+      "date": "2026-03-25",
+      "count": 3
+    },
+    {
+      "date": "2026-03-26",
+      "count": 4
+    },
+    {
+      "date": "2026-03-27",
+      "count": 1
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 2
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 1
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 3
+    },
+    {
+      "date": "2026-04-07",
+      "count": 2
+    },
+    {
+      "date": "2026-04-08",
+      "count": 2
+    },
+    {
+      "date": "2026-04-09",
+      "count": 2
+    },
+    {
+      "date": "2026-04-10",
+      "count": 1
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 4
+    },
+    {
+      "date": "2026-04-14",
+      "count": 7
+    },
+    {
+      "date": "2026-04-15",
+      "count": 2
+    },
+    {
+      "date": "2026-04-16",
+      "count": 6
+    },
+    {
+      "date": "2026-04-17",
+      "count": 8
+    },
+    {
+      "date": "2026-04-18",
+      "count": 2
+    },
+    {
+      "date": "2026-04-19",
+      "count": 1
+    },
+    {
+      "date": "2026-04-20",
+      "count": 6
+    },
+    {
+      "date": "2026-04-21",
+      "count": 1
+    },
+    {
+      "date": "2026-04-22",
+      "count": 1
+    },
+    {
+      "date": "2026-04-23",
+      "count": 1
+    },
+    {
+      "date": "2026-04-24",
+      "count": 1
+    },
+    {
+      "date": "2026-04-25",
+      "count": 2
+    },
+    {
+      "date": "2026-04-26",
+      "count": 5
+    },
+    {
+      "date": "2026-04-27",
+      "count": 4
+    },
+    {
+      "date": "2026-04-28",
+      "count": 1
+    },
+    {
+      "date": "2026-04-29",
+      "count": 1
+    },
+    {
+      "date": "2026-04-30",
+      "count": 12
+    },
+    {
+      "date": "2026-05-01",
+      "count": 1
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 6
+    },
+    {
+      "date": "2026-05-05",
+      "count": 7
+    },
+    {
+      "date": "2026-05-06",
+      "count": 14
+    },
+    {
+      "date": "2026-05-07",
+      "count": 4
+    },
+    {
+      "date": "2026-05-08",
+      "count": 4
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 3
+    },
+    {
+      "date": "2026-05-11",
+      "count": 8
+    },
+    {
+      "date": "2026-05-12",
+      "count": 1
+    },
+    {
+      "date": "2026-05-13",
+      "count": 1
+    },
+    {
+      "date": "2026-05-14",
+      "count": 1
+    },
+    {
+      "date": "2026-05-15",
+      "count": 4
+    },
+    {
+      "date": "2026-05-16",
+      "count": 7
+    },
+    {
+      "date": "2026-05-17",
+      "count": 3
+    },
+    {
+      "date": "2026-05-18",
+      "count": 6
+    },
+    {
+      "date": "2026-05-19",
+      "count": 3
+    },
+    {
+      "date": "2026-05-20",
+      "count": 5
+    },
+    {
+      "date": "2026-05-21",
+      "count": 3
+    },
+    {
+      "date": "2026-05-22",
+      "count": 3
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 2
+    },
+    {
+      "date": "2026-05-27",
+      "count": 2
+    },
+    {
+      "date": "2026-05-28",
+      "count": 1
+    },
+    {
+      "date": "2026-05-29",
+      "count": 3
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 2
+    },
+    {
+      "date": "2026-06-01",
+      "count": 4
+    },
+    {
+      "date": "2026-06-02",
+      "count": 1
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 1
+    },
+    {
+      "date": "2026-06-05",
+      "count": 1
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 2
+    },
+    {
+      "date": "2026-06-09",
+      "count": 2
+    },
+    {
+      "date": "2026-06-10",
+      "count": 3
+    },
+    {
+      "date": "2026-06-11",
+      "count": 1
+    },
+    {
+      "date": "2026-06-12",
+      "count": 1
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 4
+    },
+    {
+      "date": "2026-06-16",
+      "count": 3
+    },
+    {
+      "date": "2026-06-17",
+      "count": 12
+    },
+    {
+      "date": "2026-06-18",
+      "count": 3
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 6
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 2
+    },
+    {
+      "date": "2026-06-25",
+      "count": 7
+    },
+    {
+      "date": "2026-06-26",
+      "count": 11
+    },
+    {
+      "date": "2026-06-27",
+      "count": 3
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 6
+    },
+    {
+      "date": "2026-06-30",
+      "count": 2
+    },
+    {
+      "date": "2026-07-01",
+      "count": 5
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 2
+    },
+    {
+      "date": "2026-07-06",
+      "count": 9
+    },
+    {
+      "date": "2026-07-07",
+      "count": 1
+    },
+    {
+      "date": "2026-07-08",
+      "count": 7
+    },
+    {
+      "date": "2026-07-09",
+      "count": 5
+    },
+    {
+      "date": "2026-07-10",
+      "count": 3
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 4
+    },
+    {
+      "date": "2026-07-14",
+      "count": 3
+    },
+    {
+      "date": "2026-07-15",
+      "count": 4
+    },
+    {
+      "date": "2026-07-16",
+      "count": 6
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 24
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 1
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 7
+    },
+    {
+      "date": "2026-08-12",
+      "count": 4
+    },
+    {
+      "date": "2026-08-13",
+      "count": 1
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 3
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
+      "count": 2
+    },
+    {
+      "date": "2026-09-20",
+      "count": 0
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 0
+    },
+    {
+      "date": "2026-09-23",
+      "count": 0
+    },
+    {
+      "date": "2026-09-24",
+      "count": 0
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
+      "count": 0
+    }
+  ],
+  "contributorCount": 10,
+  "recentIssues": [
+    {
+      "number": 364,
+      "title": "`make build-task-runner` fails: `.dockerignore` excludes `bin/`, which `Dockerfile.task-runner` COPYs from",
+      "url": "https://github.com/google/ax/issues/364",
+      "createdAt": "2026-09-22T08:40:24Z",
+      "comments": 0,
+      "labels": [],
+      "author": "parithosh"
+    },
+    {
+      "number": 363,
+      "title": "RCE: unvalidated git repo URL/branch in fetchRepo lead to command execution during workspace setup",
+      "url": "https://github.com/google/ax/issues/363",
+      "createdAt": "2026-09-22T08:05:20Z",
+      "comments": 0,
+      "labels": [],
+      "author": "serval-frenchie"
+    },
+    {
+      "number": 362,
+      "title": "Document the external roadmap",
+      "url": "https://github.com/google/ax/issues/362",
+      "createdAt": "2026-09-22T06:13:09Z",
+      "comments": 1,
+      "labels": [],
+      "author": "rakyll"
+    },
+    {
+      "number": 360,
+      "title": "Task deletion can leave ActorTemplates from later list pages",
+      "url": "https://github.com/google/ax/issues/360",
+      "createdAt": "2026-09-21T23:11:54Z",
+      "comments": 1,
+      "labels": [],
+      "author": "ryo-whaletech"
+    },
+    {
+      "number": 358,
+      "title": "Makefile/ko build targets hardcode linux/amd64, breaking arm64 clusters",
+      "url": "https://github.com/google/ax/issues/358",
+      "createdAt": "2026-09-21T21:12:09Z",
+      "comments": 2,
+      "labels": [],
+      "author": "loafoe"
+    },
+    {
+      "number": 357,
+      "title": "Where should task-scoped authority live for a tree of Tasks?",
+      "url": "https://github.com/google/ax/issues/357",
+      "createdAt": "2026-09-21T16:50:46Z",
+      "comments": 0,
+      "labels": [],
+      "author": "aimable100"
+    }
+  ],
+  "participation": {
+    "all": 625,
+    "owner": 0,
+    "community": 625
+  },
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 10
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 3
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 9
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 8
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 18
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 11
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 13
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 5
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 7
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 6
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 14
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 5
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 9
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 2
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 10
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 16
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 11
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 20
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 9
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 6
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 3
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 7
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 23
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 19
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 6
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 10
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 14
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 6
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 9
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 3
+    }
+  ],
+  "recentCommits": [
+    {
+      "sha": "d8ed0fe",
+      "message": "chore: pin workflow actions and add read permissions",
+      "url": "https://github.com/google/ax/commit/d8ed0fe38bceb7842d3c47817d53d16ccdfcb601",
+      "date": "2026-09-20T03:20:32Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "dc4f36c",
+      "message": "Restructure AX into a general-purpose orchestration layer for agentic tasks",
+      "url": "https://github.com/google/ax/commit/dc4f36cdba647f110b34fd69adf31eb2bec37ca3",
+      "date": "2026-09-20T03:14:43Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "b777313",
+      "message": "Add doctor command to diagnose sidecar, assets, and runtime",
+      "url": "https://github.com/google/ax/commit/b77731302075b3630b200af5e2cf63ac93b5f315",
+      "date": "2026-08-20T05:56:39Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "20760f4",
+      "message": "Remove redundant attached field and use cmd nil-check",
+      "url": "https://github.com/google/ax/commit/20760f4e3df6979bbb329f96bf4f9c0596fe41b3",
+      "date": "2026-08-20T05:27:44Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "34d81b7",
+      "message": "Enable sidecar PID tracking",
+      "url": "https://github.com/google/ax/commit/34d81b78cff0480c3ab372f11cd0239facf82db2",
+      "date": "2026-08-20T05:18:15Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "703a79f",
+      "message": "Bump dependencies to fix the broken build",
+      "url": "https://github.com/google/ax/commit/703a79f2a55def5be183ad7bd54da7c38cc22cc5",
+      "date": "2026-08-13T18:49:13Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "8ee3b7d",
+      "message": "Update dependencies in requirements.txt",
+      "url": "https://github.com/google/ax/commit/8ee3b7d734264b6e3c86b1afe63b08ba7f851284",
+      "date": "2026-08-12T08:01:39Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "2bcc163",
+      "message": "Update project dependencies in requirements.txt",
+      "url": "https://github.com/google/ax/commit/2bcc1637b3c106c16963c5c5464aedb46c6da031",
+      "date": "2026-08-12T07:38:32Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "7f05376",
+      "message": "Display tool calls, and add an animation for loading",
+      "url": "https://github.com/google/ax/commit/7f053762ffee30e8b0931478eac8841649ab757c",
+      "date": "2026-08-12T07:28:09Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    },
+    {
+      "sha": "e4270cf",
+      "message": "Update architectural diagram and labels",
+      "url": "https://github.com/google/ax/commit/e4270cfb7113a62c1b3360d2f2ce4c8b9557c13b",
+      "date": "2026-08-12T07:01:28Z",
+      "author": "rakyll",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/108380?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/.github"
+    },
+    {
+      "name": "assets",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/assets"
+    },
+    {
+      "name": "cmd",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/cmd"
+    },
+    {
+      "name": "deploy",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/deploy"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/docs"
+    },
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/examples"
+    },
+    {
+      "name": "internal",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/internal"
+    },
+    {
+      "name": "pkg",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/pkg"
+    },
+    {
+      "name": "runner",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/google/ax/tree/main/runner"
+    },
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "size": 85,
+      "url": "https://github.com/google/ax/blob/main/.dockerignore"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 151,
+      "url": "https://github.com/google/ax/blob/main/.gitignore"
+    },
+    {
+      "name": ".ko.yaml",
+      "type": "file",
+      "size": 996,
+      "url": "https://github.com/google/ax/blob/main/.ko.yaml"
+    },
+    {
+      "name": "CONTRIBUTING.md",
+      "type": "file",
+      "size": 3363,
+      "url": "https://github.com/google/ax/blob/main/CONTRIBUTING.md"
+    },
+    {
+      "name": "demo.sh",
+      "type": "file",
+      "size": 6237,
+      "url": "https://github.com/google/ax/blob/main/demo.sh"
+    },
+    {
+      "name": "DESIGN.md",
+      "type": "file",
+      "size": 3902,
+      "url": "https://github.com/google/ax/blob/main/DESIGN.md"
+    },
+    {
+      "name": "Dockerfile.task-runner",
+      "type": "file",
+      "size": 1041,
+      "url": "https://github.com/google/ax/blob/main/Dockerfile.task-runner"
+    },
+    {
+      "name": "go.mod",
+      "type": "file",
+      "size": 794,
+      "url": "https://github.com/google/ax/blob/main/go.mod"
+    },
+    {
+      "name": "go.sum",
+      "type": "file",
+      "size": 6620,
+      "url": "https://github.com/google/ax/blob/main/go.sum"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 11358,
+      "url": "https://github.com/google/ax/blob/main/LICENSE"
+    },
+    {
+      "name": "Makefile",
+      "type": "file",
+      "size": 3580,
+      "url": "https://github.com/google/ax/blob/main/Makefile"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 7357,
+      "url": "https://github.com/google/ax/blob/main/README.md"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 330,
+      "title": "fix(antigravity): resume pending executions via empty-input continue (#190)",
+      "url": "https://github.com/google/ax/pull/330",
+      "state": "closed",
+      "updatedAt": "2026-09-20T03:28:38Z",
+      "author": "joycel-github",
+      "draft": false
+    },
+    {
+      "number": 342,
+      "title": "chore(deps): bump google.golang.org/grpc from 1.81.1 to 1.83.1 in the go_modules group across 1 directory",
+      "url": "https://github.com/google/ax/pull/342",
+      "state": "closed",
+      "updatedAt": "2026-09-20T03:28:36Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 343,
+      "title": "Restructure AX into a general-purpose orchestration layer for agentic…",
+      "url": "https://github.com/google/ax/pull/343",
+      "state": "closed",
+      "updatedAt": "2026-09-20T03:28:20Z",
+      "author": "rakyll",
+      "draft": true
+    },
+    {
+      "number": 340,
+      "title": "Bump dependencies to fix the broken build",
+      "url": "https://github.com/google/ax/pull/340",
+      "state": "merged",
+      "updatedAt": "2026-08-13T18:52:06Z",
+      "author": "rakyll",
+      "draft": true
+    },
+    {
+      "number": 319,
+      "title": "docs(readme): correct --last-seq disconnect/resume docs",
+      "url": "https://github.com/google/ax/pull/319",
+      "state": "closed",
+      "updatedAt": "2026-08-12T06:25:59Z",
+      "author": "joycel-github",
+      "draft": true
+    },
+    {
+      "number": 339,
+      "title": "Make the public facing ExecutionService more InteractionsService-like",
+      "url": "https://github.com/google/ax/pull/339",
+      "state": "merged",
+      "updatedAt": "2026-08-12T05:52:10Z",
+      "author": "rakyll",
+      "draft": false
+    },
+    {
+      "number": 316,
+      "title": "skills: add local directory source alongside the registry",
+      "url": "https://github.com/google/ax/pull/316",
+      "state": "merged",
+      "updatedAt": "2026-07-28T20:04:19Z",
+      "author": "zbl94",
+      "draft": false
+    },
+    {
+      "number": 333,
+      "title": "antigravity: remove stray blank line in _has_credentials docstring",
+      "url": "https://github.com/google/ax/pull/333",
+      "state": "closed",
+      "updatedAt": "2026-07-21T01:50:08Z",
+      "author": "joycel-github",
+      "draft": true
+    }
+  ],
+  "workflowRuns": [
+    {
+      "name": "Graph Update: pip in /python/antigravity #1583478301",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486648427",
+      "branch": "main",
+      "updatedAt": "2026-09-20T03:29:24Z"
+    },
+    {
+      "name": "Graph Update: go_modules in /. #1583478302",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486648426",
+      "branch": "main",
+      "updatedAt": "2026-09-20T03:28:54Z"
+    },
+    {
+      "name": "Go",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486647192",
+      "branch": "main",
+      "updatedAt": "2026-09-20T03:29:50Z"
+    },
+    {
+      "name": "Check Binaries",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486485849",
+      "branch": "new-main",
+      "updatedAt": "2026-09-20T03:24:40Z"
+    },
+    {
+      "name": "Google GitHub Admin: Actions Workflow Security Scan",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486485834",
+      "branch": "new-main",
+      "updatedAt": "2026-09-20T03:25:15Z"
+    },
+    {
+      "name": "GitHub Actions Scan",
+      "status": "success",
+      "url": "https://github.com/google/ax/actions/runs/35486485044",
+      "branch": "new-main",
+      "updatedAt": "2026-09-20T03:25:08Z"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "go.mod",
+    "dependencies": [
+      {
+        "name": "github.com/agent-substrate/env",
+        "version": "v0.0.11-0.20260912052224-4468a200b170"
+      },
+      {
+        "name": "github.com/agent-substrate/substrate",
+        "version": "v0.0.0-20260911232748-672533541dbf"
+      },
+      {
+        "name": "github.com/redis/go-redis/v9",
+        "version": "v9.22.0"
+      },
+      {
+        "name": "google.golang.org/grpc",
+        "version": "v1.83.2"
+      },
+      {
+        "name": "google.golang.org/protobuf",
+        "version": "v1.36.12"
+      },
+      {
+        "name": "gopkg.in/yaml.v3",
+        "version": "v3.0.1"
+      }
+    ],
+    "total": 6
+  },
+  "branchCount": 52,
+  "tagCount": 6,
+  "community": {
+    "healthPercentage": 87,
+    "hasCodeOfConduct": true,
+    "hasContributing": true,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 21,
+  "openPRs": 0,
+  "releaseCount": 6,
+  "discussionsEnabled": true,
+  "discussionCount": 4,
+  "discussions": [
+    {
+      "title": "Workload-level provenance metadata for AX agents — LAR-1 integration example",
+      "url": "https://github.com/google/ax/discussions/361",
+      "createdAt": "2026-09-22T05:31:35Z",
+      "comments": 0,
+      "category": "General"
+    },
+    {
+      "title": "Why isn't this built on top of the kubeapi?",
+      "url": "https://github.com/google/ax/discussions/359",
+      "createdAt": "2026-09-21T21:41:19Z",
+      "comments": 0,
+      "category": "General"
+    },
+    {
+      "title": "ETA for release",
+      "url": "https://github.com/google/ax/discussions/45",
+      "createdAt": "2026-06-02T14:49:34Z",
+      "comments": 1,
+      "category": "General"
+    },
+    {
+      "title": "Long running Agent",
+      "url": "https://github.com/google/ax/discussions/220",
+      "createdAt": "2026-06-29T02:32:55Z",
+      "comments": 0,
+      "category": "Q&A"
+    }
+  ],
+  "closedIssues": 151,
+  "mergedPRs": 155,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": true,
+  "securityPolicyUrl": "https://github.com/google/ax/security/policy",
+  "codeOfConduct": {
+    "name": "Other",
+    "url": "https://github.com/google/.github/blob/master/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": {
+    "tag": "v0.3.0",
+    "publishedAt": "2026-09-20T03:33:20Z"
+  },
+  "codeFrequency": [
+    {
+      "week": "2026-01-04",
+      "additions": 803,
+      "deletions": 265
+    },
+    {
+      "week": "2026-01-11",
+      "additions": 1065,
+      "deletions": 1388
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 5450,
+      "deletions": 209
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 1600,
+      "deletions": 1679
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 2454,
+      "deletions": 1366
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 3497,
+      "deletions": 3172
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 2099,
+      "deletions": 934
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 2736,
+      "deletions": 1760
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 506,
+      "deletions": 461
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 2432,
+      "deletions": 1054
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 9483,
+      "deletions": 8613
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 4529,
+      "deletions": 3893
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 430,
+      "deletions": 155
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 3535,
+      "deletions": 1408
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 4346,
+      "deletions": 3161
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 1302,
+      "deletions": 601
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 7129,
+      "deletions": 5721
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 6919,
+      "deletions": 2712
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 2155,
+      "deletions": 1637
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 2538,
+      "deletions": 932
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 1130,
+      "deletions": 118
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 2383,
+      "deletions": 981
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 1973,
+      "deletions": 419
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 3447,
+      "deletions": 4868
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 6723,
+      "deletions": 18013
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 2074,
+      "deletions": 675
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 5221,
+      "deletions": 3527
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 3620,
+      "deletions": 482
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 997,
+      "deletions": 2793
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 465,
+      "deletions": 62
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 2540,
+      "deletions": 2506
+    },
+    {
+      "week": "2026-08-16",
+      "additions": 664,
+      "deletions": 123
+    },
+    {
+      "week": "2026-08-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 16222,
+      "deletions": 20011
+    },
+    {
+      "week": "2026-09-20",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-09-22T11:40:47.681Z",
+  "starHistory": {
+    "points": [
+      {
+        "date": "2026-05-17",
+        "stars": 3834
+      },
+      {
+        "date": "2026-05-24",
+        "stars": 5653
+      },
+      {
+        "date": "2026-05-31",
+        "stars": 6390
+      },
+      {
+        "date": "2026-06-07",
+        "stars": 6587
+      },
+      {
+        "date": "2026-06-14",
+        "stars": 6636
+      },
+      {
+        "date": "2026-06-21",
+        "stars": 6734
+      }
+    ],
+    "source": "gharchive-clickhouse",
+    "scale": 49.153,
+    "sampledAt": "2026-09-22T11:41:33.420Z"
+  }
+}
