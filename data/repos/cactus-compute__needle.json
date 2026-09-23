@@ -240,6 +240,11 @@
       "date": "2026-09-20",
       "stars": 11881,
       "forks": 763
+    },
+    {
+      "date": "2026-09-23",
+      "stars": 12333,
+      "forks": 808
     }
   ],
   "trendingHistory": [
@@ -514,30 +519,30 @@
     "tinyml",
     "tool-calling"
   ],
-  "stars": 11881,
-  "forks": 763,
-  "watchers": 65,
-  "openIssues": 29,
+  "stars": 12333,
+  "forks": 808,
+  "watchers": 67,
+  "openIssues": 28,
   "createdAt": "2026-02-24T04:50:47Z",
-  "pushedAt": "2026-09-20T16:02:04Z",
+  "pushedAt": "2026-09-23T05:26:36Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-20T20:47:57.518Z",
+  "updatedAt": "2026-09-23T13:14:52.378Z",
   "languages": {
-    "Python": 288380,
+    "Python": 358292,
     "JavaScript": 20802,
     "CSS": 13162,
     "HTML": 5857,
     "Shell": 1054,
     "Batchfile": 646
   },
-  "readmeExcerpt": "\n\n# Needle 2\n\nNeedle 2 is an open 45M-parameter model for tool calling, device use and structured extraction. The whole model is a single 14MB binary that runs a full session in about 28MB of RAM. It is built on our Simple Attention Network findings, compressed to CQ2-bit with Cactus Quants, and baked into its own engine. On the benchmarks below, Needle 2 trades wins with other small models like FunctionGemma 270M, LFM2.5 230M and Apple FM, at 5x to 70x smaller, and 2 bits against their f16.\n\nThis repository is the Python package: inference, LoRA fine-tuning, and export. `pip install cactus-needle`, describe your tools, and call them from Python. The inference engine is fetched once from Hugging Face and cached; there is nothing else to build, and offline setup for air gapped devices is covered in [doc/apis.md](doc/apis.md).\n\n- **Self-contained**: weights baked into a single 14MB engine; no separate model files to manage, and inference does no network.\n- **Simple contract**: tool calls come back as structured data, text in, JSON out; a byte-level grammar compiled from your schemas constrains every token.\n- **Confidence-gated**: every response carries a calibrated confidence score from a learned head; set a threshold, act above it, escalate below it.\n- **Tool retrieval**: declare a large catalogue and a built-in retrieval head renders only the top five tools per turn, with the grammar constrained to that subset.\n- **Bounded memory**: a 256-token sliding window with the tools pinned as KV sinks, so total memory stays near 28MB no matter how long the conversation runs.\n\nWeights: [huggingface.co/Cactus-Compute/needle2](https://huggingface.co/Cactus-Compute/needle2) &middot; source: [github.com/cactus-compute/needle](https://github.com/cactus-compute/needle).\n\n\n\n## Simple Attention Network\n\nNeedle 2 is a Simple Attention Network, our dense small-model recipe: a Hadamard MLP in place of the FFN, GQA attention, engram key-value memory, and multi-lane hyper-connections. See the paper for the design and ablations: [arXiv:2607.18363](https://arxiv.org/abs/2607.18363).\n\n\n\nEach block carries its update rule. Here x̂ is the RMS-normalised flattening of the four residual streams, H the orthonormal Walsh-Hadamard transform (a fixed matrix, applied in n log n time with no weights to read), (kₜ, vₜ) rows gathered from hashed n-gram tables, and P the doubly-stochastic normalisation of the routing logits A, computed by Sinkhorn iteration; a, b, g and all σ-gates are learned and input-dependent. Both attention and MLP residuals are sandwich-normed and gated, the engram sites fire at two layers, and decoding is constrained by a byte-level grammar compiled from the declared schemas.\n\n## Quickstart\n\n```sh\npip install cactus-needle\n```\n\nThe runtime package does not install the training stack. Add the `train` extra\nwhen using fine-tuning or checkpoint export:\n\n```sh\npip install \"cactus-needle[train]\"\n```\n\nNeedle reads your tool descriptions to decide what to call and how to fill arguments, so describing them well is the whole game.\n\n**Simple**: decorate a function. The signature gives the argument types, the docstring is the tool description, and `run()` completes the loop: model picks the call, Needle executes your function, feeds the result back, and returns the final response with the executed tool results attached as `results`.\n\n```python\nimport needle\n\n@needle.tool\ndef get_weather(city: str):\n    \"Get the current weather for a city.\"\n    return {\"city\": city, \"temp_c\": 27, \"sky\": \"clear\"}\n\nagent = needle.Needle(tools=[get_weather])\nprint(agent.run(\"what's it like in Lagos right now?\")[\"results\"])\n# [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]\n```\n\n**Extraction**: to pull structured data out of text, declare the shape and call `extract()`. Pass a Pydantic model and you get a typed object back.\n\n```python\nfrom pydantic import BaseModel\n\nclass Invoice(BaseModel):\n    vendor: str\n    total: float\n    due_date: str\n\ninvoice = needle.extract(\"Invoice from Acme Corp, $1,200.00, due 2026-09-01\", Invoice)\nprint(invoice.vendor, invoice.total)   # -> Acme Corp 1200.0\n```\n\nPer argument descriptions and choices, value constraints compiled into the decode grammar, raw JSON schemas, driving the loop with `complete()`, the response contract, system facts, tool retrieval, and confidence gating are all covered in [doc/apis.md](doc/apis.md).\n\n## Playground\n\nTry any model in the browser: pick a preset, edit the tools or prompt, and Run. Follow-up queries continue the same conversation.\n\n```sh\nneedle playground                      # base model, http://127.0.0.1:7860\nneedle playground --weights my.cact    # a tuned model\n```\n\nThe server downloads and initializes the model before serving, so the first query is instant. The **Finetune on these tools** button runs the fine-tuning pipeline below from the UI and hands back a downloadable `.cact`.\n\n## Environments\n\nReady-made tool surfaces in `needle.environments`: `smart_home`, `media_player`, `productivity`, `wearable`, `kitchen_appliance`, and `data_capture`. Each is a hand-curated set of tools whose enums, bounds, and descriptions map cleanly onto Needle's constrained decoding, with a ready agent and a frozen acceptance suite.\n\n```python\nfrom needle.environments import smart_home\n\nsmart_home.agent.complete(\"dim the study lights to 30 percent\")\nsmart_home.run_tests()\n```\n\n`python -m needle.environments.smart_home` runs a suite from the shell. To adapt an environment to your product, swap the `Literal` values (rooms, contacts, categories) for your own and keep the shapes: closed sets as enums, bounded numbers, verbatim copy for free text, five tools or fewer. The full tool surfaces and the suite contract are in [doc/environments.md](doc/environments.md).\n\n## Fine-tuning\n\nNeedle fine-tunes with LoRA on the frozen base and merges the adapter at export, so a run is cheap and the tuned model is still a single `.cact` that runs on the same engine. The workflow is: (optionally) synthesize data, LoRA fine-tune, then build a tuned `.cact`. See [doc/finetuning.md](doc/finetuning.md) for dataset sizing, reading the loss curve, and troubleshooting.\n\n**Data format.** A JSONL file, one example per line. `reasoning` is optional; an off-topic example has `answers: []`.\n\n```json\n{\"query\": \"dim the kitchen to 10\", \"tools\": [{\"name\": \"set_lights\", \"parameters\": {\"type\": \"object\", \"properties\": {\"room\": {\"type\": \"string\"}, \"brightness\": {\"type\": \"integer\"}}, \"required\": [\"room\"]}}], \"answers\": [{\"name\": \"set_lights\", \"arguments\": {\"room\": \"kitchen\", \"brightness\": 10}}], \"reasoning\": \"'kitchen' -> room; 'dim to 10' -> brightness 10\"}\n```\n\n**1. Synthesize data (optional).** Needs `OPENROUTER_API_KEY`. Seed from a tool schema file, or expand an existing set:\n\n```sh\nexport OPENROUTER_API_KEY=sk-or-...\nneedle generate-data --tools my_tools.json --num-samples 500 --output data.jsonl\nneedle generate-data --augment data.jsonl --num-samples 500      # expand an existing JSONL\n```\n\nSet `OPENROUTER_URL` to use an OpenAI-compatible gateway instead of the default OpenRouter endpoint.\n\n**2. LoRA fine-tune.** The base checkpoint auto-downloads from Hugging Face if you do not pass `--checkpoint`. `--generate N` first synthesizes N more examples from the tools in your data (also needs `OPENROUTER_API_KEY`).\n\n```sh\nneedle finetune data.jsonl --epochs 10\nneedle finetune data.jsonl --epochs 10 --generate 300 --lora-rank 16 --lora-alpha 32\n```\n\nKey options: `--epochs` (default 3), `--lora-rank` (16), `--lora-alpha` (32), `--lr` (1e-4), `--batch-size` (16), `--max-len` (1024), `--val-split` (0.1), `--checkpoint <base.pkl>`, `--checkpoint-dir <dir>` (default `checkpoints`), `--out <adapter.pkl>`, `--generate <n>`, `--model <id>` (default `deepseek/deepseek-v4-flash`), and `--workers <n>` (default 8). `--generate` uses the configured OpenRouter endpoint to synthesize extra examples before training. The adapter is written to `checkpoints/needle_lora.pkl` by default. A validation loss prints each epoch from the held out split.\n\nTraining is plain JAX and runs on any accelerator jax supports. On an NVIDIA machine install the CUDA build and the same command trains on the GPU:\n\n```sh\npip install \"cactus-needle[train,gpu]\"\n```\n\nOn Apple Silicon the `metal` extra trains on the GPU:\n\n```sh\npip install \"cactus-needle[train,metal]\"\n```\n\n**3. Build a tuned `.cact`.** Merge the adapter into the base and quantize. The base auto-downloads if absent.\n\n```sh\nneedle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl --out my_needle.cact\n```\n\nAdd `--bits 2` for a smaller model (by default the export follows the checkpoint's declared per-layer bit map, falling back to 4 when the checkpoint declares none), or set `NEEDLE_HF_REPO=<you>/<model>` and pass `--upload` to publish the `.cact`. The counterpart `needle download <you>/<model>/my_needle.cact` pulls a published archive on any machine, and `needle download <platform>` (e.g. `macos-arm64`) fetches that platform's engine runner.\n\n**4. Run it.** The engine is weights-agnostic, so a tuned `.cact` runs on it directly - no recompilation:\n\n```python\nimport needle\nagent = needle.Needle(weights=\"my_needle.cact\", tools=[...])\nagent.run(\"...\")\n```\n\n## Telemetry\n\nCactus Compute collects strictly anonymous usage telemetry (function name, package version, OS — never your prompts, outputs, or data); opt out with `NEEDLE_TELEMETRY=0` or `DO_NOT_TRACK=1`.\n\n## Citation\n\nNeedle 2 is built by the Cactus Compute team. If you use it in your work, please cite:\n\n```bibtex\n@misc{needle2_2026,\n  title        = {Needle 2: A 45M-Parameter Foundation Tool-Calling Model for Tiny Devices},\n  author       = {Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and\n                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.},\n  year         = {2026},\n  organization = {Cactus Compute, Inc.},\n  howpublished = {\\url{https://github.com/cactus-compute/needle}}\n}\n```\n\nReach out on founders@cactuscompute.com for partnerships, collaborations, synergies and deploying Needle2 in your product.\n",
+  "readmeExcerpt": "\n\nA foundation model for mobiles, wearables, robots, smart home, automotive and microcontrollers. The whole model is a single 8-29 MB binary built on our Simple Attention Network, and we trade general chat capacity to beat models 10x its size on mobile tool calls and match 2-3x bigger models on extraction.\n\n- **Tool calls**: given the functions your app exposes, Needle picks the right ones and fills every argument from what the user said. Ask for two things and you get two calls in order; ask for something no tool covers and you get an empty list, not a guess.\n- **Structured extraction**: declare a shape, hand over messy text, get typed fields back: an invoice, a booking, a notification, a form. The decode grammar guarantees the output parses, and extraction generalises to classification.\n- **Text embedding**: the same model returns a vector for a sentence, so an app can search, match and route locally.\n\n\n\nNeedle 3 is a Laddered Simple Attention Network: a Monarch Hadamard MLP in place of the FFN, GQA attention with causal conv taps, engram n-gram memory read by gather, and multi-lane hyper-connections, trained so that every depth from 2 to 20 layers is a deployable model. Most of its parameters sit in the engram, so the 121M model does the arithmetic of a 50M one. A byte-level grammar compiled from your schemas constrains every token, and every response carries a calibrated confidence score from a learned head. The architecture diagram is on the [release page](https://cactuscompute.com/needle).\n\n## Benchmarks\n\nTool calling is exact-match accuracy on the full test splits, extraction is field micro-F1 on the full test splits.\n\n\n\nThe interactive frontier plot, the architecture and the fine-tuning results are at [cactuscompute.com/needle](https://cactuscompute.com/needle).\n\n## Get started\n\n```sh\npip install cactus-needle\n```\n\nTry it in the browser at [cactuscompute.com/needle](https://cactuscompute.com/needle); the weights and every platform engine are on [Hugging Face](https://huggingface.co/Cactus-Compute/needle3).\n\nDecorate a function: the signature gives the argument types, the docstring is the tool description, and `run()` completes the loop, executing your function and returning its results.\n\n```python\nimport needle\n\n@needle.tool\ndef get_weather(city: str):\n    \"Get the current weather for a city.\"\n    return {\"city\": city, \"temp_c\": 27, \"sky\": \"clear\"}\n\nagent = needle.Needle(tools=[get_weather])\nprint(agent.run(\"what's it like in Lagos right now?\")[\"results\"])\n# [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]\n```\n\nEvery turn returns one JSON object with `function_calls`, the model's `reasoning` and a calibrated `confidence`; an off-topic request returns an empty list rather than a guess. `needle.Needle(tools=[...], generation=2)` keeps running Needle 2 for existing deployments.\n\n## Guides\n\n- [How to design tools for Needle 3](https://cactuscompute.com/blog/designing-tools-for-needle): one tool per action, names users would say, formats in descriptions, constraints in the grammar, triggers.\n- [Leveraging Needle's confidence](https://cactuscompute.com/blog/needle-confidence): what the score measures, what the engine withholds, and routing on act, confirm or refuse.\n- [Structured JSON extraction with Needle](https://cactuscompute.com/blog/structured-extraction-with-needle): the record as the only tool, typed results, classification with enums.\n- [Fine-tuning Needle](https://cactuscompute.com/blog/finetuning-needle): the data format, the commands, reading the loss, sizing the dataset.\n- [Needle Python docs](https://cactuscompute.com/blog/needle-python-docs): the API, the response shape, the behaviour contract, system facts, tool retrieval, offline devices, environments, the CLI.\n- [What devices are supported on Needle](https://cactuscompute.com/blog/needle-supported-devices): every platform folder, the CLI runner, the C API, the browser, WASI, air-gapped setup.\n- [The .cact format](https://cactuscompute.com/blog/cact-format): the file the engine maps and reads in place, Cactus Quants at 2.125 bits per weight, and how to parse it yourself.\n- [Porting Needle 3](https://cactuscompute.com/blog/porting-needle): notes for writing your own runtime, the oracle to test against, the tensor order the container promises, the prompt on the wire, the ladder rule, retrieval with `needle_embed`.\n\n`llms.txt` in this repo carries the same reference for AI coding assistants.\n\n## Customisation\n\nNeedle was designed to be customised. Its capacity is a ladder, and a subnetwork as small as 2 layers, fine-tuned on one product's tools, runs optimally on devices far smaller than the full model needs. Fine-tuning on DroidCall lifts every subnetwork by 18 to 36 points, and from 4 layers up the tuned subnetwork passes DeepSeek V4 Flash, starting at 29M parameters.\n\n\n\nTwo ways to fine-tune, from the same package:\n\n| | Local, `needle finetune` | Platform, `needle platform finetune` |\n| --- | --- | --- |\n| What trains | LoRA adapters on the attention projections, base frozen, merged at export | The full model, every depth from 2 layers up |\n| What it keeps | Your data only | Your data reinforced with Needle's original dataset, so nothing already learned is unlearned |\n| Confidence | Head untouched; `confidence` is `None` | Head fine-tuned with the model, calibrated on your tools |\n| Precision | 4-bit | 2-bit, the same post-training as the shipped model |\n| Data | Your JSONL, `query`/`answers` or chat format | Yours, or generated from your tool definitions, 100 to 10,000 examples per run |\n| Scores | Validation loss | Validation and test accuracy for every depth |\n| Compute | Your machine, JAX on CPU, CUDA or Metal | Cactus GPUs |\n| Runs from | The CLI | The CLI, Python, the [dashboard](https://cactuscompute.com/dashboard), or a coding agent holding your key |\n\nLocal:\n\n```sh\npip install \"cactus-needle[train]\"\nneedle finetune data.jsonl --epochs 10 --out adapter.safetensors\nneedle build --lora adapter.safetensors --layers 8 --out tuned.cact\n```\n\nPlatform, with a key from the [console](https://cactuscompute.com/dashboard/api-keys) in `NEEDLE_API_KEY`. One command uploads the files, trains and scores every size, and downloads the `.cact` files; once a job is submitted it can also be followed on the dashboard:\n\n```sh\nexport NEEDLE_API_KEY=needle_ft_...\nneedle platform generate --tools tools.json --examples 1000 --out ./data\nneedle platform finetune data/train.jsonl data/validation.jsonl data/test.jsonl --suffix smart-home --out ./models\n```\n\n```python\nfrom needle.platform import Platform\n\nclient = Platform()\njob = client.wait(client.finetune([\"train.jsonl\"], [\"validation.jsonl\"], [\"test.jsonl\"], suffix=\"smart-home\"))\npaths = client.download(job[\"fine_tuned_model\"], \"models\", depth=8)\n```\n\nOr hand the key to Claude Code or Codex with [cactuscompute.com/llms.txt](https://cactuscompute.com/llms.txt) and let the agent run the loop. `needle platform jobs | models | files | billing` list what the account holds, `needle download model-<id>` fetches a model by id, and the [fine-tuning guide](https://cactuscompute.com/blog/finetuning-needle) covers the data format and how to read the scores.\n\n## Deploy\n\nEvery deployment target ships a prebuilt engine under 1 MB that loads the `needle3.cact` weights at start. `needle build --platform <folder> [--layers N]` fetches that engine and puts the weights beside it.\n\n\n\n```sh\nneedle build --platform macos-arm64\nneedle build --platform linux-arm64 --layers 8 --out ./pi\n./macos-arm64/needle --model needle3.cact --tools tools.json --serve\n```\n\nThe [devices guide](https://cactuscompute.com/blog/needle-supported-devices) lists every folder and what ships in it.\n\nBy default, telemetry is turned on in the binary. To turn it off, set environment variables NEEDLE_TELEMETRY=0 and DO_NOT_TRACK=1. \n\n## Citation\n\nNeedle is built by the Cactus Compute team. If you use it in your work, please cite:\n\n```bibtex\n@misc{needle3_2026,\n  title        = {Needle: Automation Foundation Model for Tiny Devices},\n  author       = {Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and\n                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.},\n  year         = {2026},\n  organization = {Cactus Compute, Inc.},\n  howpublished = {\\url{https://github.com/cactus-compute/needle}}\n}\n```\n",
   "contributors": [
     {
       "login": "HenryNdubuaku",
       "url": "https://github.com/HenryNdubuaku",
       "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4",
-      "contributions": 241
+      "contributions": 256
     },
     {
       "login": "ncylich",
@@ -546,16 +551,16 @@
       "contributions": 9
     },
     {
+      "login": "kar-m",
+      "url": "https://github.com/kar-m",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/52249278?v=4",
+      "contributions": 6
+    },
+    {
       "login": "LeonSGP43",
       "url": "https://github.com/LeonSGP43",
       "avatarUrl": "https://avatars.githubusercontent.com/u/154585401?v=4",
       "contributions": 6
-    },
-    {
-      "login": "kar-m",
-      "url": "https://github.com/kar-m",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/52249278?v=4",
-      "contributions": 5
     },
     {
       "login": "justinl66",
@@ -579,24 +584,24 @@
       "login": "SomSamantray",
       "url": "https://github.com/SomSamantray",
       "avatarUrl": "https://avatars.githubusercontent.com/u/92726151?v=4",
-      "contributions": 2
+      "contributions": 3
+    },
+    {
+      "login": "kevin9327",
+      "url": "https://github.com/kevin9327",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/5299031?v=4",
+      "contributions": 3
     },
     {
       "login": "rshemet",
       "url": "https://github.com/rshemet",
       "avatarUrl": "https://avatars.githubusercontent.com/u/42696921?v=4",
       "contributions": 2
-    },
-    {
-      "login": "AntonOsika",
-      "url": "https://github.com/AntonOsika",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/4467025?v=4",
-      "contributions": 1
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/banner.png\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/banner.png\" alt=\"Needle\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Needle 2</h1></div>\n<p dir=\"auto\">Needle 2 is an open 45M-parameter model for tool calling, device use and structured extraction. The whole model is a single 14MB binary that runs a full session in about 28MB of RAM. It is built on our Simple Attention Network findings, compressed to CQ2-bit with Cactus Quants, and baked into its own engine. On the benchmarks below, Needle 2 trades wins with other small models like FunctionGemma 270M, LFM2.5 230M and Apple FM, at 5x to 70x smaller, and 2 bits against their f16.</p>\n<p dir=\"auto\">This repository is the Python package: inference, LoRA fine-tuning, and export. <code>pip install cactus-needle</code>, describe your tools, and call them from Python. The inference engine is fetched once from Hugging Face and cached; there is nothing else to build, and offline setup for air gapped devices is covered in <a href=\"https://github.com/cactus-compute/needle/blob/main/doc/apis.md\">doc/apis.md</a>.</p>\n<ul dir=\"auto\">\n<li><strong>Self-contained</strong>: weights baked into a single 14MB engine; no separate model files to manage, and inference does no network.</li>\n<li><strong>Simple contract</strong>: tool calls come back as structured data, text in, JSON out; a byte-level grammar compiled from your schemas constrains every token.</li>\n<li><strong>Confidence-gated</strong>: every response carries a calibrated confidence score from a learned head; set a threshold, act above it, escalate below it.</li>\n<li><strong>Tool retrieval</strong>: declare a large catalogue and a built-in retrieval head renders only the top five tools per turn, with the grammar constrained to that subset.</li>\n<li><strong>Bounded memory</strong>: a 256-token sliding window with the tools pinned as KV sinks, so total memory stays near 28MB no matter how long the conversation runs.</li>\n</ul>\n<p dir=\"auto\">Weights: <a href=\"https://huggingface.co/Cactus-Compute/needle2\" rel=\"nofollow\">huggingface.co/Cactus-Compute/needle2</a> · source: <a href=\"https://github.com/cactus-compute/needle\">github.com/cactus-compute/needle</a>.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/frontier.png\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/frontier.png\" alt=\"Size-quality frontier: mobile-class and below\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Simple Attention Network</h2></div>\n<p dir=\"auto\">Needle 2 is a Simple Attention Network, our dense small-model recipe: a Hadamard MLP in place of the FFN, GQA attention, engram key-value memory, and multi-lane hyper-connections. See the paper for the design and ablations: <a href=\"https://arxiv.org/abs/2607.18363\" rel=\"nofollow\">arXiv:2607.18363</a>.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/architecture.png\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/architecture.png\" alt=\"Simple Attention Network architecture\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Each block carries its update rule. Here x̂ is the RMS-normalised flattening of the four residual streams, H the orthonormal Walsh-Hadamard transform (a fixed matrix, applied in n log n time with no weights to read), (kₜ, vₜ) rows gathered from hashed n-gram tables, and P the doubly-stochastic normalisation of the routing logits A, computed by Sinkhorn iteration; a, b, g and all σ-gates are learned and input-dependent. Both attention and MLP residuals are sandwich-normed and gated, the engram sites fire at two layers, and decoding is constrained by a byte-level grammar compiled from the declared schemas.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quickstart</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install cactus-needle\"><pre>pip install cactus-needle</pre></div>\n<p dir=\"auto\">The runtime package does not install the training stack. Add the <code>train</code> extra\nwhen using fine-tuning or checkpoint export:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install &quot;cactus-needle[train]&quot;\"><pre>pip install <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>cactus-needle[train]<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">Needle reads your tool descriptions to decide what to call and how to fill arguments, so describing them well is the whole game.</p>\n<p dir=\"auto\"><strong>Simple</strong>: decorate a function. The signature gives the argument types, the docstring is the tool description, and <code>run()</code> completes the loop: model picks the call, Needle executes your function, feeds the result back, and returns the final response with the executed tool results attached as <code>results</code>.</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import needle\n\n@needle.tool\ndef get_weather(city: str):\n    &quot;Get the current weather for a city.&quot;\n    return {&quot;city&quot;: city, &quot;temp_c&quot;: 27, &quot;sky&quot;: &quot;clear&quot;}\n\nagent = needle.Needle(tools=[get_weather])\nprint(agent.run(&quot;what's it like in Lagos right now?&quot;)[&quot;results&quot;])\n# [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">needle</span>\n\n<span class=\"pl-en\">@<span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">tool</span></span>\n<span class=\"pl-k\">def</span> <span class=\"pl-en\">get_weather</span>(<span class=\"pl-s1\">city</span>: <span class=\"pl-smi\">str</span>):\n    <span class=\"pl-s\">\"Get the current weather for a city.\"</span>\n    <span class=\"pl-k\">return</span> {<span class=\"pl-s\">\"city\"</span>: <span class=\"pl-s1\">city</span>, <span class=\"pl-s\">\"temp_c\"</span>: <span class=\"pl-c1\">27</span>, <span class=\"pl-s\">\"sky\"</span>: <span class=\"pl-s\">\"clear\"</span>}\n\n<span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">Needle</span>(<span class=\"pl-s1\">tools</span><span class=\"pl-c1\">=</span>[<span class=\"pl-s1\">get_weather</span>])\n<span class=\"pl-en\">print</span>(<span class=\"pl-s1\">agent</span>.<span class=\"pl-c1\">run</span>(<span class=\"pl-s\">\"what's it like in Lagos right now?\"</span>)[<span class=\"pl-s\">\"results\"</span>])\n<span class=\"pl-c\"># [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]</span></pre></div>\n<p dir=\"auto\"><strong>Extraction</strong>: to pull structured data out of text, declare the shape and call <code>extract()</code>. Pass a Pydantic model and you get a typed object back.</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from pydantic import BaseModel\n\nclass Invoice(BaseModel):\n    vendor: str\n    total: float\n    due_date: str\n\ninvoice = needle.extract(&quot;Invoice from Acme Corp, $1,200.00, due 2026-09-01&quot;, Invoice)\nprint(invoice.vendor, invoice.total)   # -&gt; Acme Corp 1200.0\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">pydantic</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">BaseModel</span>\n\n<span class=\"pl-k\">class</span> <span class=\"pl-v\">Invoice</span>(<span class=\"pl-v\">BaseModel</span>):\n    <span class=\"pl-s1\">vendor</span>: <span class=\"pl-smi\">str</span>\n    <span class=\"pl-s1\">total</span>: <span class=\"pl-smi\">float</span>\n    <span class=\"pl-s1\">due_date</span>: <span class=\"pl-smi\">str</span>\n\n<span class=\"pl-s1\">invoice</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">extract</span>(<span class=\"pl-s\">\"Invoice from Acme Corp, $1,200.00, due 2026-09-01\"</span>, <span class=\"pl-v\">Invoice</span>)\n<span class=\"pl-en\">print</span>(<span class=\"pl-s1\">invoice</span>.<span class=\"pl-c1\">vendor</span>, <span class=\"pl-s1\">invoice</span>.<span class=\"pl-c1\">total</span>)   <span class=\"pl-c\"># -&gt; Acme Corp 1200.0</span></pre></div>\n<p dir=\"auto\">Per argument descriptions and choices, value constraints compiled into the decode grammar, raw JSON schemas, driving the loop with <code>complete()</code>, the response contract, system facts, tool retrieval, and confidence gating are all covered in <a href=\"https://github.com/cactus-compute/needle/blob/main/doc/apis.md\">doc/apis.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Playground</h2></div>\n<p dir=\"auto\">Try any model in the browser: pick a preset, edit the tools or prompt, and Run. Follow-up queries continue the same conversation.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"needle playground                      # base model, http://127.0.0.1:7860\nneedle playground --weights my.cact    # a tuned model\"><pre>needle playground                      <span class=\"pl-c\"><span class=\"pl-c\">#</span> base model, http://127.0.0.1:7860</span>\nneedle playground --weights my.cact    <span class=\"pl-c\"><span class=\"pl-c\">#</span> a tuned model</span></pre></div>\n<p dir=\"auto\">The server downloads and initializes the model before serving, so the first query is instant. The <strong>Finetune on these tools</strong> button runs the fine-tuning pipeline below from the UI and hands back a downloadable <code>.cact</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Environments</h2></div>\n<p dir=\"auto\">Ready-made tool surfaces in <code>needle.environments</code>: <code>smart_home</code>, <code>media_player</code>, <code>productivity</code>, <code>wearable</code>, <code>kitchen_appliance</code>, and <code>data_capture</code>. Each is a hand-curated set of tools whose enums, bounds, and descriptions map cleanly onto Needle's constrained decoding, with a ready agent and a frozen acceptance suite.</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from needle.environments import smart_home\n\nsmart_home.agent.complete(&quot;dim the study lights to 30 percent&quot;)\nsmart_home.run_tests()\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-s1\">environments</span> <span class=\"pl-k\">import</span> <span class=\"pl-s1\">smart_home</span>\n\n<span class=\"pl-s1\">smart_home</span>.<span class=\"pl-c1\">agent</span>.<span class=\"pl-c1\">complete</span>(<span class=\"pl-s\">\"dim the study lights to 30 percent\"</span>)\n<span class=\"pl-s1\">smart_home</span>.<span class=\"pl-c1\">run_tests</span>()</pre></div>\n<p dir=\"auto\"><code>python -m needle.environments.smart_home</code> runs a suite from the shell. To adapt an environment to your product, swap the <code>Literal</code> values (rooms, contacts, categories) for your own and keep the shapes: closed sets as enums, bounded numbers, verbatim copy for free text, five tools or fewer. The full tool surfaces and the suite contract are in <a href=\"https://github.com/cactus-compute/needle/blob/main/doc/environments.md\">doc/environments.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Fine-tuning</h2></div>\n<p dir=\"auto\">Needle fine-tunes with LoRA on the frozen base and merges the adapter at export, so a run is cheap and the tuned model is still a single <code>.cact</code> that runs on the same engine. The workflow is: (optionally) synthesize data, LoRA fine-tune, then build a tuned <code>.cact</code>. See <a href=\"https://github.com/cactus-compute/needle/blob/main/doc/finetuning.md\">doc/finetuning.md</a> for dataset sizing, reading the loss curve, and troubleshooting.</p>\n<p dir=\"auto\"><strong>Data format.</strong> A JSONL file, one example per line. <code>reasoning</code> is optional; an off-topic example has <code>answers: []</code>.</p>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{&quot;query&quot;: &quot;dim the kitchen to 10&quot;, &quot;tools&quot;: [{&quot;name&quot;: &quot;set_lights&quot;, &quot;parameters&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;room&quot;: {&quot;type&quot;: &quot;string&quot;}, &quot;brightness&quot;: {&quot;type&quot;: &quot;integer&quot;}}, &quot;required&quot;: [&quot;room&quot;]}}], &quot;answers&quot;: [{&quot;name&quot;: &quot;set_lights&quot;, &quot;arguments&quot;: {&quot;room&quot;: &quot;kitchen&quot;, &quot;brightness&quot;: 10}}], &quot;reasoning&quot;: &quot;'kitchen' -&gt; room; 'dim to 10' -&gt; brightness 10&quot;}\"><pre>{<span class=\"pl-ent\">\"query\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>dim the kitchen to 10<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"tools\"</span>: [{<span class=\"pl-ent\">\"name\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>set_lights<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"parameters\"</span>: {<span class=\"pl-ent\">\"type\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>object<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"properties\"</span>: {<span class=\"pl-ent\">\"room\"</span>: {<span class=\"pl-ent\">\"type\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>string<span class=\"pl-pds\">\"</span></span>}, <span class=\"pl-ent\">\"brightness\"</span>: {<span class=\"pl-ent\">\"type\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>integer<span class=\"pl-pds\">\"</span></span>}}, <span class=\"pl-ent\">\"required\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>room<span class=\"pl-pds\">\"</span></span>]}}], <span class=\"pl-ent\">\"answers\"</span>: [{<span class=\"pl-ent\">\"name\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>set_lights<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"arguments\"</span>: {<span class=\"pl-ent\">\"room\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>kitchen<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"brightness\"</span>: <span class=\"pl-c1\">10</span>}}], <span class=\"pl-ent\">\"reasoning\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>'kitchen' -&gt; room; 'dim to 10' -&gt; brightness 10<span class=\"pl-pds\">\"</span></span>}</pre></div>\n<p dir=\"auto\"><strong>1. Synthesize data (optional).</strong> Needs <code>OPENROUTER_API_KEY</code>. Seed from a tool schema file, or expand an existing set:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export OPENROUTER_API_KEY=sk-or-...\nneedle generate-data --tools my_tools.json --num-samples 500 --output data.jsonl\nneedle generate-data --augment data.jsonl --num-samples 500      # expand an existing JSONL\"><pre><span class=\"pl-k\">export</span> OPENROUTER_API_KEY=sk-or-...\nneedle generate-data --tools my_tools.json --num-samples 500 --output data.jsonl\nneedle generate-data --augment data.jsonl --num-samples 500      <span class=\"pl-c\"><span class=\"pl-c\">#</span> expand an existing JSONL</span></pre></div>\n<p dir=\"auto\">Set <code>OPENROUTER_URL</code> to use an OpenAI-compatible gateway instead of the default OpenRouter endpoint.</p>\n<p dir=\"auto\"><strong>2. LoRA fine-tune.</strong> The base checkpoint auto-downloads from Hugging Face if you do not pass <code>--checkpoint</code>. <code>--generate N</code> first synthesizes N more examples from the tools in your data (also needs <code>OPENROUTER_API_KEY</code>).</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"needle finetune data.jsonl --epochs 10\nneedle finetune data.jsonl --epochs 10 --generate 300 --lora-rank 16 --lora-alpha 32\"><pre>needle finetune data.jsonl --epochs 10\nneedle finetune data.jsonl --epochs 10 --generate 300 --lora-rank 16 --lora-alpha 32</pre></div>\n<p dir=\"auto\">Key options: <code>--epochs</code> (default 3), <code>--lora-rank</code> (16), <code>--lora-alpha</code> (32), <code>--lr</code> (1e-4), <code>--batch-size</code> (16), <code>--max-len</code> (1024), <code>--val-split</code> (0.1), <code>--checkpoint &lt;base.pkl&gt;</code>, <code>--checkpoint-dir &lt;dir&gt;</code> (default <code>checkpoints</code>), <code>--out &lt;adapter.pkl&gt;</code>, <code>--generate &lt;n&gt;</code>, <code>--model &lt;id&gt;</code> (default <code>deepseek/deepseek-v4-flash</code>), and <code>--workers &lt;n&gt;</code> (default 8). <code>--generate</code> uses the configured OpenRouter endpoint to synthesize extra examples before training. The adapter is written to <code>checkpoints/needle_lora.pkl</code> by default. A validation loss prints each epoch from the held out split.</p>\n<p dir=\"auto\">Training is plain JAX and runs on any accelerator jax supports. On an NVIDIA machine install the CUDA build and the same command trains on the GPU:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install &quot;cactus-needle[train,gpu]&quot;\"><pre>pip install <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>cactus-needle[train,gpu]<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">On Apple Silicon the <code>metal</code> extra trains on the GPU:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install &quot;cactus-needle[train,metal]&quot;\"><pre>pip install <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>cactus-needle[train,metal]<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\"><strong>3. Build a tuned <code>.cact</code>.</strong> Merge the adapter into the base and quantize. The base auto-downloads if absent.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"needle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl --out my_needle.cact\"><pre>needle build checkpoints/needle2.pkl --lora checkpoints/needle_lora.pkl --out my_needle.cact</pre></div>\n<p dir=\"auto\">Add <code>--bits 2</code> for a smaller model (by default the export follows the checkpoint's declared per-layer bit map, falling back to 4 when the checkpoint declares none), or set <code>NEEDLE_HF_REPO=&lt;you&gt;/&lt;model&gt;</code> and pass <code>--upload</code> to publish the <code>.cact</code>. The counterpart <code>needle download &lt;you&gt;/&lt;model&gt;/my_needle.cact</code> pulls a published archive on any machine, and <code>needle download &lt;platform&gt;</code> (e.g. <code>macos-arm64</code>) fetches that platform's engine runner.</p>\n<p dir=\"auto\"><strong>4. Run it.</strong> The engine is weights-agnostic, so a tuned <code>.cact</code> runs on it directly - no recompilation:</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import needle\nagent = needle.Needle(weights=&quot;my_needle.cact&quot;, tools=[...])\nagent.run(&quot;...&quot;)\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">needle</span>\n<span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">Needle</span>(<span class=\"pl-s1\">weights</span><span class=\"pl-c1\">=</span><span class=\"pl-s\">\"my_needle.cact\"</span>, <span class=\"pl-s1\">tools</span><span class=\"pl-c1\">=</span>[...])\n<span class=\"pl-s1\">agent</span>.<span class=\"pl-c1\">run</span>(<span class=\"pl-s\">\"...\"</span>)</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Telemetry</h2></div>\n<p dir=\"auto\">Cactus Compute collects strictly anonymous usage telemetry (function name, package version, OS — never your prompts, outputs, or data); opt out with <code>NEEDLE_TELEMETRY=0</code> or <code>DO_NOT_TRACK=1</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Citation</h2></div>\n<p dir=\"auto\">Needle 2 is built by the Cactus Compute team. If you use it in your work, please cite:</p>\n<div class=\"highlight highlight-text-bibtex notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"@misc{needle2_2026,\n  title        = {Needle 2: A 45M-Parameter Foundation Tool-Calling Model for Tiny Devices},\n  author       = {Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and\n                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.},\n  year         = {2026},\n  organization = {Cactus Compute, Inc.},\n  howpublished = {\\url{https://github.com/cactus-compute/needle}}\n}\"><pre><span class=\"pl-k\">@misc</span>{<span class=\"pl-en\">needle2_2026</span>,\n  <span class=\"pl-s\">title</span>        = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Needle 2: A 45M-Parameter Foundation Tool-Calling Model for Tiny Devices<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">author</span>       = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and</span>\n<span class=\"pl-s\">                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">year</span>         = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>2026<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">organization</span> = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Cactus Compute, Inc.<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">howpublished</span> = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>\\url{https://github.com/cactus-compute/needle}<span class=\"pl-pds\">}</span></span>\n}</pre></div>\n<p dir=\"auto\">Reach out on <a href=\"mailto:founders@cactuscompute.com\">founders@cactuscompute.com</a> for partnerships, collaborations, synergies and deploying Needle2 in your product.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/banner.svg\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/banner.svg\" alt=\"Needle\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">A foundation model for mobiles, wearables, robots, smart home, automotive and microcontrollers. The whole model is a single 8-29 MB binary built on our Simple Attention Network, and we trade general chat capacity to beat models 10x its size on mobile tool calls and match 2-3x bigger models on extraction.</p>\n<ul dir=\"auto\">\n<li><strong>Tool calls</strong>: given the functions your app exposes, Needle picks the right ones and fills every argument from what the user said. Ask for two things and you get two calls in order; ask for something no tool covers and you get an empty list, not a guess.</li>\n<li><strong>Structured extraction</strong>: declare a shape, hand over messy text, get typed fields back: an invoice, a booking, a notification, a form. The decode grammar guarantees the output parses, and extraction generalises to classification.</li>\n<li><strong>Text embedding</strong>: the same model returns a vector for a sentence, so an app can search, match and route locally.</li>\n</ul>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/model.svg\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/model.svg\" alt=\"Needle 3 at a glance\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Needle 3 is a Laddered Simple Attention Network: a Monarch Hadamard MLP in place of the FFN, GQA attention with causal conv taps, engram n-gram memory read by gather, and multi-lane hyper-connections, trained so that every depth from 2 to 20 layers is a deployable model. Most of its parameters sit in the engram, so the 121M model does the arithmetic of a 50M one. A byte-level grammar compiled from your schemas constrains every token, and every response carries a calibrated confidence score from a learned head. The architecture diagram is on the <a href=\"https://cactuscompute.com/needle\" rel=\"nofollow\">release page</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Benchmarks</h2></div>\n<p dir=\"auto\">Tool calling is exact-match accuracy on the full test splits, extraction is field micro-F1 on the full test splits.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/benchmarks.svg\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/benchmarks.svg\" alt=\"Needle 3 against baselines on six benchmarks\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">The interactive frontier plot, the architecture and the fine-tuning results are at <a href=\"https://cactuscompute.com/needle\" rel=\"nofollow\">cactuscompute.com/needle</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Get started</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install cactus-needle\"><pre>pip install cactus-needle</pre></div>\n<p dir=\"auto\">Try it in the browser at <a href=\"https://cactuscompute.com/needle\" rel=\"nofollow\">cactuscompute.com/needle</a>; the weights and every platform engine are on <a href=\"https://huggingface.co/Cactus-Compute/needle3\" rel=\"nofollow\">Hugging Face</a>.</p>\n<p dir=\"auto\">Decorate a function: the signature gives the argument types, the docstring is the tool description, and <code>run()</code> completes the loop, executing your function and returning its results.</p>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import needle\n\n@needle.tool\ndef get_weather(city: str):\n    &quot;Get the current weather for a city.&quot;\n    return {&quot;city&quot;: city, &quot;temp_c&quot;: 27, &quot;sky&quot;: &quot;clear&quot;}\n\nagent = needle.Needle(tools=[get_weather])\nprint(agent.run(&quot;what's it like in Lagos right now?&quot;)[&quot;results&quot;])\n# [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-s1\">needle</span>\n\n<span class=\"pl-en\">@<span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">tool</span></span>\n<span class=\"pl-k\">def</span> <span class=\"pl-en\">get_weather</span>(<span class=\"pl-s1\">city</span>: <span class=\"pl-smi\">str</span>):\n    <span class=\"pl-s\">\"Get the current weather for a city.\"</span>\n    <span class=\"pl-k\">return</span> {<span class=\"pl-s\">\"city\"</span>: <span class=\"pl-s1\">city</span>, <span class=\"pl-s\">\"temp_c\"</span>: <span class=\"pl-c1\">27</span>, <span class=\"pl-s\">\"sky\"</span>: <span class=\"pl-s\">\"clear\"</span>}\n\n<span class=\"pl-s1\">agent</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-c1\">Needle</span>(<span class=\"pl-s1\">tools</span><span class=\"pl-c1\">=</span>[<span class=\"pl-s1\">get_weather</span>])\n<span class=\"pl-en\">print</span>(<span class=\"pl-s1\">agent</span>.<span class=\"pl-c1\">run</span>(<span class=\"pl-s\">\"what's it like in Lagos right now?\"</span>)[<span class=\"pl-s\">\"results\"</span>])\n<span class=\"pl-c\"># [{'city': 'Lagos', 'temp_c': 27, 'sky': 'clear'}]</span></pre></div>\n<p dir=\"auto\">Every turn returns one JSON object with <code>function_calls</code>, the model's <code>reasoning</code> and a calibrated <code>confidence</code>; an off-topic request returns an empty list rather than a guess. <code>needle.Needle(tools=[...], generation=2)</code> keeps running Needle 2 for existing deployments.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Guides</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://cactuscompute.com/blog/designing-tools-for-needle\" rel=\"nofollow\">How to design tools for Needle 3</a>: one tool per action, names users would say, formats in descriptions, constraints in the grammar, triggers.</li>\n<li><a href=\"https://cactuscompute.com/blog/needle-confidence\" rel=\"nofollow\">Leveraging Needle's confidence</a>: what the score measures, what the engine withholds, and routing on act, confirm or refuse.</li>\n<li><a href=\"https://cactuscompute.com/blog/structured-extraction-with-needle\" rel=\"nofollow\">Structured JSON extraction with Needle</a>: the record as the only tool, typed results, classification with enums.</li>\n<li><a href=\"https://cactuscompute.com/blog/finetuning-needle\" rel=\"nofollow\">Fine-tuning Needle</a>: the data format, the commands, reading the loss, sizing the dataset.</li>\n<li><a href=\"https://cactuscompute.com/blog/needle-python-docs\" rel=\"nofollow\">Needle Python docs</a>: the API, the response shape, the behaviour contract, system facts, tool retrieval, offline devices, environments, the CLI.</li>\n<li><a href=\"https://cactuscompute.com/blog/needle-supported-devices\" rel=\"nofollow\">What devices are supported on Needle</a>: every platform folder, the CLI runner, the C API, the browser, WASI, air-gapped setup.</li>\n<li><a href=\"https://cactuscompute.com/blog/cact-format\" rel=\"nofollow\">The .cact format</a>: the file the engine maps and reads in place, Cactus Quants at 2.125 bits per weight, and how to parse it yourself.</li>\n<li><a href=\"https://cactuscompute.com/blog/porting-needle\" rel=\"nofollow\">Porting Needle 3</a>: notes for writing your own runtime, the oracle to test against, the tensor order the container promises, the prompt on the wire, the ladder rule, retrieval with <code>needle_embed</code>.</li>\n</ul>\n<p dir=\"auto\"><code>llms.txt</code> in this repo carries the same reference for AI coding assistants.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Customisation</h2></div>\n<p dir=\"auto\">Needle was designed to be customised. Its capacity is a ladder, and a subnetwork as small as 2 layers, fine-tuned on one product's tools, runs optimally on devices far smaller than the full model needs. Fine-tuning on DroidCall lifts every subnetwork by 18 to 36 points, and from 4 layers up the tuned subnetwork passes DeepSeek V4 Flash, starting at 29M parameters.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/finetune.svg\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/finetune.svg\" alt=\"Every subnetwork before and after fine-tuning on DroidCall and on Mobile Actions\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Two ways to fine-tune, from the same package:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>Local, <code>needle finetune</code></th>\n<th>Platform, <code>needle platform finetune</code></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>What trains</td>\n<td>LoRA adapters on the attention projections, base frozen, merged at export</td>\n<td>The full model, every depth from 2 layers up</td>\n</tr>\n<tr>\n<td>What it keeps</td>\n<td>Your data only</td>\n<td>Your data reinforced with Needle's original dataset, so nothing already learned is unlearned</td>\n</tr>\n<tr>\n<td>Confidence</td>\n<td>Head untouched; <code>confidence</code> is <code>None</code></td>\n<td>Head fine-tuned with the model, calibrated on your tools</td>\n</tr>\n<tr>\n<td>Precision</td>\n<td>4-bit</td>\n<td>2-bit, the same post-training as the shipped model</td>\n</tr>\n<tr>\n<td>Data</td>\n<td>Your JSONL, <code>query</code>/<code>answers</code> or chat format</td>\n<td>Yours, or generated from your tool definitions, 100 to 10,000 examples per run</td>\n</tr>\n<tr>\n<td>Scores</td>\n<td>Validation loss</td>\n<td>Validation and test accuracy for every depth</td>\n</tr>\n<tr>\n<td>Compute</td>\n<td>Your machine, JAX on CPU, CUDA or Metal</td>\n<td>Cactus GPUs</td>\n</tr>\n<tr>\n<td>Runs from</td>\n<td>The CLI</td>\n<td>The CLI, Python, the <a href=\"https://cactuscompute.com/dashboard\" rel=\"nofollow\">dashboard</a>, or a coding agent holding your key</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Local:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pip install &quot;cactus-needle[train]&quot;\nneedle finetune data.jsonl --epochs 10 --out adapter.safetensors\nneedle build --lora adapter.safetensors --layers 8 --out tuned.cact\"><pre>pip install <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>cactus-needle[train]<span class=\"pl-pds\">\"</span></span>\nneedle finetune data.jsonl --epochs 10 --out adapter.safetensors\nneedle build --lora adapter.safetensors --layers 8 --out tuned.cact</pre></div>\n<p dir=\"auto\">Platform, with a key from the <a href=\"https://cactuscompute.com/dashboard/api-keys\" rel=\"nofollow\">console</a> in <code>NEEDLE_API_KEY</code>. One command uploads the files, trains and scores every size, and downloads the <code>.cact</code> files; once a job is submitted it can also be followed on the dashboard:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export NEEDLE_API_KEY=needle_ft_...\nneedle platform generate --tools tools.json --examples 1000 --out ./data\nneedle platform finetune data/train.jsonl data/validation.jsonl data/test.jsonl --suffix smart-home --out ./models\"><pre><span class=\"pl-k\">export</span> NEEDLE_API_KEY=needle_ft_...\nneedle platform generate --tools tools.json --examples 1000 --out ./data\nneedle platform finetune data/train.jsonl data/validation.jsonl data/test.jsonl --suffix smart-home --out ./models</pre></div>\n<div class=\"highlight highlight-source-python notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"from needle.platform import Platform\n\nclient = Platform()\njob = client.wait(client.finetune([&quot;train.jsonl&quot;], [&quot;validation.jsonl&quot;], [&quot;test.jsonl&quot;], suffix=&quot;smart-home&quot;))\npaths = client.download(job[&quot;fine_tuned_model&quot;], &quot;models&quot;, depth=8)\"><pre><span class=\"pl-k\">from</span> <span class=\"pl-s1\">needle</span>.<span class=\"pl-s1\">platform</span> <span class=\"pl-k\">import</span> <span class=\"pl-v\">Platform</span>\n\n<span class=\"pl-s1\">client</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">Platform</span>()\n<span class=\"pl-s1\">job</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">client</span>.<span class=\"pl-c1\">wait</span>(<span class=\"pl-s1\">client</span>.<span class=\"pl-c1\">finetune</span>([<span class=\"pl-s\">\"train.jsonl\"</span>], [<span class=\"pl-s\">\"validation.jsonl\"</span>], [<span class=\"pl-s\">\"test.jsonl\"</span>], <span class=\"pl-s1\">suffix</span><span class=\"pl-c1\">=</span><span class=\"pl-s\">\"smart-home\"</span>))\n<span class=\"pl-s1\">paths</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">client</span>.<span class=\"pl-c1\">download</span>(<span class=\"pl-s1\">job</span>[<span class=\"pl-s\">\"fine_tuned_model\"</span>], <span class=\"pl-s\">\"models\"</span>, <span class=\"pl-s1\">depth</span><span class=\"pl-c1\">=</span><span class=\"pl-c1\">8</span>)</pre></div>\n<p dir=\"auto\">Or hand the key to Claude Code or Codex with <a href=\"https://cactuscompute.com/llms.txt\" rel=\"nofollow\">cactuscompute.com/llms.txt</a> and let the agent run the loop. <code>needle platform jobs | models | files | billing</code> list what the account holds, <code>needle download model-&lt;id&gt;</code> fetches a model by id, and the <a href=\"https://cactuscompute.com/blog/finetuning-needle\" rel=\"nofollow\">fine-tuning guide</a> covers the data format and how to read the scores.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Deploy</h2></div>\n<p dir=\"auto\">Every deployment target ships a prebuilt engine under 1 MB that loads the <code>needle3.cact</code> weights at start. <code>needle build --platform &lt;folder&gt; [--layers N]</code> fetches that engine and puts the weights beside it.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cactus-compute/needle/blob/main/assets/deploy.svg\"><img src=\"https://raw.githubusercontent.com/cactus-compute/needle/main/assets/deploy.svg\" alt=\"One engine per platform folder\" style=\"max-width: 100%;\"></a></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"needle build --platform macos-arm64\nneedle build --platform linux-arm64 --layers 8 --out ./pi\n./macos-arm64/needle --model needle3.cact --tools tools.json --serve\"><pre>needle build --platform macos-arm64\nneedle build --platform linux-arm64 --layers 8 --out ./pi\n./macos-arm64/needle --model needle3.cact --tools tools.json --serve</pre></div>\n<p dir=\"auto\">The <a href=\"https://cactuscompute.com/blog/needle-supported-devices\" rel=\"nofollow\">devices guide</a> lists every folder and what ships in it.</p>\n<p dir=\"auto\">By default, telemetry is turned on in the binary. To turn it off, set environment variables NEEDLE_TELEMETRY=0 and DO_NOT_TRACK=1.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Citation</h2></div>\n<p dir=\"auto\">Needle is built by the Cactus Compute team. If you use it in your work, please cite:</p>\n<div class=\"highlight highlight-text-bibtex notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"@misc{needle3_2026,\n  title        = {Needle: Automation Foundation Model for Tiny Devices},\n  author       = {Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and\n                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.},\n  year         = {2026},\n  organization = {Cactus Compute, Inc.},\n  howpublished = {\\url{https://github.com/cactus-compute/needle}}\n}\"><pre><span class=\"pl-k\">@misc</span>{<span class=\"pl-en\">needle3_2026</span>,\n  <span class=\"pl-s\">title</span>        = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Needle: Automation Foundation Model for Tiny Devices<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">author</span>       = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Ndubuaku, Henry and Mosoyan, Karen and Mroz, Jakub and Cylich, Noah and</span>\n<span class=\"pl-s\">                  Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">year</span>         = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>2026<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">organization</span> = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>Cactus Compute, Inc.<span class=\"pl-pds\">}</span></span>,\n  <span class=\"pl-s\">howpublished</span> = <span class=\"pl-s\"><span class=\"pl-pds\">{</span>\\url{https://github.com/cactus-compute/needle}<span class=\"pl-pds\">}</span></span>\n}</pre></div>\n</article></div>",
   "releases": [],
-  "contributorCount": 27,
+  "contributorCount": 30,
   "punchCard": [
     {
       "day": 0,
@@ -621,7 +626,7 @@
     {
       "day": 0,
       "hour": 4,
-      "commits": 1
+      "commits": 3
     },
     {
       "day": 0,
@@ -686,7 +691,7 @@
     {
       "day": 0,
       "hour": 17,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 0,
@@ -826,7 +831,7 @@
     {
       "day": 1,
       "hour": 21,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 1,
@@ -911,7 +916,7 @@
     {
       "day": 2,
       "hour": 14,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 2,
@@ -921,7 +926,7 @@
     {
       "day": 2,
       "hour": 16,
-      "commits": 9
+      "commits": 10
     },
     {
       "day": 2,
@@ -931,7 +936,7 @@
     {
       "day": 2,
       "hour": 18,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 2,
@@ -941,7 +946,7 @@
     {
       "day": 2,
       "hour": 20,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 2,
@@ -951,12 +956,12 @@
     {
       "day": 2,
       "hour": 22,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 2,
       "hour": 23,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 3,
@@ -1011,7 +1016,7 @@
     {
       "day": 3,
       "hour": 10,
-      "commits": 4
+      "commits": 6
     },
     {
       "day": 3,
@@ -1021,7 +1026,7 @@
     {
       "day": 3,
       "hour": 12,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -1136,7 +1141,7 @@
     {
       "day": 4,
       "hour": 11,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 4,
@@ -1161,7 +1166,7 @@
     {
       "day": 4,
       "hour": 16,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 4,
@@ -1181,7 +1186,7 @@
     {
       "day": 4,
       "hour": 20,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 4,
@@ -1366,7 +1371,7 @@
     {
       "day": 6,
       "hour": 9,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
@@ -1376,12 +1381,12 @@
     {
       "day": 6,
       "hour": 11,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
       "hour": 12,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 6,
@@ -1431,7 +1436,7 @@
     {
       "day": 6,
       "hour": 22,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -1439,204 +1444,222 @@
       "commits": 1
     }
   ],
-  "commitCount": 296,
+  "commitCount": 319,
   "recentIssues": [
     {
-      "number": 121,
-      "title": "needle.environments: five of six frozen acceptance suites fail on the shipped engine",
-      "url": "https://github.com/cactus-compute/needle/issues/121",
-      "createdAt": "2026-09-10T22:27:24Z",
+      "number": 141,
+      "title": "Multi-language support",
+      "url": "https://github.com/cactus-compute/needle/issues/141",
+      "createdAt": "2026-09-23T09:33:59Z",
       "comments": 0,
       "labels": [],
-      "author": "rakhimovv"
+      "author": "gijswobben-pluryn"
     },
     {
-      "number": 118,
-      "title": "Where are the libneedle sources?",
-      "url": "https://github.com/cactus-compute/needle/issues/118",
-      "createdAt": "2026-09-10T19:55:23Z",
+      "number": 139,
+      "title": "CLI help still advertises finetune --layers, but finetune parser has no --layers",
+      "url": "https://github.com/cactus-compute/needle/issues/139",
+      "createdAt": "2026-09-23T06:31:43Z",
       "comments": 0,
       "labels": [],
-      "author": "josegomezr"
+      "author": "TeaShaman-cyber"
+    },
+    {
+      "number": 136,
+      "title": "[Bug] Needle HTTP server (--serve) KV cache state persistence ignores /reset and returns sticky/stale responses",
+      "url": "https://github.com/cactus-compute/needle/issues/136",
+      "createdAt": "2026-09-20T21:40:19Z",
+      "comments": 1,
+      "labels": [],
+      "author": "willdom-kahari"
+    },
+    {
+      "number": 133,
+      "title": "Use Case\"  Media Player Controls",
+      "url": "https://github.com/cactus-compute/needle/issues/133",
+      "createdAt": "2026-09-19T19:38:12Z",
+      "comments": 4,
+      "labels": [],
+      "author": "jjmlovesgit"
+    },
+    {
+      "number": 128,
+      "title": "RFC: native MLX training backend for `needle finetune` on Apple Silicon",
+      "url": "https://github.com/cactus-compute/needle/issues/128",
+      "createdAt": "2026-09-16T12:36:28Z",
+      "comments": 4,
+      "labels": [],
+      "author": "nandoolle"
     },
     {
       "number": 115,
       "title": "[native CLI] `needle --serve` hangs in `needle_complete` spin loop on first /complete request",
       "url": "https://github.com/cactus-compute/needle/issues/115",
       "createdAt": "2026-09-08T18:33:31Z",
-      "comments": 0,
+      "comments": 2,
       "labels": [],
       "author": "VIPKaiser"
-    },
-    {
-      "number": 114,
-      "title": "False hit on nonsense words",
-      "url": "https://github.com/cactus-compute/needle/issues/114",
-      "createdAt": "2026-09-08T05:06:33Z",
-      "comments": 1,
-      "labels": [],
-      "author": "1003657663"
     }
   ],
   "participation": {
-    "all": 296,
+    "all": 315,
     "owner": 0,
-    "community": 296
+    "community": 315
   },
   "firstCommitAt": "2026-02-24T04:50:47Z",
   "recentCommits": [
     {
-      "sha": "956840f",
-      "message": "fix(grounding): stop rejecting thousands-separated numbers (#123)",
-      "url": "https://github.com/cactus-compute/needle/commit/956840ff176bfe179bb2f230b726f4be44fb11cf",
-      "date": "2026-09-12T19:49:41Z",
+      "sha": "42bf1f2",
+      "message": "test(environments): pin the suite scoring rule and document a red suite (#124)",
+      "url": "https://github.com/cactus-compute/needle/commit/42bf1f2d0a7784b0d4d1ec94bb5ade425cf9a67c",
+      "date": "2026-09-23T05:26:36Z",
       "author": "SomSamantray",
       "avatarUrl": "https://avatars.githubusercontent.com/u/92726151?v=4"
     },
     {
-      "sha": "9bbc9d7",
-      "message": "fix(tests): skip the packaging test when tomllib is unavailable (#119)",
-      "url": "https://github.com/cactus-compute/needle/commit/9bbc9d77af414d730b6c046da5a95588ef41676d",
-      "date": "2026-09-12T19:46:14Z",
-      "author": "rakhimovv",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/14886513?v=4"
+      "sha": "1e2072f",
+      "message": "security: remove pickle fallback to prevent arbitrary code execution (fixes #36) (#131)",
+      "url": "https://github.com/cactus-compute/needle/commit/1e2072f934d04e8f0dda178a26042362e5437677",
+      "date": "2026-09-23T05:26:32Z",
+      "author": "DPRC137",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/50619554?v=4"
     },
     {
-      "sha": "aaf62b4",
-      "message": "fix(tokenizer): drop a CLI hint for a command that does not exist (#116)",
-      "url": "https://github.com/cactus-compute/needle/commit/aaf62b4168d28f0623b50a06f3d329e4ea332f57",
-      "date": "2026-09-12T19:45:59Z",
-      "author": "dajiaohuang",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/108231307?v=4"
+      "sha": "6e33cbd",
+      "message": "fix: update engine version for compatibility with latest changes",
+      "url": "https://github.com/cactus-compute/needle/commit/6e33cbd42ea14d19de48317ffb17b15a88b9cbf0",
+      "date": "2026-09-23T05:25:56Z",
+      "author": "HenryNdubuaku",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
     },
     {
-      "sha": "53df049",
-      "message": "fix(tests): look for the engine where the runtime caches it (#109)",
-      "url": "https://github.com/cactus-compute/needle/commit/53df049c4a1a82fca1027b81f9ff21336dfb0861",
-      "date": "2026-09-07T18:12:42Z",
+      "sha": "475eb9b",
+      "message": "feat: enhance stateless agent functionality and improve libc detection",
+      "url": "https://github.com/cactus-compute/needle/commit/475eb9b1708f54ba9e6eada91f3b15662da8051c",
+      "date": "2026-09-23T05:18:17Z",
+      "author": "HenryNdubuaku",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
+    },
+    {
+      "sha": "f189b23",
+      "message": "Implement platform integration for fine-tuning and model management",
+      "url": "https://github.com/cactus-compute/needle/commit/f189b23ebf34b98bcc8f9ee819249425c6623a32",
+      "date": "2026-09-21T00:10:18Z",
+      "author": "HenryNdubuaku",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
+    },
+    {
+      "sha": "fc5bae0",
+      "message": "Merge pull request #127 from nimakalantar/use-deepseek-v4.1-flash",
+      "url": "https://github.com/cactus-compute/needle/commit/fc5bae0f9b6138828fe7589f6b531fb9a26968de",
+      "date": "2026-09-19T21:48:45Z",
+      "author": "ParkiratS",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/85805976?v=4"
+    },
+    {
+      "sha": "ae2b58d",
+      "message": "feat: update default model version to `deepseek/deepseek-flash-latest`",
+      "url": "https://github.com/cactus-compute/needle/commit/ae2b58d1de9d9403d35dfa502dab7fb86f0abc71",
+      "date": "2026-09-19T21:46:09Z",
+      "author": "nimakalantar",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/113363856?v=4"
+    },
+    {
+      "sha": "3cb04f1",
+      "message": "fix(playground): rewind through the agent, not the global engine (#111)",
+      "url": "https://github.com/cactus-compute/needle/commit/3cb04f167fcdf0d7cf92f961cc3df6b07fc3bfde",
+      "date": "2026-09-19T19:32:05Z",
       "author": "kevin9327",
       "avatarUrl": "https://avatars.githubusercontent.com/u/5299031?v=4"
     },
     {
-      "sha": "cd2eae3",
-      "message": "finetune: make training seed explicit (#108)",
-      "url": "https://github.com/cactus-compute/needle/commit/cd2eae34b96e20b15b1c0fcb7e9fe683ed6a675b",
-      "date": "2026-09-07T18:12:16Z",
-      "author": "TeaShaman-cyber",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/279958428?v=4"
+      "sha": "6301761",
+      "message": "fix: accept a path-like tool_index_path, as weights already does (#110)",
+      "url": "https://github.com/cactus-compute/needle/commit/630176107034279301be801cd175acc877bb522d",
+      "date": "2026-09-19T19:31:22Z",
+      "author": "kevin9327",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/5299031?v=4"
     },
     {
-      "sha": "21291c7",
-      "message": "feat: add publish-component workflow for WebAssembly component and enhance validation for ungrounded fields",
-      "url": "https://github.com/cactus-compute/needle/commit/21291c78dac70cd28890644e0753adddb9ed416a",
-      "date": "2026-09-07T18:12:04Z",
-      "author": "HenryNdubuaku",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
-    },
-    {
-      "sha": "b5e2943",
-      "message": "Project Xander",
-      "url": "https://github.com/cactus-compute/needle/commit/b5e29432116af7d91704b50fc2fce79650049355",
-      "date": "2026-09-05T19:52:58Z",
-      "author": "HenryNdubuaku",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
-    },
-    {
-      "sha": "cd2f976",
-      "message": "feat: Introduce support for multiple Needle engine generations and enhance telemetry",
-      "url": "https://github.com/cactus-compute/needle/commit/cd2f97642643e70832d8c6f8d9ba998b9c168de9",
-      "date": "2026-09-03T09:53:56Z",
-      "author": "HenryNdubuaku",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/26547576?v=4"
-    },
-    {
-      "sha": "205b8f0",
-      "message": "fix(release): tag the versioned distribution source (#106)",
-      "url": "https://github.com/cactus-compute/needle/commit/205b8f0d9fda2ea2d4a886bba8c2d96e21de1b17",
-      "date": "2026-09-02T19:21:34Z",
-      "author": "MohammedThowfiq",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/49336054?v=4"
-    },
-    {
-      "sha": "f04b598",
-      "message": "serve playground downloads from a private temp dir (#102)",
-      "url": "https://github.com/cactus-compute/needle/commit/f04b598d7db0c485d776b7aa2ed39e53a662b3d2",
-      "date": "2026-09-02T19:18:55Z",
-      "author": "avionicharshit-byte",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/78672319?v=4"
+      "sha": "e0a7a55",
+      "message": "fix(grounding): stop reading a slash date's day or month as a year (#126)",
+      "url": "https://github.com/cactus-compute/needle/commit/e0a7a55a01ec7524c0299324cf701bec6e330b78",
+      "date": "2026-09-19T19:31:03Z",
+      "author": "breken-ai",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/312387581?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 110,
-      "title": "fix: accept a path-like tool_index_path, as weights already does",
-      "url": "https://github.com/cactus-compute/needle/pull/110",
+      "number": 140,
+      "title": "fix(cli): drop stale --layers from finetune help",
+      "url": "https://github.com/cactus-compute/needle/pull/140",
       "state": "open",
-      "updatedAt": "2026-09-13T12:54:16Z",
-      "author": "kevin9327",
+      "updatedAt": "2026-09-23T07:44:46Z",
+      "author": "hiro-nikaitou",
       "draft": false
     },
     {
       "number": 125,
       "title": "docs(apis): note that source-written numbers ground strict mode",
       "url": "https://github.com/cactus-compute/needle/pull/125",
-      "state": "open",
-      "updatedAt": "2026-09-13T01:49:48Z",
+      "state": "closed",
+      "updatedAt": "2026-09-23T05:27:37Z",
       "author": "LeonSGP43",
       "draft": false
     },
     {
-      "number": 123,
-      "title": "fix(grounding): stop rejecting thousands-separated numbers",
-      "url": "https://github.com/cactus-compute/needle/pull/123",
-      "state": "merged",
-      "updatedAt": "2026-09-12T19:49:42Z",
-      "author": "SomSamantray",
-      "draft": false
-    },
-    {
-      "number": 122,
-      "title": "fix: replace pickle with safetensors for LoRA adapter serialization",
-      "url": "https://github.com/cactus-compute/needle/pull/122",
+      "number": 129,
+      "title": "feat: add OrcaRouter provider with API-key and OAuth 2.0 PKCE login",
+      "url": "https://github.com/cactus-compute/needle/pull/129",
       "state": "open",
-      "updatedAt": "2026-09-12T19:48:53Z",
-      "author": "mvanhorn",
+      "updatedAt": "2026-09-23T05:27:03Z",
+      "author": "kuswardhanietidims-svg",
       "draft": false
     },
     {
-      "number": 119,
-      "title": "fix(tests): skip the packaging test when tomllib is unavailable",
-      "url": "https://github.com/cactus-compute/needle/pull/119",
-      "state": "merged",
-      "updatedAt": "2026-09-12T19:46:15Z",
-      "author": "rakhimovv",
+      "number": 112,
+      "title": "fix: carry the agent's system facts into agent.extract",
+      "url": "https://github.com/cactus-compute/needle/pull/112",
+      "state": "open",
+      "updatedAt": "2026-09-23T05:26:53Z",
+      "author": "kevin9327",
       "draft": false
     },
     {
-      "number": 116,
-      "title": "fix(tokenizer): drop a CLI hint for a command that does not exist",
-      "url": "https://github.com/cactus-compute/needle/pull/116",
-      "state": "merged",
-      "updatedAt": "2026-09-12T19:45:59Z",
-      "author": "dajiaohuang",
+      "number": 107,
+      "title": "docs: sync llms.txt with multi-generation engine changes",
+      "url": "https://github.com/cactus-compute/needle/pull/107",
+      "state": "open",
+      "updatedAt": "2026-09-23T05:26:52Z",
+      "author": "LeonSGP43",
+      "draft": false
+    },
+    {
+      "number": 95,
+      "title": "docs: sync needle run --temperature and finetune --generate options",
+      "url": "https://github.com/cactus-compute/needle/pull/95",
+      "state": "open",
+      "updatedAt": "2026-09-23T05:26:51Z",
+      "author": "LeonSGP43",
       "draft": false
     },
     {
       "number": 124,
       "title": "test(environments): pin the suite scoring rule and document a red suite",
       "url": "https://github.com/cactus-compute/needle/pull/124",
-      "state": "open",
-      "updatedAt": "2026-09-11T16:54:25Z",
+      "state": "merged",
+      "updatedAt": "2026-09-23T05:26:36Z",
       "author": "SomSamantray",
       "draft": false
     },
     {
-      "number": 109,
-      "title": "fix(tests): look for the engine where the runtime caches it",
-      "url": "https://github.com/cactus-compute/needle/pull/109",
+      "number": 131,
+      "title": "security: remove pickle fallback to prevent arbitrary code execution (fixes #36)",
+      "url": "https://github.com/cactus-compute/needle/pull/131",
       "state": "merged",
-      "updatedAt": "2026-09-07T18:12:43Z",
-      "author": "kevin9327",
+      "updatedAt": "2026-09-23T05:26:33Z",
+      "author": "DPRC137",
       "draft": false
     }
   ],
@@ -1644,9 +1667,9 @@
     {
       "name": "release",
       "status": "success",
-      "url": "https://github.com/cactus-compute/needle/actions/runs/34707029098",
+      "url": "https://github.com/cactus-compute/needle/actions/runs/35758166485",
       "branch": "main",
-      "updatedAt": "2026-09-12T17:02:36Z"
+      "updatedAt": "2026-09-22T17:03:25Z"
     }
   ],
   "fileTree": [
@@ -1661,12 +1684,6 @@
       "type": "dir",
       "size": 0,
       "url": "https://github.com/cactus-compute/needle/tree/main/assets"
-    },
-    {
-      "name": "doc",
-      "type": "dir",
-      "size": 0,
-      "url": "https://github.com/cactus-compute/needle/tree/main/doc"
     },
     {
       "name": "needle",
@@ -1695,7 +1712,7 @@
     {
       "name": "llms.txt",
       "type": "file",
-      "size": 12217,
+      "size": 19869,
       "url": "https://github.com/cactus-compute/needle/blob/main/llms.txt"
     },
     {
@@ -1707,19 +1724,19 @@
     {
       "name": "pyproject.toml",
       "type": "file",
-      "size": 976,
+      "size": 992,
       "url": "https://github.com/cactus-compute/needle/blob/main/pyproject.toml"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 10276,
+      "size": 8651,
       "url": "https://github.com/cactus-compute/needle/blob/main/README.md"
     },
     {
       "name": "requirements-train.txt",
       "type": "file",
-      "size": 116,
+      "size": 129,
       "url": "https://github.com/cactus-compute/needle/blob/main/requirements-train.txt"
     },
     {
@@ -1752,7 +1769,7 @@
     "total": 1
   },
   "branchCount": 35,
-  "tagCount": 12,
+  "tagCount": 19,
   "community": {
     "healthPercentage": 37,
     "hasCodeOfConduct": false,
@@ -1761,14 +1778,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 16,
-  "openPRs": 18,
+  "openIssuesOnly": 14,
+  "openPRs": 14,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 36,
-  "mergedPRs": 38,
+  "closedIssues": 47,
+  "mergedPRs": 44,
   "environmentCount": 0,
   "isFork": false,
   "isInOrganization": true,
@@ -1776,10 +1793,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-09-20",
-      "commits": 0
-    },
     {
       "week": "2025-09-27",
       "commits": 0
@@ -1982,38 +1995,14 @@
     },
     {
       "week": "2026-09-13",
-      "commits": 2
+      "commits": 17
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 7
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-20",
-      "count": 0
-    },
-    {
-      "date": "2025-09-21",
-      "count": 0
-    },
-    {
-      "date": "2025-09-22",
-      "count": 0
-    },
-    {
-      "date": "2025-09-23",
-      "count": 0
-    },
-    {
-      "date": "2025-09-24",
-      "count": 0
-    },
-    {
-      "date": "2025-09-25",
-      "count": 0
-    },
-    {
-      "date": "2025-09-26",
-      "count": 0
-    },
     {
       "date": "2025-09-27",
       "count": 0
@@ -3420,19 +3409,19 @@
     },
     {
       "date": "2026-09-14",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-09-15",
-      "count": 0
+      "count": 5
     },
     {
       "date": "2026-09-16",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-09-17",
-      "count": 0
+      "count": 4
     },
     {
       "date": "2026-09-18",
@@ -3440,11 +3429,39 @@
     },
     {
       "date": "2026-09-19",
+      "count": 4
+    },
+    {
+      "date": "2026-09-20",
+      "count": 3
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 2
+    },
+    {
+      "date": "2026-09-23",
+      "count": 2
+    },
+    {
+      "date": "2026-09-24",
+      "count": 0
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
       "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-13T14:48:48.741Z",
+  "factsUpdatedAt": "2026-09-23T13:14:55.531Z",
   "aiSummary": {
     "oneLiner": "A 26M parameter Simple Attention Network optimized for function calling.",
     "whatItDoes": "Needle is a highly compact, 26-million parameter language model tailored specifically for structured function calling. Built on the Simple Attention Network architecture, it is designed for deployment in resource-constrained environments where standard large language models are impractical. It offers extremely fast inference, achieving 6000 tokens per second for prefilling and 1200 tokens per second for decoding when running on Cactus. The model can also be fine-tuned locally on consumer hardware like a standard Mac or PC. It is meticulously optimized for environments with minimal RAM, operating within a few hundred megabytes.",
@@ -3634,8 +3651,13 @@
     },
     {
       "week": "2026-09-13",
-      "additions": 261,
-      "deletions": 2
+      "additions": 3294,
+      "deletions": 2657
+    },
+    {
+      "week": "2026-09-20",
+      "additions": 1570,
+      "deletions": 135
     }
   ]
 }
