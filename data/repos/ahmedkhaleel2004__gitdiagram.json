@@ -25,6 +25,11 @@
       "date": "2026-09-25",
       "stars": 17123,
       "forks": 1304
+    },
+    {
+      "date": "2026-09-28",
+      "stars": 17359,
+      "forks": 1326
     }
   ],
   "trendingHistory": [
@@ -57,29 +62,31 @@
     "system-design",
     "video"
   ],
-  "stars": 17123,
-  "forks": 1304,
-  "watchers": 61,
-  "openIssues": 43,
+  "stars": 17359,
+  "forks": 1326,
+  "watchers": 62,
+  "openIssues": 44,
   "createdAt": "2024-12-15T10:32:03Z",
-  "pushedAt": "2026-09-25T21:37:08Z",
+  "pushedAt": "2026-09-28T13:17:45Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-09-25T21:56:19.609Z",
+  "updatedAt": "2026-09-28T18:21:14.848Z",
   "languages": {
-    "TypeScript": 1067958,
-    "CSS": 27488,
-    "JavaScript": 8576,
-    "Dockerfile": 1051,
-    "Shell": 604
+    "TypeScript": 2417402,
+    "JavaScript": 124924,
+    "CSS": 80288,
+    "Dockerfile": 2475,
+    "Python": 1619,
+    "Shell": 961,
+    "HTML": 949
   },
-  "commitCount": 380,
+  "commitCount": 637,
   "contributors": [
     {
       "login": "ahmedkhaleel2004",
       "url": "https://github.com/ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4",
-      "contributions": 354
+      "contributions": 614
     },
     {
       "login": "dependabot[bot]",
@@ -98,14 +105,38 @@
       "url": "https://github.com/martin226",
       "avatarUrl": "https://avatars.githubusercontent.com/u/46298951?v=4",
       "contributions": 1
+    },
+    {
+      "login": "github-actions[bot]",
+      "url": "https://github.com/apps/github-actions",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4",
+      "contributions": 1
     }
   ],
-  "readmeExcerpt": "\n\n\n\n\n# GitDiagram\n\nTurn any public or private GitHub repository into an interactive architecture diagram in seconds.\n\nYou can also replace `hub` with `diagram` in a GitHub URL to open its diagram.\n\n> **Sponsor slot:** Reach developers while they are actively exploring codebases. [Sponsor GitDiagram](https://gitdiagram.com/sponsor).\n\n## Features\n\n- **Architecture-first diagrams:** converts a repository tree, README, and bounded source excerpts into a system-level graph instead of merely drawing folders.\n- **Interactive source links:** click a component to open its real file or directory on GitHub.\n- **Streaming generation:** see the explanation arrive while the graph is planned.\n- **Private repositories:** provide a GitHub token locally in the browser; private artifacts use a separate protected storage namespace.\n- **Export:** copy Mermaid source or download the rendered diagram as PNG.\n- **Provider choice:** OpenAI by default, with OpenRouter available for self-hosted deployments.\n\n## Stack\n\n- **Application:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS, and Radix UI\n- **Generation API:** same-origin Next.js Route Handlers running on Vercel's Bun runtime\n- **Storage:** Cloudflare R2 for diagram artifacts\n- **Coordination:** Upstash Redis for quota accounting, cancellation, locks, and short-lived failure state\n- **AI:** OpenAI or OpenRouter through `AI_PROVIDER`\n- **Analytics:** PostHog\n- **Deployment:** Vercel is the only live runtime; an offline Railway/Docker recipe is retained for disaster recovery\n\nThere is no separate FastAPI implementation, Postgres database, or Neon runtime.\n\n## Production architecture\n\nVercel serves both the UI and the generation endpoints:\n\n- `/api/generate/cost` estimates a run after bounded GitHub ingestion, same-origin and rate limited.\n- `/api/generate/stream` streams Server-Sent Events for explanation and graph progress.\n- `/api/generate/cancel` records authenticated, same-origin cancellation signals.\n- `/api/diagram-state` reads and writes the persisted result contract.\n- `/api/healthz` provides a lightweight deployment health check.\n\nLong-running generation uses a 300-second Vercel function budget with a shorter application deadline so quota reconciliation and persistence still have time to finish. Requests use explicit upstream deadlines, retries, structured logs, heartbeats, and distributed cancellation rather than process-local state.\n\nThe default managed OpenAI pipeline uses one GPT-5.6 Luna request at medium reasoning to produce a source-grounded graph and short streamed overview. The model returns a compact graph without redundant descriptions or type captions. Graphs are validated and compiled deterministically; additional Luna calls are reserved for structural repairs or one recovery after an 18-second slow request. The slow connection is cancelled before its replacement starts; its unavailable partial usage is included as an estimated cost. Managed GPT-5.6 requests explicitly use Fast mode (`service_tier: \"priority\"`); estimates include its premium, and final costs use the model and tier actually served. User-supplied keys retain standard service and their configured model. Explicit model overrides and OpenRouter retain the two-stage pipeline. Output token estimates reserve quota but do not cap provider output.\n\nThe same Next.js application can also build into a minimal, non-root standalone Docker image for Railway. No Railway service, source connection, or Railway domain is kept live. The checked-in `Dockerfile` and `railway.json` are a cold recovery recipe that can recreate the full application later without reviving a second backend implementation. See [docs/deployment-failover.md](docs/deployment-failover.md).\n\n## How generation works\n\n1. GitDiagram fetches the repository's default branch, recursive tree, and README through the GitHub API. Truncated trees and oversized inputs are rejected before model work begins.\n2. GitDiagram fetches bounded, integrity-checked source excerpts. Selection favors substantive runtime modules, distributes excerpts across long files, and preserves import bindings for sampled calls.\n3. One managed Luna request streams a short architecture overview followed by a strict graph: groups, nodes, edges, shapes, labels, and repository paths. Explicit model overrides and user-supplied keys retain the separate explanation/graph flow.\n4. The server validates identifiers, graph connectivity, limits, and every linked path against the actual repository. Invalid output is retried with focused feedback.\n5. A deterministic compiler converts the validated AST to Mermaid with total text escaping and GitHub-only links.\n6. The browser sanitizes the source, renders Mermaid in strict security mode, sanitizes the resulting SVG, and enforces the link allowlist again.\n7. Successful artifacts and terminal audit state are persisted so later visits can reopen the diagram without another model call.\n\nThe full Mermaid parser remains in the test suite as a compiler contract test. It is deliberately not loaded into the production generation function, keeping the server bundle small without weakening diagram validation or browser safety.\n\n## State\n\n- **Successful public generations:** R2 object keyed by repository\n- **Successful private generations:** separate R2 namespace derived with a server-side secret\n- **Complimentary quota and active cancellation tokens:** Upstash Redis\n- **Terminal failures without a saved artifact:** short-lived Upstash state\n- **Concurrent writes:** distributed lock plus newest-session-wins persistence\n\n## Private repositories\n\nSelect **Private Repos** in the header and provide a fine-grained GitHub personal access token that can read the target repository. The token is sent only with the relevant same-origin request and is never embedded in public diagram links.\n\n## Local development\n\nFor exact prerequisites and environment details, see [docs/dev-setup.md](docs/dev-setup.md).\n\n```bash\ngit clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\nbun run dev\n```\n\nOpen [http://localhost:3000](http://localhost:3000).\n\nAt minimum, configure R2, Upstash, and one AI provider in `.env`. A GitHub PAT or GitHub App is optional but strongly recommended for higher GitHub API limits.\n\nRun the complete local gate before opening a pull request:\n\n```bash\nbun run lint\nbun run typecheck\nbun run test\nbun run build\n```\n\n## Contributing\n\nContributions are welcome. Please open an issue or pull request with a focused description and verification notes.\n\n## Acknowledgements\n\nInspired by [Romain Courtois](https://github.com/cyclotruc)'s [Gitingest](https://gitingest.com/).\n",
+  "readmeExcerpt": "# GitDiagram\n\nTurn any public or private GitHub repository into an interactive architecture diagram, or watch it explained in a one-minute narrated video.\n\n**[Try GitDiagram →](https://gitdiagram.com/)** · Or replace `hub` with `diagram` in any GitHub repository URL.\n\n\n\n\n\n\n\n\n> <a href=\"https://gitdiagram.com/out/sent-2026-09?placement=readme\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"./public/sponsors/sent-logo-dark.svg\" /><img src=\"./public/sponsors/sent-logo.png\" alt=\"Sent\" width=\"104\" align=\"middle\" /></picture></a>&nbsp;&nbsp; <sub>Sponsored</sub>\n>\n> SMS, WhatsApp, and RCS through one API. [Try Sent →](https://gitdiagram.com/out/sent-2026-09?placement=readme)\n\n\n\n## New: explainer videos\n\nGitDiagram can now turn a repository into a narrated video of about a minute. The video starts with what the project is for and what people do with it, then shows briefly how its main parts fit together and one decision under the hood.\n\n\n\n- **[Watch the gallery →](https://gitdiagram.com/videos)** or add `/video` to any diagram URL, such as `gitdiagram.com/owner/repo/video`.\n- **Download an MP4** in landscape or vertical (9:16), with captions burned in.\n- **Making new videos is in early access.** Anyone can watch videos that already exist.\n\n## Features\n\n- **Watch a repository explained** in a narrated video, or press **Video** on any diagram page.\n- **Explore the architecture** with an AI-generated diagram and streamed explanation.\n- **Jump to the code** by clicking any component's linked file or directory.\n- **Use private repositories** with a GitHub token via **Private Repos** in the header.\n- **Export diagrams** as PNG or copy the Mermaid source.\n\n## Run locally\n\nRequires [Bun](https://bun.sh/), Cloudflare R2, Upstash Redis, and an OpenAI or OpenRouter API key. See the [setup guide](docs/dev-setup.md) for prerequisites and configuration.\n\n```bash\ngit clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\n```\n\nFill in `.env` using the [configuration guide](docs/dev-setup.md#configure), then start the app:\n\n```bash\nbun run dev\n```\n\nOpen [localhost:3000](http://localhost:3000).\n\nExplainer videos are off by default. To turn them on, set `VIDEO_EXPLAINER_ENABLED=1`, `NEXT_PUBLIC_VIDEO_EXPLAINER=1`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `OPENROUTER_API_KEY` (for the voice) in `.env`. See `.env.example` for the other video settings.\n\n## Development\n\nBuilt with Next.js, React, TypeScript, Tailwind CSS, and Mermaid. Videos use Claude or GPT for the script and scenes and OpenRouter (Gemini 3.8 Flash TTS) for the voice. Deployed on Vercel.\n\n- [Architecture](docs/architecture.md) — generation pipeline, storage, and API\n- [Development guide](docs/dev-setup.md) — setup, checks, and deployment\n- [Deployment recovery](docs/deployment-failover.md) — Railway/Docker fallback\n\nContributions are welcome. Open an issue or pull request with a focused description and [verification notes](docs/dev-setup.md#verify).\n\nInspired by [Romain Courtois](https://github.com/cyclotruc)'s [Gitingest](https://gitingest.com/).\n",
   "releases": [],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a href=\"https://gitdiagram.com/\" rel=\"nofollow\"><img src=\"https://raw.githubusercontent.com/ahmedkhaleel2004/gitdiagram/main/docs/readme_img.png\" alt=\"GitDiagram front page\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://ko-fi.com/ahmedkhaleel2004\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/eedfd801bf0295d9607435e3eb3a1ad35c6c2eb59e20210dcc029d339d444f6a/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4b6f2d2d66692d4631363036312e7376673f6c6f676f3d6b6f2d6669266c6f676f436f6c6f723d7768697465\" alt=\"Ko-fi\" data-canonical-src=\"https://img.shields.io/badge/Ko--fi-F16061.svg?logo=ko-fi&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">GitDiagram</h1></div>\n<p dir=\"auto\">Turn any public or private GitHub repository into an interactive architecture diagram in seconds.</p>\n<p dir=\"auto\">You can also replace <code>hub</code> with <code>diagram</code> in a GitHub URL to open its diagram.</p>\n<blockquote>\n<p dir=\"auto\"><strong>Sponsor slot:</strong> Reach developers while they are actively exploring codebases. <a href=\"https://gitdiagram.com/sponsor\" rel=\"nofollow\">Sponsor GitDiagram</a>.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li><strong>Architecture-first diagrams:</strong> converts a repository tree, README, and bounded source excerpts into a system-level graph instead of merely drawing folders.</li>\n<li><strong>Interactive source links:</strong> click a component to open its real file or directory on GitHub.</li>\n<li><strong>Streaming generation:</strong> see the explanation arrive while the graph is planned.</li>\n<li><strong>Private repositories:</strong> provide a GitHub token locally in the browser; private artifacts use a separate protected storage namespace.</li>\n<li><strong>Export:</strong> copy Mermaid source or download the rendered diagram as PNG.</li>\n<li><strong>Provider choice:</strong> OpenAI by default, with OpenRouter available for self-hosted deployments.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Stack</h2></div>\n<ul dir=\"auto\">\n<li><strong>Application:</strong> Next.js 16 App Router, React 19, TypeScript, Tailwind CSS, and Radix UI</li>\n<li><strong>Generation API:</strong> same-origin Next.js Route Handlers running on Vercel's Bun runtime</li>\n<li><strong>Storage:</strong> Cloudflare R2 for diagram artifacts</li>\n<li><strong>Coordination:</strong> Upstash Redis for quota accounting, cancellation, locks, and short-lived failure state</li>\n<li><strong>AI:</strong> OpenAI or OpenRouter through <code>AI_PROVIDER</code></li>\n<li><strong>Analytics:</strong> PostHog</li>\n<li><strong>Deployment:</strong> Vercel is the only live runtime; an offline Railway/Docker recipe is retained for disaster recovery</li>\n</ul>\n<p dir=\"auto\">There is no separate FastAPI implementation, Postgres database, or Neon runtime.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Production architecture</h2></div>\n<p dir=\"auto\">Vercel serves both the UI and the generation endpoints:</p>\n<ul dir=\"auto\">\n<li><code>/api/generate/cost</code> estimates a run after bounded GitHub ingestion, same-origin and rate limited.</li>\n<li><code>/api/generate/stream</code> streams Server-Sent Events for explanation and graph progress.</li>\n<li><code>/api/generate/cancel</code> records authenticated, same-origin cancellation signals.</li>\n<li><code>/api/diagram-state</code> reads and writes the persisted result contract.</li>\n<li><code>/api/healthz</code> provides a lightweight deployment health check.</li>\n</ul>\n<p dir=\"auto\">Long-running generation uses a 300-second Vercel function budget with a shorter application deadline so quota reconciliation and persistence still have time to finish. Requests use explicit upstream deadlines, retries, structured logs, heartbeats, and distributed cancellation rather than process-local state.</p>\n<p dir=\"auto\">The default managed OpenAI pipeline uses one GPT-5.6 Luna request at medium reasoning to produce a source-grounded graph and short streamed overview. The model returns a compact graph without redundant descriptions or type captions. Graphs are validated and compiled deterministically; additional Luna calls are reserved for structural repairs or one recovery after an 18-second slow request. The slow connection is cancelled before its replacement starts; its unavailable partial usage is included as an estimated cost. Managed GPT-5.6 requests explicitly use Fast mode (<code>service_tier: \"priority\"</code>); estimates include its premium, and final costs use the model and tier actually served. User-supplied keys retain standard service and their configured model. Explicit model overrides and OpenRouter retain the two-stage pipeline. Output token estimates reserve quota but do not cap provider output.</p>\n<p dir=\"auto\">The same Next.js application can also build into a minimal, non-root standalone Docker image for Railway. No Railway service, source connection, or Railway domain is kept live. The checked-in <code>Dockerfile</code> and <code>railway.json</code> are a cold recovery recipe that can recreate the full application later without reviving a second backend implementation. See <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/deployment-failover.md\">docs/deployment-failover.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How generation works</h2></div>\n<ol dir=\"auto\">\n<li>GitDiagram fetches the repository's default branch, recursive tree, and README through the GitHub API. Truncated trees and oversized inputs are rejected before model work begins.</li>\n<li>GitDiagram fetches bounded, integrity-checked source excerpts. Selection favors substantive runtime modules, distributes excerpts across long files, and preserves import bindings for sampled calls.</li>\n<li>One managed Luna request streams a short architecture overview followed by a strict graph: groups, nodes, edges, shapes, labels, and repository paths. Explicit model overrides and user-supplied keys retain the separate explanation/graph flow.</li>\n<li>The server validates identifiers, graph connectivity, limits, and every linked path against the actual repository. Invalid output is retried with focused feedback.</li>\n<li>A deterministic compiler converts the validated AST to Mermaid with total text escaping and GitHub-only links.</li>\n<li>The browser sanitizes the source, renders Mermaid in strict security mode, sanitizes the resulting SVG, and enforces the link allowlist again.</li>\n<li>Successful artifacts and terminal audit state are persisted so later visits can reopen the diagram without another model call.</li>\n</ol>\n<p dir=\"auto\">The full Mermaid parser remains in the test suite as a compiler contract test. It is deliberately not loaded into the production generation function, keeping the server bundle small without weakening diagram validation or browser safety.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">State</h2></div>\n<ul dir=\"auto\">\n<li><strong>Successful public generations:</strong> R2 object keyed by repository</li>\n<li><strong>Successful private generations:</strong> separate R2 namespace derived with a server-side secret</li>\n<li><strong>Complimentary quota and active cancellation tokens:</strong> Upstash Redis</li>\n<li><strong>Terminal failures without a saved artifact:</strong> short-lived Upstash state</li>\n<li><strong>Concurrent writes:</strong> distributed lock plus newest-session-wins persistence</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Private repositories</h2></div>\n<p dir=\"auto\">Select <strong>Private Repos</strong> in the header and provide a fine-grained GitHub personal access token that can read the target repository. The token is sent only with the relevant same-origin request and is never embedded in public diagram links.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Local development</h2></div>\n<p dir=\"auto\">For exact prerequisites and environment details, see <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md\">docs/dev-setup.md</a>.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\nbun run dev\"><pre>git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\n<span class=\"pl-c1\">cd</span> gitdiagram\nbun install\ncp .env.example .env\nbun run dev</pre></div>\n<p dir=\"auto\">Open <a href=\"http://localhost:3000\" rel=\"nofollow\">http://localhost:3000</a>.</p>\n<p dir=\"auto\">At minimum, configure R2, Upstash, and one AI provider in <code>.env</code>. A GitHub PAT or GitHub App is optional but strongly recommended for higher GitHub API limits.</p>\n<p dir=\"auto\">Run the complete local gate before opening a pull request:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"bun run lint\nbun run typecheck\nbun run test\nbun run build\"><pre>bun run lint\nbun run typecheck\nbun run <span class=\"pl-c1\">test</span>\nbun run build</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Contributing</h2></div>\n<p dir=\"auto\">Contributions are welcome. Please open an issue or pull request with a focused description and verification notes.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Acknowledgements</h2></div>\n<p dir=\"auto\">Inspired by <a href=\"https://github.com/cyclotruc\">Romain Courtois</a>'s <a href=\"https://gitingest.com/\" rel=\"nofollow\">Gitingest</a>.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">GitDiagram</h1></div>\n<p dir=\"auto\">Turn any public or private GitHub repository into an interactive architecture diagram, or watch it explained in a one-minute narrated video.</p>\n<p dir=\"auto\"><strong><a href=\"https://gitdiagram.com/\" rel=\"nofollow\">Try GitDiagram →</a></strong> · Or replace <code>hub</code> with <code>diagram</code> in any GitHub repository URL.</p>\n<p dir=\"auto\"><a href=\"https://gitdiagram.com/\" rel=\"nofollow\"><img src=\"https://raw.githubusercontent.com/ahmedkhaleel2004/gitdiagram/main/docs/readme_img.png\" alt=\"GitDiagram front page\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/LICENSE\"><img src=\"https://camo.githubusercontent.com/7013272bd27ece47364536a221edb554cd69683b68a46fc0ee96881174c4214c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d4d49542d626c75652e737667\" alt=\"License\" data-canonical-src=\"https://img.shields.io/badge/license-MIT-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://ko-fi.com/ahmedkhaleel2004\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/eedfd801bf0295d9607435e3eb3a1ad35c6c2eb59e20210dcc029d339d444f6a/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4b6f2d2d66692d4631363036312e7376673f6c6f676f3d6b6f2d6669266c6f676f436f6c6f723d7768697465\" alt=\"Ko-fi\" data-canonical-src=\"https://img.shields.io/badge/Ko--fi-F16061.svg?logo=ko-fi&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n\n<blockquote>\n<p dir=\"auto\"><a href=\"https://gitdiagram.com/out/sent-2026-09?placement=readme\" rel=\"nofollow\"><themed-picture data-catalyst-inline=\"true\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"./public/sponsors/sent-logo-dark.svg\"><img src=\"https://raw.githubusercontent.com/ahmedkhaleel2004/gitdiagram/main/public/sponsors/sent-logo.png\" alt=\"Sent\" width=\"104\" align=\"middle\"></picture></themed-picture></a>   <sub>Sponsored</sub></p>\n<p dir=\"auto\">SMS, WhatsApp, and RCS through one API. <a href=\"https://gitdiagram.com/out/sent-2026-09?placement=readme\" rel=\"nofollow\">Try Sent →</a></p>\n</blockquote>\n\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">New: explainer videos</h2></div>\n<p dir=\"auto\">GitDiagram can now turn a repository into a narrated video of about a minute. The video starts with what the project is for and what people do with it, then shows briefly how its main parts fit together and one decision under the hood.</p>\n<p dir=\"auto\"><a href=\"https://gitdiagram.com/ahmedkhaleel2004/gitdiagram/video\" rel=\"nofollow\"><img src=\"https://raw.githubusercontent.com/ahmedkhaleel2004/gitdiagram/main/docs/readme_video.jpg\" alt=\"Watch GitDiagram explain itself in a minute\" style=\"max-width: 100%;\"></a></p>\n<ul dir=\"auto\">\n<li><strong><a href=\"https://gitdiagram.com/videos\" rel=\"nofollow\">Watch the gallery →</a></strong> or add <code>/video</code> to any diagram URL, such as <code>gitdiagram.com/owner/repo/video</code>.</li>\n<li><strong>Download an MP4</strong> in landscape or vertical (9:16), with captions burned in.</li>\n<li><strong>Making new videos is in early access.</strong> Anyone can watch videos that already exist.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li><strong>Watch a repository explained</strong> in a narrated video, or press <strong>Video</strong> on any diagram page.</li>\n<li><strong>Explore the architecture</strong> with an AI-generated diagram and streamed explanation.</li>\n<li><strong>Jump to the code</strong> by clicking any component's linked file or directory.</li>\n<li><strong>Use private repositories</strong> with a GitHub token via <strong>Private Repos</strong> in the header.</li>\n<li><strong>Export diagrams</strong> as PNG or copy the Mermaid source.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Run locally</h2></div>\n<p dir=\"auto\">Requires <a href=\"https://bun.sh/\" rel=\"nofollow\">Bun</a>, Cloudflare R2, Upstash Redis, and an OpenAI or OpenRouter API key. See the <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md\">setup guide</a> for prerequisites and configuration.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\ncd gitdiagram\nbun install\ncp .env.example .env\"><pre>git clone https://github.com/ahmedkhaleel2004/gitdiagram.git\n<span class=\"pl-c1\">cd</span> gitdiagram\nbun install\ncp .env.example .env</pre></div>\n<p dir=\"auto\">Fill in <code>.env</code> using the <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md#configure\">configuration guide</a>, then start the app:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"bun run dev\"><pre>bun run dev</pre></div>\n<p dir=\"auto\">Open <a href=\"http://localhost:3000\" rel=\"nofollow\">localhost:3000</a>.</p>\n<p dir=\"auto\">Explainer videos are off by default. To turn them on, set <code>VIDEO_EXPLAINER_ENABLED=1</code>, <code>NEXT_PUBLIC_VIDEO_EXPLAINER=1</code>, <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code> and <code>OPENROUTER_API_KEY</code> (for the voice) in <code>.env</code>. See <code>.env.example</code> for the other video settings.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<p dir=\"auto\">Built with Next.js, React, TypeScript, Tailwind CSS, and Mermaid. Videos use Claude or GPT for the script and scenes and OpenRouter (Gemini 3.8 Flash TTS) for the voice. Deployed on Vercel.</p>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/architecture.md\">Architecture</a> — generation pipeline, storage, and API</li>\n<li><a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md\">Development guide</a> — setup, checks, and deployment</li>\n<li><a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/deployment-failover.md\">Deployment recovery</a> — Railway/Docker fallback</li>\n</ul>\n<p dir=\"auto\">Contributions are welcome. Open an issue or pull request with a focused description and <a href=\"https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/docs/dev-setup.md#verify\">verification notes</a>.</p>\n<p dir=\"auto\">Inspired by <a href=\"https://github.com/cyclotruc\">Romain Courtois</a>'s <a href=\"https://gitingest.com/\" rel=\"nofollow\">Gitingest</a>.</p>\n</article></div>",
   "firstCommitAt": "2024-12-15T10:32:37Z",
-  "contributorCount": 4,
+  "contributorCount": 5,
   "recentIssues": [
+    {
+      "number": 219,
+      "title": "Proposal: inline \"Private repository\" option on the home form",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/219",
+      "createdAt": "2026-09-21T11:49:18Z",
+      "comments": 0,
+      "labels": [],
+      "author": "sudoping01"
+    },
+    {
+      "number": 218,
+      "title": "Why can't I see the proxy module in ProxyAuth?",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/218",
+      "createdAt": "2026-09-20T21:02:21Z",
+      "comments": 0,
+      "labels": [],
+      "author": "vBlackOut"
+    },
     {
       "number": 215,
       "title": "Diagram shows connections that do not exist in the scanned code",
@@ -132,26 +163,9 @@
       "comments": 3,
       "labels": [],
       "author": "zahidpichen"
-    },
-    {
-      "number": 175,
-      "title": "New concept Mr Ahmed",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/issues/175",
-      "createdAt": "2026-05-20T11:42:26Z",
-      "comments": 0,
-      "labels": [],
-      "author": "Noorababi"
     }
   ],
   "commitActivity": [
-    {
-      "week": "2025-09-21",
-      "commits": 0
-    },
-    {
-      "week": "2025-09-28",
-      "commits": 0
-    },
     {
       "week": "2025-10-05",
       "commits": 0
@@ -350,66 +364,18 @@
     },
     {
       "week": "2026-09-13",
-      "commits": 36
+      "commits": 66
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 218
+    },
+    {
+      "week": "2026-09-27",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-09-21",
-      "count": 0
-    },
-    {
-      "date": "2025-09-22",
-      "count": 0
-    },
-    {
-      "date": "2025-09-23",
-      "count": 0
-    },
-    {
-      "date": "2025-09-24",
-      "count": 0
-    },
-    {
-      "date": "2025-09-25",
-      "count": 0
-    },
-    {
-      "date": "2025-09-26",
-      "count": 0
-    },
-    {
-      "date": "2025-09-27",
-      "count": 0
-    },
-    {
-      "date": "2025-09-28",
-      "count": 0
-    },
-    {
-      "date": "2025-09-29",
-      "count": 0
-    },
-    {
-      "date": "2025-09-30",
-      "count": 0
-    },
-    {
-      "date": "2025-10-01",
-      "count": 0
-    },
-    {
-      "date": "2025-10-02",
-      "count": 0
-    },
-    {
-      "date": "2025-10-03",
-      "count": 0
-    },
-    {
-      "date": "2025-10-04",
-      "count": 0
-    },
     {
       "date": "2025-10-05",
       "count": 0
@@ -1804,10 +1770,66 @@
     },
     {
       "date": "2026-09-18",
-      "count": 18
+      "count": 37
     },
     {
       "date": "2026-09-19",
+      "count": 11
+    },
+    {
+      "date": "2026-09-20",
+      "count": 11
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 1
+    },
+    {
+      "date": "2026-09-23",
+      "count": 1
+    },
+    {
+      "date": "2026-09-24",
+      "count": 56
+    },
+    {
+      "date": "2026-09-25",
+      "count": 148
+    },
+    {
+      "date": "2026-09-26",
+      "count": 1
+    },
+    {
+      "date": "2026-09-27",
+      "count": 0
+    },
+    {
+      "date": "2026-09-28",
+      "count": 0
+    },
+    {
+      "date": "2026-09-29",
+      "count": 0
+    },
+    {
+      "date": "2026-09-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-01",
+      "count": 0
+    },
+    {
+      "date": "2026-10-02",
+      "count": 0
+    },
+    {
+      "date": "2026-10-03",
       "count": 0
     }
   ],
@@ -1825,7 +1847,7 @@
     {
       "day": 0,
       "hour": 2,
-      "commits": 0
+      "commits": 2
     },
     {
       "day": 0,
@@ -1840,7 +1862,7 @@
     {
       "day": 0,
       "hour": 5,
-      "commits": 3
+      "commits": 12
     },
     {
       "day": 0,
@@ -2125,7 +2147,7 @@
     {
       "day": 2,
       "hour": 14,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 2,
@@ -2280,187 +2302,187 @@
     {
       "day": 3,
       "hour": 21,
+      "commits": 13
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 3
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 5
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 18
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 17
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 9
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 7
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 9
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 13
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 6
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 54
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 37
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 7,
       "commits": 12
     },
     {
-      "day": 3,
-      "hour": 22,
-      "commits": 4
-    },
-    {
-      "day": 3,
-      "hour": 23,
-      "commits": 4
-    },
-    {
-      "day": 4,
-      "hour": 0,
-      "commits": 4
-    },
-    {
-      "day": 4,
-      "hour": 1,
-      "commits": 1
-    },
-    {
-      "day": 4,
-      "hour": 2,
-      "commits": 2
-    },
-    {
-      "day": 4,
-      "hour": 3,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 4,
-      "commits": 5
-    },
-    {
-      "day": 4,
-      "hour": 5,
-      "commits": 1
-    },
-    {
-      "day": 4,
-      "hour": 6,
-      "commits": 2
-    },
-    {
-      "day": 4,
-      "hour": 7,
-      "commits": 3
-    },
-    {
-      "day": 4,
-      "hour": 8,
-      "commits": 1
-    },
-    {
-      "day": 4,
-      "hour": 9,
-      "commits": 2
-    },
-    {
-      "day": 4,
-      "hour": 10,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 11,
-      "commits": 4
-    },
-    {
-      "day": 4,
-      "hour": 12,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 13,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 14,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 15,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 16,
-      "commits": 1
-    },
-    {
-      "day": 4,
-      "hour": 17,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 18,
-      "commits": 6
-    },
-    {
-      "day": 4,
-      "hour": 19,
-      "commits": 6
-    },
-    {
-      "day": 4,
-      "hour": 20,
-      "commits": 5
-    },
-    {
-      "day": 4,
-      "hour": 21,
-      "commits": 0
-    },
-    {
-      "day": 4,
-      "hour": 22,
-      "commits": 4
-    },
-    {
-      "day": 4,
-      "hour": 23,
-      "commits": 3
-    },
-    {
-      "day": 5,
-      "hour": 0,
-      "commits": 1
-    },
-    {
-      "day": 5,
-      "hour": 1,
-      "commits": 2
-    },
-    {
-      "day": 5,
-      "hour": 2,
-      "commits": 2
-    },
-    {
-      "day": 5,
-      "hour": 3,
-      "commits": 4
-    },
-    {
-      "day": 5,
-      "hour": 4,
-      "commits": 7
-    },
-    {
-      "day": 5,
-      "hour": 5,
-      "commits": 5
-    },
-    {
-      "day": 5,
-      "hour": 6,
-      "commits": 4
-    },
-    {
-      "day": 5,
-      "hour": 7,
-      "commits": 5
-    },
-    {
       "day": 5,
       "hour": 8,
-      "commits": 1
+      "commits": 26
     },
     {
       "day": 5,
       "hour": 9,
-      "commits": 2
+      "commits": 5
     },
     {
       "day": 5,
@@ -2490,7 +2512,7 @@
     {
       "day": 5,
       "hour": 15,
-      "commits": 0
+      "commits": 2
     },
     {
       "day": 5,
@@ -2500,22 +2522,22 @@
     {
       "day": 5,
       "hour": 17,
-      "commits": 1
-    },
-    {
-      "day": 5,
-      "hour": 18,
       "commits": 5
     },
     {
       "day": 5,
+      "hour": 18,
+      "commits": 14
+    },
+    {
+      "day": 5,
       "hour": 19,
-      "commits": 2
+      "commits": 10
     },
     {
       "day": 5,
       "hour": 20,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 5,
@@ -2535,7 +2557,7 @@
     {
       "day": 6,
       "hour": 0,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 6,
@@ -2555,12 +2577,12 @@
     {
       "day": 6,
       "hour": 4,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
       "hour": 5,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -2600,7 +2622,7 @@
     {
       "day": 6,
       "hour": 13,
-      "commits": 0
+      "commits": 3
     },
     {
       "day": 6,
@@ -2625,17 +2647,17 @@
     {
       "day": 6,
       "hour": 18,
-      "commits": 0
-    },
-    {
-      "day": 6,
-      "hour": 19,
       "commits": 2
     },
     {
       "day": 6,
+      "hour": 19,
+      "commits": 5
+    },
+    {
+      "day": 6,
       "hour": 20,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 6,
@@ -2654,93 +2676,99 @@
     }
   ],
   "participation": {
-    "all": 202,
-    "owner": 182,
-    "community": 20
+    "all": 478,
+    "owner": 457,
+    "community": 21
   },
   "recentCommits": [
     {
-      "sha": "eef003b",
-      "message": "Record live Luna latency, quality, and cost verification",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/eef003bb2d5837f69dc4f8ad6a7e583ba012a661",
-      "date": "2026-09-18T11:13:53Z",
+      "sha": "abe0620",
+      "message": "Have GPT-6 Sol design premium videos too",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/abe0620f1ff33c1d962e5e8cc6dc74e66c8090cf",
+      "date": "2026-09-26T09:39:39Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "d439b64",
-      "message": "Recover slow Luna requests and preserve major architecture capabilities",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/d439b6484a602437b6160867f35143988ffd322a",
-      "date": "2026-09-18T11:08:16Z",
+      "sha": "ddf88f6",
+      "message": "Park feed events in Redis while no dashboard is watching",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/ddf88f66bd149303d914ae9c6e64aea139f941fc",
+      "date": "2026-09-26T00:16:47Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "75e5448",
-      "message": "Improve Luna architecture quality with compact output and stronger source evidence",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/75e5448c2f588bf526fe62f09e3e68660b2a01b8",
-      "date": "2026-09-18T10:52:04Z",
+      "sha": "0f49101",
+      "message": "Always change the character a presence test breaks a token with",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/0f4910102e31ad2ae29c0dbed18e773c74e9c46d",
+      "date": "2026-09-25T23:47:11Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "a09b1f8",
-      "message": "Restore Luna generation to contain public API costs",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/a09b1f89f38d4af79224e640a6ffcca1ec12c53b",
-      "date": "2026-09-18T10:34:50Z",
+      "sha": "5c4dc64",
+      "message": "Keep live presence inside Cloudflare's free daily requests",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/5c4dc64c3166ab3bbb0516ee3903de5044c3a88c",
+      "date": "2026-09-25T23:26:49Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "494ab33",
-      "message": "Use Sol consistently for architecture quality on small repositories",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/494ab3397d345f655b2ffd36bcbb97af4db56101",
-      "date": "2026-09-18T10:21:38Z",
+      "sha": "eafd6bc",
+      "message": "Report how reels are watched and shared",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/eafd6bcc73ba30747ee21122d3d1016ac5aeaa47",
+      "date": "2026-09-25T21:37:00Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "9b90615",
-      "message": "Generate source-grounded architecture in one fast model pass",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/9b90615683325c4951669214b4bfc3dd153f5cbf",
-      "date": "2026-09-18T10:19:31Z",
+      "sha": "8047f69",
+      "message": "Add Reels: every explainer video in a vertical swipe feed",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/8047f69339fd7120ca98c135ab5ed8153750cfa6",
+      "date": "2026-09-25T21:28:41Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "315365e",
-      "message": "Remove unused generation tester helpers",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/315365e6d30e8a33af8067231607cb820878b593",
-      "date": "2026-09-18T09:49:13Z",
+      "sha": "423ccaa",
+      "message": "Lead videos with practical use, and measure how they are watched and shared",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/423ccaa445cf7259d5105e1b6563646fcd1c5bb6",
+      "date": "2026-09-25T21:07:48Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "117ac39",
-      "message": "Remove generation UI tester before release",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/117ac392756c45015bb1ec65faa7fb0438dfd3dd",
-      "date": "2026-09-18T09:48:45Z",
+      "sha": "e6d1251",
+      "message": "Leave the platform-sized ffmpeg binary out of the tracing ceilings",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/e6d12517a085fd69bf48dd94fe0858674d5f6901",
+      "date": "2026-09-25T13:27:30Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "4fe2396",
-      "message": "Expire saved diagram cache immediately after regeneration",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/4fe2396baaa5e116aabee704e726c7740acdbf61",
-      "date": "2026-09-18T09:41:42Z",
+      "sha": "0b4379d",
+      "message": "Merge origin/main into review fixes",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/0b4379d2f945df1245693387dd3c55a1164a42f1",
+      "date": "2026-09-25T13:06:51Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     },
     {
-      "sha": "afc8514",
-      "message": "Match repository link sizing to toolbar buttons",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/afc85144e2b64d6b9d2bb83dfce7d5bc569df085",
-      "date": "2026-09-18T09:29:45Z",
+      "sha": "dfb5a22",
+      "message": "Bring the docs and .env.example in line with the review fixes",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/commit/dfb5a220a23fdee83b807cd0954057888aaf0748",
+      "date": "2026-09-25T13:04:39Z",
       "author": "ahmedkhaleel2004",
       "avatarUrl": "https://avatars.githubusercontent.com/u/111161052?v=4"
     }
   ],
   "fileTree": [
+    {
+      "name": ".githooks",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/.githooks"
+    },
     {
       "name": ".github",
       "type": "dir",
@@ -2752,6 +2780,12 @@
       "type": "dir",
       "size": 0,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/docs"
+    },
+    {
+      "name": "experiments",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/experiments"
     },
     {
       "name": "patches",
@@ -2778,57 +2812,69 @@
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/src"
     },
     {
+      "name": "workers",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/tree/main/workers"
+    },
+    {
       "name": ".dockerignore",
       "type": "file",
-      "size": 120,
+      "size": 190,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.dockerignore"
     },
     {
       "name": ".env.example",
       "type": "file",
-      "size": 1553,
+      "size": 6101,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.env.example"
     },
     {
       "name": ".gitignore",
       "type": "file",
-      "size": 897,
+      "size": 960,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.gitignore"
+    },
+    {
+      "name": ".prettierignore",
+      "type": "file",
+      "size": 256,
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.prettierignore"
     },
     {
       "name": ".vercelignore",
       "type": "file",
-      "size": 278,
+      "size": 403,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/.vercelignore"
     },
     {
       "name": "bun.lock",
       "type": "file",
-      "size": 198761,
+      "size": 236106,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/bun.lock"
     },
     {
       "name": "CLAUDE.md",
       "type": "file",
-      "size": 6613,
+      "size": 26652,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/CLAUDE.md"
     },
     {
       "name": "components.json",
       "type": "file",
-      "size": 450,
+      "size": 451,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/components.json"
     },
     {
       "name": "Dockerfile",
       "type": "file",
-      "size": 1051,
+      "size": 2475,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/Dockerfile"
     },
     {
       "name": "eslint.config.mjs",
       "type": "file",
-      "size": 989,
+      "size": 2018,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/eslint.config.mjs"
     },
     {
@@ -2840,13 +2886,13 @@
     {
       "name": "next.config.js",
       "type": "file",
-      "size": 2984,
+      "size": 6664,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/next.config.js"
     },
     {
       "name": "package.json",
       "type": "file",
-      "size": 2792,
+      "size": 3545,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/package.json"
     },
     {
@@ -2870,7 +2916,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 6959,
+      "size": 3560,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/README.md"
     },
     {
@@ -2882,13 +2928,13 @@
     {
       "name": "tsconfig.json",
       "type": "file",
-      "size": 1030,
+      "size": 1038,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/tsconfig.json"
     },
     {
       "name": "vercel.json",
       "type": "file",
-      "size": 192,
+      "size": 328,
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/blob/main/vercel.json"
     },
     {
@@ -2906,21 +2952,66 @@
   ],
   "recentPulls": [
     {
-      "number": 217,
-      "title": "Optimize Generation Pipeline and Cache Performance",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/217",
+      "number": 223,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/223",
       "state": "open",
-      "updatedAt": "2026-09-17T09:30:58Z",
-      "author": "AnandkumarMall",
+      "updatedAt": "2026-09-28T13:18:35Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 222,
+      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/222",
+      "state": "open",
+      "updatedAt": "2026-09-28T13:09:11Z",
+      "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 221,
+      "title": "Add export function for SVG diagrams with error handling for dimensions",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/221",
+      "state": "closed",
+      "updatedAt": "2026-09-26T07:14:49Z",
+      "author": "xoity",
       "draft": false
     },
     {
       "number": 216,
       "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/216",
-      "state": "open",
-      "updatedAt": "2026-09-14T13:09:04Z",
+      "state": "closed",
+      "updatedAt": "2026-09-25T07:44:39Z",
       "author": "dependabot[bot]",
+      "draft": false
+    },
+    {
+      "number": 197,
+      "title": "Add Requesty as an OpenAI-compatible provider",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/197",
+      "state": "open",
+      "updatedAt": "2026-09-23T05:35:33Z",
+      "author": "Thibaultjaigu",
+      "draft": false
+    },
+    {
+      "number": 220,
+      "title": "Add Google Cloud Storage and local Redis backends",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/220",
+      "state": "open",
+      "updatedAt": "2026-09-22T22:54:58Z",
+      "author": "shapor",
+      "draft": false
+    },
+    {
+      "number": 217,
+      "title": "Optimize Generation Pipeline and Cache Performance",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/217",
+      "state": "open",
+      "updatedAt": "2026-09-18T16:29:54Z",
+      "author": "AnandkumarMall",
       "draft": false
     },
     {
@@ -2929,51 +3020,6 @@
       "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/214",
       "state": "merged",
       "updatedAt": "2026-09-13T09:47:29Z",
-      "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 177,
-      "title": "Adding support for local repos and running against an AI cli",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/177",
-      "state": "open",
-      "updatedAt": "2026-09-11T23:22:47Z",
-      "author": "Leiyiliro",
-      "draft": false
-    },
-    {
-      "number": 197,
-      "title": "Add Requesty as an OpenAI-compatible provider",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/197",
-      "state": "open",
-      "updatedAt": "2026-09-11T18:35:14Z",
-      "author": "Thibaultjaigu",
-      "draft": false
-    },
-    {
-      "number": 212,
-      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/212",
-      "state": "merged",
-      "updatedAt": "2026-09-02T00:38:46Z",
-      "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 185,
-      "title": "feat: add PDF Export feature and fix GitHub PAT authentication bug",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/185",
-      "state": "closed",
-      "updatedAt": "2026-08-29T16:17:32Z",
-      "author": "shantopaul",
-      "draft": false
-    },
-    {
-      "number": 210,
-      "title": "Bump the \"all-dependencies\" group with 1 update across multiple ecosystems",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/pull/210",
-      "state": "merged",
-      "updatedAt": "2026-08-12T02:03:55Z",
       "author": "dependabot[bot]",
       "draft": false
     }
@@ -2987,23 +3033,27 @@
   },
   "workflowRuns": [
     {
-      "name": "CI",
+      "name": "Sponsor README schedule",
       "status": "success",
-      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/actions/runs/35338602055",
+      "url": "https://github.com/ahmedkhaleel2004/gitdiagram/actions/runs/36461245097",
       "branch": "main",
-      "updatedAt": "2026-09-18T11:16:20Z"
+      "updatedAt": "2026-09-28T17:52:58Z"
     }
   ],
   "manifestDependencies": {
     "manifest": "package.json",
     "dependencies": [
       {
-        "name": "@aws-sdk/client-s3",
-        "version": "^3.1131.0"
+        "name": "@anthropic-ai/sdk",
+        "version": "^0.128.0"
       },
       {
-        "name": "@mermaid-js/layout-elk",
-        "version": "^0.2.3"
+        "name": "@aws-sdk/client-s3",
+        "version": "^3.1140.0"
+      },
+      {
+        "name": "@aws-sdk/s3-request-presigner",
+        "version": "^3.1140.0"
       },
       {
         "name": "@radix-ui/react-dialog",
@@ -3018,12 +3068,24 @@
         "version": "^1.2.16"
       },
       {
+        "name": "@sparticuz/chromium",
+        "version": "153.0.0"
+      },
+      {
+        "name": "@vercel/functions",
+        "version": "^3.9.9"
+      },
+      {
         "name": "clsx",
         "version": "^2.1.1"
       },
       {
         "name": "dompurify",
-        "version": "^3.4.15"
+        "version": "^3.4.16"
+      },
+      {
+        "name": "ffmpeg-static",
+        "version": "5.3.0"
       },
       {
         "name": "geist",
@@ -3031,15 +3093,15 @@
       },
       {
         "name": "lucide-react",
-        "version": "^1.45.0"
+        "version": "^1.48.0"
       },
       {
         "name": "mermaid",
-        "version": "^11.17.2"
+        "version": "^12.0.0"
       },
       {
         "name": "next",
-        "version": "^16.3.5"
+        "version": "^16.3.6"
       },
       {
         "name": "next-themes",
@@ -3047,11 +3109,15 @@
       },
       {
         "name": "openai",
-        "version": "^7.15.0"
+        "version": "^7.23.0"
       },
       {
         "name": "posthog-js",
-        "version": "^1.430.3"
+        "version": "^1.434.13"
+      },
+      {
+        "name": "puppeteer-core",
+        "version": "25.11.0"
       },
       {
         "name": "react",
@@ -3075,12 +3141,12 @@
       },
       {
         "name": "zod",
-        "version": "^4.6.4"
+        "version": "^4.6.5"
       }
     ],
-    "total": 20
+    "total": 25
   },
-  "branchCount": 2,
+  "branchCount": 3,
   "tagCount": 1,
   "fundingLinks": [
     {
@@ -3088,8 +3154,8 @@
       "url": "https://ko-fi.com/ahmedkhaleel2004"
     }
   ],
-  "openIssuesOnly": 23,
-  "openPRs": 17,
+  "openIssuesOnly": 25,
+  "openPRs": 19,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
@@ -3103,7 +3169,7 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-18T11:17:26.699Z",
+  "factsUpdatedAt": "2026-09-28T18:21:18.148Z",
   "starHistory": {
     "points": [
       {
@@ -3299,5 +3365,267 @@
     "category": "developer-tools",
     "version": 3,
     "source": "jules"
-  }
+  },
+  "codeFrequency": [
+    {
+      "week": "2025-10-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-10-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-09",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-16",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-11-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2025-12-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-04",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-11",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 8162,
+      "deletions": 4291
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 4328,
+      "deletions": 1689
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 157,
+      "deletions": 129
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 161,
+      "deletions": 58
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 65,
+      "deletions": 15
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 12249,
+      "deletions": 6853
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 11746,
+      "deletions": 14481
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 1154,
+      "deletions": 1211
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 173,
+      "deletions": 325
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 152,
+      "deletions": 140
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 322,
+      "deletions": 136
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 984,
+      "deletions": 440
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 1607,
+      "deletions": 477
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 159,
+      "deletions": 279
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 151,
+      "deletions": 127
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 207,
+      "deletions": 88
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 123,
+      "deletions": 226
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 183,
+      "deletions": 232
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 161,
+      "deletions": 221
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 19261,
+      "deletions": 14740
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 5588,
+      "deletions": 1479
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 1391,
+      "deletions": 199
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 127,
+      "deletions": 175
+    },
+    {
+      "week": "2026-08-16",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-30",
+      "additions": 192,
+      "deletions": 174
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 38,
+      "deletions": 46
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 18940,
+      "deletions": 10346
+    },
+    {
+      "week": "2026-09-20",
+      "additions": 69779,
+      "deletions": 24961
+    },
+    {
+      "week": "2026-09-27",
+      "additions": 0,
+      "deletions": 0
+    }
+  ]
 }
