@@ -1,0 +1,81 @@
+name: Replay Jules PRs
+
+# Jules enrichment PRs rewrite data/repos/*.json on branches that are days old.
+# By the time they are reviewed, the hourly pipeline, rename merges and history
+# repairs have changed the same files, so the branches conflict and git cannot
+# merge them (51 of 52 open PRs were stuck this way). What a PR contributes is
+# the aiSummary of each repo, so this applies just those onto the current main
+# (see scripts/replay-pr-summaries.mjs), only where they beat what is there,
+# then closes the PR. PRs that touch anything besides data/repos are left alone.
+on:
+  schedule:
+    - cron: "40 */2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply summaries from open data PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          # Only PRs whose every changed file is a repo profile.
+          prs=$(gh pr list --state open --limit 100 --json number,files \
+            --jq '.[] | select((.files | length) > 0 and all(.files[]; .path | test("^data/repos/[^/]+\\.json$"))) | .number' | sort -n)
+          if [ -z "$prs" ]; then echo "No open data PRs to replay."; exit 0; fi
+
+          mkdir -p "$RUNNER_TEMP/replay"
+          applied_any=false
+          for n in $prs; do
+            git fetch -q origin "pull/$n/head:refs/prs/$n" || { echo "PR #$n: fetch failed, skipping"; continue; }
+            if node scripts/replay-pr-summaries.mjs "$n" > "$RUNNER_TEMP/replay/$n.json"; then
+              a=$(jq '.applied | length' "$RUNNER_TEMP/replay/$n.json")
+              s=$(jq '.skipped | length' "$RUNNER_TEMP/replay/$n.json")
+              echo "PR #$n: applied $a, skipped $s"
+              [ "$a" -gt 0 ] && applied_any=true
+            else
+              echo "::warning::PR #$n: replay failed, leaving it open"
+              rm -f "$RUNNER_TEMP/replay/$n.json"
+            fi
+          done
+
+          # One commit for the whole batch.
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No summary changes to commit."
+          else
+            git commit -q -m "data: apply AI summaries from open enrichment PRs"
+            git pull -q --rebase origin "${GITHUB_REF_NAME}"
+            git push -q
+          fi
+
+          # Close only after the push succeeded.
+          for f in "$RUNNER_TEMP"/replay/*.json; do
+            [ -e "$f" ] || continue
+            n=$(basename "$f" .json)
+            a=$(jq '.applied | length' "$f"); s=$(jq '.skipped | length' "$f")
+            gh pr comment "$n" --body "Applied the AI summaries from this PR onto \`main\` as of now: $a applied, $s skipped (already as good or better, or the repository is no longer tracked). Closing because the branch itself conflicts with newer data and cannot be merged directly." >/dev/null
+            gh pr close "$n" --delete-branch >/dev/null || gh pr close "$n" >/dev/null
+          done
