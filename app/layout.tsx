@@ -4,8 +4,6 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import SideNav from "@/components/SideNav";
 import AuthProvider from "@/components/AuthProvider";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -67,8 +65,13 @@ export default function RootLayout({
           </div>
           <SiteFooter />
         </AuthProvider>
-        <Analytics />
-        <SpeedInsights />
+        {process.env.NEXT_PUBLIC_CF_BEACON_TOKEN ? (
+          <script
+            defer
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={JSON.stringify({ token: process.env.NEXT_PUBLIC_CF_BEACON_TOKEN })}
+          />
+        ) : null}
       </body>
     </html>
   );

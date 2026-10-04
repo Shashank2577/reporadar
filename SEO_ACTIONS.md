@@ -82,11 +82,11 @@ order of effort-to-impact:
 
 ## 5. Analytics (so you can see whether any of this is working)
 
-- [ ] Vercel Web Analytics and Speed Insights are already wired into every
-      page. Enable them for the project in the Vercel dashboard's Analytics
-      tab (nothing to code) to start seeing real visitor counts, top pages,
-      and referrers — this is how you'll actually see traffic arrive from
-      the channels above, days to weeks after doing them.
+- [ ] Cloudflare Web Analytics is wired into every page once
+      `NEXT_PUBLIC_CF_BEACON_TOKEN` is set (see the README's deployment
+      checklist). It shows real visitor counts, top pages, referrers and Core
+      Web Vitals — this is how you'll actually see traffic arrive from the
+      channels above, days to weeks after doing them.
 - [ ] Once Search Console is verified, its own dashboard shows real search
       impressions and clicks per query — a more direct signal than
       `site:` searches or general analytics.

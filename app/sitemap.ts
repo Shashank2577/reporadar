@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getAllRepos, getReports, getBlogPosts, getAllTrendingDates, allTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
+import { getAllRepos, getReports, getBlogPosts, getAllTrendingDates, topTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -45,7 +45,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.8,
   }));
 
-  const topics: MetadataRoute.Sitemap = allTopics().map(({ topic }) => ({
+  const topics: MetadataRoute.Sitemap = topTopics().map(({ topic }) => ({
     url: absoluteUrl(`/topics/${encodeURIComponent(topic)}`),
     lastModified: now,
     changeFrequency: "daily",

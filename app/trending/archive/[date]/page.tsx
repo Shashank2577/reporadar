@@ -43,7 +43,7 @@ export default async function TrendingArchiveDatePage({ params }: { params: Prom
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
   return (
-    <div data-pagefind-body>
+    <div>
       <p className="text-sm text-muted">
         <Link href="/trending/archive" className="hover:underline">Trending archive</Link>
       </p>

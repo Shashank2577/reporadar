@@ -208,25 +208,64 @@ function readJson<T>(file: string): T | null {
   }
 }
 
+// Fields only the single-repo detail page renders. They make up ~95% of the
+// 130+ MB data set, so list/browse pages and the in-memory index drop them;
+// getRepo() re-reads the full file for the one page that needs them. Without
+// this, every prerender worker held the entire corpus in memory.
+const DETAIL_ONLY_FIELDS = [
+  "readmeHtml",
+  "readmeExcerpt",
+  "contributionDays",
+  "punchCard",
+  "codeFrequency",
+  "recentCommits",
+  "recentPulls",
+  "recentIssues",
+  "discussions",
+  "releases",
+  "fileTree",
+  "contributors",
+  "manifestDependencies",
+] as const;
+
+function slimRepo(profile: RepoProfile): RepoProfile {
+  const slim = profile as unknown as Record<string, unknown>;
+  for (const key of DETAIL_ONLY_FIELDS) delete slim[key];
+  return profile;
+}
+
 let repoCache: RepoProfile[] | null = null;
+// id -> file of the profile getRepo() serves. A few ids exist in two files
+// (upstream renames); like a stars-sorted .find(), the higher-star one wins.
+const repoFileById = new Map<string, { file: string; stars: number }>();
 
 export function getAllRepos(): RepoProfile[] {
   if (repoCache) return repoCache;
   if (!fs.existsSync(REPO_DIR)) return [];
-  repoCache = fs
-    .readdirSync(REPO_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => readJson<RepoProfile>(path.join(REPO_DIR, f)))
-    .filter((p): p is RepoProfile => Boolean(p?.id))
-    // Newly-discovered stubs (e.g. from the historical trending backfill)
-    // don't have `stars` yet until their first facts fetch — treat as 0
-    // rather than NaN so they sort predictably to the bottom, not scattered.
-    .sort((a, b) => (b.stars || 0) - (a.stars || 0));
+  const repos: RepoProfile[] = [];
+  for (const f of fs.readdirSync(REPO_DIR)) {
+    if (!f.endsWith(".json")) continue;
+    const profile = readJson<RepoProfile>(path.join(REPO_DIR, f));
+    if (!profile?.id) continue;
+    const id = profile.id.toLowerCase();
+    const known = repoFileById.get(id);
+    if (!known || (profile.stars || 0) > known.stars) repoFileById.set(id, { file: f, stars: profile.stars || 0 });
+    repos.push(slimRepo(profile));
+  }
+  // Newly-discovered stubs (e.g. from the historical trending backfill)
+  // don't have `stars` yet until their first facts fetch — treat as 0
+  // rather than NaN so they sort predictably to the bottom, not scattered.
+  repoCache = repos.sort((a, b) => (b.stars || 0) - (a.stars || 0));
   return repoCache;
 }
 
+// Full profile (including detail-only fields), read straight from disk and
+// deliberately not cached so it can be garbage-collected after the page renders.
 export function getRepo(owner: string, name: string): RepoProfile | null {
-  return getAllRepos().find((r) => r.id.toLowerCase() === `${owner}/${name}`.toLowerCase()) || null;
+  getAllRepos();
+  const entry = repoFileById.get(`${owner}/${name}`.toLowerCase());
+  if (!entry) return null;
+  return readJson<RepoProfile>(path.join(REPO_DIR, entry.file));
 }
 
 export function getLatestTrending(): TrendingDay | null {
@@ -353,6 +392,15 @@ export function allLanguages(): { language: string; count: number }[] {
     .sort((a, b) => b.count - a.count);
 }
 
+// Only topics with real traction get a page: the long tail (3,800+ topics that
+// tag one or two repos) is thin content, and a static export can't render
+// pages on demand. The page, the sitemap, and the search index all use this.
+export const TOP_TOPICS_LIMIT = 100;
+
+export function topTopics(): { topic: string; count: number }[] {
+  return allTopics().slice(0, TOP_TOPICS_LIMIT);
+}
+
 export function reposByTopic(topic: string): RepoProfile[] {
   return getAllRepos().filter(
     (r) =>
@@ -360,56 +408,9 @@ export function reposByTopic(topic: string): RepoProfile[] {
   );
 }
 
-// Fixed category buckets (see scripts/enrich.mjs's guessCategory/prompt) —
-// unlike free-form topics, these are the primary browse-by-intent surface:
-// someone searching "best AI agent frameworks" is looking for a category,
-// not a specific tag or a specific day's trending list.
-export const CATEGORIES: Record<string, { title: string; description: string }> = {
-  "ai-ml": {
-    title: "AI & Machine Learning",
-    description: "Agents, LLM tooling, model training, inference, and applied AI projects trending on GitHub.",
-  },
-  "developer-tools": {
-    title: "Developer Tools",
-    description: "CLIs, SDKs, frameworks, linters, and build tooling that other developers rely on daily.",
-  },
-  web: {
-    title: "Web Development",
-    description: "Frontend frameworks, UI libraries, and full-stack web projects gaining traction.",
-  },
-  mobile: {
-    title: "Mobile Development",
-    description: "iOS, Android, and cross-platform mobile frameworks and apps.",
-  },
-  data: {
-    title: "Data & Analytics",
-    description: "Databases, ETL pipelines, analytics engines, and data infrastructure.",
-  },
-  infrastructure: {
-    title: "Infrastructure & DevOps",
-    description: "Kubernetes, containers, cloud tooling, and infrastructure-as-code projects.",
-  },
-  security: {
-    title: "Security",
-    description: "Authentication, cryptography, vulnerability tooling, and security research projects.",
-  },
-  systems: {
-    title: "Systems Programming",
-    description: "Low-level, performance-critical, and systems-language projects — Rust, C, kernels, embedded.",
-  },
-  learning: {
-    title: "Learning Resources",
-    description: "Courses, curated lists, roadmaps, and educational open-source projects.",
-  },
-  productivity: {
-    title: "Productivity",
-    description: "Note-taking, task management, and personal productivity tools.",
-  },
-  other: {
-    title: "Other",
-    description: "Everything that doesn't fit neatly into a single category above.",
-  },
-};
+import { CATEGORIES } from "@/lib/categories";
+
+export { CATEGORIES };
 
 export function allCategories(): { category: string; title: string; count: number; topRepo: RepoProfile | null }[] {
   const byCategory = new Map<string, RepoProfile[]>();

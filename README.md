@@ -14,8 +14,8 @@ static, with a couple of small serverless routes for GitHub login.
   it searches GitHub by stars/relevance, adds the best match to tracking, comments
   the result, and closes the issue
 - SEO/AEO: JSON-LD structured data, sitemap, RSS feed, `llms.txt`
-- Vercel Web Analytics + Speed Insights for real traffic and performance data
-- Near-zero infrastructure cost: hybrid Next.js on Vercel, data via GitHub Actions
+- Cloudflare Web Analytics (cookieless, includes Core Web Vitals) for real traffic and performance data
+- Near-zero infrastructure cost: static Next.js export on Cloudflare Pages, data via GitHub Actions
 
 ## Architecture
 
@@ -26,18 +26,20 @@ GitHub Actions (cron 06:15 + 18:15 UTC, plus hourly-refresh.yml every hour)
   scripts/enrich.mjs              -> aiSummary via GitHub Models API (free, falls back to template)
   scripts/generate-reports.mjs    -> content/reports/{daily,weekly,monthly}/<slug>.md
   scripts/process-repo-requests.mjs -> resolves open `repo-request` issues, adds matches to data/repos/
-  git commit + push               -> Vercel rebuilds and deploys
+  git commit + push               -> deploy-cloudflare.yml builds on a runner and uploads out/ (every 2h + on code changes)
 
-Runtime (Vercel, Node runtime)
-  /api/auth/[...nextauth]  -> Auth.js v5, GitHub OAuth (login only — no accounts, no user table)
+Runtime (Cloudflare Pages Functions, functions/)
+  /api/auth/*              -> GitHub OAuth login (encrypted HttpOnly session cookie; no accounts, no user table)
   /api/request-repo        -> creates a GitHub Issue as the signed-in user
-  everything else          -> prerendered static HTML, same as before
+  /api/mcp                 -> MCP server over the static JSON in out/mcp-data
+  everything else          -> static HTML from `next build` (output: "export")
 ```
 
-Almost every page is still fully static and prerendered at build time — the
-only server-side code is the two API routes above, both existing solely
-because GitHub's OAuth token exchange requires a secret that can never live
-in browser JavaScript. Star history accumulates one snapshot per day per
+The site is a static export, built in GitHub Actions rather than on the host.
+The only server-side code is the Functions above, existing because GitHub's
+OAuth token exchange needs a secret that can never live in browser JavaScript.
+The build prunes client-navigation payloads for repo pages (`scripts/prune-export.mjs`)
+to stay under Cloudflare Pages' 20,000-file limit. Star history accumulates one snapshot per day per
 tracked repo, so charts and "biggest gainers" get richer every day the
 pipeline runs.
 
@@ -77,7 +79,7 @@ actual GitHub Actions executions, not just local tests):
 | GitHub REST API | 5,000/hour observed with `GITHUB_TOKEN` in Actions on this repo (GitHub documents 1,000/hour per repository for Actions tokens — treat 1,000 as the planning floor) | ~40 calls/run at today's scale (40 tracked repos); auto-scales with population, see below |
 | GitHub Models (AI summaries) | ~50 requests/day for `openai/gpt-4o` on the free tier | 1 call per newly-tracked or stale-summary repo, capped at 20 per run |
 | GH Archive on ClickHouse (star history) | Public, anonymous | 1 batched query per run, only for repos missing history |
-| Vercel Hobby | 100 deploys/day, generous build minutes | Up to 26 deploys/day if every run changes data, ~1 min build each |
+| Cloudflare Pages | Unlimited bandwidth; direct-upload deploys are not build-minute metered | 12 deploys/day (every 2h), built on GitHub Actions in ~1 min |
 | Buttondown | 100 subscribers | RSS-to-email, no code |
 
 Safety behaviour built in: the pipeline reports its own API usage every run,
@@ -88,7 +90,7 @@ all come due at once, and stops enrichment cleanly when the model quota is hit.
 ### Do you need Jules?
 
 No. The site is fully autonomous on GitHub Actions alone: the workflows collect
-data, generate reports, commit, and Vercel redeploys. Jules is an optional
+data, generate reports, commit, and the deploy workflow publishes them. Jules is an optional
 editorial layer that rewrites the human-voice paragraph between the
 `<!-- jules:editorial -->` markers and improves any summary still marked
 `"source": "template"`. Without Jules, those sections keep their generated text.
@@ -151,23 +153,23 @@ uses what's actually there, up to the target.
 ## Deployment checklist
 
 1. **Push to GitHub.** Create a repository and push this project to `main`.
-2. **Vercel.** Import the repo at vercel.com/new. Framework preset: Next.js
-   is auto-detected (the app is no longer a static export, so Vercel builds
-   it as a normal hybrid Next.js app — same deploy flow, still free on Hobby).
-   Set env vars:
-   - `NEXT_PUBLIC_SITE_URL` — the production URL (e.g. `https://reporadar.vercel.app`)
-   - `NEXT_PUBLIC_GITHUB_REPO` — `youruser/reporadar` (adds a Source footer link
-     and is the repo repo-requests are filed against)
-   - `NEXT_PUBLIC_BUTTONDOWN_USERNAME` — once the newsletter exists (step 6 below)
-   - `AUTH_SECRET` — any random string (`openssl rand -base64 32`)
-   - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` — from step 3
+2. **Cloudflare Pages.** Create a Pages project named `reporadar` using
+   "Direct Upload" (no Git integration; GitHub Actions uploads the build). Then:
+   - Repo secrets: `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID`.
+   - Repo variables: `NEXT_PUBLIC_SITE_URL` (the production URL, required: canonicals,
+     sitemap and robots.txt are built from it), optionally
+     `NEXT_PUBLIC_BUTTONDOWN_USERNAME` and `NEXT_PUBLIC_CF_BEACON_TOKEN`.
+   - Pages secrets (`wrangler pages secret put <NAME> --project-name reporadar`):
+     `AUTH_SECRET` (any random string, `openssl rand -base64 32`),
+     `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` (from step 3).
+   - `GITHUB_REPO` (the repo repo-requests are filed against) lives in `wrangler.toml`.
+   - Add the custom domain under the project's Custom domains tab.
 3. **GitHub OAuth App (for "Request a repo" login).** In GitHub, go to
    Settings > Developer settings > OAuth Apps > New OAuth App. Homepage URL:
    your production URL. Authorization callback URL:
    `https://<your-domain>/api/auth/callback/github`. Copy the generated
-   Client ID and Client Secret into Vercel as `AUTH_GITHUB_ID` and
-   `AUTH_GITHUB_SECRET`, then redeploy. This step needs your GitHub account —
-   it can't be scripted or done on your behalf.
+   Client ID and Client Secret into the Pages secrets above, then redeploy.
+   This step needs your GitHub account — it can't be scripted or done on your behalf.
 4. **GitHub Actions.** Already configured in `.github/workflows/`:
    - `morning-report.yml` (06:15 UTC) — trending + repo refresh + daily report
    - `evening-report.yml` (18:15 UTC) — snapshot refresh; weekly digest on
@@ -176,7 +178,8 @@ uses what's actually there, up to the target.
      tracked corpus, so coverage keeps up as the repo count grows (see above)
    - `repo-requests.yml` (fires the instant a `repo-request` issue is opened) —
      searches, tracks, comments, closes
-   - `ci.yml` — lint + build on every PR (the auto-merge gate)
+   - `ci.yml` — lint + typecheck + build on every PR (the auto-merge gate)
+   - `deploy-cloudflare.yml` — builds the static export and deploys it to Cloudflare Pages
    - `auto-merge-jules.yml` — auto-merges Jules PRs that only touch `data/` and
      `content/` after CI passes
    In the repo settings, under Actions > General, set Workflow permissions to
@@ -189,14 +192,14 @@ uses what's actually there, up to the target.
 6. **Newsletter (free).** Create a [Buttondown](https://buttondown.com) account
    (free tier: 100 subscribers). In Buttondown settings, add the RSS-to-email
    automation pointing at `https://<your-domain>/feed.xml`, filtered to items
-   in category `weekly`. Set `NEXT_PUBLIC_BUTTONDOWN_USERNAME` in Vercel and
+   in category `weekly`. Set the `NEXT_PUBLIC_BUTTONDOWN_USERNAME` repository variable and
    redeploy — the subscribe forms go live.
 7. **Search Console.** Submit `https://<your-domain>/sitemap.xml` to Google
    Search Console and Bing Webmaster Tools for fastest indexing.
-8. **Analytics.** Nothing to configure — Vercel Web Analytics and Speed
-   Insights are wired into every page already. Enable them for the project
-   in the Vercel dashboard (Analytics tab) to start seeing real visitor and
-   performance data; both are free on Hobby.
+8. **Analytics.** In the Cloudflare dashboard, open Web Analytics, add the site,
+   and set the token as the `NEXT_PUBLIC_CF_BEACON_TOKEN` repository variable
+   (or enable automatic injection on the Pages project). Free, cookieless, and
+   includes Core Web Vitals.
 
 ## Backfilling trending history
 
@@ -231,7 +234,7 @@ with a larger day count — it only adds what's missing.
 
 ## Costs
 
-Everything runs on free tiers: Vercel static hosting, GitHub Actions (public
+Everything runs on free tiers: Cloudflare Pages, GitHub Actions (public
 repo: unlimited minutes), GitHub Models API (free tier via `GITHUB_TOKEN`),
 Buttondown free plan, Pagefind (static, no service). There is nothing to pay
 for at any scale this design supports.

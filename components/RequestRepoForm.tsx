@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "@/components/AuthProvider";
 
 export default function RequestRepoForm() {
-  const { data: session, status } = useSession();
+  const { data: session, status, signIn } = useSession();
   const [query, setQuery] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -41,7 +41,7 @@ export default function RequestRepoForm() {
         </p>
         <button
           type="button"
-          onClick={() => signIn("github")}
+          onClick={signIn}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
         >
           Sign in with GitHub
