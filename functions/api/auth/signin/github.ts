@@ -3,6 +3,9 @@ import { cookie, safeReturnTo, seal, STATE_COOKIE, type Env } from "../../../_li
 // Starts the GitHub OAuth flow. `public_repo` is the minimum scope needed to
 // open an issue on this (public) repository as the signed-in user.
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  if (!env.AUTH_GITHUB_ID || !env.AUTH_SECRET) {
+    return new Response("GitHub sign-in is not configured on this deployment.", { status: 503 });
+  }
   const url = new URL(request.url);
   const state = crypto.randomUUID();
   const returnTo = safeReturnTo(url.searchParams.get("returnTo"));

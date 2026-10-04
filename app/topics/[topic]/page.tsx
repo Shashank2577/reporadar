@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { topTopics, reposByTopic, toBrowserRepo } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd } from "@/lib/seo";
 import { itemListJsonLd } from "@/lib/site";
 
 // Only the topics with real traction (see topTopics) are built; the 3,800+
@@ -30,6 +32,7 @@ export default async function TopicPage({ params }: { params: Promise<{ topic: s
 
   return (
     <div data-pagefind-body>
+      <JsonLd data={breadcrumbJsonLd([{ name: "Topics", path: "/topics" }, { name: t, path: `/topics/${topic}` }])} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(`Trending ${t} repositories`, repos.map((r) => r.id))) }}

@@ -4,7 +4,9 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import SideNav from "@/components/SideNav";
 import AuthProvider from "@/components/AuthProvider";
+import Analytics from "@/components/Analytics";
 import { site } from "@/lib/site";
+import { publisherJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
   metadataBase: new URL(site.url),
@@ -36,6 +38,8 @@ const websiteJsonLd = {
   name: site.name,
   url: site.url,
   description: site.description,
+  inLanguage: "en",
+  publisher: publisherJsonLd,
   potentialAction: {
     "@type": "SearchAction",
     target: { "@type": "EntryPoint", urlTemplate: `${site.url}/search?q={search_term_string}` },
@@ -65,6 +69,7 @@ export default function RootLayout({
           </div>
           <SiteFooter />
         </AuthProvider>
+        <Analytics />
         {process.env.NEXT_PUBLIC_CF_BEACON_TOKEN ? (
           <script
             defer

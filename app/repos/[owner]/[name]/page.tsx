@@ -18,6 +18,8 @@ import AwardList from "@/components/AwardList";
 import Tag from "@/components/Tag";
 import WatchButton from "@/components/WatchButton";
 import { absoluteUrl } from "@/lib/site";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd, faqJsonLd, truncateAtWord, demoteHeadings } from "@/lib/seo";
 
 type Params = { owner: string; name: string };
 
@@ -31,15 +33,16 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const { owner, name } = await params;
   const repo = getRepo(owner, name);
   if (!repo) return {};
-  const title = `${repo.id}: ${repo.aiSummary?.oneLiner || repo.description || "repository profile"}`.slice(0, 65);
+  const title = truncateAtWord(`${repo.id}: ${repo.aiSummary?.oneLiner || repo.description || "repository profile"}`, 60);
   const description =
     `${repo.id} — ${compactNumber(repo.stars)} stars, ${repo.language || "multi-language"}, ${repo.license || "unspecified"} license. ` +
-    `${(repo.aiSummary?.whatItDoes || repo.description || "").slice(0, 90)}`;
+    truncateAtWord(repo.aiSummary?.whatItDoes || repo.description || "", 110);
   return {
     title,
     description,
     alternates: { canonical: `/repos/${repo.id}` },
-    openGraph: { title, description, type: "article", url: absoluteUrl(`/repos/${repo.id}`) },
+    openGraph: { title, description, type: "article", url: absoluteUrl(`/repos/${repo.id}`), images: [{ url: absoluteUrl("/opengraph-image"), width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title, description, images: [absoluteUrl("/opengraph-image")] },
   };
 }
 
@@ -103,6 +106,22 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
     .filter((r) => r.id !== repo.id && (r.language === repo.language || r.topics?.some((t) => repo.topics?.includes(t))))
     .slice(0, 6);
 
+  const repoName = repo.name;
+  const qas: { question: string; answer: string }[] = [];
+  const what = s?.oneLiner || repo.description;
+  if (what) qas.push({ question: `What is ${repoName}?`, answer: what });
+  if (s?.whatItDoes) qas.push({ question: `What does ${repoName} do?`, answer: s.whatItDoes });
+  if (s?.whoIsItFor) qas.push({ question: `Who is ${repoName} for?`, answer: s.whoIsItFor });
+  if (s?.gettingStarted) qas.push({ question: `How do I get started with ${repoName}?`, answer: s.gettingStarted });
+  qas.push({
+    question: `How popular is ${repoName} on GitHub?`,
+    answer:
+      `${repo.id} has ${fullNumber(repo.stars)} stars and ${fullNumber(repo.forks)} forks on GitHub` +
+      (gainWeek ? `, and gained ${fullNumber(gainWeek)} stars in the last 7 days` : "") +
+      ".",
+  });
+  if (repo.license) qas.push({ question: `What license does ${repoName} use?`, answer: `${repo.id} is released under the ${repo.license} license.` });
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",
@@ -115,6 +134,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
     license: repo.license ? `https://spdx.org/licenses/${repo.license}` : undefined,
     dateCreated: repo.createdAt,
     dateModified: repo.pushedAt,
+    sameAs: repo.url,
     keywords: tags.join(", ") || undefined,
     maintainer: {
       "@type": repo.ownerType === "Organization" ? "Organization" : "Person",
@@ -139,7 +159,9 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
 
   return (
     <div data-pagefind-body>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <JsonLd data={jsonLd} />
+      <JsonLd data={breadcrumbJsonLd([{ name: "Repositories", path: "/repos" }, { name: repo.id, path: `/repos/${repo.id}` }])} />
+      <JsonLd data={faqJsonLd(qas)} />
 
       {/* Repo header, in GitHub's shape */}
       <header>
@@ -233,6 +255,17 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
       {/* Wide dashboard grid — main column plus right rail */}
       <div className="mt-6 grid gap-5 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5" id="overview">
+          <Card id="quick-answers" title="Quick answers">
+            <dl className="space-y-3 text-sm">
+              {qas.map((qa) => (
+                <div key={qa.question}>
+                  <dt className="font-semibold">{qa.question}</dt>
+                  <dd className="mt-0.5 whitespace-pre-line text-muted">{qa.answer}</dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
+
           <Card id="star-history" title="Star history" meta={history.length ? `since ${formatDate(history[0]?.date)}` : undefined}>
             <StarHistoryChart
               points={history}
@@ -308,7 +341,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
 
           {repo.readmeHtml ? (
             <Card id="readme" title="README" meta={repo.defaultBranch ? `${repo.defaultBranch} branch` : undefined}>
-              <ReadmeViewer html={repo.readmeHtml} repoUrl={repo.url} />
+              <ReadmeViewer html={demoteHeadings(repo.readmeHtml)} repoUrl={repo.url} />
             </Card>
           ) : null}
 

@@ -33,6 +33,7 @@ export function GET() {
     `- [Topics](${absoluteUrl("/topics")}) and [Languages](${absoluteUrl("/languages")}): browse by tag or language`,
     `- [RSS feed](${absoluteUrl("/feed.xml")}): all reports, machine-readable`,
     `- [Sitemap](${absoluteUrl("/sitemap.xml")})`,
+    `- [Full text of the top 300 repository summaries](${absoluteUrl("/llms-full.txt")}): quotable summaries in one file`,
     "",
     "## MCP server",
     "",

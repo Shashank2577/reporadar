@@ -1,8 +1,20 @@
 import type { MetadataRoute } from "next";
-import { getAllRepos, getReports, getBlogPosts, getAllTrendingDates, topTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
+import { reposByTopic, reposByCategory, reposByLanguage, getAllRepos, getReports, getBlogPosts, getAllTrendingDates, topTopics, allLanguages, allCategories, languageSlug } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
+
+// Most recent real data change among a set of repos, instead of "now" (which
+// would claim every hub page changed on every build and teach crawlers to
+// ignore lastmod).
+function latestUpdate(repos: { updatedAt?: string }[], fallback: Date): Date {
+  let best = 0;
+  for (const r of repos) {
+    const t = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+    if (t > best) best = t;
+  }
+  return best ? new Date(best) : fallback;
+}
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
@@ -40,21 +52,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   const categories: MetadataRoute.Sitemap = allCategories().map(({ category }) => ({
     url: absoluteUrl(`/categories/${category}`),
-    lastModified: now,
+    lastModified: latestUpdate(reposByCategory(category), now),
     changeFrequency: "daily",
     priority: 0.8,
   }));
 
   const topics: MetadataRoute.Sitemap = topTopics().map(({ topic }) => ({
     url: absoluteUrl(`/topics/${encodeURIComponent(topic)}`),
-    lastModified: now,
+    lastModified: latestUpdate(reposByTopic(topic), now),
     changeFrequency: "daily",
     priority: 0.5,
   }));
 
   const languages: MetadataRoute.Sitemap = allLanguages().map(({ language }) => ({
     url: absoluteUrl(`/languages/${languageSlug(language)}`),
-    lastModified: now,
+    lastModified: latestUpdate(reposByLanguage(language), now),
     changeFrequency: "daily",
     priority: 0.5,
   }));
