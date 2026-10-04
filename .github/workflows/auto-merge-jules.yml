@@ -63,29 +63,34 @@ jobs:
           # which would make every other-checks-pass poll loop forever
           # (self-referential deadlock) instead of ever seeing all-pass.
           for i in $(seq 1 40); do
-            checks=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name != "automerge")]')
+            # Only the "build" check gates the merge. Other statuses (e.g. a
+            # hosting provider's deployment check) say nothing about whether
+            # the data is valid; one of them (Vercel) failing on every PR once
+            # blocked every auto-merge.
+            checks=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name == "build")]')
             echo "$checks"
-            # Require the "build" check to actually be present, not just
-            # whatever's currently reported -- observed live on PRs #54/#63
-            # that a push to a PR branch can silently fail to trigger CI at
-            # all (no check-suite created), which would otherwise let this
-            # merge on Vercel's checks alone with the code never validated.
             if ! echo "$checks" | jq -e 'any(.name == "build")' > /dev/null; then
               echo "\"build\" check hasn't appeared yet (attempt $i/40), waiting..."
               sleep 20
             elif echo "$checks" | jq -e 'all(.bucket == "pass")' > /dev/null; then
-              echo "All other checks passed -- merging."
+              echo "Build passed -- merging."
               # Jules opens these PRs as drafts; GitHub refuses to merge a
               # draft PR, so it must be marked ready first.
               gh pr ready "$PR" || true
-              gh pr merge "$PR" --squash --delete-branch
+              if gh pr merge "$PR" --squash --delete-branch; then
+                exit 0
+              fi
+              # Typically a merge conflict: the branch rewrites data files the
+              # pipeline has since changed. replay-jules-prs.yml applies such
+              # PRs' summaries onto main, so leave this one for it.
+              echo "::warning::PR #$PR could not be merged directly; replay-jules-prs.yml will apply it."
               exit 0
             elif echo "$checks" | jq -e 'any(.bucket == "fail")' > /dev/null; then
-              echo "::error::A check failed on PR #$PR -- leaving it open for manual review."
-              gh pr comment "$PR" --body "One or more checks failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
+              echo "::error::The build failed on PR #$PR -- leaving it open for manual review."
+              gh pr comment "$PR" --body "The build failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
               exit 1
             else
-              echo "Checks still pending (attempt $i/40), waiting..."
+              echo "Build still pending (attempt $i/40), waiting..."
               sleep 20
             fi
           done
@@ -120,18 +125,12 @@ jobs:
           git fetch origin "$branch"
           git checkout "$branch"
 
-          vercel_state=$(gh pr checks "$PR" --json name,bucket --jq '[.[] | select(.name == "Vercel")] | if length == 0 then "missing" else .[0].bucket end')
-          if [ "$vercel_state" = "fail" ]; then
-            echo "::error::Vercel check failed on PR #$PR -- leaving it open for manual review."
-            gh pr comment "$PR" --body "Vercel's check failed, so this content-only PR was not auto-merged. A maintainer needs to review it."
-            exit 1
-          fi
-
           echo "Running the build directly against $branch (bypassing PR check-rollup)."
           if npm ci && npm run build; then
             echo "Build passed -- merging."
             gh pr ready "$PR" || true
-            gh pr merge "$PR" --squash --delete-branch
+            gh pr merge "$PR" --squash --delete-branch ||
+              echo "::warning::PR #$PR could not be merged directly (likely a conflict); replay-jules-prs.yml will apply it."
           else
             echo "::error::Build failed on PR #$PR -- leaving it open for manual review."
             gh pr comment "$PR" --body "The build failed when this PR's auto-merge was manually retried, so it was not merged. A maintainer needs to review it."

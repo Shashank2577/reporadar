@@ -36,13 +36,13 @@ function freshness(p) {
   return String(p.factsUpdatedAt || p.updatedAt || "");
 }
 
-function summaryRank(p) {
+export function summaryRank(p) {
   const s = p.aiSummary;
   if (!s) return [0, 0, 0];
   return [SOURCE_RANK[s.source] || 0, s.version || 0, JSON.stringify(s).length];
 }
 
-function betterSummary(a, b) {
+export function betterSummary(a, b) {
   const ra = summaryRank(a);
   const rb = summaryRank(b);
   for (let i = 0; i < 3; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i] ? a : b;
