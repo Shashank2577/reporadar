@@ -18,9 +18,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mergeProfiles, dedupeRepos, diffProfile } from "./lib/merge.mjs";
 import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted, mapLimit, checkRateLimit } from "./lib/gh.mjs";
 import {
   fetchStarHistoryBatch,
+  needsStarHistory,
+  isValidStarHistory,
   fetchReleases,
   fetchRecentIssues,
   fetchCommitStats,
@@ -255,7 +258,7 @@ async function fetchFacts(fullName, profile) {
 
 async function updateRepo(fullName, trendingEntry, date) {
   const file = path.join(REPO_DIR, `${repoSlug(fullName)}.json`);
-  const profile = readJson(file) || { id: fullName, snapshots: [], trendingHistory: [] };
+  let profile = readJson(file) || { id: fullName, snapshots: [], trendingHistory: [] };
 
   const { status, data: r } = await ghFetch(`/repos/${fullName}`);
   if (status === 404 || !r) {
@@ -274,9 +277,16 @@ async function updateRepo(fullName, trendingEntry, date) {
   // duplicated repo. Migrating the file here, the moment the rename is
   // first observed, is what actually stops it recurring.
   const finalFile = path.join(REPO_DIR, `${repoSlug(r.full_name)}.json`);
-  if (finalFile !== file && fs.existsSync(file)) {
-    fs.rmSync(file);
+  if (finalFile !== file) {
+    // The new name may already be tracked as its own file (trending lists the
+    // new name). Merge instead of overwriting, so no snapshots are lost, and
+    // keep the old name as an alias so its URL redirects.
+    const other = fs.existsSync(finalFile) ? readJson(finalFile) : null;
+    if (other?.id) profile = mergeProfiles([{ file, profile }, { file: finalFile, profile: other }], date);
+    profile.aliases = [...new Set([...(profile.aliases || []), fullName])].filter((a) => a !== r.full_name);
+    if (fs.existsSync(file)) fs.rmSync(file);
   }
+  const previous = { ...profile };
 
   Object.assign(profile, {
     id: r.full_name,
@@ -326,6 +336,8 @@ async function updateRepo(fullName, trendingEntry, date) {
     factsDone++;
   }
 
+  diffProfile(previous, profile, date);
+
   fs.mkdirSync(REPO_DIR, { recursive: true });
   fs.writeFileSync(finalFile, JSON.stringify(profile, null, 2));
   return true;
@@ -333,6 +345,11 @@ async function updateRepo(fullName, trendingEntry, date) {
 
 async function main() {
   const date = todayUTC();
+
+  const deduped = dedupeRepos(REPO_DIR, date);
+  if (deduped.merged || deduped.renamed) {
+    console.log(`Merged ${deduped.merged} duplicate repo profiles, renamed ${deduped.renamed} stale files`);
+  }
 
   const { remaining, limit, resetAt } = await checkRateLimit();
   if (remaining !== null) {
@@ -462,7 +479,7 @@ async function main() {
     .readdirSync(REPO_DIR)
     .filter((f) => f.endsWith(".json"))
     .map((f) => ({ file: path.join(REPO_DIR, f), profile: readJson(path.join(REPO_DIR, f)) }))
-    .filter(({ profile }) => profile && !profile.starHistory?.points?.length);
+    .filter(({ profile }) => profile && needsStarHistory(profile.starHistory));
   if (needBackfill.length) {
     console.log(`Backfilling star history for ${needBackfill.length} repos`);
     const histories = await fetchStarHistoryBatch(
@@ -471,7 +488,15 @@ async function main() {
     let filled = 0;
     for (const { file, profile } of needBackfill) {
       const h = histories.get(profile.id);
-      if (!h) continue;
+      if (!h) {
+        // Not re-fetchable yet (e.g. no star count). A legacy all-null
+        // history is worse than none, so drop it; it is retried once facts exist.
+        if (profile.starHistory && !isValidStarHistory(profile.starHistory)) {
+          delete profile.starHistory;
+          fs.writeFileSync(file, JSON.stringify(profile, null, 2));
+        }
+        continue;
+      }
       profile.starHistory = h;
       fs.writeFileSync(file, JSON.stringify(profile, null, 2));
       filled++;

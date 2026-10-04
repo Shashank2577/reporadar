@@ -67,7 +67,19 @@ export type StarHistory = {
   source?: string;
   scale?: number;
   partial?: boolean;
+  version?: number;
+  // Share of the repo's star total the archive accounts for; histories below
+  // ~0.6 are stored as `unreliable` with no points.
+  coverage?: number;
+  unreliable?: boolean;
   sampledAt: string;
+};
+
+export type ChangelogEntry = {
+  date: string;
+  type: "renamed" | "release" | "description" | "license" | "language";
+  summary: string;
+  from?: string;
 };
 export type Community = {
   healthPercentage: number;
@@ -107,6 +119,9 @@ export type RepoProfile = {
   trendingHistory: TrendingAppearance[];
   aiSummary?: AiSummary;
   starHistory?: StarHistory;
+  // Previous owner/name ids this repo has been tracked under (for redirects).
+  aliases?: string[];
+  changelog?: ChangelogEntry[];
   commitActivity?: { week: string; commits: number }[];
   releases?: Release[];
   releaseCount?: number;
@@ -162,7 +177,9 @@ export type RepoProfile = {
 // Full star curve: backfilled history (from stargazer timestamps) merged with
 // our daily snapshots, which take over from the backfill's last point.
 export function mergedStarHistory(repo: RepoProfile): { date: string; stars: number }[] {
-  const back = repo.starHistory?.points || [];
+  // Drop non-finite points: a legacy bug stored all-null histories, which
+  // would otherwise plot as 0 stars followed by a huge one-day jump.
+  const back = (repo.starHistory?.points || []).filter((p) => Number.isFinite(p?.stars));
   const lastBack = back.length ? back[back.length - 1].date : "";
   const snaps = (repo.snapshots || [])
     .filter((s) => s.date > lastBack)
