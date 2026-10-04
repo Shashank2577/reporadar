@@ -196,10 +196,15 @@ uses what's actually there, up to the target.
    redeploy — the subscribe forms go live.
 7. **Search Console.** Submit `https://<your-domain>/sitemap.xml` to Google
    Search Console and Bing Webmaster Tools for fastest indexing.
-8. **Analytics.** In the Cloudflare dashboard, open Web Analytics, add the site,
-   and set the token as the `NEXT_PUBLIC_CF_BEACON_TOKEN` repository variable
-   (or enable automatic injection on the Pages project). Free, cookieless, and
-   includes Core Web Vitals.
+8. **Analytics.** Two layers, both optional and both off until their variable is set:
+   - **PostHog** (clicks, time on page, scroll depth, heatmaps, funnels, custom events
+     such as `repo_open`, `outbound_click`, `search`, `mcp_config_copied`,
+     `repo_request_submitted`): create a project at posthog.com, then set the
+     `NEXT_PUBLIC_POSTHOG_KEY` repository variable (and `NEXT_PUBLIC_POSTHOG_HOST` for the
+     EU cloud). It runs cookieless, so no consent banner is needed; session replay is off.
+   - **Cloudflare Web Analytics** (traffic and Core Web Vitals): enable it on the Pages
+     project's Metrics tab, or set `NEXT_PUBLIC_CF_BEACON_TOKEN`.
+   After each deploy the workflow also notifies Bing and other IndexNow partners of changed URLs.
 
 ## Backfilling trending history
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "@/components/AuthProvider";
+import { track } from "@/lib/track";
 
 export default function RequestRepoForm() {
   const { data: session, status, signIn } = useSession();
@@ -21,6 +22,7 @@ export default function RequestRepoForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      track("repo_request_submitted");
       setState("sent");
       setMessage(`Request opened: ${data.url}`);
       setQuery("");
@@ -41,7 +43,10 @@ export default function RequestRepoForm() {
         </p>
         <button
           type="button"
-          onClick={signIn}
+          onClick={() => {
+            track("sign_in_clicked", { from: "request" });
+            signIn();
+          }}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
         >
           Sign in with GitHub

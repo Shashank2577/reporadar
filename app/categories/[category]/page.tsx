@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { allCategories, reposByCategory, toBrowserRepo, CATEGORIES } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
 import { itemListJsonLd } from "@/lib/site";
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd } from "@/lib/seo";
 
 export function generateStaticParams() {
   return allCategories().map(({ category }) => ({ category }));
@@ -29,6 +31,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ categ
 
   return (
     <div data-pagefind-body>
+      <JsonLd data={breadcrumbJsonLd([{ name: "Categories", path: "/categories" }, { name: meta.title, path: `/categories/${category}` }])} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd(`Best ${meta.title} repositories`, repos.map((r) => r.id))) }}

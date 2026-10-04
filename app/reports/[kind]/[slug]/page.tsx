@@ -1,3 +1,5 @@
+import JsonLd from "@/components/JsonLd";
+import { breadcrumbJsonLd, publisherJsonLd } from "@/lib/seo";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -30,7 +32,9 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       type: "article",
       publishedTime: report.date,
       url: absoluteUrl(`/reports/${kind}/${slug}`),
+      images: [{ url: absoluteUrl("/opengraph-image"), width: 1200, height: 630 }],
     },
+    twitter: { card: "summary_large_image", title: report.title, description: report.description, images: [absoluteUrl("/opengraph-image")] },
   };
 }
 
@@ -50,15 +54,25 @@ export default async function ReportPage({ params }: { params: Promise<Params> }
     headline: report.title,
     description: report.description,
     datePublished: report.date,
+    dateModified: report.date,
     keywords: report.tags.join(", "),
     url: absoluteUrl(`/reports/${kind}/${slug}`),
-    publisher: { "@type": "Organization", name: site.name, url: site.url },
-    author: { "@type": "Organization", name: site.name },
+    mainEntityOfPage: absoluteUrl(`/reports/${kind}/${slug}`),
+    image: absoluteUrl("/opengraph-image"),
+    inLanguage: "en",
+    publisher: publisherJsonLd,
+    author: { "@type": "Organization", name: site.name, url: site.url },
   };
 
   return (
     <article className="mx-auto max-w-3xl" data-pagefind-body>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <JsonLd data={jsonLd} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Reports", path: "/reports" },
+          { name: `${kind[0].toUpperCase()}${kind.slice(1)} report`, path: `/reports/${kind}/${slug}` },
+        ])}
+      />
       <header>
         <p className="text-sm text-muted">
           <Link href="/reports" className="hover:underline">Reports</Link>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { track } from "@/lib/track";
 
 type Result = { url: string; meta: { title?: string }; excerpt: string };
 type PagefindResult = { data: () => Promise<Result> };
@@ -51,7 +52,10 @@ export default function HeaderSearch() {
       const search = await api.debouncedSearch(query);
       if (!search || cancelled) return;
       const data = await Promise.all(search.results.slice(0, 8).map((r) => r.data()));
-      if (!cancelled) setResults(data);
+      if (!cancelled) {
+        setResults(data);
+        track("search", { query: query.trim().slice(0, 100), results: data.length });
+      }
     })();
     return () => {
       cancelled = true;
