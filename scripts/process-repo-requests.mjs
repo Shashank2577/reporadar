@@ -27,7 +27,7 @@ const STOPWORDS = new Set(
     "anything thing things find looking need needs open source opensource github run runs running").split(" ")
 );
 
-function keywords(text) {
+export function keywords(text) {
   const words = text
     .toLowerCase()
     .replace(/['\u2019]s\b/g, "")
@@ -126,9 +126,41 @@ export async function pickWithModel(query, candidates) {
   }
 }
 
+// Repos that are about a subject rather than a tool for it.
+const NOT_A_TOOL = /\b(tutorial|course|courses|awesome|cheatsheet|cheat-sheet|interview|roadmap|notes|homework|assignment|templates?|dataset|learning|study)\b/i;
+
+// Deterministic fallback for when the model is unavailable (the Models API has
+// been returning a bare "OK" instead of a completion). Auto-adds a repo only on
+// a clear match: most of the request's keywords appear in the repo's name,
+// topics or description, and it is not a tutorial or list. Anything less
+// confident returns null, so the comment lists candidates instead.
+// Higher than the search floor: a guess is only worth publishing for an established project.
+const MIN_STARS_AUTO = 100;
+
+export function heuristicPick(query, candidates) {
+  const kw = keywords(query).slice(0, 8);
+  if (kw.length < 2) return null;
+  const need = Math.max(2, Math.ceil(kw.length * 0.6));
+  const asksForList = NOT_A_TOOL.test(query);
+  let best = null;
+  for (const r of candidates) {
+    const text = `${r.full_name} ${(r.topics || []).join(" ")} ${r.description || ""}`.toLowerCase();
+    if (r.stargazers_count < MIN_STARS_AUTO) continue;
+    if (!asksForList && NOT_A_TOOL.test(text)) continue;
+    const hits = kw.filter((w) => text.includes(w)).length;
+    if (hits < need) continue;
+    if (!best || hits > best.hits || (hits === best.hits && r.stargazers_count > best.repo.stargazers_count)) best = { repo: r, hits };
+  }
+  return best ? { match: best.repo, reason: `${best.hits}/${kw.length} request keywords match` } : null;
+}
+
 export async function findBestMatch(query) {
   const candidates = await gatherCandidates(query);
-  const picked = await pickWithModel(query, candidates);
+  let picked = await pickWithModel(query, candidates);
+  if (!picked) {
+    picked = heuristicPick(query, candidates);
+    if (picked) console.log(`  heuristic: ${picked.match.full_name} (${picked.reason})`);
+  }
   return { candidates, picked };
 }
 
@@ -166,7 +198,7 @@ async function main() {
       const found = await findBestMatch(query);
       candidates = found.candidates;
       if (found.picked) match = found.picked.match;
-      else modelUnavailable = candidates.length > 0;
+      else modelUnavailable = candidates.length > 0; // neither the model nor the heuristic was confident
     } catch (err) {
       console.warn(`  search failed: ${err.message}`);
     }
@@ -176,7 +208,7 @@ async function main() {
       const top = candidates.slice(0, 3);
       comment =
         (modelUnavailable
-          ? `I found some candidates for "${query}" but couldn't automatically confirm that any of them fits, so I haven't added one to the site.\n\n`
+          ? `I found some candidates for "${query}" but couldn't confirm that any of them clearly fits, so I haven't added one to the site.\n\n`
           : `I couldn't find a repository that genuinely fits: "${query}".\n\n`) +
         (top.length
           ? `Closest results (not added):\n${top.map((r) => `- [${r.full_name}](${r.html_url}) (${r.stargazers_count.toLocaleString()} stars)`).join("\n")}\n\n`
