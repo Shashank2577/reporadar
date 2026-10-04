@@ -25,7 +25,9 @@ export const STAR_HISTORY_VERSION = 2;
 // otherwise the chart shows just our own daily snapshots, which are exact.
 const COVERAGE_MIN = 0.6;
 const COVERAGE_MAX = 1.5;
-const UNRELIABLE_RETRY_DAYS = 30;
+// Short: the archive can answer from a stale view (a run once saw 8 usable
+// histories where another saw 139), so a low sample is re-checked soon.
+const UNRELIABLE_RETRY_DAYS = 2;
 
 // Usable if every point has a finite star count, or if it is an explicit
 // "archive unreliable" marker. An earlier version scaled by an undefined star
@@ -39,9 +41,10 @@ export function isValidStarHistory(h) {
 
 // Whether a stored history needs (re)fetching: missing, from an older version,
 // invalid, or an "unreliable" marker old enough that the archive may have caught up.
-export function needsStarHistory(h) {
+export function needsStarHistory(h, { ignoreRetryWindow = false } = {}) {
   if (!h || h.version !== STAR_HISTORY_VERSION || !isValidStarHistory(h)) return true;
   if (h.unreliable) {
+    if (ignoreRetryWindow) return true;
     const age = (Date.now() - new Date(h.sampledAt).getTime()) / 86400000;
     return !(age < UNRELIABLE_RETRY_DAYS);
   }
@@ -91,7 +94,7 @@ export async function fetchStarHistoryBatch(repos) {
         const sampledAt = new Date().toISOString();
         const coverage = Number((totalEvents / r.stars).toFixed(3));
         if (!(totalEvents > 0) || coverage < COVERAGE_MIN || coverage > COVERAGE_MAX) {
-          result.set(r.id, { version: STAR_HISTORY_VERSION, unreliable: true, points: [], coverage, source: "gharchive-clickhouse", sampledAt });
+          result.set(r.id, { version: STAR_HISTORY_VERSION, unreliable: true, points: [], coverage, events: totalEvents, source: "gharchive-clickhouse", sampledAt });
           continue;
         }
         // Scale the archive counts so the curve ends at the true current total.
@@ -107,6 +110,7 @@ export async function fetchStarHistoryBatch(repos) {
           source: "gharchive-clickhouse",
           scale: Number(scale.toFixed(3)),
           coverage,
+          events: totalEvents,
           sampledAt,
         };
         if (isValidStarHistory(history)) result.set(r.id, history);

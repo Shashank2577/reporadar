@@ -19,11 +19,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mergeProfiles, dedupeRepos, diffProfile } from "./lib/merge.mjs";
+import { backfillStarHistories } from "./lib/star-history.mjs";
 import { ghFetch, lastPageFromLink, todayUTC, repoSlug, apiUsage, budgetExhausted, mapLimit, checkRateLimit } from "./lib/gh.mjs";
 import {
-  fetchStarHistoryBatch,
-  needsStarHistory,
-  isValidStarHistory,
   fetchReleases,
   fetchRecentIssues,
   fetchCommitStats,
@@ -473,36 +471,7 @@ async function main() {
   }
   console.log(`Updated ${ok}/${queue.length} repos (deep facts refreshed: ${factsDone})`);
 
-  // Batched star-history backfill (one-time per repo) from the GH Archive
-  // dataset on ClickHouse's public playground.
-  const needBackfill = fs
-    .readdirSync(REPO_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => ({ file: path.join(REPO_DIR, f), profile: readJson(path.join(REPO_DIR, f)) }))
-    .filter(({ profile }) => profile && needsStarHistory(profile.starHistory));
-  if (needBackfill.length) {
-    console.log(`Backfilling star history for ${needBackfill.length} repos`);
-    const histories = await fetchStarHistoryBatch(
-      needBackfill.map(({ profile }) => ({ id: profile.id, stars: profile.stars }))
-    );
-    let filled = 0;
-    for (const { file, profile } of needBackfill) {
-      const h = histories.get(profile.id);
-      if (!h) {
-        // Not re-fetchable yet (e.g. no star count). A legacy all-null
-        // history is worse than none, so drop it; it is retried once facts exist.
-        if (profile.starHistory && !isValidStarHistory(profile.starHistory)) {
-          delete profile.starHistory;
-          fs.writeFileSync(file, JSON.stringify(profile, null, 2));
-        }
-        continue;
-      }
-      profile.starHistory = h;
-      fs.writeFileSync(file, JSON.stringify(profile, null, 2));
-      filled++;
-    }
-    console.log(`Backfilled ${filled}/${needBackfill.length}`);
-  }
+  await backfillStarHistories(REPO_DIR);
 
   const u = apiUsage();
   console.log(
