@@ -237,9 +237,23 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
             <StarHistoryChart
               points={history}
               partial={repo.starHistory?.partial}
-              approximate={repo.starHistory?.source === "gharchive-clickhouse"}
+              approximate={!!repo.starHistory?.points?.length && repo.starHistory?.source === "gharchive-clickhouse"}
+              measuredSince={repo.snapshots?.[0]?.date}
             />
           </Card>
+
+          {repo.changelog?.length ? (
+            <Card id="updates" title="Update history" meta={`${repo.changelog.length} recorded`}>
+              <ul className="space-y-2.5 text-sm">
+                {repo.changelog.slice(0, 8).map((e, i) => (
+                  <li key={`${e.date}-${e.type}-${i}`} className="flex gap-3">
+                    <span className="w-24 shrink-0 text-xs text-muted">{formatDate(e.date)}</span>
+                    <span>{e.summary}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {repo.contributionDays?.length ? (
             <Card id="contributions" title="Contribution activity" meta="commits per day, last 52 weeks">

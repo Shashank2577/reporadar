@@ -6,24 +6,72 @@ import { ghFetch, ghGraphQL, lastPageFromLink } from "./gh.mjs";
 // --- Star history backfill --------------------------------------------------
 // GitHub removed public access to stargazer timestamps, so the historical
 // curve comes from the GH Archive dataset mirrored on ClickHouse's public
-// playground: weekly WatchEvent counts per repo since 2011, queried
-// anonymously in one batched request. The cumulative curve is scaled to the
-// repo's current star count (the archive misses a small fraction of events);
-// our own daily snapshots take over from the backfill's end.
+// playground: WatchEvent counts per repo since 2011, queried anonymously in
+// one batched request. Weekly buckets cover the long history; the last
+// DAILY_WINDOW_DAYS are daily so a repo that just started trending shows its
+// real day-by-day gains instead of one lump. The cumulative curve is scaled to
+// the repo's current star count (the archive misses a small fraction of
+// events); our own daily snapshots take over from the backfill's end.
 const CLICKHOUSE_URL = "https://play.clickhouse.com/?user=play";
+const DAILY_WINDOW_DAYS = 60;
+
+// Bump to re-fetch every stored history on the next run.
+export const STAR_HISTORY_VERSION = 2;
+// The archive is the only public source of star timestamps, but it is
+// incomplete for some periods (some recent months hold a tenth of the events
+// of earlier ones). Scaling an undercounted curve to the current total
+// inflates every day's gain (e.g. "+9,000 in a day"), so a backfill is kept
+// only when the archive accounts for roughly the repo's real star count;
+// otherwise the chart shows just our own daily snapshots, which are exact.
+const COVERAGE_MIN = 0.6;
+const COVERAGE_MAX = 1.5;
+const UNRELIABLE_RETRY_DAYS = 30;
+
+// Usable if every point has a finite star count, or if it is an explicit
+// "archive unreliable" marker. An earlier version scaled by an undefined star
+// total (repos backfilled before their facts were fetched), producing
+// all-null curves that rendered as "0 stars, then +50,000 in a day".
+export function isValidStarHistory(h) {
+  if (h?.unreliable === true) return true;
+  const points = h?.points;
+  return Array.isArray(points) && points.length > 0 && points.every((p) => Number.isFinite(p?.stars));
+}
+
+// Whether a stored history needs (re)fetching: missing, from an older version,
+// invalid, or an "unreliable" marker old enough that the archive may have caught up.
+export function needsStarHistory(h) {
+  if (!h || h.version !== STAR_HISTORY_VERSION || !isValidStarHistory(h)) return true;
+  if (h.unreliable) {
+    const age = (Date.now() - new Date(h.sampledAt).getTime()) / 86400000;
+    return !(age < UNRELIABLE_RETRY_DAYS);
+  }
+  return false;
+}
 
 export async function fetchStarHistoryBatch(repos) {
-  // repos: [{ id, stars }]
+  // repos: [{ id, stars }] -- entries without a positive finite star count are
+  // skipped (they are retried on a later run once their facts exist).
   const result = new Map();
+  const usable = repos.filter(
+    (r) => /^[\w.-]+\/[\w.-]+$/.test(r.id) && Number.isFinite(r.stars) && r.stars > 0
+  );
   const chunkSize = 50;
-  for (let i = 0; i < repos.length; i += chunkSize) {
-    const chunk = repos.filter((r) => /^[\w.-]+\/[\w.-]+$/.test(r.id)).slice(i, i + chunkSize);
-    if (!chunk.length) continue;
+  for (let i = 0; i < usable.length; i += chunkSize) {
+    const chunk = usable.slice(i, i + chunkSize);
     const list = chunk.map((r) => `'${r.id}'`).join(",");
-    const sql = `SELECT repo_name, toStartOfWeek(created_at) AS week, count() AS c
-      FROM github_events
-      WHERE event_type = 'WatchEvent' AND repo_name IN (${list})
-      GROUP BY repo_name, week ORDER BY repo_name, week
+    const cutoff = `today() - ${DAILY_WINDOW_DAYS}`;
+    // Wrapped in a subquery: a bare ORDER BY after UNION ALL only sorts the last branch.
+    const sql = `SELECT repo_name, bucket, c FROM (
+        SELECT repo_name, toString(toStartOfWeek(created_at)) AS bucket, count() AS c
+        FROM github_events
+        WHERE event_type = 'WatchEvent' AND repo_name IN (${list}) AND toDate(created_at) < ${cutoff}
+        GROUP BY repo_name, bucket
+        UNION ALL
+        SELECT repo_name, toString(toDate(created_at)) AS bucket, count() AS c
+        FROM github_events
+        WHERE event_type = 'WatchEvent' AND repo_name IN (${list}) AND toDate(created_at) >= ${cutoff}
+        GROUP BY repo_name, bucket
+      ) ORDER BY repo_name, bucket
       FORMAT JSONCompact`;
     try {
       const res = await fetch(CLICKHOUSE_URL, { method: "POST", body: sql });
@@ -33,27 +81,35 @@ export async function fetchStarHistoryBatch(repos) {
       }
       const json = await res.json();
       const byRepo = new Map();
-      for (const [repoName, week, c] of json.data || []) {
+      for (const [repoName, bucket, c] of json.data || []) {
         if (!byRepo.has(repoName)) byRepo.set(repoName, []);
-        byRepo.get(repoName).push({ week, count: Number(c) });
+        byRepo.get(repoName).push({ bucket, count: Number(c) });
       }
       for (const r of chunk) {
-        const weeks = byRepo.get(r.id);
-        if (!weeks?.length) continue;
-        const totalEvents = weeks.reduce((s, w) => s + w.count, 0);
+        const buckets = (byRepo.get(r.id) || []).sort((a, b) => a.bucket.localeCompare(b.bucket));
+        const totalEvents = buckets.reduce((s, w) => s + w.count, 0);
+        const sampledAt = new Date().toISOString();
+        const coverage = Number((totalEvents / r.stars).toFixed(3));
+        if (!(totalEvents > 0) || coverage < COVERAGE_MIN || coverage > COVERAGE_MAX) {
+          result.set(r.id, { version: STAR_HISTORY_VERSION, unreliable: true, points: [], coverage, source: "gharchive-clickhouse", sampledAt });
+          continue;
+        }
         // Scale the archive counts so the curve ends at the true current total.
-        const scale = totalEvents > 0 ? r.stars / totalEvents : 1;
+        const scale = r.stars / totalEvents;
         let cum = 0;
-        const points = weeks.map((w) => {
+        const points = buckets.map((w) => {
           cum += w.count;
-          return { date: w.week, stars: Math.max(1, Math.round(cum * scale)) };
+          return { date: w.bucket, stars: Math.max(1, Math.round(cum * scale)) };
         });
-        result.set(r.id, {
+        const history = {
+          version: STAR_HISTORY_VERSION,
           points,
           source: "gharchive-clickhouse",
           scale: Number(scale.toFixed(3)),
-          sampledAt: new Date().toISOString(),
-        });
+          coverage,
+          sampledAt,
+        };
+        if (isValidStarHistory(history)) result.set(r.id, history);
       }
     } catch (err) {
       console.warn(`  clickhouse batch failed: ${err.message}`);

@@ -18,10 +18,13 @@ export default function StarHistoryChart({
   points,
   partial,
   approximate,
+  measuredSince,
 }: {
   points: Point[];
   partial?: boolean;
   approximate?: boolean;
+  // First day we measured the star count ourselves (daily snapshots).
+  measuredSince?: string;
 }) {
   if (points.length < 2) {
     return (
@@ -103,8 +106,12 @@ export default function StarHistoryChart({
         ))}
       </svg>
       <figcaption className="mt-1 text-xs text-muted">
-        {compactNumber(last.stars)} stars as of {formatDate(last.date)}, tracked back to {formatDate(first.date)}.
-        {approximate ? " Historical curve reconstructed from public GitHub event archives, calibrated to the current total." : ""}
+        {compactNumber(last.stars)} stars as of {formatDate(last.date)}.
+        {approximate && measuredSince
+          ? ` Before ${formatDate(measuredSince)}, reconstructed from public GitHub event archives (checked against the repository's real star total); since then measured daily.`
+          : approximate
+            ? " Reconstructed from public GitHub event archives, checked against the repository's real star total."
+            : ` Measured daily since ${formatDate(first.date)}; GitHub no longer exposes earlier star timestamps.`}
         {partial ? " History beyond the first 40,000 stars is approximated from daily snapshots." : ""}
       </figcaption>
     </figure>
