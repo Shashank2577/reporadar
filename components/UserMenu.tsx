@@ -1,9 +1,9 @@
 "use client";
 
-import { useSession, signIn, signOut } from "next-auth/react";
+import { useSession } from "@/components/AuthProvider";
 
 export default function UserMenu() {
-  const { data: session, status } = useSession();
+  const { data: session, status, signIn, signOut } = useSession();
 
   if (status === "loading") {
     return <span className="h-8 w-8 shrink-0" aria-hidden="true" />;
@@ -13,7 +13,7 @@ export default function UserMenu() {
     return (
       <button
         type="button"
-        onClick={() => signIn("github")}
+        onClick={signIn}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-surface"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
@@ -27,8 +27,8 @@ export default function UserMenu() {
   return (
     <button
       type="button"
-      onClick={() => signOut()}
-      title={`Signed in as ${session.user.name || session.user.email}. Click to sign out.`}
+      onClick={signOut}
+      title={`Signed in as ${session.user.name || "GitHub user"}. Click to sign out.`}
       className="shrink-0"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

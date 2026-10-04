@@ -1,22 +1,16 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { allTopics, reposByTopic, toBrowserRepo } from "@/lib/data";
+import { topTopics, reposByTopic, toBrowserRepo } from "@/lib/data";
 import RepoBrowser from "@/components/RepoBrowser";
 import { itemListJsonLd } from "@/lib/site";
 
-// Prerendering every topic (3,800+, most tagging only 1-2 repos) was the
-// single biggest driver of build time and page count for near-zero benefit --
-// thin, rarely-visited pages. Only the topics with real traction are worth
-// prerendering; the long tail still works, it just renders on first request
-// and gets cached from then on (the default when dynamicParams isn't set to
-// false), instead of being generated at every single build forever.
-const PRERENDER_TOP_N = 100;
-
+// Only the topics with real traction (see topTopics) are built; the 3,800+
+// long-tail topics were thin pages and a static export can't render on demand.
 export function generateStaticParams() {
-  return allTopics()
-    .slice(0, PRERENDER_TOP_N)
-    .map(({ topic }) => ({ topic }));
+  return topTopics().map(({ topic }) => ({ topic }));
 }
+
+export const dynamicParams = false;
 
 export async function generateMetadata({ params }: { params: Promise<{ topic: string }> }): Promise<Metadata> {
   const { topic } = await params;
