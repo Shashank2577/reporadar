@@ -197,7 +197,11 @@ async function main() {
     if (!(issue.labels || []).some((l) => l.name === "repo-request")) {
       await postJson(`https://api.github.com/repos/${targetOwner}/${targetRepo}/issues/${issue.number}/labels`, "POST", {
         labels: ["repo-request"],
-      }).catch((err) => console.warn(`  could not label #${issue.number}: ${err.message}`));
+      })
+        // Keep our copy in step: the closing PATCH below sends the full label list,
+        // and a stale copy would silently drop the label we just added.
+        .then(() => (issue.labels = [...(issue.labels || []), { name: "repo-request" }]))
+        .catch((err) => console.warn(`  could not label #${issue.number}: ${err.message}`));
     }
     const query = extractQuery(issue);
     console.log(`#${issue.number}: "${query}"`);
