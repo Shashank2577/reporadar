@@ -143,6 +143,14 @@ async function main() {
     : [];
 
   let enriched = 0;
+  // The Models API has been answering every call with a bare "OK" (HTTP 200,
+  // no completion). Each call then threw, so a run logged ~300 identical
+  // failures and spent its time on calls that cannot work. After a few
+  // consecutive failures, stop calling the model for the rest of the run;
+  // repos without a summary still get the deterministic template.
+  const BREAKER_AFTER = 3;
+  let consecutiveFailures = 0;
+  let modelDown = false;
   for (const f of files) {
     const file = path.join(REPO_DIR, f);
     const profile = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -158,14 +166,22 @@ async function main() {
 
     console.log(`Enriching ${profile.id}`);
     let summary = null;
-    try {
-      summary = await llmSummarize(profile);
-    } catch (err) {
-      if (err.message === "RATE_LIMITED") {
-        console.log("Model quota reached; remaining repos will be enriched on a later run");
-        break;
+    if (!modelDown) {
+      try {
+        summary = await llmSummarize(profile);
+        consecutiveFailures = summary ? 0 : consecutiveFailures + 1;
+      } catch (err) {
+        if (err.message === "RATE_LIMITED") {
+          console.log("Model quota reached; remaining repos will be enriched on a later run");
+          break;
+        }
+        console.warn(`  llm failed: ${err.message}`);
+        consecutiveFailures++;
       }
-      console.warn(`  llm failed: ${err.message}`);
+      if (consecutiveFailures >= BREAKER_AFTER) {
+        modelDown = true;
+        console.warn(`Model unavailable after ${BREAKER_AFTER} consecutive failures; using templates for the rest of this run`);
+      }
     }
     // Never downgrade an existing LLM/Jules summary to a template one.
     if (!summary && (s?.source === "llm" || s?.source === "jules")) continue;
