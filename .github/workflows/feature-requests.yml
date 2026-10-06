@@ -1,0 +1,58 @@
+name: Feature requests
+
+# "Get featured". The site's form opens an issue titled "Feature request:
+# owner/name" (GitHub drops labels from non-collaborators, so this triggers on
+# the title). The script validates the repository, tracks it, and acknowledges.
+# A maintainer approves by adding the `feature-approved` label (only people with
+# triage access can), which writes data/featured.json and closes the issue.
+# Add the `sponsored` label first to mark a paid placement as "Sponsored".
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  process:
+    if: >-
+      (github.event.action == 'opened' && startsWith(github.event.issue.title, 'Feature request:')) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'feature-approved')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Process the request
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPORADAR_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
+        run: node scripts/process-feature-requests.mjs
+
+      - name: Commit and push
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: feature request $(date -u +%Y-%m-%dT%H:%M)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+            # Publish approvals right away instead of waiting for the next scheduled deploy.
+            if [ "${{ github.event.action }}" = "labeled" ]; then
+              GH_TOKEN="${{ secrets.GITHUB_TOKEN }}" gh workflow run deploy-cloudflare.yml
+            fi
+          fi

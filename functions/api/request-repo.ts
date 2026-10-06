@@ -1,4 +1,5 @@
 import { getSession, json, type Env } from "../_lib/session";
+import { createIssue } from "../_lib/issue";
 
 // Creates a GitHub Issue on this repo, authenticated as the signed-in user's
 // own GitHub account — so the issue's author *is* the requester, the same
@@ -19,31 +20,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: "Keep the description under 500 characters." }, { status: 400 });
   }
 
-  const [owner, repo] = (env.GITHUB_REPO || "").split("/");
-  if (!owner || !repo) {
-    return json({ error: "Repo requests are not configured on this deployment." }, { status: 500 });
-  }
-
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.accessToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "reporadar",
-    },
-    body: JSON.stringify({
-      title: `Repo request: ${text.slice(0, 80)}`,
-      body: `${text}\n\n---\nSubmitted via the RepoRadar site request form.`,
-      labels: ["repo-request"],
-    }),
+  return createIssue(env, session, {
+    title: `Repo request: ${text.slice(0, 80)}`,
+    body: `${text}\n\n---\nSubmitted via the RepoRadar site request form.`,
+    labels: ["repo-request"],
   });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    return json({ error: `GitHub rejected the request (${res.status}): ${detail.slice(0, 200)}` }, { status: 502 });
-  }
-
-  const issue = (await res.json()) as { html_url: string; number: number };
-  return json({ url: issue.html_url, number: issue.number });
 };

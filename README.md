@@ -237,6 +237,27 @@ with a larger day count — it only adds what's missing.
 - `content/reports/<kind>/<slug>.md` — published reports (permanent archive);
   frontmatter drives titles, descriptions, and featured repos
 
+## Featured projects and traffic stats
+
+**Get featured.** `/featured` lets a signed-in GitHub user request a spot for their repository with a one-line
+pitch. The Pages Function `functions/api/feature-request.ts` opens an issue titled `Feature request: owner/name`.
+`.github/workflows/feature-requests.yml` validates the repository, starts tracking it, and acknowledges the
+request. Nothing is featured automatically: a maintainer approves by adding the **`feature-approved`** label
+(add **`sponsored`** first for a paid placement, which then renders as "Sponsored" with `rel="sponsored"`).
+Approval writes `data/featured.json` (30 days by default, `FEATURE_DAYS` to change) and triggers a deploy.
+Featured entries never affect any ranking. Set `NEXT_PUBLIC_FEATURE_SPONSOR_URL` (for example a Stripe Payment
+Link) to show a "Sponsor a slot" link on `/featured`.
+
+GitHub drops labels on issues opened by people without push access, so both the repo-request and
+feature-request workflows trigger on the issue title (`opened`) and apply labels themselves.
+
+**Traffic stats.** The deploy workflow runs `scripts/fetch-site-stats.mjs`, which queries PostHog and writes
+`data/site-stats.json` (not committed). It powers the visit count in the footer (shown once there are at least
+100 visits in 30 days), "Most viewed this week" on the home page, and a "Views (30d)" figure on each repo page.
+Configure the `POSTHOG_PERSONAL_API_KEY` repository secret (a personal API key with `query:read`) and the
+`POSTHOG_PROJECT_ID` repository variable; without them the site builds without any of these numbers. "Visits"
+are PostHog sessions; the analytics run cookieless, so a visitor who reloads in a new tab may count again.
+
 ## Costs
 
 Everything runs on free tiers: Cloudflare Pages, GitHub Actions (public
