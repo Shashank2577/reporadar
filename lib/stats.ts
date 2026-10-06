@@ -13,8 +13,9 @@ export type SiteStats = {
 };
 
 const FILE = path.join(process.cwd(), "data", "site-stats.json");
-// Below this the numbers are noise and would only advertise an empty site.
-export const MIN_PUBLIC_VISITS = 100;
+// Show the real number as soon as there is one. (An earlier threshold of 100
+// hid it entirely while traffic was small, which nobody had asked for.)
+export const MIN_PUBLIC_VISITS = 1;
 
 let cache: SiteStats | null | undefined;
 
