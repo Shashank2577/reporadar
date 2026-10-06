@@ -17,12 +17,13 @@ permissions:
   issues: write
   models: read
 
-concurrency:
-  group: data-pipeline
-  cancel-in-progress: false
-
 jobs:
   process:
+    # See feature-requests.yml: per-issue, job-level, so skipped runs for other
+    # issues and workflows can never cancel a real request.
+    concurrency:
+      group: repo-request-${{ github.event.issue.number || 'manual' }}
+      cancel-in-progress: false
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.label.name == 'repo-request' ||
@@ -52,6 +53,10 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "data: repo request $(date -u +%Y-%m-%dT%H:%M)"
-            git pull --rebase origin ${GITHUB_REF_NAME}
-            git push
+            # Other pipelines push to main too; retry if it moved while we worked.
+            for attempt in 1 2 3; do
+              git pull --rebase origin ${GITHUB_REF_NAME} && git push && break
+              echo "push attempt $attempt failed; retrying"
+              sleep $((attempt * 3))
+            done
           fi
