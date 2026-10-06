@@ -164,7 +164,7 @@ export async function findBestMatch(query) {
   return { candidates, picked };
 }
 
-async function postJson(url, method, body) {
+export async function postJson(url, method, body) {
   const res = await fetch(url, {
     method,
     headers: {
@@ -182,13 +182,23 @@ async function postJson(url, method, body) {
 async function main() {
   if (!targetOwner || !targetRepo) throw new Error("GITHUB_REPOSITORY is not set (owner/repo)");
 
-  const res = await ghFetch(
-    `/repos/${targetOwner}/${targetRepo}/issues?state=open&labels=repo-request&per_page=20`
+  // Selected by label OR by the form's title prefix: GitHub drops labels on
+  // issues opened by people without push access, so the prefix is what
+  // identifies a visitor's request.
+  const res = await ghFetch(`/repos/${targetOwner}/${targetRepo}/issues?state=open&per_page=50`);
+  const issues = (res.data || []).filter(
+    (i) =>
+      !i.pull_request &&
+      ((i.labels || []).some((l) => l.name === "repo-request") || /^Repo request:/i.test(i.title))
   );
-  const issues = (res.data || []).filter((i) => !i.pull_request);
   console.log(`Found ${issues.length} open repo-request issue(s)`);
 
   for (const issue of issues) {
+    if (!(issue.labels || []).some((l) => l.name === "repo-request")) {
+      await postJson(`https://api.github.com/repos/${targetOwner}/${targetRepo}/issues/${issue.number}/labels`, "POST", {
+        labels: ["repo-request"],
+      }).catch((err) => console.warn(`  could not label #${issue.number}: ${err.message}`));
+    }
     const query = extractQuery(issue);
     console.log(`#${issue.number}: "${query}"`);
     let match = null;

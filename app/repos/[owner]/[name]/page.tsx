@@ -19,6 +19,7 @@ import Tag from "@/components/Tag";
 import WatchButton from "@/components/WatchButton";
 import { absoluteUrl } from "@/lib/site";
 import JsonLd from "@/components/JsonLd";
+import { getSiteStats } from "@/lib/stats";
 import { breadcrumbJsonLd, faqJsonLd, truncateAtWord, demoteHeadings } from "@/lib/seo";
 
 type Params = { owner: string; name: string };
@@ -156,6 +157,9 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
     { label: "Commits", value: repo.commitCount ? compactNumber(repo.commitCount) : "n/a" },
     { label: "Branches", value: repo.branchCount != null ? compactNumber(repo.branchCount) : "n/a" },
   ];
+  // Page views from the site's own analytics; omitted until stats exist.
+  const views30d = getSiteStats()?.repoViews30d[repo.id];
+  if (views30d) heroStats.push({ label: "Views (30d)", value: compactNumber(views30d) });
 
   return (
     <div data-pagefind-body>

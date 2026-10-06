@@ -5,6 +5,10 @@ import { compactNumber } from "@/lib/format";
 import RepoBrowser from "@/components/RepoBrowser";
 import NewsletterForm from "@/components/NewsletterForm";
 import StarHistoryChart from "@/components/StarHistoryChart";
+import FeaturedProjects from "@/components/FeaturedProjects";
+import MostViewed from "@/components/MostViewed";
+import { getFeatured } from "@/lib/featured";
+import { getSiteStats } from "@/lib/stats";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -23,6 +27,12 @@ export default function HomePage() {
   const latestDaily = reports.find((r) => r.kind === "daily");
   const featured = latestDaily?.featured ? byId.get(latestDaily.featured) : byId.get(daily[0]?.repo);
   const gainers = topGainers(7, 8);
+  const spotlight = getFeatured();
+  const stats = getSiteStats();
+  const mostViewed = (stats?.topRepos7d || [])
+    .map((t) => ({ repo: byId.get(t.id), views: t.views }))
+    .filter((x): x is { repo: NonNullable<typeof x.repo>; views: number } => Boolean(x.repo))
+    .slice(0, 8);
   const mostActive = [...repos]
     .map((r) => ({ r, commits: (r.commitActivity || []).reduce((s, w) => s + w.commits, 0) }))
     .filter((x) => x.commits > 0)
@@ -49,6 +59,26 @@ export default function HomePage() {
           </Link>
           .
         </p>
+      </section>
+
+      <section aria-labelledby="featured-projects">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 id="featured-projects" className="text-lg font-semibold">Featured projects</h2>
+          <Link href="/featured" className="text-sm text-accent hover:underline">
+            Get your project featured
+          </Link>
+        </div>
+        {spotlight.length ? (
+          <FeaturedProjects projects={spotlight} />
+        ) : (
+          <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted">
+            Building something open source?{" "}
+            <Link href="/featured" className="text-accent hover:underline">
+              Request a featured spot
+            </Link>
+            . It is reviewed by a maintainer, labelled, and never changes any ranking.
+          </div>
+        )}
       </section>
 
       <section aria-labelledby="categories">
@@ -113,6 +143,16 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {mostViewed.length ? (
+        <section aria-labelledby="most-viewed">
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 id="most-viewed" className="text-lg font-semibold">Most viewed this week</h2>
+            <span className="text-xs text-muted">By visitors to this site</span>
+          </div>
+          <MostViewed items={mostViewed} />
         </section>
       ) : null}
 
