@@ -8,7 +8,7 @@ import StarHistoryChart from "@/components/StarHistoryChart";
 import FeaturedProjects from "@/components/FeaturedProjects";
 import MostViewed from "@/components/MostViewed";
 import { getFeatured } from "@/lib/featured";
-import { getSiteStats } from "@/lib/stats";
+import { getSiteStats, MIN_PUBLIC_VISITS } from "@/lib/stats";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -59,6 +59,13 @@ export default function HomePage() {
           </Link>
           .
         </p>
+        {stats && stats.visits30d >= MIN_PUBLIC_VISITS ? (
+          <p className="mt-3 text-sm text-muted" data-testid="visit-count">
+            <span className="font-medium text-foreground">{compactNumber(stats.visits30d)}</span> visits and{" "}
+            <span className="font-medium text-foreground">{compactNumber(stats.pageviews30d)}</span> page views in the
+            last 30 days.
+          </p>
+        ) : null}
       </section>
 
       <section aria-labelledby="featured-projects">
