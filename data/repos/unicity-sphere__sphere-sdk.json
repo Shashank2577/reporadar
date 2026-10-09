@@ -210,6 +210,11 @@
       "date": "2026-10-06",
       "stars": 5384,
       "forks": 107
+    },
+    {
+      "date": "2026-10-09",
+      "stars": 5385,
+      "forks": 107
     }
   ],
   "trendingHistory": [
@@ -250,39 +255,39 @@
     "blockchain",
     "commerce"
   ],
-  "stars": 5384,
+  "stars": 5385,
   "forks": 107,
   "watchers": 33,
-  "openIssues": 123,
+  "openIssues": 120,
   "createdAt": "2026-01-27T12:05:07Z",
-  "pushedAt": "2026-10-02T21:45:09Z",
+  "pushedAt": "2026-10-07T13:22:38Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-10-06T15:20:29.644Z",
+  "updatedAt": "2026-10-09T21:53:49.787Z",
   "languages": {
-    "TypeScript": 3694182,
+    "TypeScript": 3951429,
     "JavaScript": 34687
   },
-  "commitCount": 999,
+  "commitCount": 1048,
   "readmeExcerpt": "# Sphere SDK\n\nA modular TypeScript SDK for Unicity wallet operations (Unicity state transition network).\n\n## Features\n\n- **Wallet Management** - BIP39/BIP32 key derivation; optional password encryption of the stored seed (see [Wallet Security & Encryption](#wallet-security--encryption))\n- **Payments** - Engine-certified token transfers over the **wallet-api vertical** (durable server-side intents, mailbox delivery, crash-safe resume under the same transferId); server custody — the backend holds inventory, keys stay local\n- **Payment Requests** - Request payments over the wallet-api rail with encrypted memos and durable settling\n- **Market (Intents)** - Signed intent bulletin board with semantic search and live feed\n- **Group Chat** - NIP-29 relay-based group messaging with moderation\n- **Messaging (Nostr)** - NIP-17 DMs + NIP-29 group chat and nametag publishing — **messaging only; not the payment rail**\n- **Multi-Address** - HD address derivation (BIP32/BIP44)\n- **Connect Protocol** - dApp ↔ wallet communication via `ConnectClient` / `ConnectHost` (hosted wallet in an iframe, or WebSocket for Node.js dApps)\n\n## Installation\n\n```bash\nnpm install @unicitylabs/sphere-sdk        # browser\nnpm install @unicitylabs/sphere-sdk ws     # Node.js: ws is required, see \"Node.js Providers\"\n```\n\n## Quick Start Guides\n\nChoose your platform:\n\n| Platform | Guide | Required | Notes |\n|----------|-------|----------|-------|\n| **Browser** | [QUICKSTART-BROWSER.md](docs/QUICKSTART-BROWSER.md) | SDK only | Default storage: IndexedDB. TypeScript: `./impl/browser` ships no type declarations yet (see [the shim](#typescript-declarations-for-implbrowser)) |\n| **Node.js** | [QUICKSTART-NODEJS.md](docs/QUICKSTART-NODEJS.md) | SDK + `ws`, Node.js >= 22 | Default storage: a wallet file under `./sphere-data` |\n| **CLI** | [unicity-sphere/sphere-cli](https://github.com/unicity-sphere/sphere-cli) | Separate repository | Not published to npm yet |\n| **dApp integration** | [CONNECT.md](docs/CONNECT.md) | SDK only | `ws` (Node.js dApps) |\n\n## CLI (Command Line Interface)\n\nThe Sphere CLI lives in its own repository, [unicity-sphere/sphere-cli](https://github.com/unicity-sphere/sphere-cli),\nand is not published to npm yet: `npm install -g @unicity-sphere/cli` fails with a 404. Its `package.json`\ndepends on this SDK through a local path (`file:../../sphere-sdk`), so it builds only next to a checkout of\nthis repository. See [docs/QUICKSTART-CLI.md](docs/QUICKSTART-CLI.md).\n\n## Quick Start\n\n> **Setup is two provider layers, not one.** `createBrowserProviders` / `createNodeProviders`\n> build only the **base** (storage + transport + oracle). You **must** then attach the wallet-api\n> transport config with `createWalletApiProviders` — money moves only through the wallet-api\n> vertical. Skipping it fails loudly: `Sphere.init` throws `INVALID_CONFIG`.\n\n```typescript\nimport { Sphere, TokenRegistry, getCoinIdBySymbol, randomUUID } from '@unicitylabs/sphere-sdk';\nimport { createBrowserProviders } from '@unicitylabs/sphere-sdk/impl/browser'; // untyped entry: add the declaration shim below\nimport { createWalletApiProviders } from '@unicitylabs/sphere-sdk/impl/shared/wallet-api';\n\n// One network literal, used in all three places below.\nconst NETWORK = 'testnet2';\n\n// A per-device id: stable across launches on this device, different on every device.\nfunction deviceId(): string {\n  let id = localStorage.getItem('sphere-device-id');\n  if (!id) {\n    // The SDK's randomUUID(): unlike crypto.randomUUID(), it also works outside a secure context.\n    id = randomUUID();\n    localStorage.setItem('sphere-device-id', id);\n  }\n  return id;\n}\n\n// 1. Base providers: storage (IndexedDB) + transport (Nostr) + oracle (gateway).\n//    `network` is required here: createBrowserProviders throws INVALID_CONFIG without it.\nconst base = createBrowserProviders({\n  network: NETWORK,\n  oracle: { apiKey: 'sk_ddc3cfcc001e4a28ac3fad7407f99590' }, // public testnet2 gateway key\n});\n\n// 2. The wallet-api transport config that the payments vertical is composed from.\n//    Returns { ...base, walletApi }; walletApi is a plain config object.\nconst providers = createWalletApiProviders(base, {\n  baseUrl: 'https://wallet-api.unicity.network', // testnet2 wallet-api\n  network: NETWORK,\n  deviceId: deviceId(),\n});\n\n// 3. Load the wallet in this storage, or create one. `network` is required here too.\nconst { sphere, created, generatedMnemonic } = await Sphere.init({\n  ...providers,\n  network: NETWORK,\n  autoGenerate: true,\n});\nif (created && generatedMnemonic) {\n  console.log('SAVE THIS RECOVERY PHRASE:', generatedMnemonic);\n}\n\n// 4. Send: engine-driven, certified on-chain. The recipient needs a published identity\n//    (chain pubkey), e.g. a registered Unicity ID; otherwise send fails with INVALID_RECIPIENT.\n//    coinId is the 64-hex coin id; getCoinIdBySymbol() returns it for a symbol.\nawait TokenRegistry.waitForReady(); // Sphere.init starts the registry load but does not await it\nconst coinId = getCoinIdBySymbol('UCT'); // string | undefined\nif (!coinId) throw new Error('UCT is not in this network\\'s token registry');\n\nconst result = await sphere.payments.send({\n  recipient: '@alice',\n  amount: '1000000',     // base units, as a decimal STRING (never a JS number)\n  coinId,\n  memo: 'hello',\n});\nconsole.log(result.status);   // 'delivered', or 'confirmed' with result.deliveryPending === true\n// A resolved send() means sent. deliveryPending === true is NORMAL, not a failure: the token is\n// certified on-chain and the mailbox delivery is retried automatically (see \"Send result\" below).\n\n// 5. Receive: incoming transfers land automatically while the wallet runs (mailbox drain +\n//    wake socket). To drain explicitly (e.g. a CLI/batch app), call receive():\nconst { transfers } = await sphere.payments.receive();\nsphere.on('transfer:incoming', (t) => console.log('received from', t.senderNametag ?? t.senderPubkey));\n\nconsole.log(await sphere.payments.assets());\n```\n\n`generatedMnemonic` is returned only by the `Sphere.init` call that created the wallet. The phrase is\nstored before the rest of the setup runs, so if that call then throws (for example, a requested\n`nametag` is already taken), the next `Sphere.init` loads the stored wallet with `created: false`.\nGate your backup prompt on your own \"backup confirmed\" flag and read the phrase with\n`sphere.getMnemonic()` until the user confirms.\n\nNametag bindings do not carry a network yet, so the SDK cannot prove that a `@nametag` or `DIRECT://`\nrecipient uses your network. Every such send emits `transfer:attention` with\n`code: 'recipient:network-unverified'` and an empty `transferId`, and then proceeds on your network.\nTreat it as information, not an error; on mainnet, make sure the recipient runs mainnet. A bare 66-hex\nchain pubkey recipient is taken as being on your network.\n\n### What just happened (the provider model)\n\nA wallet is composed from **swappable ports**, layered in two steps:\n\n| Layer | Built by | What it supplies |\n|-------|----------|-------------------|\n| **Base** | `createBrowserProviders` / `createNodeProviders` | `storage` (keys/identity/journals), `transport` (Nostr — **messaging/nametags only**), `oracle` (gateway/trust base) |\n| **wallet-api transport** | `createWalletApiProviders(base, …)` | `walletApi` — the transport CONFIG (`{ network, baseUrl, deviceId?, fetchFn?, webSocketFactory?, paymentsV2Transport? }`) the payments vertical is composed from |\n\n- **The rail is wallet-api, not Nostr.** Transfers are certified on-chain by the token engine and the finished token is deposited into the recipient's **wallet-api mailbox**. Nostr carries messaging/nametags — **it does not move payments.**\n- **Custody is server-side.** The wallet-api backend holds your token inventory; your keys never leave the client. (Own-storage custody was rescinded — there is no local token store.)\n- **The money ports are contract-enforced.** `StoragePort`/`DeliveryPort` (`modules/payments-v2/ports.ts`) have wallet-api implementations; the `paymentsV2Transport` seam in the `walletApi` config lets tests/custom hosts inject a whole replacement bundle.\n- **`network` placement.** Required on `createBrowserProviders`/`createNodeProviders`, in the `walletApi` config, AND on `Sphere.init`; use one literal, `'testnet2'`, in all three places. Neither provider factory returns a `network` field, so `...providers` cannot supply it. `Sphere.init` compares its own `network` with `walletApi.network` as plain strings and throws `INVALID_CONFIG` (\"walletApi.network \"testnet2\" does not match the Sphere network ...\") when they differ, including when `Sphere.init` gets no `network` at all; this happens before any storage write. `'testnet'` and `'testnet2'` reach the same endpoints but are different strings, so mixing them fails this check. The wallet-api deployment names its network too: the testnet2 deployment signs you in only as `'testnet2'`, and the SDK refuses a sign-in challenge for any other network. The base-provider literal is not compared by that check, but it scopes the storage keys, while the payments state is keyed by the `Sphere.init` network, so mixing the two literals splits one wallet's state across two names.\n- **Messaging-only wallets say so out loud.** A wallet that never touches money — a Nostr DM or group-chat bot — passes `walletApi: 'none'` instead of a config: no wallet-api session, device registration, mailbox drain, token engine or `pv2g2:` key. `network` is still required, because it selects the token registry and the group-chat relays. `sphere.payments` then throws `PAYMENTS_NOT_COMPOSED` and `sphere.hasPayments` is `false`. **Omitting `walletApi` altogether still throws `INVALID_CONFIG`** — a dropped env var must never read as a deliberate choice.\n\nFor manual/advanced provider wiring, see [Custom Providers Configuration](#custom-providers-configuration). For the deeper integration guide, see [docs/INTEGRATION.md](docs/INTEGRATION.md).\n\n### Send result (`TransferResult`)\n\n`send()` resolves only when the payment is sent, with a `TransferResult`:\n\n| Field | Meaning |\n|-------|---------|\n| `status` | `'delivered'` when the payment landed in the recipient's mailbox, or `'confirmed'` when the transfer is certified and delivery is still being retried (`deliveryPending === true`). `send()` never resolves with `'completed'` or `'failed'`: a failure throws. (`'submitted'` and `'failed'` appear only as `transfer:updated` event payloads.) |\n| `deliveryPending` | `true` when the spend is **certified on-chain** but the recipient's **mailbox delivery was deferred** (a full inbox / transient outage). **This is success, not failure** — the token is finalized and the finished blob is journaled and re-delivered automatically. |\n| `deliveryState` | `'landed'` (delivered) or `'pending-delivery'` (deferred, as above). |\n\nA resolved `send()` is sent, whichever of the two statuses it carries. Use `deliveryPending` only to show a \"delivery pending\" hint — never as an error. A stale-but-spent source is self-healed (the next live coin is selected automatically).\n\n#### Handling `send()` rejections: never re-send a possibly-committed payment (money-safety)\n\nSome rejections mean the money may already have left the wallet. `isPossiblyCommittedSendOutcome(err)` is `true`\nfor exactly these codes: `SEND_SYNC_PENDING`, `CERTIFICATION_UNCONFIRMED`, `CHECKPOINT_PERSIST_FAILED`,\n`SPLIT_CHECKPOINT_LOST`, `CHECKPOINT_TRUSTBASE_MISMATCH` and `SEND_PARTIALLY_COMPLETED`. Never call `send()` again\nfor that payment: a new `send()` gets a new transfer id and pays the recipient a second time. The SDK finishes the\noriginal under its own transfer id; show it as pending (`sphere.payments.pendingTransfers()`), and wire any\n\"retry\" button to `sphere.payments.resumeNow()`. A `PartialSendConflictError` means part of the amount was\ndelivered and is final; only `err.remainingAmount` is still owed. When `isPossiblyCommittedSendOutcome(err)` is\n`false`, the SDK's contract is",
   "contributors": [
     {
       "login": "KruGoL",
       "url": "https://github.com/KruGoL",
       "avatarUrl": "https://avatars.githubusercontent.com/u/89870667?v=4",
-      "contributions": 367
+      "contributions": 368
     },
     {
       "login": "MastaP",
       "url": "https://github.com/MastaP",
       "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4",
-      "contributions": 277
+      "contributions": 285
     },
     {
       "login": "github-actions[bot]",
       "url": "https://github.com/apps/github-actions",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4",
-      "contributions": 157
+      "contributions": 162
     },
     {
       "login": "vrogojin",
@@ -300,7 +305,7 @@
       "login": "lploom",
       "url": "https://github.com/lploom",
       "avatarUrl": "https://avatars.githubusercontent.com/u/5463023?v=4",
-      "contributions": 11
+      "contributions": 46
     },
     {
       "login": "mareksepp",
@@ -339,7 +344,7 @@
       "title": "native coin issuance policy and rejection of unsupported token types before the tge",
       "url": "https://github.com/unicity-sphere/sphere-sdk/issues/832",
       "createdAt": "2026-09-30T11:19:31Z",
-      "comments": 0,
+      "comments": 1,
       "labels": [],
       "author": "lploom"
     },
@@ -362,17 +367,6 @@
       "author": "KruGoL"
     },
     {
-      "number": 825,
-      "title": "A token of a bridged type minted without a matching deposit on the other chain passes verification and shows as the bridged asset",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/issues/825",
-      "createdAt": "2026-09-28T12:11:03Z",
-      "comments": 0,
-      "labels": [
-        "bug"
-      ],
-      "author": "lploom"
-    },
-    {
       "number": 812,
       "title": "Follow-ups to #801/#808: the derivation path is unvalidated, a replace is not atomic, load() still fails open",
       "url": "https://github.com/unicity-sphere/sphere-sdk/issues/812",
@@ -388,6 +382,17 @@
       "title": "Connect WebSocket host: a new socket inherits the previous client's session without a handshake",
       "url": "https://github.com/unicity-sphere/sphere-sdk/issues/807",
       "createdAt": "2026-09-18T16:34:11Z",
+      "comments": 0,
+      "labels": [
+        "bug"
+      ],
+      "author": "KruGoL"
+    },
+    {
+      "number": 806,
+      "title": "requests.pay(): the request-to-transfer link is not durable during the send, so a paid request can become payable again",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/issues/806",
+      "createdAt": "2026-09-18T16:34:09Z",
       "comments": 0,
       "labels": [
         "bug"
@@ -574,12 +579,12 @@
     {
       "day": 1,
       "hour": 11,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 1,
       "hour": 12,
-      "commits": 7
+      "commits": 19
     },
     {
       "day": 1,
@@ -599,12 +604,12 @@
     {
       "day": 1,
       "hour": 16,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 1,
       "hour": 17,
-      "commits": 7
+      "commits": 9
     },
     {
       "day": 1,
@@ -709,7 +714,7 @@
     {
       "day": 2,
       "hour": 14,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 2,
@@ -724,12 +729,12 @@
     {
       "day": 2,
       "hour": 17,
-      "commits": 10
+      "commits": 11
     },
     {
       "day": 2,
       "hour": 18,
-      "commits": 13
+      "commits": 14
     },
     {
       "day": 2,
@@ -749,7 +754,7 @@
     {
       "day": 2,
       "hour": 22,
-      "commits": 7
+      "commits": 10
     },
     {
       "day": 2,
@@ -814,7 +819,7 @@
     {
       "day": 3,
       "hour": 11,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 3,
@@ -824,7 +829,7 @@
     {
       "day": 3,
       "hour": 13,
-      "commits": 8
+      "commits": 10
     },
     {
       "day": 3,
@@ -989,7 +994,7 @@
     {
       "day": 4,
       "hour": 22,
-      "commits": 7
+      "commits": 8
     },
     {
       "day": 4,
@@ -999,7 +1004,7 @@
     {
       "day": 5,
       "hour": 0,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 5,
@@ -1044,7 +1049,7 @@
     {
       "day": 5,
       "hour": 9,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 5,
@@ -1059,17 +1064,17 @@
     {
       "day": 5,
       "hour": 12,
-      "commits": 6
+      "commits": 8
     },
     {
       "day": 5,
       "hour": 13,
-      "commits": 3
+      "commits": 5
     },
     {
       "day": 5,
       "hour": 14,
-      "commits": 1
+      "commits": 2
     },
     {
       "day": 5,
@@ -1084,12 +1089,12 @@
     {
       "day": 5,
       "hour": 17,
-      "commits": 8
+      "commits": 11
     },
     {
       "day": 5,
       "hour": 18,
-      "commits": 8
+      "commits": 10
     },
     {
       "day": 5,
@@ -1099,7 +1104,7 @@
     {
       "day": 5,
       "hour": 20,
-      "commits": 12
+      "commits": 13
     },
     {
       "day": 5,
@@ -1114,7 +1119,7 @@
     {
       "day": 5,
       "hour": 23,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 6,
@@ -1238,110 +1243,137 @@
     }
   ],
   "participation": {
-    "all": 997,
+    "all": 1048,
     "owner": 0,
-    "community": 997
+    "community": 1048
   },
   "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Sphere SDK</h1></div>\n<p dir=\"auto\">A modular TypeScript SDK for Unicity wallet operations (Unicity state transition network).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li><strong>Wallet Management</strong> - BIP39/BIP32 key derivation; optional password encryption of the stored seed (see <a href=\"#wallet-security--encryption\">Wallet Security &amp; Encryption</a>)</li>\n<li><strong>Payments</strong> - Engine-certified token transfers over the <strong>wallet-api vertical</strong> (durable server-side intents, mailbox delivery, crash-safe resume under the same transferId); server custody — the backend holds inventory, keys stay local</li>\n<li><strong>Payment Requests</strong> - Request payments over the wallet-api rail with encrypted memos and durable settling</li>\n<li><strong>Market (Intents)</strong> - Signed intent bulletin board with semantic search and live feed</li>\n<li><strong>Group Chat</strong> - NIP-29 relay-based group messaging with moderation</li>\n<li><strong>Messaging (Nostr)</strong> - NIP-17 DMs + NIP-29 group chat and nametag publishing — <strong>messaging only; not the payment rail</strong></li>\n<li><strong>Multi-Address</strong> - HD address derivation (BIP32/BIP44)</li>\n<li><strong>Connect Protocol</strong> - dApp ↔ wallet communication via <code>ConnectClient</code> / <code>ConnectHost</code> (hosted wallet in an iframe, or WebSocket for Node.js dApps)</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Installation</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install @unicitylabs/sphere-sdk        # browser\nnpm install @unicitylabs/sphere-sdk ws     # Node.js: ws is required, see &quot;Node.js Providers&quot;\"><pre>npm install @unicitylabs/sphere-sdk        <span class=\"pl-c\"><span class=\"pl-c\">#</span> browser</span>\nnpm install @unicitylabs/sphere-sdk ws     <span class=\"pl-c\"><span class=\"pl-c\">#</span> Node.js: ws is required, see \"Node.js Providers\"</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start Guides</h2></div>\n<p dir=\"auto\">Choose your platform:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Platform</th>\n<th>Guide</th>\n<th>Required</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Browser</strong></td>\n<td><a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/QUICKSTART-BROWSER.md\">QUICKSTART-BROWSER.md</a></td>\n<td>SDK only</td>\n<td>Default storage: IndexedDB. TypeScript: <code>./impl/browser</code> ships no type declarations yet (see <a href=\"#typescript-declarations-for-implbrowser\">the shim</a>)</td>\n</tr>\n<tr>\n<td><strong>Node.js</strong></td>\n<td><a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/QUICKSTART-NODEJS.md\">QUICKSTART-NODEJS.md</a></td>\n<td>SDK + <code>ws</code>, Node.js &gt;= 22</td>\n<td>Default storage: a wallet file under <code>./sphere-data</code></td>\n</tr>\n<tr>\n<td><strong>CLI</strong></td>\n<td><a href=\"https://github.com/unicity-sphere/sphere-cli\">unicity-sphere/sphere-cli</a></td>\n<td>Separate repository</td>\n<td>Not published to npm yet</td>\n</tr>\n<tr>\n<td><strong>dApp integration</strong></td>\n<td><a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/CONNECT.md\">CONNECT.md</a></td>\n<td>SDK only</td>\n<td><code>ws</code> (Node.js dApps)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CLI (Command Line Interface)</h2></div>\n<p dir=\"auto\">The Sphere CLI lives in its own repository, <a href=\"https://github.com/unicity-sphere/sphere-cli\">unicity-sphere/sphere-cli</a>,\nand is not published to npm yet: <code>npm install -g @unicity-sphere/cli</code> fails with a 404. Its <code>package.json</code>\ndepends on this SDK through a local path (<code>file:../../sphere-sdk</code>), so it builds only next to a checkout of\nthis repository. See <a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/QUICKSTART-CLI.md\">docs/QUICKSTART-CLI.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick Start</h2></div>\n<blockquote>\n<p dir=\"auto\"><strong>Setup is two provider layers, not one.</strong> <code>createBrowserProviders</code> / <code>createNodeProviders</code>\nbuild only the <strong>base</strong> (storage + transport + oracle). You <strong>must</strong> then attach the wallet-api\ntransport config with <code>createWalletApiProviders</code> — money moves only through the wallet-api\nvertical. Skipping it fails loudly: <code>Sphere.init</code> throws <code>INVALID_CONFIG</code>.</p>\n</blockquote>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { Sphere, TokenRegistry, getCoinIdBySymbol, randomUUID } from '@unicitylabs/sphere-sdk';\nimport { createBrowserProviders } from '@unicitylabs/sphere-sdk/impl/browser'; // untyped entry: add the declaration shim below\nimport { createWalletApiProviders } from '@unicitylabs/sphere-sdk/impl/shared/wallet-api';\n\n// One network literal, used in all three places below.\nconst NETWORK = 'testnet2';\n\n// A per-device id: stable across launches on this device, different on every device.\nfunction deviceId(): string {\n  let id = localStorage.getItem('sphere-device-id');\n  if (!id) {\n    // The SDK's randomUUID(): unlike crypto.randomUUID(), it also works outside a secure context.\n    id = randomUUID();\n    localStorage.setItem('sphere-device-id', id);\n  }\n  return id;\n}\n\n// 1. Base providers: storage (IndexedDB) + transport (Nostr) + oracle (gateway).\n//    `network` is required here: createBrowserProviders throws INVALID_CONFIG without it.\nconst base = createBrowserProviders({\n  network: NETWORK,\n  oracle: { apiKey: 'sk_ddc3cfcc001e4a28ac3fad7407f99590' }, // public testnet2 gateway key\n});\n\n// 2. The wallet-api transport config that the payments vertical is composed from.\n//    Returns { ...base, walletApi }; walletApi is a plain config object.\nconst providers = createWalletApiProviders(base, {\n  baseUrl: 'https://wallet-api.unicity.network', // testnet2 wallet-api\n  network: NETWORK,\n  deviceId: deviceId(),\n});\n\n// 3. Load the wallet in this storage, or create one. `network` is required here too.\nconst { sphere, created, generatedMnemonic } = await Sphere.init({\n  ...providers,\n  network: NETWORK,\n  autoGenerate: true,\n});\nif (created &amp;&amp; generatedMnemonic) {\n  console.log('SAVE THIS RECOVERY PHRASE:', generatedMnemonic);\n}\n\n// 4. Send: engine-driven, certified on-chain. The recipient needs a published identity\n//    (chain pubkey), e.g. a registered Unicity ID; otherwise send fails with INVALID_RECIPIENT.\n//    coinId is the 64-hex coin id; getCoinIdBySymbol() returns it for a symbol.\nawait TokenRegistry.waitForReady(); // Sphere.init starts the registry load but does not await it\nconst coinId = getCoinIdBySymbol('UCT'); // string | undefined\nif (!coinId) throw new Error('UCT is not in this network\\'s token registry');\n\nconst result = await sphere.payments.send({\n  recipient: '@alice',\n  amount: '1000000',     // base units, as a decimal STRING (never a JS number)\n  coinId,\n  memo: 'hello',\n});\nconsole.log(result.status);   // 'delivered', or 'confirmed' with result.deliveryPending === true\n// A resolved send() means sent. deliveryPending === true is NORMAL, not a failure: the token is\n// certified on-chain and the mailbox delivery is retried automatically (see &quot;Send result&quot; below).\n\n// 5. Receive: incoming transfers land automatically while the wallet runs (mailbox drain +\n//    wake socket). To drain explicitly (e.g. a CLI/batch app), call receive():\nconst { transfers } = await sphere.payments.receive();\nsphere.on('transfer:incoming', (t) =&gt; console.log('received from', t.senderNametag ?? t.senderPubkey));\n\nconsole.log(await sphere.payments.assets());\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-v\">Sphere</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">getCoinIdBySymbol</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">randomUUID</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createBrowserProviders</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk/impl/browser'</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// untyped entry: add the declaration shim below</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createWalletApiProviders</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk/impl/shared/wallet-api'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// One network literal, used in all three places below.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-c1\">NETWORK</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// A per-device id: stable across launches on this device, different on every device.</span>\n<span class=\"pl-k\">function</span> <span class=\"pl-en\">deviceId</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-smi\">string</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">let</span> <span class=\"pl-s1\">id</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">localStorage</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getItem</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'sphere-device-id'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">!</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// The SDK's randomUUID(): unlike crypto.randomUUID(), it also works outside a secure context.</span>\n    <span class=\"pl-s1\">id</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">randomUUID</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-s1\">localStorage</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setItem</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'sphere-device-id'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">id</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n  <span class=\"pl-k\">return</span> <span class=\"pl-s1\">id</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span>\n\n<span class=\"pl-c\">// 1. Base providers: storage (IndexedDB) + transport (Nostr) + oracle (gateway).</span>\n<span class=\"pl-c\">//    `network` is required here: createBrowserProviders throws INVALID_CONFIG without it.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">base</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-c1\">NETWORK</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">oracle</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">apiKey</span>: <span class=\"pl-s\">'sk_ddc3cfcc001e4a28ac3fad7407f99590'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span> <span class=\"pl-c\">// public testnet2 gateway key</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// 2. The wallet-api transport config that the payments vertical is composed from.</span>\n<span class=\"pl-c\">//    Returns { ...base, walletApi }; walletApi is a plain config object.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">providers</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createWalletApiProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">base</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">baseUrl</span>: <span class=\"pl-s\">'https://wallet-api.unicity.network'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c\">// testnet2 wallet-api</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-c1\">NETWORK</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">deviceId</span>: <span class=\"pl-en\">deviceId</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// 3. Load the wallet in this storage, or create one. `network` is required here too.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> sphere<span class=\"pl-kos\">,</span> created<span class=\"pl-kos\">,</span> generatedMnemonic <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-v\">Sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">init</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  ...<span class=\"pl-s1\">providers</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-c1\">NETWORK</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">autoGenerate</span>: <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">created</span> <span class=\"pl-c1\">&amp;&amp;</span> <span class=\"pl-s1\">generatedMnemonic</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'SAVE THIS RECOVERY PHRASE:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">generatedMnemonic</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span>\n\n<span class=\"pl-c\">// 4. Send: engine-driven, certified on-chain. The recipient needs a published identity</span>\n<span class=\"pl-c\">//    (chain pubkey), e.g. a registered Unicity ID; otherwise send fails with INVALID_RECIPIENT.</span>\n<span class=\"pl-c\">//    coinId is the 64-hex coin id; getCoinIdBySymbol() returns it for a symbol.</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">waitForReady</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// Sphere.init starts the registry load but does not await it</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">coinId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">getCoinIdBySymbol</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'UCT'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// string | undefined</span>\n<span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">!</span><span class=\"pl-s1\">coinId</span><span class=\"pl-kos\">)</span> <span class=\"pl-k\">throw</span> <span class=\"pl-k\">new</span> <span class=\"pl-v\">Error</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'UCT is not in this network\\'s token registry'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">recipient</span>: <span class=\"pl-s\">'@alice'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">amount</span>: <span class=\"pl-s\">'1000000'</span><span class=\"pl-kos\">,</span>     <span class=\"pl-c\">// base units, as a decimal STRING (never a JS number)</span>\n  coinId<span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">memo</span>: <span class=\"pl-s\">'hello'</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">status</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>   <span class=\"pl-c\">// 'delivered', or 'confirmed' with result.deliveryPending === true</span>\n<span class=\"pl-c\">// A resolved send() means sent. deliveryPending === true is NORMAL, not a failure: the token is</span>\n<span class=\"pl-c\">// certified on-chain and the mailbox delivery is retried automatically (see \"Send result\" below).</span>\n\n<span class=\"pl-c\">// 5. Receive: incoming transfers land automatically while the wallet runs (mailbox drain +</span>\n<span class=\"pl-c\">//    wake socket). To drain explicitly (e.g. a CLI/batch app), call receive():</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> transfers <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">receive</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'transfer:incoming'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">t</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'received from'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">t</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">senderNametag</span> <span class=\"pl-c1\">??</span> <span class=\"pl-s1\">t</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">senderPubkey</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">assets</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\"><code>generatedMnemonic</code> is returned only by the <code>Sphere.init</code> call that created the wallet. The phrase is\nstored before the rest of the setup runs, so if that call then throws (for example, a requested\n<code>nametag</code> is already taken), the next <code>Sphere.init</code> loads the stored wallet with <code>created: false</code>.\nGate your backup prompt on your own \"backup confirmed\" flag and read the phrase with\n<code>sphere.getMnemonic()</code> until the user confirms.</p>\n<p dir=\"auto\">Nametag bindings do not carry a network yet, so the SDK cannot prove that a <code>@nametag</code> or <code>DIRECT://</code>\nrecipient uses your network. Every such send emits <code>transfer:attention</code> with\n<code>code: 'recipient:network-unverified'</code> and an empty <code>transferId</code>, and then proceeds on your network.\nTreat it as information, not an error; on mainnet, make sure the recipient runs mainnet. A bare 66-hex\nchain pubkey recipient is taken as being on your network.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">What just happened (the provider model)</h3></div>\n<p dir=\"auto\">A wallet is composed from <strong>swappable ports</strong>, layered in two steps:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Layer</th>\n<th>Built by</th>\n<th>What it supplies</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><strong>Base</strong></td>\n<td><code>createBrowserProviders</code> / <code>createNodeProviders</code></td>\n<td><code>storage</code> (keys/identity/journals), <code>transport</code> (Nostr — <strong>messaging/nametags only</strong>), <code>oracle</code> (gateway/trust base)</td>\n</tr>\n<tr>\n<td><strong>wallet-api transport</strong></td>\n<td><code>createWalletApiProviders(base, …)</code></td>\n<td><code>walletApi</code> — the transport CONFIG (<code>{ network, baseUrl, deviceId?, fetchFn?, webSocketFactory?, paymentsV2Transport? }</code>) the payments vertical is composed from</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<ul dir=\"auto\">\n<li><strong>The rail is wallet-api, not Nostr.</strong> Transfers are certified on-chain by the token engine and the finished token is deposited into the recipient's <strong>wallet-api mailbox</strong>. Nostr carries messaging/nametags — <strong>it does not move payments.</strong></li>\n<li><strong>Custody is server-side.</strong> The wallet-api backend holds your token inventory; your keys never leave the client. (Own-storage custody was rescinded — there is no local token store.)</li>\n<li><strong>The money ports are contract-enforced.</strong> <code>StoragePort</code>/<code>DeliveryPort</code> (<code>modules/payments-v2/ports.ts</code>) have wallet-api implementations; the <code>paymentsV2Transport</code> seam in the <code>walletApi</code> config lets tests/custom hosts inject a whole replacement bundle.</li>\n<li><strong><code>network</code> placement.</strong> Required on <code>createBrowserProviders</code>/<code>createNodeProviders</code>, in the <code>walletApi</code> config, AND on <code>Sphere.init</code>; use one literal, <code>'testnet2'</code>, in all three places. Neither provider factory returns a <code>network</code> field, so <code>...providers</code> cannot supply it. <code>Sphere.init</code> compares its own <code>network</code> with <code>walletApi.network</code> as plain strings and throws <code>INVALID_CONFIG</code> (\"walletApi.network \"testnet2\" does not match the Sphere network ...\") when they differ, including when <code>Sphere.init</code> gets no <code>network</code> at all; this happens before any storage write. <code>'testnet'</code> and <code>'testnet2'</code> reach the same endpoints but are different strings, so mixing them fails this check. The wallet-api deployment names its network too: the testnet2 deployment signs you in only as <code>'testnet2'</code>, and the SDK refuses a sign-in challenge for any other network. The base-provider literal is not compared by that check, but it scopes the storage keys, while the payments state is keyed by the <code>Sphere.init</code> network, so mixing the two literals splits one wallet's state across two names.</li>\n<li><strong>Messaging-only wallets say so out loud.</strong> A wallet that never touches money — a Nostr DM or group-chat bot — passes <code>walletApi: 'none'</code> instead of a config: no wallet-api session, device registration, mailbox drain, token engine or <code>pv2g2:</code> key. <code>network</code> is still required, because it selects the token registry and the group-chat relays. <code>sphere.payments</code> then throws <code>PAYMENTS_NOT_COMPOSED</code> and <code>sphere.hasPayments</code> is <code>false</code>. <strong>Omitting <code>walletApi</code> altogether still throws <code>INVALID_CONFIG</code></strong> — a dropped env var must never read as a deliberate choice.</li>\n</ul>\n<p dir=\"auto\">For manual/advanced provider wiring, see <a href=\"#custom-providers-configuration\">Custom Providers Configuration</a>. For the deeper integration guide, see <a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/INTEGRATION.md\">docs/INTEGRATION.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Send result (<code>TransferResult</code>)</h3></div>\n<p dir=\"auto\"><code>send()</code> resolves only when the payment is sent, with a <code>TransferResult</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Field</th>\n<th>Meaning</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>status</code></td>\n<td><code>'delivered'</code> when the payment landed in the recipient's mailbox, or <code>'confirmed'</code> when the transfer is certified and delivery is still being retried (<code>deliveryPending === true</code>). <code>send()</code> never resolves with <code>'completed'</code> or <code>'failed'</code>: a failure throws. (<code>'submitted'</code> and <code>'failed'</code> appear only as <code>transfer:updated</code> event payloads.)</td>\n</tr>\n<tr>\n<td><code>deliveryPending</code></td>\n<td><code>true</code> when the spend is <strong>certified on-chain</strong> but the recipient's <strong>mailbox delivery was deferred</strong> (a full inbox / transient outage). <strong>This is success, not failure</strong> — the token is finalized and the finished blob is journaled and re-delivered automatically.</td>\n</tr>\n<tr>\n<td><code>deliveryState</code></td>\n<td><code>'landed'</code> (delivered) or <code>'pending-delivery'</code> (deferred, as above).</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">A resolved <code>send()</code> is sent, whichever of the two statuses it carries. Use <code>deliveryPending</code> only to show a \"delivery pending\" hint — never as an error. A stale-but-spent source is self-healed (the next live coin is selected automatically).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Handling <code>send()</code> rejections: never re-send a possibly-committed payment (money-safety)</h4></div>\n<p dir=\"auto\">Some rejections mean the money may already have left the wallet. <code>isPossiblyCommittedSendOutcome(err)</code> is <code>true</code>\nfor exactly these codes: <code>SEND_SYNC_PENDING</code>, <code>CERTIFICATION_UNCONFIRMED</code>, <code>CHECKPOINT_PERSIST_FAILED</code>,\n<code>SPLIT_CHECKPOINT_LOST</code>, <code>CHECKPOINT_TRUSTBASE_MISMATCH</code> and <code>SEND_PARTIALLY_COMPLETED</code>. Never call <code>send()</code> again\nfor that payment: a new <code>send()</code> gets a new transfer id and pays the recipient a second time. The SDK finishes the\noriginal under its own transfer id; show it as pending (<code>sphere.payments.pendingTransfers()</code>), and wire any\n\"retry\" button to <code>sphere.payments.resumeNow()</code>. A <code>PartialSendConflictError</code> means part of the amount was\ndelivered and is final; only <code>err.remainingAmount</code> is still owed. When <code>isPossiblyCommittedSendOutcome(err)</code> is\n<code>false</code>, the SDK's contract is that nothing left the wallet.</p>\n<ul dir=\"auto\">\n<li><code>CERTIFICATION_UNCONFIRMED</code> is a <strong><code>ProofUnconfirmedError</code></strong> (<code>mayHaveCertified: true</code>): the spend may already be on-chain but the proof fetch was inconclusive. <code>SEND_SYNC_PENDING</code> can mean the spend committed on-chain and the wallet-api mirror is still catching up.</li>\n<li><strong>Recovery is automatic.</strong> The open intent is replayed under the same <code>transferId</code> (recovers the proof + delivery, or records the spend if a rival tx won; <strong>never a second spend</strong>): partially-committed outcomes converge in-process, and every remaining open intent is resumed when the vertical starts (<code>Sphere.init</code> / <code>Sphere.load</code> / an address switch). <code>sphere.payments.resumeNow()</code> runs that convergence now; it is the only retry verb.</li>\n<li>Clean failures you can branch on: <code>SEND_INSUFFICIENT_BALANCE</code> (when funds are pinned by transfers still converging, its message says how much and points to <code>pendingTransfers()</code>), <code>INVALID_RECIPIENT</code>, <code>TRANSPORT_ERROR</code> (the recipient lookup could not reach the relay) and <code>VALIDATION_ERROR</code> (a bad amount). <code>INSUFFICIENT_BALANCE</code> is never thrown.</li>\n<li>Import the error helpers from the same entry point as <code>Sphere</code>, and read <code>code</code> structurally for the clean failures: errors thrown by provider code (the <code>./impl/*</code> bundles, for example the Nostr transport during the recipient lookup) are a different <code>SphereError</code> class copy, so <code>isSphereError()</code> is <code>false</code> for them.</li>\n</ul>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Import the error helpers from the same entry point as Sphere (here: the package root).\nimport { PartialSendConflictError, isPossiblyCommittedSendOutcome } from '@unicitylabs/sphere-sdk';\n\ntry {\n  const result = await sphere.payments.send({ recipient: '@alice', amount: '1000000', coinId });\n  // Resolved means sent: result.status is 'delivered', or 'confirmed' with deliveryPending === true.\n  if (result.deliveryPending) show('Sent. Delivery to the recipient is pending and is retried automatically.');\n} catch (err) {\n  if (err instanceof PartialSendConflictError) {\n    // Part of the amount was delivered and is final. Only err.remainingAmount is still owed:\n    // if you pay it, do it as a NEW send of exactly that amount, never the original amount.\n    show(`Partly sent: ${err.remainingAmount} base units were not sent.`);\n  } else if (isPossiblyCommittedSendOutcome(err)) {\n    // The money may already have left the wallet. Never call send() again for this payment:\n    // the SDK completes it under the same transferId. Show it as pending.\n    show('Sent, waiting for confirmation.');\n    const pending = await sphere.payments.pendingTransfers(); // rows for a &quot;pending&quot; list\n    // A &quot;retry&quot; button calls sphere.payments.resumeNow(), never send().\n  } else {\n    // Nothing left the wallet. Read `code` structurally: errors thrown by the providers\n    // (e.g. the Nostr transport) are a different SphereError class copy, so isSphereError() is false for them.\n    const code = (err as { code?: unknown } | null)?.code;\n    switch (code) {\n      case 'SEND_INSUFFICIENT_BALANCE': show((err as Error).message); break; // names pinned funds when transfers are converging\n      case 'INVALID_RECIPIENT': show('Recipient not found'); break;\n      case 'TRANSPORT_ERROR': show('Could not look up the recipient. Check the connection.'); break;\n      default: show(err instanceof Error ? err.message : String(err));\n    }\n  }\n}\"><pre><span class=\"pl-c\">// Import the error helpers from the same entry point as Sphere (here: the package root).</span>\n<span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-v\">PartialSendConflictError</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">isPossiblyCommittedSendOutcome</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">try</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">recipient</span>: <span class=\"pl-s\">'@alice'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">amount</span>: <span class=\"pl-s\">'1000000'</span><span class=\"pl-kos\">,</span> coinId <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-c\">// Resolved means sent: result.status is 'delivered', or 'confirmed' with deliveryPending === true.</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">deliveryPending</span><span class=\"pl-kos\">)</span> <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Sent. Delivery to the recipient is pending and is retried automatically.'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span> <span class=\"pl-k\">catch</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span> <span class=\"pl-k\">instanceof</span> <span class=\"pl-v\">PartialSendConflictError</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Part of the amount was delivered and is final. Only err.remainingAmount is still owed:</span>\n    <span class=\"pl-c\">// if you pay it, do it as a NEW send of exactly that amount, never the original amount.</span>\n    <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`Partly sent: <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">err</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">remainingAmount</span><span class=\"pl-kos\">}</span></span> base units were not sent.`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span> <span class=\"pl-k\">else</span> <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-en\">isPossiblyCommittedSendOutcome</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// The money may already have left the wallet. Never call send() again for this payment:</span>\n    <span class=\"pl-c\">// the SDK completes it under the same transferId. Show it as pending.</span>\n    <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Sent, waiting for confirmation.'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">pending</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">pendingTransfers</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// rows for a \"pending\" list</span>\n    <span class=\"pl-c\">// A \"retry\" button calls sphere.payments.resumeNow(), never send().</span>\n  <span class=\"pl-kos\">}</span> <span class=\"pl-k\">else</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Nothing left the wallet. Read `code` structurally: errors thrown by the providers</span>\n    <span class=\"pl-c\">// (e.g. the Nostr transport) are a different SphereError class copy, so isSphereError() is false for them.</span>\n    <span class=\"pl-k\">const</span> <span class=\"pl-s1\">code</span> <span class=\"pl-c1\">=</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span> <span class=\"pl-k\">as</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">code</span>?: <span class=\"pl-smi\">unknown</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">|</span> <span class=\"pl-c1\">null</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">code</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-k\">switch</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">code</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n      <span class=\"pl-k\">case</span> <span class=\"pl-s\">'SEND_INSUFFICIENT_BALANCE'</span>: <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span> <span class=\"pl-k\">as</span> <span class=\"pl-smi\">Error</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">message</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// names pinned funds when transfers are converging</span>\n      <span class=\"pl-k\">case</span> <span class=\"pl-s\">'INVALID_RECIPIENT'</span>: <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Recipient not found'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n      <span class=\"pl-k\">case</span> <span class=\"pl-s\">'TRANSPORT_ERROR'</span>: <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Could not look up the recipient. Check the connection.'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n      <span class=\"pl-k\">default</span>: <span class=\"pl-en\">show</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span> <span class=\"pl-k\">instanceof</span> <span class=\"pl-v\">Error</span> ? <span class=\"pl-s1\">err</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">message</span> : <span class=\"pl-v\">String</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">err</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-kos\">}</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">TypeScript: declarations for <code>./impl/browser</code></h3></div>\n<p dir=\"auto\"><code>@unicitylabs/sphere-sdk/impl/browser</code> ships no type declarations in this release; under <code>strict</code>\nTypeScript add the declaration shim below (or a one-line <code>declare module '@unicitylabs/sphere-sdk/impl/browser';</code>,\nwhich types everything from that entry as <code>any</code>). Import <code>createWalletApiProviders</code> from the typed\n<code>@unicitylabs/sphere-sdk/impl/shared/wallet-api</code> subpath, as above.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Consumer-side declarations for '@unicitylabs/sphere-sdk/impl/browser'.\n// That entry ships no .d.ts (tsup builds it with dts: false), so strict\n// TypeScript reports TS7016 on the import without this file. Delete it once\n// the package ships declarations for ./impl/browser.\ndeclare module '@unicitylabs/sphere-sdk/impl/browser' {\n  import type {\n    NetworkType, StorageProvider, TransportProvider, OracleProvider, PriceProvider,\n    PricePlatform, GroupChatModuleConfig, MarketModuleConfig,\n  } from '@unicitylabs/sphere-sdk';\n\n  export interface BrowserProvidersConfig {\n    /** Required: createBrowserProviders throws INVALID_CONFIG without it. */\n    network: NetworkType;\n    debug?: boolean;\n    storage?: { prefix?: string; dbName?: string; debug?: boolean };\n    transport?: {\n      relays?: string[]; additionalRelays?: string[]; timeout?: number; autoReconnect?: boolean;\n      debug?: boolean; reconnectDelay?: number; maxReconnectAttempts?: number;\n    };\n    oracle?: { url?: string; apiKey?: string; timeout?: number; skipVerification?: boolean; debug?: boolean };\n    price?: { platform?: PricePlatform; apiKey?: string; baseUrl?: string; cacheTtlMs?: number; timeout?: number; debug?: boolean };\n    groupChat?: { enabled?: boolean; relays?: string[] } | boolean;\n    market?: { apiUrl?: string; timeout?: number } | boolean;\n  }\n\n  export interface BrowserProviders {\n    storage: StorageProvider;\n    transport: TransportProvider;\n    oracle: OracleProvider;\n    price?: PriceProvider;\n    groupChat?: GroupChatModuleConfig | boolean;\n    market?: MarketModuleConfig | boolean;\n  }\n\n  export function createBrowserProviders(config: BrowserProvidersConfig): BrowserProviders;\n}\"><pre><span class=\"pl-c\">// Consumer-side declarations for '@unicitylabs/sphere-sdk/impl/browser'.</span>\n<span class=\"pl-c\">// That entry ships no .d.ts (tsup builds it with dts: false), so strict</span>\n<span class=\"pl-c\">// TypeScript reports TS7016 on the import without this file. Delete it once</span>\n<span class=\"pl-c\">// the package ships declarations for ./impl/browser.</span>\n<span class=\"pl-k\">declare</span> module <span class=\"pl-s\">'@unicitylabs/sphere-sdk/impl/browser'</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">import</span> <span class=\"pl-k\">type</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-v\">NetworkType</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">StorageProvider</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">TransportProvider</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">OracleProvider</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">PriceProvider</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-v\">PricePlatform</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">GroupChatModuleConfig</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">MarketModuleConfig</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n\n  <span class=\"pl-k\">export</span> <span class=\"pl-k\">interface</span> <span class=\"pl-smi\">BrowserProvidersConfig</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">/** Required: createBrowserProviders throws INVALID_CONFIG without it. */</span>\n    <span class=\"pl-c1\">network</span>: <span class=\"pl-smi\">NetworkType</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">debug</span>?: <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">storage</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">prefix</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">dbName</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">debug</span>?: <span class=\"pl-smi\">boolean</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">transport</span>?: <span class=\"pl-kos\">{</span>\n      <span class=\"pl-c1\">relays</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">additionalRelays</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">timeout</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">autoReconnect</span>?: <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n      <span class=\"pl-c1\">debug</span>?: <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">reconnectDelay</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">maxReconnectAttempts</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">oracle</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">url</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">apiKey</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">timeout</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">skipVerification</span>?: <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">debug</span>?: <span class=\"pl-smi\">boolean</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">price</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">platform</span>?: <span class=\"pl-smi\">PricePlatform</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">apiKey</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">baseUrl</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">cacheTtlMs</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">timeout</span>?: <span class=\"pl-smi\">number</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">debug</span>?: <span class=\"pl-smi\">boolean</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">groupChat</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">enabled</span>?: <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">relays</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">[</span><span class=\"pl-kos\">]</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">|</span> <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">market</span>?: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">apiUrl</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">timeout</span>?: <span class=\"pl-smi\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">|</span> <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n\n  <span class=\"pl-k\">export</span> <span class=\"pl-k\">interface</span> <span class=\"pl-smi\">BrowserProviders</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">storage</span>: <span class=\"pl-smi\">StorageProvider</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">transport</span>: <span class=\"pl-smi\">TransportProvider</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">oracle</span>: <span class=\"pl-smi\">OracleProvider</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">price</span>?: <span class=\"pl-smi\">PriceProvider</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">groupChat</span>?: <span class=\"pl-smi\">GroupChatModuleConfig</span> <span class=\"pl-c1\">|</span> <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-c1\">market</span>?: <span class=\"pl-smi\">MarketModuleConfig</span> <span class=\"pl-c1\">|</span> <span class=\"pl-smi\">boolean</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n\n  <span class=\"pl-k\">export</span> <span class=\"pl-k\">function</span> <span class=\"pl-s1\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">config</span>: <span class=\"pl-smi\">BrowserProvidersConfig</span><span class=\"pl-kos\">)</span>: <span class=\"pl-smi\">BrowserProviders</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">The shim declares only <code>createBrowserProviders</code>. The other <code>./impl/browser</code> exports used later in this\nREADME (<code>createLocalStorageProvider</code>, <code>createNostrTransportProvider</code>, <code>createUnicityAggregatorProvider</code>)\nneed their own declarations, or the one-line form.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Migrating off <code>sphere.paymentsV2</code></h2></div>\n<p dir=\"auto\">The deprecated <code>sphere.paymentsV2</code> alias and the <code>paymentsV2: true</code> init flag are <strong>removed</strong> in\n0.15.0. <code>sphere.payments</code> is the only accessor, and it is the same facade the alias returned.</p>\n<p dir=\"auto\">One behavioural difference matters: while no vertical is running (init in flight, mid\naddress-switch, destroyed) the alias returned <code>null</code> and <code>sphere.payments</code> <strong>throws</strong>\n<code>SphereError</code> with <code>code: 'NOT_INITIALIZED'</code>. Call sites that leaned on the nullish alias —\n<code>sphere.paymentsV2?.tokens()</code>, <code>?? fallback</code>, <code>if (sphere.paymentsV2)</code> as a readiness probe —\nsilently degraded to \"no payments\" before and now throw, so catch <code>NOT_INITIALIZED</code> where you\nused to check for null. Code that runs after <code>await Sphere.init(…)</code> and before <code>destroy()</code> —\neverything else in this README — reads <code>sphere.payments</code> directly.</p>\n<p dir=\"auto\">A wallet initialised with <code>walletApi: 'none'</code> has no payments at all: there <code>sphere.payments</code> throws\n<code>PAYMENTS_NOT_COMPOSED</code>, permanently, instead of the transient <code>NOT_INITIALIZED</code>. Use\n<code>sphere.hasPayments</code> to tell the two cases apart without a try/catch.</p>\n<p dir=\"auto\">The <code>accounting:</code> / <code>swap:</code> options are <strong>not</strong> part of this cleanup: they still throw a typed\n<code>INVALID_CONFIG</code>, deliberately, because those modules were removed and a silently ignored option\nwould hide that.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Network Configuration</h2></div>\n<p dir=\"auto\">The SDK ships network presets that configure all services automatically. <code>network</code> is <strong>required</strong> — there is no default:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th><code>network</code> literal</th>\n<th>networkId</th>\n<th>Gateway (preset)</th>\n<th>Nostr relay (preset)</th>\n<th>wallet-api <code>baseUrl</code> (you pass it)</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>'testnet2'</code></td>\n<td>4</td>\n<td><code>https://gateway.testnet2.unicity.network</code></td>\n<td><code>wss://nostr-relay.testnet.unicity.network</code></td>\n<td><code>https://wallet-api.unicity.network</code></td>\n</tr>\n<tr>\n<td><code>'mainnet'</code></td>\n<td>1</td>\n<td><code>https://gateway.mainnet.unicity.network</code></td>\n<td>the testnet relay (mainnet has none of its own yet)</td>\n<td><code>https://wallet-api.mainnet.unicity.network</code></td>\n</tr>\n<tr>\n<td><code>'testnet'</code></td>\n<td>4</td>\n<td>same as <code>testnet2</code></td>\n<td>same as <code>testnet2</code></td>\n<td>none: the testnet2 wallet-api signs in only as <code>'testnet2'</code>, and the SDK refuses its sign-in challenge for <code>'testnet'</code>. Use <code>'testnet2'</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<blockquote>\n<p dir=\"auto\"><strong>Live networks are testnet2 and mainnet</strong>, each with its own gateway and wallet-api deployment. <code>testnet</code> is a second key with testnet2's configuration (network id 4, taken from the trust base; the testnet2 token registry), but it is a different string, so it fails the <code>network</code> check against a <code>'testnet2'</code> wallet-api config (see <a href=\"#what-just-happened-the-provider-model\"><code>network</code> placement</a>). <code>SPHERE_NETWORKS</code> exposes only <code>mainnet</code> and <code>testnet2</code>. The v1 network is discontinued — the old <code>goggregator-test</code> testnet spoke the removed v1 protocol, and the <code>dev</code> network that aliased its trust base has been removed along with every other v1 pointer. On mainnet use <code>network: 'mainnet'</code> in <code>createBrowserProviders</code>/<code>createNodeProviders</code>, in the <code>walletApi</code> config and on <code>Sphere.init</code>, the mainnet wallet-api <code>https://wallet-api.mainnet.unicity.network</code>, and your mainnet gateway API key, which is a secret. Mainnet shares testnet2's Nostr relay for now, and its token registry lists no fungible coins yet. The transfer wire payload is the finished token blob — the base SDK's own <code>Token.toCBOR()</code> bytes, with no sphere envelope around them — deposited into the recipient's wallet-api mailbox.</p>\n<p dir=\"auto\">The <strong>network</strong> name (testnet2) and the <strong>base-SDK major</strong> (3.x since 0.15.0) are separate axes: testnet2 is still testnet2 after the 3.0.1 bump. What the bump changes is the bytes on that network — a gateway serving the v3 protocol accepts nothing a 2.x client writes, and vice versa.</p>\n</blockquote>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Use the testnet2 preset for all services\nconst presetOnly = createBrowserProviders({ network: 'testnet2' });\n\n// Override specific services while using the network preset\nconst customGateway = createBrowserProviders({\n  network: 'testnet2',\n  oracle: { url: 'https://custom-gateway.example.com' }, // custom testnet2 gateway\n});\"><pre><span class=\"pl-c\">// Use the testnet2 preset for all services</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">presetOnly</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Override specific services while using the network preset</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">customGateway</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">oracle</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">url</span>: <span class=\"pl-s\">'https://custom-gateway.example.com'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span> <span class=\"pl-c\">// custom testnet2 gateway</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">API Key</h3></div>\n<p dir=\"auto\">The SDK bundles <strong>no default API key</strong>. Pass the gateway key via <code>oracle: { apiKey }</code>. Without one the token engine is still built, the SDK logs a <code>TokenEngine</code> warning, and gateway requests are unauthenticated; whether a gateway serves them is the gateway's policy.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"const withApiKey = createBrowserProviders({\n  network: 'testnet2',\n  oracle: { apiKey: 'sk_...' },\n});\"><pre><span class=\"pl-k\">const</span> <span class=\"pl-s1\">withApiKey</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">oracle</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">apiKey</span>: <span class=\"pl-s\">'sk_...'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">The <strong>testnet2 key is not a secret</strong> — it is published in <a href=\"https://github.com/unicity-sphere/sphere-sdk/blob/main/env.example\">.env.example</a> and safe to keep in docs and client code. A <strong>mainnet</strong> key, by contrast, IS a secret: keep it in your deploy environment only.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Testnet2 endpoints (the values we build with)</h3></div>\n<p dir=\"auto\">The <code>testnet2</code> preset wires most of these automatically — you only pass <code>network</code>, <code>oracle.apiKey</code>, and the wallet-api <code>baseUrl</code>. The full set, for reference and manual wiring:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>What</th>\n<th>Value</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Network</td>\n<td><code>testnet2</code>, networkId <strong>4</strong> (the <code>testnet</code> key has the same gateway, relays and token registry, but it is a different literal and the testnet2 wallet-api signs in only as <code>'testnet2'</code>; use <code>testnet2</code>)</td>\n</tr>\n<tr>\n<td><strong>Aggregator / gateway</strong> (token engine)</td>\n<td><code>https://gateway.testnet2.unicity.network</code></td>\n</tr>\n<tr>\n<td><strong>Aggregator API key</strong> (public — <strong>not</strong> a secret)</td>\n<td><code>sk_ddc3cfcc001e4a28ac3fad7407f99590</code></td>\n</tr>\n<tr>\n<td><strong>wallet-api</strong> (delivery + token storage)</td>\n<td><code>https://wallet-api.unicity.network</code></td>\n</tr>\n<tr>\n<td><strong>Nostr relay</strong> (messaging / nametags)</td>\n<td><code>wss://nostr-relay.testnet.unicity.network</code></td>\n</tr>\n<tr>\n<td><strong>Group-chat relay</strong> (NIP-29)</td>\n<td><code>wss://sphere-relay.unicity.network</code></td>\n</tr>\n<tr>\n<td><strong>Token registry</strong></td>\n<td><code>https://raw.githubusercontent.com/unicitynetwork/unicity-ids/refs/heads/main/unicity-ids.testnet2.json</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The aggregator key above is the <strong>testnet2</strong> key only and is safe in client code; a <strong>mainnet</strong> key is a real secret and must never be committed.</p>\n<p dir=\"auto\">Mainnet (<code>network: 'mainnet'</code>, networkId <strong>1</strong>): gateway <code>https://gateway.mainnet.unicity.network</code>, wallet-api\n<code>https://wallet-api.mainnet.unicity.network</code>, the same Nostr and group-chat relays as testnet2, and token registry\n<code>https://raw.githubusercontent.com/unicitynetwork/unicity-ids/refs/heads/main/unicity-ids.mainnet.json</code>, which\ncurrently lists only the non-fungible base token type (no fungible coins yet).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Price Provider (Optional)</h2></div>\n<p dir=\"auto\">Enable fiat price display by adding a <code>price</code> config. Currently supports CoinGecko API (free and pro tiers).</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// With CoinGecko (free tier, no API key)\nconst base = createBrowserProviders({\n  network: 'testnet2',\n  price: { platform: 'coingecko' },\n});\n// With CoinGecko Pro: price: { platform: 'coingecko', apiKey: 'CG-xxx' }\n\nconst providers = createWalletApiProviders(base, {\n  baseUrl: 'https://wallet-api.unicity.network',\n  network: 'testnet2',\n});\nconst { sphere } = await Sphere.init({ ...providers, network: 'testnet2', autoGenerate: true });\n\n// Assets with price data\nconst assets = await sphere.payments.assets();\n// [{ coinId, symbol, totalAmount, priceUsd: 97500, fiatValueUsd: 975.00, change24h: 2.3, ... }]\n\n// Total portfolio value in USD\nconst totalUsd = assets.reduce((sum, a) =&gt; sum + (a.fiatValueUsd ?? 0), 0);\"><pre><span class=\"pl-c\">// With CoinGecko (free tier, no API key)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">base</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createBrowserProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">price</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">platform</span>: <span class=\"pl-s\">'coingecko'</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-c\">// With CoinGecko Pro: price: { platform: 'coingecko', apiKey: 'CG-xxx' }</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">providers</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">createWalletApiProviders</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">base</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">baseUrl</span>: <span class=\"pl-s\">'https://wallet-api.unicity.network'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-kos\">{</span> sphere <span class=\"pl-kos\">}</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-v\">Sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">init</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> ...<span class=\"pl-s1\">providers</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">network</span>: <span class=\"pl-s\">'testnet2'</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">autoGenerate</span>: <span class=\"pl-c1\">true</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Assets with price data</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">assets</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">assets</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-c\">// [{ coinId, symbol, totalAmount, priceUsd: 97500, fiatValueUsd: 975.00, change24h: 2.3, ... }]</span>\n\n<span class=\"pl-c\">// Total portfolio value in USD</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">totalUsd</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">assets</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">reduce</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sum</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">a</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-s1\">sum</span> <span class=\"pl-c1\">+</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">a</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">fiatValueUsd</span> <span class=\"pl-c1\">??</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">Without <code>price</code> config, the price fields in <code>assets()</code> are <code>null</code>. All other functionality works normally.</p>\n<p dir=\"auto\">You can also set the price provider after initialization — price is a composition-time property of the payments vertical, so verticals composed after the call (the next address switch) pick it up:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { createPriceProvider } from '@unicitylabs/sphere-sdk';\n\nsphere.setPriceProvider(createPriceProvider({\n  platform: 'coingecko',\n  apiKey: 'CG-xxx',\n}));\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">createPriceProvider</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setPriceProvider</span><span class=\"pl-kos\">(</span><span class=\"pl-en\">createPriceProvider</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">platform</span>: <span class=\"pl-s\">'coingecko'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-c1\">apiKey</span>: <span class=\"pl-s\">'CG-xxx'</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Test Tokens on Testnet (Self-Mint)</h2></div>\n<p dir=\"auto\">There is no faucet. On testnet you top up your wallet by <strong>self-minting</strong> fungible tokens via the token engine — <code>mint(coinIdHex, amount)</code> mints a finished token directly to this wallet (journal-first: crash-safe, a replay converges idempotently):</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { TokenRegistry, getCoinIdBySymbol } from '@unicitylabs/sphere-sdk';\n\n// Resolve the coin's hex id from the token registry (or pass a hex coinId directly).\nawait TokenRegistry.waitForReady(); // Sphere.init starts the registry load but does not await it\nconst coinId = getCoinIdBySymbol('UCT'); // string | undefined\nif (!coinId) throw new Error('UCT is not in this network\\'s token registry');\n\nconst result = await sphere.payments.mint(coinId, 1000n);\nif (result.success) {\n  console.log('Minted token:', result.tokenId);\n} else {\n  console.error('Mint failed:', result.error);\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">getCoinIdBySymbol</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Resolve the coin's hex id from the token registry (or pass a hex coinId directly).</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">waitForReady</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// Sphere.init starts the registry load but does not await it</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">coinId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">getCoinIdBySymbol</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'UCT'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// string | undefined</span>\n<span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">!</span><span class=\"pl-s1\">coinId</span><span class=\"pl-kos\">)</span> <span class=\"pl-k\">throw</span> <span class=\"pl-k\">new</span> <span class=\"pl-v\">Error</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'UCT is not in this network\\'s token registry'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">result</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">mint</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">coinId</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">1000n</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">success</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Minted token:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">tokenId</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span> <span class=\"pl-k\">else</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">error</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Mint failed:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">result</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">error</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<blockquote>\n<p dir=\"auto\"><strong>Note:</strong> Minting needs the token engine, which <code>Sphere.init</code> builds from the oracle's trust base and\ngateway URL (without them <code>Sphere.init</code> rejects with <code>INVALID_CONFIG</code>); pass the gateway key via\n<code>oracle: { apiKey }</code>. A mint that fails after it was journaled resolves <code>{ success: false, error }</code>\nand is replayed by the SDK: do not call <code>mint()</code> again for it. See <a href=\"#api-key\">API Key</a> above.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Multi-Address Support</h2></div>\n<p dir=\"auto\">The SDK supports HD (Hierarchical Deterministic) wallets with multiple addresses:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Get current address index\nconst currentIndex = sphere.getCurrentAddressIndex(); // 0\n\n// Switch to a different address\nawait sphere.switchToAddress(1);\nconsole.log(sphere.identity?.directAddress); // DIRECT://... (address at index 1)\n\n// Register nametag for this address (independent per address)\nawait sphere.registerNametag('bob');\n\n// Switch back to first address\nawait sphere.switchToAddress(0);\n\n// Get the nametag of a specific address. Index 1 is tracked because we switched to it.\nconst bobNametag = sphere.getTrackedAddress(1)?.nametag; // 'bob'\n// getNametagForAddress takes the short addressId ('DIRECT_xxxxxx_yyyyyy'), not an index:\nconst sameNametag = sphere.getNametagForAddress(sphere.getTrackedAddress(1)?.addressId);\n\n// All active addresses with their nametags (TrackedAddress[], sorted by index)\nconst active = sphere.getActiveAddresses();\n// [{ index: 0, addressId: 'DIRECT_…', directAddress: 'DIRECT://…', nametag: 'alice', … }, { index: 1, …, nametag: 'bob' }]\n\n// deriveAddress() returns keys, not an address: { privateKey, publicKey, path, index }.\nconst keys2 = sphere.deriveAddress(2);\nconsole.log(keys2.publicKey, keys2.path); // never log or serialise the whole object: it holds the private key\"><pre><span class=\"pl-c\">// Get current address index</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">currentIndex</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getCurrentAddressIndex</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// 0</span>\n\n<span class=\"pl-c\">// Switch to a different address</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">switchToAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">identity</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">directAddress</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// DIRECT://... (address at index 1)</span>\n\n<span class=\"pl-c\">// Register nametag for this address (independent per address)</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">registerNametag</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'bob'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Switch back to first address</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">switchToAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Get the nametag of a specific address. Index 1 is tracked because we switched to it.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">bobNametag</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getTrackedAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">nametag</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// 'bob'</span>\n<span class=\"pl-c\">// getNametagForAddress takes the short addressId ('DIRECT_xxxxxx_yyyyyy'), not an index:</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">sameNametag</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getNametagForAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getTrackedAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">1</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">addressId</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// All active addresses with their nametags (TrackedAddress[], sorted by index)</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">active</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">getActiveAddresses</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-c\">// [{ index: 0, addressId: 'DIRECT_…', directAddress: 'DIRECT://…', nametag: 'alice', … }, { index: 1, …, nametag: 'bob' }]</span>\n\n<span class=\"pl-c\">// deriveAddress() returns keys, not an address: { privateKey, publicKey, path, index }.</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">keys2</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">deriveAddress</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">2</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">keys2</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">publicKey</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">keys2</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">path</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// never log or serialise the whole object: it holds the private key</span></pre></div>\n<p dir=\"auto\"><code>deriveAddress(index)</code> returns key material, <code>{ privateKey, publicKey, path, index }</code>, not an address; never log or\nserialise the whole object. For the <code>DIRECT://</code> address use <code>sphere.identity?.directAddress</code> (active address) or\n<code>sphere.getTrackedAddress(index)?.directAddress</code> (after <code>switchToAddress(index)</code>). <code>getAllAddressNametags()</code> is\ndeprecated; it returns <code>Map&lt;addressId, Map&lt;nametagIndex, nametag&gt;&gt;</code>, keyed by the short <code>addressId</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Identity Properties</h3></div>\n<p dir=\"auto\"><strong>Important:</strong> The DIRECT address is the primary address for the Unicity network.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"interface Identity {\n  chainPubkey: string;         // 33-byte compressed secp256k1 public key\n  directAddress?: string;      // DIRECT address (DIRECT://...) - PRIMARY ADDRESS\n  ipnsName?: string;           // legacy derived id ('12D3KooW…'); nothing in the SDK uses it\n  nametag?: string;            // Registered nametag (@username)\n}\n\n// Access identity - use directAddress as primary\nconsole.log(sphere.identity?.directAddress);    // DIRECT://0000be36... (PRIMARY)\nconsole.log(sphere.identity?.nametag);          // alice (human-readable)\nconsole.log(sphere.identity?.chainPubkey);      // 02abc123... (33-byte compressed)\"><pre><span class=\"pl-k\">interface</span> <span class=\"pl-smi\">Identity</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">chainPubkey</span>: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span>         <span class=\"pl-c\">// 33-byte compressed secp256k1 public key</span>\n  <span class=\"pl-c1\">directAddress</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span>      <span class=\"pl-c\">// DIRECT address (DIRECT://...) - PRIMARY ADDRESS</span>\n  <span class=\"pl-c1\">ipnsName</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span>           <span class=\"pl-c\">// legacy derived id ('12D3KooW…'); nothing in the SDK uses it</span>\n  <span class=\"pl-c1\">nametag</span>?: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span>            <span class=\"pl-c\">// Registered nametag (@username)</span>\n<span class=\"pl-kos\">}</span>\n\n<span class=\"pl-c\">// Access identity - use directAddress as primary</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">identity</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">directAddress</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>    <span class=\"pl-c\">// DIRECT://0000be36... (PRIMARY)</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">identity</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">nametag</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>          <span class=\"pl-c\">// alice (human-readable)</span>\n<span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">identity</span><span class=\"pl-kos\">?.</span><span class=\"pl-c1\">chainPubkey</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>      <span class=\"pl-c\">// 02abc123... (33-byte compressed)</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Address Change Event</h3></div>\n<p dir=\"auto\">Event handlers receive the payload directly: <code>sphere.on('identity:changed', (e) =&gt; e.addressIndex)</code>, not\n<code>e.data.addressIndex</code>. <code>on()</code> returns an unsubscribe function.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Listen for address switches\nconst off = sphere.on('identity:changed', (event) =&gt; {\n  console.log('Switched to address index:', event.addressIndex);\n  console.log('L3 address:', event.directAddress);\n  console.log('Chain pubkey:', event.chainPubkey);\n  console.log('Nametag:', event.nametag);\n});\n\n// Nametag recoveries after init (e.g. after switchToAddress)\nsphere.on('nametag:recovered', (event) =&gt; {\n  console.log('Recovered nametag from Nostr:', event.nametag);\n});\n\noff(); // stop listening\"><pre><span class=\"pl-c\">// Listen for address switches</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">off</span> <span class=\"pl-c1\">=</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'identity:changed'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Switched to address index:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">event</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">addressIndex</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'L3 address:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">event</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">directAddress</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Chain pubkey:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">event</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">chainPubkey</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Nametag:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">event</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nametag</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Nametag recoveries after init (e.g. after switchToAddress)</span>\n<span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'nametag:recovered'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">event</span><span class=\"pl-kos\">)</span> <span class=\"pl-c1\">=&gt;</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">log</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'Recovered nametag from Nostr:'</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">event</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">nametag</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-en\">off</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// stop listening</span></pre></div>\n<p dir=\"auto\">Nametag recovery during <code>Sphere.init</code> / <code>load</code> / <code>import</code> finishes, and emits <code>nametag:recovered</code>, before the call\nreturns, so a listener added afterwards does not see it. Check <code>sphere.identity?.nametag</code> after init. The event is\nuseful for later recoveries, such as after <code>switchToAddress()</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Payment Requests</h2></div>\n<p dir=\"auto\">Request payments from others over the wallet-api rail (<code>sphere.payments.requests</code>). Request memos ride an encrypted recipient-ECDH envelope.</p>\n<ul dir=\"auto\">\n<li><code>requests.create(to, { coinId, amount, memo? })</code> never throws; it resolves <code>{ success, requestId?, error? }</code>. Check <code>success</code>. <code>coinId</code> is the 64-hex coin id (look it up with <code>getCoinIdBySymbol()</code>).</li>\n<li>Never pay from inside the <code>payment_request:incoming</code> handler without the user's decision; <code>pay()</code> and <code>decline()</code> are alternatives. <code>pay()</code> rethrows <code>send()</code>'s errors: handle them as in <a href=\"#handling-send-rejections-never-re-send-a-possibly-committed-payment-money-safety\">Handling <code>send()</code> rejections</a>.</li>\n<li><code>payment_request:updated</code> reports requests you <strong>received</strong>. The SDK does not track requests you created: detect payment through <code>transfer:incoming</code> or <code>sphere.payments.history()</code>.</li>\n<li><code>request.amount</code> is a base-unit string and <code>request.coinId</code> the hex id; <code>request.symbol</code> is not set by the SDK event.</li>\n</ul>\n<p dir=\"auto\">When the send inside <code>pay()</code> fails with a possibly-committed error, <code>pay()</code> links the request to that transfer (the\nerror's <code>transferId</code>) in the payments journal and marks it <code>'settling'</code> before it rethrows, so the request is not\npayable, and the link survives a restart. One exception: if writing that link to storage fails, <code>pay()</code> rejects with\nthe storage error instead of the send error, so <code>isPossiblyCommittedSendOutcome</code> is <code>false</code> for it although the\npayment may have gone out; the link is then held in memory and reaches storage only with a later successful journal\nwrite. A second <code>pay()</code> of the same id while the first is still running joins it. The link is written after the send\nreturns or throws, not before it starts. If the app or process stops while <code>pay()</code> is still waiting on the send, or\nbefore a link that failed to write reaches storage, no link exists: on the next start the request is listed as\n<code>'pending'</code> again and <code>payment_request:incoming</code> fires again, even if the transfer went through (a transfer the SDK\nhad already recorded is resumed when the wallet starts). Before paying a request again after a restart, check\n<code>sphere.payments.pendingTransfers()</code> and <code>sphere.payments.history()</code> for a transfer to that requester.</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { TokenRegistry, getCoinIdBySymbol } from '@unicitylabs/sphere-sdk';\n\n// Requester side: create() never throws. It resolves { success, requestId?, error? }.\nawait TokenRegistry.waitForReady();\nconst coinId = getCoinIdBySymbol('UCT'); // the 64-hex coin id, or undefined\nif (coinId) {\n  const created = await sphere.payments.requests.create('@bob', {\n    coinId,\n    amount: '1000000',\n    memo: 'Payment for order #1234',\n  });\n  if (!created.success) console.error(created.error);\n}\n\n// Payer side: never pay from the event handler itself. Show the request and let the user decide.\nsphere.on('payment_request:incoming', async (request) =&gt; {\n  // request.amount is a base-unit string and request.coinId the hex coin id; request.symbol is not set here.\n  console.log(`${request.senderNametag ?? request.senderPubkey} requests ${request.amount} of ${request.coinId}`);\n  try {\n    if (await askUser(request)) {\n      await sphere.payments.requests.pay(request.id);\n    } else {\n      // A server 403/409 propagates: a refused decline is not success.\n      await sphere.payments.requests.decline(request.id);\n    }\n  } catch (err) {\n    console.error('payment request failed', err); // pay() rethrows send() errors: handle them like send()\n  }\n});\n\n// Current views (requests you received) + housekeeping\nconst open = sphere.payments.requests.list();\nsphere.payments.requests.dismissProcessed();\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">getCoinIdBySymbol</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">'@unicitylabs/sphere-sdk'</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Requester side: create() never throws. It resolves { success, requestId?, error? }.</span>\n<span class=\"pl-k\">await</span> <span class=\"pl-v\">TokenRegistry</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">waitForReady</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">const</span> <span class=\"pl-s1\">coinId</span> <span class=\"pl-c1\">=</span> <span class=\"pl-en\">getCoinIdBySymbol</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'UCT'</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span> <span class=\"pl-c\">// the 64-hex coin id, or undefined</span>\n<span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-s1\">coinId</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">created</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">payments</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">requests</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">create</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'@bob'</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span>\n    coinId<span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">amount</span>: <span class=\"pl-s\">'1000000'</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c1\">memo</span>: <span class=\"pl-s\">'Payment for order #1234'</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-k\">if</span> <span class=\"pl-kos\">(</span><span class=\"pl-c1\">!</span><span class=\"pl-s1\">created</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">success</span><span class=\"pl-kos\">)</span> <span class=\"pl-smi\">console</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">error</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">created</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">error</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span>\n\n<span class=\"pl-c\">// Payer side: never pay from the event handler itself. Show the request and let the user decide.</span>\n<span class=\"pl-s1\">sphere</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">on</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">'payment_request:incoming'</span><span class=\"pl-kos\"\n<p>(README truncated)</p>",
   "recentCommits": [
     {
-      "sha": "c82087a",
-      "message": "Merge pull request #831 from unicity-sphere/ci/830-all-prs",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/c82087ab428e96ef2244e93d3dfd960b3d86f8af",
-      "date": "2026-09-30T10:07:30Z",
-      "author": "MastaP",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
-    },
-    {
-      "sha": "0d69f1b",
-      "message": "ci: run CI on every pull request, whatever its base branch (#830)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/0d69f1bb629a0f8f0acfc76f8b889b6ec6015d22",
-      "date": "2026-09-30T09:58:12Z",
-      "author": "MastaP",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
-    },
-    {
-      "sha": "c533280",
-      "message": "Merge pull request #824 from unicity-sphere/fix/823-publish-branch-push",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/c5332808b73e917753441ba568a8276302507fa9",
-      "date": "2026-09-24T15:38:04Z",
-      "author": "MastaP",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
-    },
-    {
-      "sha": "788d88e",
-      "message": "fix(release): read the version and branch name from env in publish.yml run steps",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/788d88e376d985c3c0fb911a8c4da9c86576fa43",
-      "date": "2026-09-24T15:33:24Z",
-      "author": "MastaP",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
-    },
-    {
-      "sha": "b2d63d5",
-      "message": "fix(release): push a dev build's release commit to its own branch, not main (#823)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/b2d63d552e76a20c7589cb97c70abb49ffbdb9f5",
-      "date": "2026-09-24T15:19:57Z",
-      "author": "MastaP",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
-    },
-    {
-      "sha": "7d70f7b",
-      "message": "chore(release): date the CHANGELOG in the publish job and keep the release commit landing (#819)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/7d70f7b34f12287c8d8b14673a9633fc3fa99e9c",
-      "date": "2026-09-22T13:15:25Z",
-      "author": "KruGoL",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/89870667?v=4"
-    },
-    {
-      "sha": "9c3ec32",
-      "message": "chore: release v0.17.6",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/9c3ec32b35b05e290b892efa0e9925dc122c2d1c",
-      "date": "2026-09-22T12:40:13Z",
+      "sha": "6207aa9",
+      "message": "chore: release v0.18.1",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/6207aa98592ec6a18291babbd71f81df145a800f",
+      "date": "2026-10-07T13:22:35Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "bec7873",
-      "message": "fix(nodejs): load the wallet file before the first read or write (#817)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/bec78734f0a1b0e64c983c0a53d969ed1437dd4e",
-      "date": "2026-09-22T12:10:30Z",
-      "author": "KruGoL",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/89870667?v=4"
+      "sha": "cc1db9e",
+      "message": "Merge pull request #834 from unicity-sphere/feat/833-registry-coin-claims",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/cc1db9e8b95ca41c21ce84f68657e5867c73a922",
+      "date": "2026-10-07T13:20:11Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
     },
     {
-      "sha": "8347b10",
-      "message": "chore: release v0.17.5",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/8347b10b94575cd07ec5307212ff382c9b6aebd6",
-      "date": "2026-09-21T17:15:10Z",
+      "sha": "9e532e9",
+      "message": "fix(payments): keep 0.18.0 readable, refuse claimed self-mints, wait for claims at start",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/9e532e973cfdb63021de25301f34632a50a7ded1",
+      "date": "2026-10-02T21:38:57Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "de584b4",
+      "message": "fix(payments): vouch and invalidate coin claims per coin; harden registry parsing",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/de584b46156c71c67e8607403adeb6c80bfb13b1",
+      "date": "2026-10-02T18:18:32Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "f18ab98",
+      "message": "fix(payments): restart the verdict retry backoff when the claims change",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/f18ab9849d04d240ff53614293e3cbf2c8e2d930",
+      "date": "2026-10-02T16:05:59Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "b978e71",
+      "message": "test(mutation): pin the receive track-hook probe to the receive wiring",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/b978e71fbf1e74b3f399f2b012a7791b8bfce90a",
+      "date": "2026-10-02T16:01:40Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "ecce809",
+      "message": "fix(payments): start the re-check before telling readers a claims change landed",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/ecce809f89351c948be170e65056c0b2ebd4aae3",
+      "date": "2026-10-02T15:32:41Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "21b6f21",
+      "message": "feat(payments): seed coin claims from the token registry (#833)",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/21b6f213881cfac6b0fe85db70337a4ce0225d77",
+      "date": "2026-10-02T15:28:51Z",
+      "author": "MastaP",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/185344?v=4"
+    },
+    {
+      "sha": "01a4b01",
+      "message": "chore: release v0.18.0",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/01a4b019195debcdea46d9f40789042ebd427108",
+      "date": "2026-10-02T14:00:08Z",
       "author": "github-actions[bot]",
       "avatarUrl": "https://avatars.githubusercontent.com/in/15368?v=4"
     },
     {
-      "sha": "314683e",
-      "message": "chore: date the CHANGELOG for the 0.17.5 release (#816)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/314683e677d1ffb0cc237dd4f7b4603fc125335d",
-      "date": "2026-09-21T16:56:23Z",
-      "author": "KruGoL",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/89870667?v=4"
+      "sha": "4718e60",
+      "message": "Merge pull request #822 from unicity-sphere/feat/token-plugins",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/commit/4718e601ccb4425873b852946b2f0a7626f950e4",
+      "date": "2026-10-02T13:52:57Z",
+      "author": "lploom",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/5463023?v=4"
     }
   ],
   "recentPulls": [
     {
-      "number": 826,
-      "title": "token types can require their issuance proof, and a coin they claim counts only in verified tokens",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/826",
-      "state": "open",
-      "updatedAt": "2026-09-30T11:59:46Z",
-      "author": "lploom",
+      "number": 640,
+      "title": "Phase 6: v1 → v2 SDK migration (uxf-v2 fork review artifact)",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/640",
+      "state": "closed",
+      "updatedAt": "2026-10-07T14:55:39Z",
+      "author": "vrogojin",
+      "draft": true
+    },
+    {
+      "number": 834,
+      "title": "Seed coin claims from the token registry, so a wallet without the issuing plugin never trusts a claimed coin",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/834",
+      "state": "merged",
+      "updatedAt": "2026-10-07T13:20:15Z",
+      "author": "MastaP",
       "draft": false
     },
     {
       "number": 822,
       "title": "token plugins: custom-genesis mint, burn with a reason and the mint justification read",
       "url": "https://github.com/unicity-sphere/sphere-sdk/pull/822",
-      "state": "open",
-      "updatedAt": "2026-09-30T11:57:19Z",
+      "state": "merged",
+      "updatedAt": "2026-10-02T13:53:01Z",
       "author": "lploom",
+      "draft": false
+    },
+    {
+      "number": 826,
+      "title": "token types can require their issuance proof, and a coin they claim counts only in verified tokens",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/826",
+      "state": "merged",
+      "updatedAt": "2026-10-02T13:24:55Z",
+      "author": "lploom",
+      "draft": false
+    },
+    {
+      "number": 827,
+      "title": "feat(connect): let the wallet offer a network switch instead of a bare refusal",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/827",
+      "state": "merged",
+      "updatedAt": "2026-10-01T21:43:04Z",
+      "author": "KruGoL",
       "draft": false
     },
     {
@@ -1351,15 +1383,6 @@
       "state": "merged",
       "updatedAt": "2026-09-30T10:07:33Z",
       "author": "MastaP",
-      "draft": false
-    },
-    {
-      "number": 827,
-      "title": "feat(connect): let the wallet offer a network switch instead of a bare refusal",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/827",
-      "state": "open",
-      "updatedAt": "2026-09-29T16:50:19Z",
-      "author": "KruGoL",
       "draft": false
     },
     {
@@ -1377,24 +1400,6 @@
       "url": "https://github.com/unicity-sphere/sphere-sdk/pull/819",
       "state": "merged",
       "updatedAt": "2026-09-22T13:15:28Z",
-      "author": "KruGoL",
-      "draft": false
-    },
-    {
-      "number": 818,
-      "title": "chore: date the CHANGELOG for the 0.17.6 release",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/818",
-      "state": "closed",
-      "updatedAt": "2026-09-22T12:59:40Z",
-      "author": "KruGoL",
-      "draft": false
-    },
-    {
-      "number": 817,
-      "title": "fix(nodejs): load the wallet file before the first read or write (#811)",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/pull/817",
-      "state": "merged",
-      "updatedAt": "2026-09-22T12:10:33Z",
       "author": "KruGoL",
       "draft": false
     }
@@ -1529,19 +1534,19 @@
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 147618,
+      "size": 157413,
       "url": "https://github.com/unicity-sphere/sphere-sdk/blob/main/CHANGELOG.md"
     },
     {
       "name": "CLAUDE.md",
       "type": "file",
-      "size": 82637,
+      "size": 83999,
       "url": "https://github.com/unicity-sphere/sphere-sdk/blob/main/CLAUDE.md"
     },
     {
       "name": "constants.ts",
       "type": "file",
-      "size": 16309,
+      "size": 18449,
       "url": "https://github.com/unicity-sphere/sphere-sdk/blob/main/constants.ts"
     },
     {
@@ -1559,7 +1564,7 @@
     {
       "name": "index.ts",
       "type": "file",
-      "size": 12261,
+      "size": 12796,
       "url": "https://github.com/unicity-sphere/sphere-sdk/blob/main/index.ts"
     },
     {
@@ -1635,8 +1640,8 @@
       "url": "https://github.com/unicity-sphere/sphere-sdk/blob/main/vitest.relay.config.ts"
     }
   ],
-  "branchCount": 355,
-  "tagCount": 237,
+  "branchCount": 352,
+  "tagCount": 241,
   "manifestDependencies": {
     "manifest": "package.json",
     "dependencies": [
@@ -1685,18 +1690,25 @@
   },
   "workflowRuns": [
     {
-      "name": "CI",
-      "status": "action_required",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/actions/runs/36712180079",
-      "branch": "feat/issuance-policies",
-      "updatedAt": "2026-09-30T12:01:51Z"
+      "name": "Publish v0.18.1",
+      "status": "success",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/actions/runs/37627734947",
+      "branch": "main",
+      "updatedAt": "2026-10-07T13:22:42Z"
     },
     {
-      "name": "Publish v0.18.0-dev.3",
+      "name": "CI",
       "status": "success",
-      "url": "https://github.com/unicity-sphere/sphere-sdk/actions/runs/36711731113",
-      "branch": "feat/issuance-policies",
-      "updatedAt": "2026-09-30T11:59:47Z"
+      "url": "https://github.com/unicity-sphere/sphere-sdk/actions/runs/37627687407",
+      "branch": "main",
+      "updatedAt": "2026-10-07T13:38:48Z"
+    },
+    {
+      "name": "Publish v0.18.0",
+      "status": "success",
+      "url": "https://github.com/unicity-sphere/sphere-sdk/actions/runs/37016617773",
+      "branch": "main",
+      "updatedAt": "2026-10-02T14:00:15Z"
     }
   ],
   "community": {
@@ -1707,14 +1719,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 121,
-  "openPRs": 4,
+  "openIssuesOnly": 120,
+  "openPRs": 0,
   "releaseCount": 2,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 184,
-  "mergedPRs": 481,
+  "closedIssues": 186,
+  "mergedPRs": 485,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": true,
@@ -1725,10 +1737,6 @@
     "publishedAt": "2026-05-29T18:06:30Z"
   },
   "commitActivity": [
-    {
-      "week": "2025-10-04",
-      "commits": 0
-    },
     {
       "week": "2025-10-11",
       "commits": 0
@@ -1923,46 +1931,22 @@
     },
     {
       "week": "2026-09-13",
-      "commits": 16
+      "commits": 17
     },
     {
       "week": "2026-09-20",
-      "commits": 12
+      "commits": 13
     },
     {
       "week": "2026-09-27",
+      "commits": 38
+    },
+    {
+      "week": "2026-10-04",
       "commits": 1
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-10-04",
-      "count": 0
-    },
-    {
-      "date": "2025-10-05",
-      "count": 0
-    },
-    {
-      "date": "2025-10-06",
-      "count": 0
-    },
-    {
-      "date": "2025-10-07",
-      "count": 0
-    },
-    {
-      "date": "2025-10-08",
-      "count": 0
-    },
-    {
-      "date": "2025-10-09",
-      "count": 0
-    },
-    {
-      "date": "2025-10-10",
-      "count": 0
-    },
     {
       "date": "2025-10-11",
       "count": 0
@@ -3329,7 +3313,7 @@
     },
     {
       "date": "2026-09-18",
-      "count": 4
+      "count": 5
     },
     {
       "date": "2026-09-19",
@@ -3345,7 +3329,7 @@
     },
     {
       "date": "2026-09-22",
-      "count": 3
+      "count": 4
     },
     {
       "date": "2026-09-23",
@@ -3369,31 +3353,59 @@
     },
     {
       "date": "2026-09-28",
-      "count": 0
+      "count": 16
     },
     {
       "date": "2026-09-29",
-      "count": 0
+      "count": 5
     },
     {
       "date": "2026-09-30",
-      "count": 1
+      "count": 3
     },
     {
       "date": "2026-10-01",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-10-02",
-      "count": 0
+      "count": 13
     },
     {
       "date": "2026-10-03",
       "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 0
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 1
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 0
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-30T13:16:07.813Z",
+  "factsUpdatedAt": "2026-10-09T21:53:53.110Z",
   "aiSummary": {
     "oneLiner": "Modular TypeScript SDK for Unicity wallet operations, enabling peer-to-peer agent settlements and state transitions.",
     "whatItDoes": "The Sphere SDK is the official TypeScript client for interacting securely with the Unicity state transition network. It provides developers with robust tools to manage BIP39/BIP32 wallets, orchestrate encrypted token transfers, and handle self-healing coin selection. The SDK utilizes a sophisticated dual-layer provider model, integrating a base storage and transport layer closely with a durable wallet-api delivery rails system. By wrapping complex, engine-certified token operations into highly familiar TypeScript interfaces, it allows applications to facilitate peer-to-peer economic transactions with absolute privacy and ultra-fast finality.",
@@ -3603,8 +3615,23 @@
     },
     {
       "week": "2026-09-13",
-      "additions": 0,
-      "deletions": 0
+      "additions": 11123,
+      "deletions": 1950
+    },
+    {
+      "week": "2026-09-20",
+      "additions": 1438,
+      "deletions": 280
+    },
+    {
+      "week": "2026-09-27",
+      "additions": 6703,
+      "deletions": 1059
+    },
+    {
+      "week": "2026-10-04",
+      "additions": 8,
+      "deletions": 5
     }
   ]
 }
