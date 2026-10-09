@@ -210,6 +210,11 @@
       "date": "2026-10-05",
       "stars": 3324,
       "forks": 148
+    },
+    {
+      "date": "2026-10-09",
+      "stars": 3345,
+      "forks": 155
     }
   ],
   "trendingHistory": [
@@ -245,24 +250,24 @@
     "static-recompilation",
     "tool"
   ],
-  "stars": 3324,
-  "forks": 148,
+  "stars": 3345,
+  "forks": 155,
   "watchers": 95,
   "openIssues": 85,
   "createdAt": "2025-04-12T06:48:01Z",
   "pushedAt": "2026-10-05T19:21:28Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-10-05T23:36:32.308Z",
+  "updatedAt": "2026-10-09T12:08:08.142Z",
   "languages": {
-    "C++": 15866008,
+    "C++": 15873645,
     "Java": 51261,
     "CMake": 42409,
     "Shell": 8268,
     "C": 34
   },
-  "commitCount": 165,
-  "readmeExcerpt": "## PS2Recomp: PlayStation 2 Static Recompiler (Experimental)\n\n\n\nAlso check our [WIKI](https://github.com/ran-j/PS2Recomp/wiki)\n\n\nThis project statically recompiles PS2 ELF binaries into C++ and provides a runtime to execute the generated code.\n\n### Modules\n\n* `ps2xAnalyzer`: scans ELF/functions and writes TOML config (`stubs`, `skip`, instruction patches).\n* `ps2xRecomp`: reads TOML + ELF, decodes R5900 instructions, and generates C++ output.\n* `ps2xRuntime`: hosts memory, function registration, syscall dispatch, and hardware stubs.\n* `ps2xIOP`: R3000A IRX execution, a virtual IOP kernel, and generic HLE fallbacks.\n\n### Features\n\n* Translates MIPS R5900 instructions to C++ code\n* PS2-specific MMI and VU0 macro support.\n* Single-file or multi-file output.\n* Configurable stubs, skips, and instruction patches.\n* Instruction-driven syscall handling.\n\n### How It Works\nPS2Recomp works by:\n\n* Parsing a PS2 ELF file to extract functions, symbols, and relocations\n* Decoding the MIPS R5900 instructions in each function\n* Translating those instructions to equivalent C++ code\n* Generating a runtime that can execute the recompiled code\n\nThe translated code is very literal, with each MIPS instruction mapping to a C++ operation. For example, `addiu $r4, $r4, 0x20` becomes `ctx->r4 = ADD32(ctx->r4, 0X20);`.\n\n### Current Behavior\n\n* `stubs` entries generate wrappers that call known runtime syscall/stub handlers by name.\n* `stubs` also supports address bindings with `handler@0xADDRESS` for stripped games (for example `sceCdRead@0x00123456`).\n* Address bindings also support generic return handlers for triage: `ret0`, `ret1`, `reta0`.\n* Recompiler now tries relocation-symbol auto-binding at callsites (`J/JAL`) before raw address dispatch; when relocation symbol is known (for example `sceCdRead`), it can call runtime handlers without manual address mapping.\n* Recompiler discovers additional internal static entry targets and emits `entry_...` wrappers for those addresses.\n* For unresolved static `J/JAL` sites, generated code falls back to `runtime->lookupFunction(0x...)`.\n* `skip` entries are not recompiled and generate explicit `ps2_stubs::TODO_NAMED(...)` wrappers.\n* Recompiled `SYSCALL` now calls `runtime->handleSyscall(...)` with the encoded syscall immediate.\n* Runtime syscall dispatch tries encoded syscall ID first, then falls back to `$v1`.\n\n### Requirements\n\n* CMake 3.20+\n* C++20 compiler (currently tested mainly with MSVC)\n* SSE4/AVX host support for some vector paths\n\n### Build\n\n```bash\ngit clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\ncd PS2Recomp\n\ncmake -S . -B out/build\ncmake --build out/build --config Debug\n```\n\n### Usage\n\nPreferred workflow for retail or stripped games:\n\n1. Open the ELF in Ghidra.\n2. Run `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`.\n3. Use the exported TOML and CSV map.\n4. Recompile with the exported TOML:\n\n```bash\n./ps2_recomp config.toml\n```\n\nFallback workflow for quick local experiments or ELFs with debug symbol :\n\n```bash\n./ps2_analyzer your_game.elf config.toml\n```\n\nSee the [Ghidra Workflow](ps2xAnalyzer/Readme.md#3-ghidra-integration-for-retail-and-stripped-games-preferred) for ghdira instructions.\n\nThen build generated output and link with `ps2xRuntime`.\n\n### Configuration\n\nMain fields in `config.toml`:\n\n* `general.input`: source ELF path.\n* `general.ghidra_output`: recommended function map CSV exported from Ghidra.\n* `general.output`: generated C++ output folder.\n* `general.single_file_output`: one combined cpp or one file per function.\n* `general.low_memory_mode`: reduce peak output-generation memory by avoiding retained disassembly strings and forcing serial output generation. Generated instruction comments are still emitted; disassembly text is produced while writing each output file instead of being kept in memory.\n* `general.output_worker_threads`: number of output-generation workers (clamped to nproc * 2). A positive value uses exactly that many workers. `0` uses `nproc - 1` when at least two hardware threads are available, otherwise serial output generation. `1` forces serial output generation.\n* `general.patch_syscalls`: apply configured patches to `SYSCALL` instructions (`false` recommended).\n* `general.patch_cop0`: apply configured patches to COP0 instructions.\n* `general.patch_cache`: apply configured patches to CACHE instructions.\n* `general.stubs`: names to force as stubs. Also accepts `handler@0xADDRESS` to bind a stripped function address directly to a runtime syscall/stub handler. Includes generic handlers `ret0`, `ret1`, `reta0`.\n* `general.skip`: names to force as skipped wrappers.\n* `patches.instructions`: raw instruction replacements by address.\n\nAddress binding for stripped ELFs:\n\n* Use `handler@0xADDRESS` inside `general.stubs` to map a stripped function start directly to a runtime handler.\n* Example: `sceCdRead@0x00123456` binds function start `0x00123456` to `ps2_stubs::sceCdRead(...)`.\n* Generic temporary handlers are available: `ret0@0xADDR`, `ret1@0xADDR`, `reta0@0xADDR`.\n* Before manual binding, prefer recompilation from a Ghidra-exported TOML/CSV first. The extra boundaries and synthetic entry points are usually more important than manual early triage.\n* The address must be the function start in that exact ELF build.\n* Addresses are not portable across different games/regions/builds.\n* The handler name must exist in runtime call lists (`PS2_SYSCALL_LIST` or `PS2_STUB_LIST`).\n\nExample:\n\n```toml\n# stripped function binding by address:\nstubs = [\"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"]\n# temporary return handlers:\nstubs = [\"ret0@0x001D9410\", \"ret1@0x001D5BC8\", \"reta0@0x0024B7C0\"]\n# mixed example:\nstubs = [\"printf\", \"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"] \n```\n\n### Runtime\n\nTo execute the recompiled code.\n\n`ps2xRuntime` currently provides:\n\n* Guest memory model and function dispatch table.\n* Some syscall dispatcher with common kernel IDs.\n* Basic GS/VU/file/system stubs.\n* Foundation to expand and port your game.\n* `ps2xIOP` execution of original IRX modules with generic HLE fallbacks.\n\nSee [IOP emulation](ps2xIOP/README.md) for module execution and the service boundary.\n\n### Game Override Hooks\n\nGame overrides are runtime-side, build-scoped patch modules.\n\nA game override is C++ code that runs during `loadELF` and can replace EE function bindings by address for one specific game build. IOP RPC/DMA behavior is handled by the `ps2xIOP` emulator and its runtime transport. This is separate from recompilation output and separate from global runtime stubs/syscalls.\n\nAPI:\n\n* Header: `ps2xRuntime/include/game_overrides.h`\n* Register macro: `PS2_REGISTER_GAME_OVERRIDE(name, elfName, entry, crc32, applyFn)`\n* Direct bind helper: `ps2_game_overrides::bindAddressHandler(runtime, addr, \"handler\")`\n\nUse Game Override modules when:\n\n* You need per-game/per-build routing or patches without polluting global behavior.\n* You need to bind many addresses, or install custom replacement logic for a specific title.\n\n#### Recommended Iteration Loop\n\n1. Run with minimal config and no aggressive skipping.\n2. Fix hard blockers first (`function not found`, syscall TODO, critical IO stubs).\n3. Use temporary return stubs only to classify call importance.\n4. Promote temporary fixes to real implementations.\n5. Move per-game hacks into game overrides keyed by ELF metadata.\n6. Re-test from cold boot after each batch.\n\n### Limitations\n \n* Performance is very bad for VU and GS\n* Hardware emulation is partial and many paths are stubbed.\n\n###  Acknowledgments\n\n* Inspired by N64Recomp\n* Uses ELFIO for ELF parsing\n* Uses toml11 for TOML parsing\n* Uses fmt for string formatting\n* Reference for runtime PCSX2",
+  "commitCount": 168,
+  "readmeExcerpt": "## PS2Recomp: PlayStation 2 Static Recompiler (Experimental)\n\n\n\nAlso check our [WIKI](https://github.com/ran-j/PS2Recomp/wiki)\n\n\nThis project statically recompiles PS2 ELF binaries into C++ and provides a runtime to execute the generated code.\n\n### Modules\n\n* `ps2xAnalyzer`: scans ELF/functions and writes TOML config (`stubs`, `skip`, instruction patches).\n* `ps2xRecomp`: reads TOML + ELF, decodes R5900 instructions, and generates C++ output.\n* `ps2xRuntime`: hosts memory, function registration, syscall dispatch, and hardware stubs.\n* `ps2xIOP`: R3000A IRX execution, a virtual IOP kernel, and generic HLE fallbacks.\n\n### Features\n\n* Translates MIPS R5900 instructions to C++ code\n* PS2-specific MMI and VU0 macro support.\n* Single-file or multi-file output.\n* Configurable stubs, skips, and instruction patches.\n* Instruction-driven syscall handling.\n\n### How It Works\nPS2Recomp works by:\n\n* Parsing a PS2 ELF file to extract functions, symbols, and relocations\n* Decoding the MIPS R5900 instructions in each function\n* Translating those instructions to equivalent C++ code\n* Generating a runtime that can execute the recompiled code\n\nThe translated code is very literal, with each MIPS instruction mapping to a C++ operation. For example, `addiu $r4, $r4, 0x20` becomes `ctx->r4 = ADD32(ctx->r4, 0X20);`.\n\n### Current Behavior\n\n* `stubs` entries generate wrappers that call known runtime syscall/stub handlers by name.\n* `stubs` also supports address bindings with `handler@0xADDRESS` for stripped games (for example `sceCdRead@0x00123456`).\n* Address bindings also support generic return handlers for triage: `ret0`, `ret1`, `reta0`.\n* Recompiler now tries relocation-symbol auto-binding at callsites (`J/JAL`) before raw address dispatch; when relocation symbol is known (for example `sceCdRead`), it can call runtime handlers without manual address mapping.\n* Recompiler discovers additional internal static entry targets and emits `entry_...` wrappers for those addresses.\n* For unresolved static `J/JAL` sites, generated code falls back to `runtime->lookupFunction(0x...)`.\n* `skip` entries are not recompiled and generate explicit `ps2_stubs::TODO_NAMED(...)` wrappers.\n* Recompiled `SYSCALL` now calls `runtime->handleSyscall(...)` with the encoded syscall immediate.\n* Runtime syscall dispatch tries encoded syscall ID first, then falls back to `$v1`.\n\n### Requirements\n\n* CMake 3.20+\n* C++20 compiler (currently tested mainly with MSVC)\n* SSE4/AVX host support for some vector paths\n\n### Build\n\n```bash\ngit clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\ncd PS2Recomp\n\ncmake -S . -B out/build\ncmake --build out/build --config Debug\n```\n\n### Usage\n\nPreferred workflow for retail or stripped games:\n\n1. Open the ELF in Ghidra.\n2. Run `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`.\n3. Use the exported TOML and CSV map.\n4. Recompile with the exported TOML:\n\n```bash\n./ps2_recomp config.toml\n```\n\nFallback workflow for quick local experiments or ELFs with debug symbol :\n\n```bash\n./ps2_analyzer your_game.elf config.toml\n```\n\nSee the [Ghidra Workflow](ps2xAnalyzer/Readme.md#3-ghidra-integration-for-retail-and-stripped-games-preferred) for ghdira instructions.\n\nThen build generated output and link with `ps2xRuntime`.\n\n### Configuration\n\nMain fields in `config.toml`:\n\n* `general.input`: source ELF path.\n* `general.ghidra_output`: recommended function map CSV exported from Ghidra.\n* `general.output`: generated C++ output folder.\n* `general.single_file_output`: one combined cpp or one file per function.\n* `general.low_memory_mode`: reduce peak output-generation memory by avoiding retained disassembly strings and forcing serial output generation. Generated instruction comments are still emitted; disassembly text is produced while writing each output file instead of being kept in memory.\n* `general.output_worker_threads`: number of output-generation workers (clamped to nproc * 2). A positive value uses exactly that many workers. `0` uses `nproc - 1` when at least two hardware threads are available, otherwise serial output generation. `1` forces serial output generation.\n* `general.patch_syscalls`: apply configured patches to `SYSCALL` instructions (`false` recommended).\n* `general.patch_cop0`: apply configured patches to COP0 instructions.\n* `general.patch_cache`: apply configured patches to CACHE instructions.\n* `general.stubs`: names to force as stubs. Also accepts `handler@0xADDRESS` to bind a stripped function address directly to a runtime syscall/stub handler. Includes generic handlers `ret0`, `ret1`, `reta0`.\n* `general.skip`: names to force as skipped wrappers.\n* `patches.instructions`: raw instruction replacements by address.\n\nAddress binding for stripped ELFs:\n\n* Use `handler@0xADDRESS` inside `general.stubs` to map a stripped function start directly to a runtime handler.\n* Example: `sceCdRead@0x00123456` binds function start `0x00123456` to `ps2_stubs::sceCdRead(...)`.\n* Generic temporary handlers are available: `ret0@0xADDR`, `ret1@0xADDR`, `reta0@0xADDR`.\n* Before manual binding, prefer recompilation from a Ghidra-exported TOML/CSV first. The extra boundaries and synthetic entry points are usually more important than manual early triage.\n* The address must be the function start in that exact ELF build.\n* Addresses are not portable across different games/regions/builds.\n* The handler name must exist in runtime call lists (`PS2_SYSCALL_LIST` or `PS2_STUB_LIST`).\n\nExample:\n\n```toml\n# stripped function binding by address:\nstubs = [\"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"]\n# temporary return handlers:\nstubs = [\"ret0@0x001D9410\", \"ret1@0x001D5BC8\", \"reta0@0x0024B7C0\"]\n# mixed example:\nstubs = [\"printf\", \"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"] \n```\n\n### Runtime\n\nTo execute the recompiled code.\n\n`ps2xRuntime` currently provides:\n\n* Guest memory model and function dispatch table.\n* Some syscall dispatcher with common kernel IDs.\n* Basic GS/VU/file/system stubs.\n* Foundation to expand and port your game.\n* `ps2xIOP` execution of original IRX modules with generic HLE fallbacks.\n\nSee [IOP emulation](ps2xIOP/README.md) for module execution and the service boundary.\n\n### Game Override Hooks\n\nGame overrides are runtime-side, build-scoped patch modules.\n\nA game override is C++ code that runs during `loadELF` and can replace EE function bindings by address for one specific game build. IOP RPC/DMA behavior is handled by the `ps2xIOP` emulator and its runtime transport. This is separate from recompilation output and separate from global runtime stubs/syscalls.\n\nAPI:\n\n* Header: `ps2xRuntime/include/game_overrides.h`\n* Register macro: `PS2_REGISTER_GAME_OVERRIDE(name, elfName, entry, crc32, applyFn)`\n* Direct bind helper: `ps2_game_overrides::bindAddressHandler(runtime, addr, \"handler\")`\n\nUse Game Override modules when:\n\n* You need per-game/per-build routing or patches without polluting global behavior.\n* You need to bind many addresses, or install custom replacement logic for a specific title.\n\n#### Recommended Iteration Loop\n\n1. Run with minimal config and no aggressive skipping.\n2. Fix hard blockers first (`function not found`, syscall TODO, critical IO stubs).\n3. Use temporary return stubs only to classify call importance.\n4. Promote temporary fixes to real implementations.\n5. Move per-game hacks into game overrides keyed by ELF metadata.\n6. Re-test from cold boot after each batch.\n\n### Describing Your Game Project\n\nA game project built with PS2Recomp can describe itself in a `.recomp.json` file at the root of its repository. Lists of recomp and decomp projects, such as [recomp.board](https://recomp.fyi), read that file instead of guessing the game, system and status from the README.\n\n> [!NOTE]\n> This file is optional: PS2Recomp does not read it and works the same without it. `.recomp.json` and recomp.board are third-party projects; the PS2Recomp developers have no ties to them.\n\nStarter file:\n\n```json\n{\n  \"$schema\": \"https://recomp.fyi/schema/v1.json\",\n  \"game\": \"<title as it shipped>\",\n  \"system\": \"PS2\",\n  \"type\": \"recomp\",\n  \"toolchain\": \"PS2Recomp\",\n  \"status\": \"in-progress\",\n  \"original\": { \"region\": \"USA\", \"serial\": \"SLUS-20312\" }\n}\n```\n\n* `original` is the release a user must own. On retail discs the ELF is named after the serial (`SLUS_203.12` is `SLUS-20312`), and the prefix gives the region: `SLUS`/`SCUS` USA, `SLES`/`SCES` Europe, `SLPS`/`SLPM`/`SCPS` Japan.\n* `status` is one of `exploring`, `in-progress`, `playable`, `released`, `complete`, `paused`. Edit it when the project moves on: a stale status is worse than none.\n* Never put a game file, or a link to one, in the file.\n\nOther fields (Wikidata item, target platforms, maintainers, links, what help is wanted) and the JSON Schema are in the [specification](https://recomp.fyi/spec).\n\n### Limitations\n \n* Performance is very bad for VU and GS\n* Hardware emulation is partial and many paths are stubbed.\n\n###  Acknowledgments\n\n* Inspired by N64Recomp\n* Uses ELFIO for ELF parsing\n* Uses toml11 for TOML parsing\n* Uses fmt for string formatting\n* Reference for runtime PCSX2",
   "contributors": [
     {
       "login": "ran-j",
@@ -325,7 +330,7 @@
       "contributions": 2
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">PS2Recomp: PlayStation 2 Static Recompiler (Experimental)</h2></div>\n<p dir=\"auto\"><a href=\"https://discord.gg/JQ8mawxUEf\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c1436607f9edd988df13ebe8debf4a6fc18a9d305e663150eb65600605a3ef62/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446973636f72642d4a6f696e2532305365727665722d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465\" alt=\"Discord\" data-canonical-src=\"https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Also check our <a href=\"https://github.com/ran-j/PS2Recomp/wiki\">WIKI</a></p>\n<p dir=\"auto\">This project statically recompiles PS2 ELF binaries into C++ and provides a runtime to execute the generated code.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Modules</h3></div>\n<ul dir=\"auto\">\n<li><code>ps2xAnalyzer</code>: scans ELF/functions and writes TOML config (<code>stubs</code>, <code>skip</code>, instruction patches).</li>\n<li><code>ps2xRecomp</code>: reads TOML + ELF, decodes R5900 instructions, and generates C++ output.</li>\n<li><code>ps2xRuntime</code>: hosts memory, function registration, syscall dispatch, and hardware stubs.</li>\n<li><code>ps2xIOP</code>: R3000A IRX execution, a virtual IOP kernel, and generic HLE fallbacks.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Features</h3></div>\n<ul dir=\"auto\">\n<li>Translates MIPS R5900 instructions to C++ code</li>\n<li>PS2-specific MMI and VU0 macro support.</li>\n<li>Single-file or multi-file output.</li>\n<li>Configurable stubs, skips, and instruction patches.</li>\n<li>Instruction-driven syscall handling.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">How It Works</h3></div>\n<p dir=\"auto\">PS2Recomp works by:</p>\n<ul dir=\"auto\">\n<li>Parsing a PS2 ELF file to extract functions, symbols, and relocations</li>\n<li>Decoding the MIPS R5900 instructions in each function</li>\n<li>Translating those instructions to equivalent C++ code</li>\n<li>Generating a runtime that can execute the recompiled code</li>\n</ul>\n<p dir=\"auto\">The translated code is very literal, with each MIPS instruction mapping to a C++ operation. For example, <code>addiu $r4, $r4, 0x20</code> becomes <code>ctx-&gt;r4 = ADD32(ctx-&gt;r4, 0X20);</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Current Behavior</h3></div>\n<ul dir=\"auto\">\n<li><code>stubs</code> entries generate wrappers that call known runtime syscall/stub handlers by name.</li>\n<li><code>stubs</code> also supports address bindings with <code>handler@0xADDRESS</code> for stripped games (for example <code>sceCdRead@0x00123456</code>).</li>\n<li>Address bindings also support generic return handlers for triage: <code>ret0</code>, <code>ret1</code>, <code>reta0</code>.</li>\n<li>Recompiler now tries relocation-symbol auto-binding at callsites (<code>J/JAL</code>) before raw address dispatch; when relocation symbol is known (for example <code>sceCdRead</code>), it can call runtime handlers without manual address mapping.</li>\n<li>Recompiler discovers additional internal static entry targets and emits <code>entry_...</code> wrappers for those addresses.</li>\n<li>For unresolved static <code>J/JAL</code> sites, generated code falls back to <code>runtime-&gt;lookupFunction(0x...)</code>.</li>\n<li><code>skip</code> entries are not recompiled and generate explicit <code>ps2_stubs::TODO_NAMED(...)</code> wrappers.</li>\n<li>Recompiled <code>SYSCALL</code> now calls <code>runtime-&gt;handleSyscall(...)</code> with the encoded syscall immediate.</li>\n<li>Runtime syscall dispatch tries encoded syscall ID first, then falls back to <code>$v1</code>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Requirements</h3></div>\n<ul dir=\"auto\">\n<li>CMake 3.20+</li>\n<li>C++20 compiler (currently tested mainly with MSVC)</li>\n<li>SSE4/AVX host support for some vector paths</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Build</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\ncd PS2Recomp\n\ncmake -S . -B out/build\ncmake --build out/build --config Debug\"><pre>git clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\n<span class=\"pl-c1\">cd</span> PS2Recomp\n\ncmake -S <span class=\"pl-c1\">.</span> -B out/build\ncmake --build out/build --config Debug</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Usage</h3></div>\n<p dir=\"auto\">Preferred workflow for retail or stripped games:</p>\n<ol dir=\"auto\">\n<li>Open the ELF in Ghidra.</li>\n<li>Run <code>ps2xRecomp/tools/ghidra/ExportPS2Functions.java</code>.</li>\n<li>Use the exported TOML and CSV map.</li>\n<li>Recompile with the exported TOML:</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./ps2_recomp config.toml\"><pre>./ps2_recomp config.toml</pre></div>\n<p dir=\"auto\">Fallback workflow for quick local experiments or ELFs with debug symbol :</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./ps2_analyzer your_game.elf config.toml\"><pre>./ps2_analyzer your_game.elf config.toml</pre></div>\n<p dir=\"auto\">See the <a href=\"https://github.com/ran-j/PS2Recomp/blob/main/ps2xAnalyzer/Readme.md#3-ghidra-integration-for-retail-and-stripped-games-preferred\">Ghidra Workflow</a> for ghdira instructions.</p>\n<p dir=\"auto\">Then build generated output and link with <code>ps2xRuntime</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Configuration</h3></div>\n<p dir=\"auto\">Main fields in <code>config.toml</code>:</p>\n<ul dir=\"auto\">\n<li><code>general.input</code>: source ELF path.</li>\n<li><code>general.ghidra_output</code>: recommended function map CSV exported from Ghidra.</li>\n<li><code>general.output</code>: generated C++ output folder.</li>\n<li><code>general.single_file_output</code>: one combined cpp or one file per function.</li>\n<li><code>general.low_memory_mode</code>: reduce peak output-generation memory by avoiding retained disassembly strings and forcing serial output generation. Generated instruction comments are still emitted; disassembly text is produced while writing each output file instead of being kept in memory.</li>\n<li><code>general.output_worker_threads</code>: number of output-generation workers (clamped to nproc * 2). A positive value uses exactly that many workers. <code>0</code> uses <code>nproc - 1</code> when at least two hardware threads are available, otherwise serial output generation. <code>1</code> forces serial output generation.</li>\n<li><code>general.patch_syscalls</code>: apply configured patches to <code>SYSCALL</code> instructions (<code>false</code> recommended).</li>\n<li><code>general.patch_cop0</code>: apply configured patches to COP0 instructions.</li>\n<li><code>general.patch_cache</code>: apply configured patches to CACHE instructions.</li>\n<li><code>general.stubs</code>: names to force as stubs. Also accepts <code>handler@0xADDRESS</code> to bind a stripped function address directly to a runtime syscall/stub handler. Includes generic handlers <code>ret0</code>, <code>ret1</code>, <code>reta0</code>.</li>\n<li><code>general.skip</code>: names to force as skipped wrappers.</li>\n<li><code>patches.instructions</code>: raw instruction replacements by address.</li>\n</ul>\n<p dir=\"auto\">Address binding for stripped ELFs:</p>\n<ul dir=\"auto\">\n<li>Use <code>handler@0xADDRESS</code> inside <code>general.stubs</code> to map a stripped function start directly to a runtime handler.</li>\n<li>Example: <code>sceCdRead@0x00123456</code> binds function start <code>0x00123456</code> to <code>ps2_stubs::sceCdRead(...)</code>.</li>\n<li>Generic temporary handlers are available: <code>ret0@0xADDR</code>, <code>ret1@0xADDR</code>, <code>reta0@0xADDR</code>.</li>\n<li>Before manual binding, prefer recompilation from a Ghidra-exported TOML/CSV first. The extra boundaries and synthetic entry points are usually more important than manual early triage.</li>\n<li>The address must be the function start in that exact ELF build.</li>\n<li>Addresses are not portable across different games/regions/builds.</li>\n<li>The handler name must exist in runtime call lists (<code>PS2_SYSCALL_LIST</code> or <code>PS2_STUB_LIST</code>).</li>\n</ul>\n<p dir=\"auto\">Example:</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# stripped function binding by address:\nstubs = [&quot;sceCdRead@0x00123456&quot;, &quot;SifLoadModule@0x00127890&quot;]\n# temporary return handlers:\nstubs = [&quot;ret0@0x001D9410&quot;, &quot;ret1@0x001D5BC8&quot;, &quot;reta0@0x0024B7C0&quot;]\n# mixed example:\nstubs = [&quot;printf&quot;, &quot;sceCdRead@0x00123456&quot;, &quot;SifLoadModule@0x00127890&quot;] \"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> stripped function binding by address:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>sceCdRead@0x00123456<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>SifLoadModule@0x00127890<span class=\"pl-pds\">\"</span></span>]\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> temporary return handlers:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ret0@0x001D9410<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ret1@0x001D5BC8<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>reta0@0x0024B7C0<span class=\"pl-pds\">\"</span></span>]\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> mixed example:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>printf<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>sceCdRead@0x00123456<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>SifLoadModule@0x00127890<span class=\"pl-pds\">\"</span></span>] </pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Runtime</h3></div>\n<p dir=\"auto\">To execute the recompiled code.</p>\n<p dir=\"auto\"><code>ps2xRuntime</code> currently provides:</p>\n<ul dir=\"auto\">\n<li>Guest memory model and function dispatch table.</li>\n<li>Some syscall dispatcher with common kernel IDs.</li>\n<li>Basic GS/VU/file/system stubs.</li>\n<li>Foundation to expand and port your game.</li>\n<li><code>ps2xIOP</code> execution of original IRX modules with generic HLE fallbacks.</li>\n</ul>\n<p dir=\"auto\">See <a href=\"https://github.com/ran-j/PS2Recomp/blob/main/ps2xIOP/README.md\">IOP emulation</a> for module execution and the service boundary.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Game Override Hooks</h3></div>\n<p dir=\"auto\">Game overrides are runtime-side, build-scoped patch modules.</p>\n<p dir=\"auto\">A game override is C++ code that runs during <code>loadELF</code> and can replace EE function bindings by address for one specific game build. IOP RPC/DMA behavior is handled by the <code>ps2xIOP</code> emulator and its runtime transport. This is separate from recompilation output and separate from global runtime stubs/syscalls.</p>\n<p dir=\"auto\">API:</p>\n<ul dir=\"auto\">\n<li>Header: <code>ps2xRuntime/include/game_overrides.h</code></li>\n<li>Register macro: <code>PS2_REGISTER_GAME_OVERRIDE(name, elfName, entry, crc32, applyFn)</code></li>\n<li>Direct bind helper: <code>ps2_game_overrides::bindAddressHandler(runtime, addr, \"handler\")</code></li>\n</ul>\n<p dir=\"auto\">Use Game Override modules when:</p>\n<ul dir=\"auto\">\n<li>You need per-game/per-build routing or patches without polluting global behavior.</li>\n<li>You need to bind many addresses, or install custom replacement logic for a specific title.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Recommended Iteration Loop</h4></div>\n<ol dir=\"auto\">\n<li>Run with minimal config and no aggressive skipping.</li>\n<li>Fix hard blockers first (<code>function not found</code>, syscall TODO, critical IO stubs).</li>\n<li>Use temporary return stubs only to classify call importance.</li>\n<li>Promote temporary fixes to real implementations.</li>\n<li>Move per-game hacks into game overrides keyed by ELF metadata.</li>\n<li>Re-test from cold boot after each batch.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Limitations</h3></div>\n<ul dir=\"auto\">\n<li>Performance is very bad for VU and GS</li>\n<li>Hardware emulation is partial and many paths are stubbed.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Acknowledgments</h3></div>\n<ul dir=\"auto\">\n<li>Inspired by N64Recomp</li>\n<li>Uses ELFIO for ELF parsing</li>\n<li>Uses toml11 for TOML parsing</li>\n<li>Uses fmt for string formatting</li>\n<li>Reference for runtime PCSX2</li>\n</ul>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">PS2Recomp: PlayStation 2 Static Recompiler (Experimental)</h2></div>\n<p dir=\"auto\"><a href=\"https://discord.gg/JQ8mawxUEf\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c1436607f9edd988df13ebe8debf4a6fc18a9d305e663150eb65600605a3ef62/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f446973636f72642d4a6f696e2532305365727665722d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465\" alt=\"Discord\" data-canonical-src=\"https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&amp;logoColor=white\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\">Also check our <a href=\"https://github.com/ran-j/PS2Recomp/wiki\">WIKI</a></p>\n<p dir=\"auto\">This project statically recompiles PS2 ELF binaries into C++ and provides a runtime to execute the generated code.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Modules</h3></div>\n<ul dir=\"auto\">\n<li><code>ps2xAnalyzer</code>: scans ELF/functions and writes TOML config (<code>stubs</code>, <code>skip</code>, instruction patches).</li>\n<li><code>ps2xRecomp</code>: reads TOML + ELF, decodes R5900 instructions, and generates C++ output.</li>\n<li><code>ps2xRuntime</code>: hosts memory, function registration, syscall dispatch, and hardware stubs.</li>\n<li><code>ps2xIOP</code>: R3000A IRX execution, a virtual IOP kernel, and generic HLE fallbacks.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Features</h3></div>\n<ul dir=\"auto\">\n<li>Translates MIPS R5900 instructions to C++ code</li>\n<li>PS2-specific MMI and VU0 macro support.</li>\n<li>Single-file or multi-file output.</li>\n<li>Configurable stubs, skips, and instruction patches.</li>\n<li>Instruction-driven syscall handling.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">How It Works</h3></div>\n<p dir=\"auto\">PS2Recomp works by:</p>\n<ul dir=\"auto\">\n<li>Parsing a PS2 ELF file to extract functions, symbols, and relocations</li>\n<li>Decoding the MIPS R5900 instructions in each function</li>\n<li>Translating those instructions to equivalent C++ code</li>\n<li>Generating a runtime that can execute the recompiled code</li>\n</ul>\n<p dir=\"auto\">The translated code is very literal, with each MIPS instruction mapping to a C++ operation. For example, <code>addiu $r4, $r4, 0x20</code> becomes <code>ctx-&gt;r4 = ADD32(ctx-&gt;r4, 0X20);</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Current Behavior</h3></div>\n<ul dir=\"auto\">\n<li><code>stubs</code> entries generate wrappers that call known runtime syscall/stub handlers by name.</li>\n<li><code>stubs</code> also supports address bindings with <code>handler@0xADDRESS</code> for stripped games (for example <code>sceCdRead@0x00123456</code>).</li>\n<li>Address bindings also support generic return handlers for triage: <code>ret0</code>, <code>ret1</code>, <code>reta0</code>.</li>\n<li>Recompiler now tries relocation-symbol auto-binding at callsites (<code>J/JAL</code>) before raw address dispatch; when relocation symbol is known (for example <code>sceCdRead</code>), it can call runtime handlers without manual address mapping.</li>\n<li>Recompiler discovers additional internal static entry targets and emits <code>entry_...</code> wrappers for those addresses.</li>\n<li>For unresolved static <code>J/JAL</code> sites, generated code falls back to <code>runtime-&gt;lookupFunction(0x...)</code>.</li>\n<li><code>skip</code> entries are not recompiled and generate explicit <code>ps2_stubs::TODO_NAMED(...)</code> wrappers.</li>\n<li>Recompiled <code>SYSCALL</code> now calls <code>runtime-&gt;handleSyscall(...)</code> with the encoded syscall immediate.</li>\n<li>Runtime syscall dispatch tries encoded syscall ID first, then falls back to <code>$v1</code>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Requirements</h3></div>\n<ul dir=\"auto\">\n<li>CMake 3.20+</li>\n<li>C++20 compiler (currently tested mainly with MSVC)</li>\n<li>SSE4/AVX host support for some vector paths</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Build</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\ncd PS2Recomp\n\ncmake -S . -B out/build\ncmake --build out/build --config Debug\"><pre>git clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\n<span class=\"pl-c1\">cd</span> PS2Recomp\n\ncmake -S <span class=\"pl-c1\">.</span> -B out/build\ncmake --build out/build --config Debug</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Usage</h3></div>\n<p dir=\"auto\">Preferred workflow for retail or stripped games:</p>\n<ol dir=\"auto\">\n<li>Open the ELF in Ghidra.</li>\n<li>Run <code>ps2xRecomp/tools/ghidra/ExportPS2Functions.java</code>.</li>\n<li>Use the exported TOML and CSV map.</li>\n<li>Recompile with the exported TOML:</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./ps2_recomp config.toml\"><pre>./ps2_recomp config.toml</pre></div>\n<p dir=\"auto\">Fallback workflow for quick local experiments or ELFs with debug symbol :</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./ps2_analyzer your_game.elf config.toml\"><pre>./ps2_analyzer your_game.elf config.toml</pre></div>\n<p dir=\"auto\">See the <a href=\"https://github.com/ran-j/PS2Recomp/blob/main/ps2xAnalyzer/Readme.md#3-ghidra-integration-for-retail-and-stripped-games-preferred\">Ghidra Workflow</a> for ghdira instructions.</p>\n<p dir=\"auto\">Then build generated output and link with <code>ps2xRuntime</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Configuration</h3></div>\n<p dir=\"auto\">Main fields in <code>config.toml</code>:</p>\n<ul dir=\"auto\">\n<li><code>general.input</code>: source ELF path.</li>\n<li><code>general.ghidra_output</code>: recommended function map CSV exported from Ghidra.</li>\n<li><code>general.output</code>: generated C++ output folder.</li>\n<li><code>general.single_file_output</code>: one combined cpp or one file per function.</li>\n<li><code>general.low_memory_mode</code>: reduce peak output-generation memory by avoiding retained disassembly strings and forcing serial output generation. Generated instruction comments are still emitted; disassembly text is produced while writing each output file instead of being kept in memory.</li>\n<li><code>general.output_worker_threads</code>: number of output-generation workers (clamped to nproc * 2). A positive value uses exactly that many workers. <code>0</code> uses <code>nproc - 1</code> when at least two hardware threads are available, otherwise serial output generation. <code>1</code> forces serial output generation.</li>\n<li><code>general.patch_syscalls</code>: apply configured patches to <code>SYSCALL</code> instructions (<code>false</code> recommended).</li>\n<li><code>general.patch_cop0</code>: apply configured patches to COP0 instructions.</li>\n<li><code>general.patch_cache</code>: apply configured patches to CACHE instructions.</li>\n<li><code>general.stubs</code>: names to force as stubs. Also accepts <code>handler@0xADDRESS</code> to bind a stripped function address directly to a runtime syscall/stub handler. Includes generic handlers <code>ret0</code>, <code>ret1</code>, <code>reta0</code>.</li>\n<li><code>general.skip</code>: names to force as skipped wrappers.</li>\n<li><code>patches.instructions</code>: raw instruction replacements by address.</li>\n</ul>\n<p dir=\"auto\">Address binding for stripped ELFs:</p>\n<ul dir=\"auto\">\n<li>Use <code>handler@0xADDRESS</code> inside <code>general.stubs</code> to map a stripped function start directly to a runtime handler.</li>\n<li>Example: <code>sceCdRead@0x00123456</code> binds function start <code>0x00123456</code> to <code>ps2_stubs::sceCdRead(...)</code>.</li>\n<li>Generic temporary handlers are available: <code>ret0@0xADDR</code>, <code>ret1@0xADDR</code>, <code>reta0@0xADDR</code>.</li>\n<li>Before manual binding, prefer recompilation from a Ghidra-exported TOML/CSV first. The extra boundaries and synthetic entry points are usually more important than manual early triage.</li>\n<li>The address must be the function start in that exact ELF build.</li>\n<li>Addresses are not portable across different games/regions/builds.</li>\n<li>The handler name must exist in runtime call lists (<code>PS2_SYSCALL_LIST</code> or <code>PS2_STUB_LIST</code>).</li>\n</ul>\n<p dir=\"auto\">Example:</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# stripped function binding by address:\nstubs = [&quot;sceCdRead@0x00123456&quot;, &quot;SifLoadModule@0x00127890&quot;]\n# temporary return handlers:\nstubs = [&quot;ret0@0x001D9410&quot;, &quot;ret1@0x001D5BC8&quot;, &quot;reta0@0x0024B7C0&quot;]\n# mixed example:\nstubs = [&quot;printf&quot;, &quot;sceCdRead@0x00123456&quot;, &quot;SifLoadModule@0x00127890&quot;] \"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> stripped function binding by address:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>sceCdRead@0x00123456<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>SifLoadModule@0x00127890<span class=\"pl-pds\">\"</span></span>]\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> temporary return handlers:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ret0@0x001D9410<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>ret1@0x001D5BC8<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>reta0@0x0024B7C0<span class=\"pl-pds\">\"</span></span>]\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> mixed example:</span>\n<span class=\"pl-smi\">stubs</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>printf<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>sceCdRead@0x00123456<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>SifLoadModule@0x00127890<span class=\"pl-pds\">\"</span></span>] </pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Runtime</h3></div>\n<p dir=\"auto\">To execute the recompiled code.</p>\n<p dir=\"auto\"><code>ps2xRuntime</code> currently provides:</p>\n<ul dir=\"auto\">\n<li>Guest memory model and function dispatch table.</li>\n<li>Some syscall dispatcher with common kernel IDs.</li>\n<li>Basic GS/VU/file/system stubs.</li>\n<li>Foundation to expand and port your game.</li>\n<li><code>ps2xIOP</code> execution of original IRX modules with generic HLE fallbacks.</li>\n</ul>\n<p dir=\"auto\">See <a href=\"https://github.com/ran-j/PS2Recomp/blob/main/ps2xIOP/README.md\">IOP emulation</a> for module execution and the service boundary.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Game Override Hooks</h3></div>\n<p dir=\"auto\">Game overrides are runtime-side, build-scoped patch modules.</p>\n<p dir=\"auto\">A game override is C++ code that runs during <code>loadELF</code> and can replace EE function bindings by address for one specific game build. IOP RPC/DMA behavior is handled by the <code>ps2xIOP</code> emulator and its runtime transport. This is separate from recompilation output and separate from global runtime stubs/syscalls.</p>\n<p dir=\"auto\">API:</p>\n<ul dir=\"auto\">\n<li>Header: <code>ps2xRuntime/include/game_overrides.h</code></li>\n<li>Register macro: <code>PS2_REGISTER_GAME_OVERRIDE(name, elfName, entry, crc32, applyFn)</code></li>\n<li>Direct bind helper: <code>ps2_game_overrides::bindAddressHandler(runtime, addr, \"handler\")</code></li>\n</ul>\n<p dir=\"auto\">Use Game Override modules when:</p>\n<ul dir=\"auto\">\n<li>You need per-game/per-build routing or patches without polluting global behavior.</li>\n<li>You need to bind many addresses, or install custom replacement logic for a specific title.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Recommended Iteration Loop</h4></div>\n<ol dir=\"auto\">\n<li>Run with minimal config and no aggressive skipping.</li>\n<li>Fix hard blockers first (<code>function not found</code>, syscall TODO, critical IO stubs).</li>\n<li>Use temporary return stubs only to classify call importance.</li>\n<li>Promote temporary fixes to real implementations.</li>\n<li>Move per-game hacks into game overrides keyed by ELF metadata.</li>\n<li>Re-test from cold boot after each batch.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Describing Your Game Project</h3></div>\n<p dir=\"auto\">A game project built with PS2Recomp can describe itself in a <code>.recomp.json</code> file at the root of its repository. Lists of recomp and decomp projects, such as <a href=\"https://recomp.fyi\" rel=\"nofollow\">recomp.board</a>, read that file instead of guessing the game, system and status from the README.</p>\n<div class=\"markdown-alert markdown-alert-note\" dir=\"auto\"><p class=\"markdown-alert-title\" dir=\"auto\"><svg data-component=\"Octicon\" class=\"octicon octicon-info mr-2\" viewBox=\"0 0 16 16\" version=\"1.1\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z\"></path></svg>Note</p><p dir=\"auto\">This file is optional: PS2Recomp does not read it and works the same without it. <code>.recomp.json</code> and recomp.board are third-party projects; the PS2Recomp developers have no ties to them.</p>\n</div>\n<p dir=\"auto\">Starter file:</p>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{\n  &quot;$schema&quot;: &quot;https://recomp.fyi/schema/v1.json&quot;,\n  &quot;game&quot;: &quot;&lt;title as it shipped&gt;&quot;,\n  &quot;system&quot;: &quot;PS2&quot;,\n  &quot;type&quot;: &quot;recomp&quot;,\n  &quot;toolchain&quot;: &quot;PS2Recomp&quot;,\n  &quot;status&quot;: &quot;in-progress&quot;,\n  &quot;original&quot;: { &quot;region&quot;: &quot;USA&quot;, &quot;serial&quot;: &quot;SLUS-20312&quot; }\n}\"><pre>{\n  <span class=\"pl-ent\">\"$schema\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>https://recomp.fyi/schema/v1.json<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"game\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>&lt;title as it shipped&gt;<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"system\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>PS2<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"type\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>recomp<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"toolchain\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>PS2Recomp<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"status\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>in-progress<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"original\"</span>: { <span class=\"pl-ent\">\"region\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>USA<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"serial\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>SLUS-20312<span class=\"pl-pds\">\"</span></span> }\n}</pre></div>\n<ul dir=\"auto\">\n<li><code>original</code> is the release a user must own. On retail discs the ELF is named after the serial (<code>SLUS_203.12</code> is <code>SLUS-20312</code>), and the prefix gives the region: <code>SLUS</code>/<code>SCUS</code> USA, <code>SLES</code>/<code>SCES</code> Europe, <code>SLPS</code>/<code>SLPM</code>/<code>SCPS</code> Japan.</li>\n<li><code>status</code> is one of <code>exploring</code>, <code>in-progress</code>, <code>playable</code>, <code>released</code>, <code>complete</code>, <code>paused</code>. Edit it when the project moves on: a stale status is worse than none.</li>\n<li>Never put a game file, or a link to one, in the file.</li>\n</ul>\n<p dir=\"auto\">Other fields (Wikidata item, target platforms, maintainers, links, what help is wanted) and the JSON Schema are in the <a href=\"https://recomp.fyi/spec\" rel=\"nofollow\">specification</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Limitations</h3></div>\n<ul dir=\"auto\">\n<li>Performance is very bad for VU and GS</li>\n<li>Hardware emulation is partial and many paths are stubbed.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Acknowledgments</h3></div>\n<ul dir=\"auto\">\n<li>Inspired by N64Recomp</li>\n<li>Uses ELFIO for ELF parsing</li>\n<li>Uses toml11 for TOML parsing</li>\n<li>Uses fmt for string formatting</li>\n<li>Reference for runtime PCSX2</li>\n</ul>\n</article></div>",
   "releases": [
     {
       "name": "v0.4",
@@ -375,12 +380,49 @@
       "prerelease": true,
       "body": "We have a recompiler with a lot of instructions and workflow for strip and debug symbol games. We also have a runtime with simple GS, DMA and many more.",
       "downloads": 0,
-      "reactions": 36
+      "reactions": 35
     }
   ],
   "firstCommitAt": "2025-04-12T06:49:35Z",
-  "recentIssues": [],
-  "contributorCount": 18,
+  "recentIssues": [
+    {
+      "number": 273,
+      "title": "Runtime: SampleTexture casts unbounded or NaN texture coordinates to int, which is undefined behaviour",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/273",
+      "createdAt": "2026-10-01T15:05:49Z",
+      "comments": 2,
+      "labels": [],
+      "author": "penpenlovesrei-dotcom"
+    },
+    {
+      "number": 264,
+      "title": "Game overrides registered from the static library are silently never applied (static-initializer discard)",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/264",
+      "createdAt": "2026-09-30T21:53:57Z",
+      "comments": 0,
+      "labels": [],
+      "author": "penpenlovesrei-dotcom"
+    },
+    {
+      "number": 263,
+      "title": "Build: /Qspectre- is MSVC-only and breaks every Release target under clang-cl",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/263",
+      "createdAt": "2026-09-30T21:30:02Z",
+      "comments": 0,
+      "labels": [],
+      "author": "penpenlovesrei-dotcom"
+    },
+    {
+      "number": 262,
+      "title": "Recompiler: vcallmsr reads ctx->vi[27], out of bounds on uint16_t vi[16], instead of ctx->vu0_cmsar0",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/262",
+      "createdAt": "2026-09-30T21:29:59Z",
+      "comments": 1,
+      "labels": [],
+      "author": "penpenlovesrei-dotcom"
+    }
+  ],
+  "contributorCount": 21,
   "punchCard": [
     {
       "day": 0,
@@ -550,7 +592,7 @@
     {
       "day": 1,
       "hour": 9,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 1,
@@ -580,7 +622,7 @@
     {
       "day": 1,
       "hour": 15,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 1,
@@ -745,7 +787,7 @@
     {
       "day": 3,
       "hour": 0,
-      "commits": 2
+      "commits": 3
     },
     {
       "day": 3,
@@ -1224,9 +1266,9 @@
     }
   ],
   "participation": {
-    "all": 121,
+    "all": 124,
     "owner": 69,
-    "community": 52
+    "community": 55
   },
   "recentPulls": [
     {
@@ -1234,71 +1276,71 @@
       "title": "Compile whole VU1 programs and run sound IRX modules natively (DQ8 fork)",
       "url": "https://github.com/ran-j/PS2Recomp/pull/254",
       "state": "open",
-      "updatedAt": "2026-09-25T07:45:31Z",
+      "updatedAt": "2026-10-09T10:09:43Z",
       "author": "Sinan-Karakaya",
       "draft": true
     },
     {
-      "number": 244,
-      "title": "Feature/iop emulator",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/244",
+      "number": 276,
+      "title": "Step c",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/276",
+      "state": "open",
+      "updatedAt": "2026-10-08T03:07:20Z",
+      "author": "siddharthakumar-98",
+      "draft": false
+    },
+    {
+      "number": 214,
+      "title": "Start the main thread with COP0 Status.IE set",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/214",
       "state": "merged",
-      "updatedAt": "2026-09-20T00:31:45Z",
-      "author": "ran-j",
+      "updatedAt": "2026-10-06T16:10:08Z",
+      "author": "Sinan-Karakaya",
       "draft": false
     },
     {
-      "number": 253,
-      "title": "Avoid global declarations in generated function bodies",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/253",
-      "state": "open",
-      "updatedAt": "2026-09-07T02:03:11Z",
-      "author": "jfmherokiller",
+      "number": 211,
+      "title": "Return true after queueing a guest syscall override",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/211",
+      "state": "closed",
+      "updatedAt": "2026-10-06T16:10:08Z",
+      "author": "Sinan-Karakaya",
       "draft": false
     },
     {
-      "number": 252,
-      "title": "perf(vu): clear pending pipeline entries directly",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/252",
-      "state": "open",
-      "updatedAt": "2026-09-06T04:29:36Z",
-      "author": "GTTeancum",
+      "number": 210,
+      "title": "Let a thread resume at the instruction after a syscall",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/210",
+      "state": "merged",
+      "updatedAt": "2026-10-06T16:10:08Z",
+      "author": "Sinan-Karakaya",
       "draft": false
     },
     {
-      "number": 251,
-      "title": "perf(vu): reuse XGKICK packet storage between transfers",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/251",
-      "state": "open",
-      "updatedAt": "2026-09-06T03:51:18Z",
-      "author": "GTTeancum",
+      "number": 128,
+      "title": "Reduce recompiler output memory usage, and added multi-threading to recomp process",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/128",
+      "state": "merged",
+      "updatedAt": "2026-10-06T16:10:08Z",
+      "author": "Sinan-Karakaya",
       "draft": false
     },
     {
-      "number": 250,
-      "title": "perf(vu): reduce FMAC flag packing and initialization work",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/250",
-      "state": "open",
-      "updatedAt": "2026-09-06T00:47:45Z",
-      "author": "GTTeancum",
+      "number": 274,
+      "title": "Dispatch syscalls 0x79/0x7A to the existing SIF register handlers",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/274",
+      "state": "merged",
+      "updatedAt": "2026-10-05T19:21:28Z",
+      "author": "llesieur99",
       "draft": false
     },
     {
-      "number": 245,
-      "title": "Use occupancy masks for VU pipeline queues",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/245",
-      "state": "open",
-      "updatedAt": "2026-09-05T23:22:13Z",
-      "author": "GTTeancum",
-      "draft": false
-    },
-    {
-      "number": 249,
-      "title": "Allow disabling IPO for large generated game runners",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/249",
-      "state": "open",
-      "updatedAt": "2026-09-05T18:11:19Z",
-      "author": "GTTeancum",
+      "number": 271,
+      "title": "fix(recomp): register resume points for standalone entry_* functions",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/271",
+      "state": "merged",
+      "updatedAt": "2026-10-05T14:57:47Z",
+      "author": "drakolordx7",
       "draft": false
     }
   ],
@@ -1384,11 +1426,35 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 7832,
+      "size": 9222,
       "url": "https://github.com/ran-j/PS2Recomp/blob/main/README.md"
     }
   ],
   "recentCommits": [
+    {
+      "sha": "2c5fbb9",
+      "message": "Dispatch syscalls 0x79/0x7A to the existing SIF register handlers (#274)",
+      "url": "https://github.com/ran-j/PS2Recomp/commit/2c5fbb9389e11dd95693385969490c9e8e6f57b4",
+      "date": "2026-10-05T19:21:27Z",
+      "author": "llesieur99",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/191315338?v=4"
+    },
+    {
+      "sha": "a5d3049",
+      "message": "fix(recomp): register resume points for standalone entry_* functions (#271)",
+      "url": "https://github.com/ran-j/PS2Recomp/commit/a5d30494eea7cb5f1ad5f5e0b3600b15b96e5514",
+      "date": "2026-10-05T14:57:47Z",
+      "author": "drakolordx7",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/98249188?v=4"
+    },
+    {
+      "sha": "c5a9d02",
+      "message": "Document .recomp.json for game projects in the README (#256)",
+      "url": "https://github.com/ran-j/PS2Recomp/commit/c5a9d02573410a2085a4b4b831b0b68ba3515440",
+      "date": "2026-09-30T04:33:17Z",
+      "author": "neurocontrarian",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/56934000?v=4"
+    },
     {
       "sha": "75d729c",
       "message": "Feature/iop emulator (#244)",
@@ -1444,30 +1510,6 @@
       "date": "2026-08-05T17:50:24Z",
       "author": "ran-j",
       "avatarUrl": "https://avatars.githubusercontent.com/u/17410205?v=4"
-    },
-    {
-      "sha": "6130079",
-      "message": "fix(recomp): include <cstdint> before elfio in elf_parser.h (#199)",
-      "url": "https://github.com/ran-j/PS2Recomp/commit/61300792a0c75c6fd399d89ac538ccdfe30f908d",
-      "date": "2026-08-01T15:48:48Z",
-      "author": "smmathews",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/444056?v=4"
-    },
-    {
-      "sha": "d87bff4",
-      "message": "fix(recomp): incorrect opcode mapping for MMI2 in PMADDH, PHMADH, PMSUBH and PHMSBH instructions (#194)",
-      "url": "https://github.com/ran-j/PS2Recomp/commit/d87bff42564221df29dc82865e7dbbb053c7a694",
-      "date": "2026-08-01T03:58:03Z",
-      "author": "gustavoauneth",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/301071590?v=4"
-    },
-    {
-      "sha": "6970f3a",
-      "message": "feat(hle): implement sceVu0 macro-mode matrix/vector math library (#183)",
-      "url": "https://github.com/ran-j/PS2Recomp/commit/6970f3a2c491e18a456c876bc7224dbb48818f85",
-      "date": "2026-07-28T18:21:01Z",
-      "author": "smmathews",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/444056?v=4"
     }
   ],
   "branchCount": 3,
@@ -1475,10 +1517,10 @@
   "workflowRuns": [
     {
       "name": "build",
-      "status": "failure",
-      "url": "https://github.com/ran-j/PS2Recomp/actions/runs/36175908154",
-      "branch": "feature/performance-patch-1",
-      "updatedAt": "2026-09-25T19:08:45Z"
+      "status": "action_required",
+      "url": "https://github.com/ran-j/PS2Recomp/actions/runs/37721210328",
+      "branch": "stepC",
+      "updatedAt": "2026-10-08T03:07:24Z"
     }
   ],
   "community": {
@@ -1489,14 +1531,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 23,
-  "openPRs": 72,
+  "openIssuesOnly": 31,
+  "openPRs": 54,
   "releaseCount": 5,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 40,
-  "mergedPRs": 85,
+  "closedIssues": 43,
+  "mergedPRs": 88,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
@@ -1504,10 +1546,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-10-05",
-      "commits": 0
-    },
     {
       "week": "2025-10-12",
       "commits": 0
@@ -1710,38 +1748,14 @@
     },
     {
       "week": "2026-09-27",
-      "commits": 0
+      "commits": 1
+    },
+    {
+      "week": "2026-10-04",
+      "commits": 2
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-10-05",
-      "count": 0
-    },
-    {
-      "date": "2025-10-06",
-      "count": 0
-    },
-    {
-      "date": "2025-10-07",
-      "count": 0
-    },
-    {
-      "date": "2025-10-08",
-      "count": 0
-    },
-    {
-      "date": "2025-10-09",
-      "count": 0
-    },
-    {
-      "date": "2025-10-10",
-      "count": 0
-    },
-    {
-      "date": "2025-10-11",
-      "count": 0
-    },
     {
       "date": "2025-10-12",
       "count": 0
@@ -3156,7 +3170,7 @@
     },
     {
       "date": "2026-09-30",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-10-01",
@@ -3169,10 +3183,38 @@
     {
       "date": "2026-10-03",
       "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 2
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 0
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 0
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-09-27T06:05:23.601Z",
+  "factsUpdatedAt": "2026-10-09T12:08:19.520Z",
   "aiSummary": {
     "oneLiner": "A static recompiler for PlayStation 2 games, converting MIPS binaries to native executable formats.",
     "whatItDoes": "PS2Recomp is an experimental toolchain that statically recompiles PlayStation 2 game binaries into native C++ code. Unlike traditional emulators that interpret instructions dynamically at runtime, this project translates the original MIPS architecture code ahead-of-time, allowing games to run natively on modern operating systems. It parses the game's ELF executable, handles complex instruction translation, and outputs source files that can be compiled with standard modern toolchains like MSVC or GCC. This novel approach provides significantly higher performance and lays the foundation for deep modding, wide-screen support, and reverse engineering of classic titles.",
