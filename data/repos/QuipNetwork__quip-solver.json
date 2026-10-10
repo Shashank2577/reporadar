@@ -1,5 +1,5 @@
 {
-  "id": "QuipNetwork/quip-miner",
+  "id": "QuipNetwork/quip-solver",
   "snapshots": [
     {
       "date": "2026-07-28",
@@ -210,6 +210,11 @@
       "date": "2026-10-07",
       "stars": 11593,
       "forks": 162
+    },
+    {
+      "date": "2026-10-10",
+      "stars": 11593,
+      "forks": 162
     }
   ],
   "trendingHistory": [
@@ -229,9 +234,9 @@
   "owner": "QuipNetwork",
   "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/203704131?v=4",
   "ownerType": "Organization",
-  "name": "quip-miner",
+  "name": "quip-solver",
   "description": "The quip network mining stack. This includes a coordinator and links all of the official quip network miners.",
-  "url": "https://github.com/QuipNetwork/quip-miner",
+  "url": "https://github.com/QuipNetwork/quip-solver",
   "homepage": "https://quip.network/",
   "license": "AGPL-3.0",
   "language": "Rust",
@@ -255,24 +260,24 @@
   "watchers": 35,
   "openIssues": 8,
   "createdAt": "2026-01-16T05:39:29Z",
-  "pushedAt": "2026-10-02T04:11:33Z",
+  "pushedAt": "2026-10-09T23:58:06Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-10-07T12:03:56.102Z",
+  "updatedAt": "2026-10-10T20:12:28.243Z",
   "languages": {
-    "Rust": 1228297,
-    "Shell": 11712
+    "Rust": 1242341,
+    "Shell": 11730
   },
-  "commitCount": 1925,
+  "commitCount": 1941,
   "releases": [],
-  "readmeExcerpt": "# quip-miner\n\n> **Experimental software.** Use at your own risk. No production warranties.\n\nThe v0.3 mining stack for the\n[quip-validator](https://gitlab.com/quip.network/quip-validator) Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a `QuantumPow.submit_proof` extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.\n\nThis is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core) and is\nconsumed from crates.io. The miner binaries ship from their own repositories.\n\n## Repository layout\n\n- `crates/` — the Cargo workspace: `quip-coordinator` (the binary),\n  `quip-miner-exec` (a miner that shells out to an external solver), and\n  `quip-mock-miner` (the miner test double).\n- `docker/` — image builds and the example coordinator config.\n\nThe miner binaries live in `quip.network/quip-miner-{cpu,cuda,metal,dwave}`.\nThe `quip-proto`, `quip-protocol`, and `quip-solver-core` dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n`quip.network/quip-solver-core`.\n\n## CUDA card support\n\nThe CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n`__nanosleep`, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n`quip-miner-cuda` image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(`--gpus all`). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.\n\n## Documentation\n\n- `AGENTS.md` — build, test, and run commands; repository conventions.\n- `COORDINATOR.md` — how the coordinator works (chain access, feeder, routing,\n  supervision, session protocol).\n- `NEWMINER.md` — how to add a new miner and wire it into the coordinator.\n- `docs/VERSIONING.md` — the release-tag standard.\n\nThe solver contract — the wire protocol, the `Sampler` trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core)\nrepository (`SPEC.md`).\n\n## Build and run\n\nThe workspace builds from the repository root (toolchain pinned in\n`rust-toolchain.toml`):\n\n```bash\ncargo build --workspace\n```\n\nRun the coordinator against a config that lists the miners and the validators:\n\n```bash\nquip-coordinator --config ./docker/config.toml\n```\n\nSee `AGENTS.md` for the full command set and `COORDINATOR.md` for the run model.\n\n## Testing\n\nThe workspace tests run offline by default:\n\n```bash\ncargo test --workspace\n```\n\n### Live devnet integration tests\n\n`crates/quip-coordinator/tests/devnet_submit.rs` drives the real chain client\nagainst a running node. The tests are `#[ignore]`d and gated on the\n`QUIP_DEVNET` environment variable, so the default `cargo test` run stays\noffline. Three milestones:\n\n- **M1 — snapshot read:** decode a live `MiningSnapshot` (runtime API +\n  SCALE).\n- **M2 — proof submit:** register `//Alice`, solve the PoW Ising locally, and\n  submit a `QuantumPow.submit_proof` extrinsic; assert on-chain acceptance.\n- **M3 — mempool decode:** propose a `QuantumComputeMempool` job order, then\n  confirm `fetch_mempool_orders` discovers its `order_id` from the head-block\n  `JobProposed` event, storage-reads `JobOrders(order_id)`, and builds a Job.\n\nStart a local devnet from the chain repo\n([quip-validator](https://gitlab.com/quip.network/quip-validator)) with\n`make local-3-node` or `docker compose up`. Both publish node RPC on\n`ws://127.0.0.1:9944`. Then run:\n\n```bash\nQUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\n```\n\nOne constraint: **use a loopback URL** (`ws://127.0.0.1:…`) or `wss://`. subxt\nrejects plain `ws://` to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.\n\nM3 self-seeds — it proposes its own order against the canonical `plain-ising-v1`\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.\n\n## What changed from v0.2\n\nIn v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:\n\n- The coordinator and chain integration are Rust (`crates/`), talking to the\n  node over subxt.\n- Each miner is a standalone binary in its own repository, supervised by the\n  coordinator over a local socket. The Python miner stack is gone.\n- The solver contract — proto, consensus primitives, harness, and the Python\n  wheel — moved to `quip.network/quip-solver-core`. This repository holds no\n  Python.\n\n## License\n\nAGPL-3.0-or-later. See LICENSE.\n",
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">quip-miner</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Experimental software.</strong> Use at your own risk. No production warranties.</p>\n</blockquote>\n<p dir=\"auto\">The v0.3 mining stack for the\n<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a> Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a <code>QuantumPow.submit_proof</code> extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.</p>\n<p dir=\"auto\">This is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a> and is\nconsumed from crates.io. The miner binaries ship from their own repositories.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository layout</h2></div>\n<ul dir=\"auto\">\n<li><code>crates/</code> — the Cargo workspace: <code>quip-coordinator</code> (the binary),\n<code>quip-miner-exec</code> (a miner that shells out to an external solver), and\n<code>quip-mock-miner</code> (the miner test double).</li>\n<li><code>docker/</code> — image builds and the example coordinator config.</li>\n</ul>\n<p dir=\"auto\">The miner binaries live in <code>quip.network/quip-miner-{cpu,cuda,metal,dwave}</code>.\nThe <code>quip-proto</code>, <code>quip-protocol</code>, and <code>quip-solver-core</code> dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n<code>quip.network/quip-solver-core</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CUDA card support</h2></div>\n<p dir=\"auto\">The CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n<code>__nanosleep</code>, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n<code>quip-miner-cuda</code> image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(<code>--gpus all</code>). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<ul dir=\"auto\">\n<li><code>AGENTS.md</code> — build, test, and run commands; repository conventions.</li>\n<li><code>COORDINATOR.md</code> — how the coordinator works (chain access, feeder, routing,\nsupervision, session protocol).</li>\n<li><code>NEWMINER.md</code> — how to add a new miner and wire it into the coordinator.</li>\n<li><code>docs/VERSIONING.md</code> — the release-tag standard.</li>\n</ul>\n<p dir=\"auto\">The solver contract — the wire protocol, the <code>Sampler</code> trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a>\nrepository (<code>SPEC.md</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build and run</h2></div>\n<p dir=\"auto\">The workspace builds from the repository root (toolchain pinned in\n<code>rust-toolchain.toml</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --workspace\"><pre>cargo build --workspace</pre></div>\n<p dir=\"auto\">Run the coordinator against a config that lists the miners and the validators:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-coordinator --config ./docker/config.toml\"><pre>quip-coordinator --config ./docker/config.toml</pre></div>\n<p dir=\"auto\">See <code>AGENTS.md</code> for the full command set and <code>COORDINATOR.md</code> for the run model.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<p dir=\"auto\">The workspace tests run offline by default:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --workspace\"><pre>cargo <span class=\"pl-c1\">test</span> --workspace</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Live devnet integration tests</h3></div>\n<p dir=\"auto\"><code>crates/quip-coordinator/tests/devnet_submit.rs</code> drives the real chain client\nagainst a running node. The tests are <code>#[ignore]</code>d and gated on the\n<code>QUIP_DEVNET</code> environment variable, so the default <code>cargo test</code> run stays\noffline. Three milestones:</p>\n<ul dir=\"auto\">\n<li><strong>M1 — snapshot read:</strong> decode a live <code>MiningSnapshot</code> (runtime API +\nSCALE).</li>\n<li><strong>M2 — proof submit:</strong> register <code>//Alice</code>, solve the PoW Ising locally, and\nsubmit a <code>QuantumPow.submit_proof</code> extrinsic; assert on-chain acceptance.</li>\n<li><strong>M3 — mempool decode:</strong> propose a <code>QuantumComputeMempool</code> job order, then\nconfirm <code>fetch_mempool_orders</code> discovers its <code>order_id</code> from the head-block\n<code>JobProposed</code> event, storage-reads <code>JobOrders(order_id)</code>, and builds a Job.</li>\n</ul>\n<p dir=\"auto\">Start a local devnet from the chain repo\n(<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a>) with\n<code>make local-3-node</code> or <code>docker compose up</code>. Both publish node RPC on\n<code>ws://127.0.0.1:9944</code>. Then run:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\"><pre>QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo <span class=\"pl-c1\">test</span> -p quip-coordinator --test devnet_submit -- --ignored --nocapture</pre></div>\n<p dir=\"auto\">One constraint: <strong>use a loopback URL</strong> (<code>ws://127.0.0.1:…</code>) or <code>wss://</code>. subxt\nrejects plain <code>ws://</code> to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.</p>\n<p dir=\"auto\">M3 self-seeds — it proposes its own order against the canonical <code>plain-ising-v1</code>\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What changed from v0.2</h2></div>\n<p dir=\"auto\">In v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:</p>\n<ul dir=\"auto\">\n<li>The coordinator and chain integration are Rust (<code>crates/</code>), talking to the\nnode over subxt.</li>\n<li>Each miner is a standalone binary in its own repository, supervised by the\ncoordinator over a local socket. The Python miner stack is gone.</li>\n<li>The solver contract — proto, consensus primitives, harness, and the Python\nwheel — moved to <code>quip.network/quip-solver-core</code>. This repository holds no\nPython.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0-or-later. See LICENSE.</p>\n</article></div>",
+  "readmeExcerpt": "# quip-solver\n\n> **Experimental software.** Use at your own risk. No production warranties.\n\nThe v0.3 mining stack for the\n[quip-validator](https://gitlab.com/quip.network/quip-validator) Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a `QuantumPow.submit_proof` extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.\n\nThis is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core) and is\nconsumed from crates.io. The miner binaries ship from their own repositories.\n\n## Repository layout\n\n- `crates/` — the Cargo workspace: `quip-coordinator` (the binary),\n  `quip-solver-exec` (a miner that shells out to an external solver), and\n  `quip-mock-miner` (the miner test double).\n- `docker/` — image builds and the example coordinator config.\n\nThe miner binaries live in `quip.network/quip-solver-{cpu,cuda,metal,dwave}`.\nThe `quip-proto`, `quip-protocol`, and `quip-solver-core` dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n`quip.network/quip-solver-core`.\n\n## CUDA card support\n\nThe CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n`__nanosleep`, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n`quip-solver-cuda` image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(`--gpus all`). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.\n\n## Documentation\n\n- `AGENTS.md` — build, test, and run commands; repository conventions.\n- `COORDINATOR.md` — how the coordinator works (chain access, feeder, routing,\n  supervision, session protocol).\n- `NEWMINER.md` — how to add a new miner and wire it into the coordinator.\n- `docs/VERSIONING.md` — the release-tag standard.\n\nThe solver contract — the wire protocol, the `Sampler` trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n[quip-solver-core](https://gitlab.com/quip.network/quip-solver-core)\nrepository (`SPEC.md`).\n\n## Build and run\n\nThe workspace builds from the repository root (toolchain pinned in\n`rust-toolchain.toml`):\n\n```bash\ncargo build --workspace\n```\n\nRun the coordinator against a config that lists the miners and the validators:\n\n```bash\nquip-coordinator --config ./docker/config.toml\n```\n\nSee `AGENTS.md` for the full command set and `COORDINATOR.md` for the run model.\n\n## Testing\n\nThe workspace tests run offline by default:\n\n```bash\ncargo test --workspace\n```\n\n### Live devnet integration tests\n\n`crates/quip-coordinator/tests/devnet_submit.rs` drives the real chain client\nagainst a running node. The tests are `#[ignore]`d and gated on the\n`QUIP_DEVNET` environment variable, so the default `cargo test` run stays\noffline. Three milestones:\n\n- **M1 — snapshot read:** decode a live `MiningSnapshot` (runtime API +\n  SCALE).\n- **M2 — proof submit:** register `//Alice`, solve the PoW Ising locally, and\n  submit a `QuantumPow.submit_proof` extrinsic; assert on-chain acceptance.\n- **M3 — mempool decode:** propose a `QuantumComputeMempool` job order, then\n  confirm `fetch_mempool_orders` discovers its `order_id` from the head-block\n  `JobProposed` event, storage-reads `JobOrders(order_id)`, and builds a Job.\n\nStart a local devnet from the chain repo\n([quip-validator](https://gitlab.com/quip.network/quip-validator)) with\n`make local-3-node` or `docker compose up`. Both publish node RPC on\n`ws://127.0.0.1:9944`. Then run:\n\n```bash\nQUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\n```\n\nOne constraint: **use a loopback URL** (`ws://127.0.0.1:…`) or `wss://`. subxt\nrejects plain `ws://` to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.\n\nM3 self-seeds — it proposes its own order against the canonical `plain-ising-v1`\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.\n\n## What changed from v0.2\n\nIn v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:\n\n- The coordinator and chain integration are Rust (`crates/`), talking to the\n  node over subxt.\n- Each miner is a standalone binary in its own repository, supervised by the\n  coordinator over a local socket. The Python miner stack is gone.\n- The solver contract — proto, consensus primitives, harness, and the Python\n  wheel — moved to `quip.network/quip-solver-core`. This repository holds no\n  Python.\n\n## License\n\nAGPL-3.0-or-later. See LICENSE.\n",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">quip-solver</h1></div>\n<blockquote>\n<p dir=\"auto\"><strong>Experimental software.</strong> Use at your own risk. No production warranties.</p>\n</blockquote>\n<p dir=\"auto\">The v0.3 mining stack for the\n<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a> Substrate\nchain. A coordinator follows the chain head and stages Ising problems for the\nminer subprocesses; when a solution clears the difficulty gate, the coordinator\nsubmits a <code>QuantumPow.submit_proof</code> extrinsic. The miners run simulated\nannealing and Gibbs sampling on CPU, CUDA, and Metal, and quantum annealing on\nD-Wave hardware.</p>\n<p dir=\"auto\">This is a Rust workspace. The coordinator and the chain integration are Rust.\nThe solver contract — the wire protocol, the consensus primitives, and the\nshared solver harness — lives in\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a> and is\nconsumed from crates.io. The miner binaries ship from their own repositories.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository layout</h2></div>\n<ul dir=\"auto\">\n<li><code>crates/</code> — the Cargo workspace: <code>quip-coordinator</code> (the binary),\n<code>quip-solver-exec</code> (a miner that shells out to an external solver), and\n<code>quip-mock-miner</code> (the miner test double).</li>\n<li><code>docker/</code> — image builds and the example coordinator config.</li>\n</ul>\n<p dir=\"auto\">The miner binaries live in <code>quip.network/quip-solver-{cpu,cuda,metal,dwave}</code>.\nThe <code>quip-proto</code>, <code>quip-protocol</code>, and <code>quip-solver-core</code> dependencies come\nfrom crates.io at v0.0.0; their source of truth is\n<code>quip.network/quip-solver-core</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">CUDA card support</h2></div>\n<p dir=\"auto\">The CUDA miner supports NVIDIA GPUs with compute capability 7.0 through 12.1\n(Volta through consumer Blackwell). The floor is set by the kernels (they use\n<code>__nanosleep</code>, an sm_70+ instruction); the ceiling by NVRTC 12.9, which the\n<code>quip-solver-cuda</code> image ships. The host needs an NVIDIA driver from a\nCUDA 12.9-supported branch (r535 or newer) and the NVIDIA container runtime\n(<code>--gpus all</code>). Kernels are JIT-compiled per card for its detected\ncapability; capabilities outside the range are clamped, and capabilities the\ntoolkit lacks (for example 8.8) fall back to the next lower architecture via\nthe driver's forward-compatible PTX JIT.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Documentation</h2></div>\n<ul dir=\"auto\">\n<li><code>AGENTS.md</code> — build, test, and run commands; repository conventions.</li>\n<li><code>COORDINATOR.md</code> — how the coordinator works (chain access, feeder, routing,\nsupervision, session protocol).</li>\n<li><code>NEWMINER.md</code> — how to add a new miner and wire it into the coordinator.</li>\n<li><code>docs/VERSIONING.md</code> — the release-tag standard.</li>\n</ul>\n<p dir=\"auto\">The solver contract — the wire protocol, the <code>Sampler</code> trait, handshake,\ncredits, cancel, and exit codes — is specified in the\n<a href=\"https://gitlab.com/quip.network/quip-solver-core\" rel=\"nofollow\">quip-solver-core</a>\nrepository (<code>SPEC.md</code>).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build and run</h2></div>\n<p dir=\"auto\">The workspace builds from the repository root (toolchain pinned in\n<code>rust-toolchain.toml</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --workspace\"><pre>cargo build --workspace</pre></div>\n<p dir=\"auto\">Run the coordinator against a config that lists the miners and the validators:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"quip-coordinator --config ./docker/config.toml\"><pre>quip-coordinator --config ./docker/config.toml</pre></div>\n<p dir=\"auto\">See <code>AGENTS.md</code> for the full command set and <code>COORDINATOR.md</code> for the run model.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Testing</h2></div>\n<p dir=\"auto\">The workspace tests run offline by default:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --workspace\"><pre>cargo <span class=\"pl-c1\">test</span> --workspace</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Live devnet integration tests</h3></div>\n<p dir=\"auto\"><code>crates/quip-coordinator/tests/devnet_submit.rs</code> drives the real chain client\nagainst a running node. The tests are <code>#[ignore]</code>d and gated on the\n<code>QUIP_DEVNET</code> environment variable, so the default <code>cargo test</code> run stays\noffline. Three milestones:</p>\n<ul dir=\"auto\">\n<li><strong>M1 — snapshot read:</strong> decode a live <code>MiningSnapshot</code> (runtime API +\nSCALE).</li>\n<li><strong>M2 — proof submit:</strong> register <code>//Alice</code>, solve the PoW Ising locally, and\nsubmit a <code>QuantumPow.submit_proof</code> extrinsic; assert on-chain acceptance.</li>\n<li><strong>M3 — mempool decode:</strong> propose a <code>QuantumComputeMempool</code> job order, then\nconfirm <code>fetch_mempool_orders</code> discovers its <code>order_id</code> from the head-block\n<code>JobProposed</code> event, storage-reads <code>JobOrders(order_id)</code>, and builds a Job.</li>\n</ul>\n<p dir=\"auto\">Start a local devnet from the chain repo\n(<a href=\"https://gitlab.com/quip.network/quip-validator\" rel=\"nofollow\">quip-validator</a>) with\n<code>make local-3-node</code> or <code>docker compose up</code>. Both publish node RPC on\n<code>ws://127.0.0.1:9944</code>. Then run:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo test -p quip-coordinator --test devnet_submit -- --ignored --nocapture\"><pre>QUIP_DEVNET=ws://127.0.0.1:9944 \\\n  cargo <span class=\"pl-c1\">test</span> -p quip-coordinator --test devnet_submit -- --ignored --nocapture</pre></div>\n<p dir=\"auto\">One constraint: <strong>use a loopback URL</strong> (<code>ws://127.0.0.1:…</code>) or <code>wss://</code>. subxt\nrejects plain <code>ws://</code> to a non-loopback host as insecure. To reach a remote\nnode, tunnel its RPC port to localhost first.</p>\n<p dir=\"auto\">M3 self-seeds — it proposes its own order against the canonical <code>plain-ising-v1</code>\nspec the runtime seeds at genesis, so it runs on a fresh devnet with an empty\nmempool.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What changed from v0.2</h2></div>\n<p dir=\"auto\">In v0.2 this repository was a single Python mining stack that attached to the\nchain. v0.3 splits it apart:</p>\n<ul dir=\"auto\">\n<li>The coordinator and chain integration are Rust (<code>crates/</code>), talking to the\nnode over subxt.</li>\n<li>Each miner is a standalone binary in its own repository, supervised by the\ncoordinator over a local socket. The Python miner stack is gone.</li>\n<li>The solver contract — proto, consensus primitives, harness, and the Python\nwheel — moved to <code>quip.network/quip-solver-core</code>. This repository holds no\nPython.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0-or-later. See LICENSE.</p>\n</article></div>",
   "contributors": [
     {
       "login": "rcarback",
       "url": "https://github.com/rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4",
-      "contributions": 1905
+      "contributions": 1921
     },
     {
       "login": "cadillion",
@@ -295,10 +300,6 @@
   ],
   "firstCommitAt": "2025-07-09T13:25:19Z",
   "commitActivity": [
-    {
-      "week": "2025-10-05",
-      "commits": 0
-    },
     {
       "week": "2025-10-12",
       "commits": 9
@@ -497,42 +498,18 @@
     },
     {
       "week": "2026-09-20",
-      "commits": 26
+      "commits": 29
     },
     {
       "week": "2026-09-27",
-      "commits": 1
+      "commits": 9
+    },
+    {
+      "week": "2026-10-04",
+      "commits": 2
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-10-05",
-      "count": 0
-    },
-    {
-      "date": "2025-10-06",
-      "count": 0
-    },
-    {
-      "date": "2025-10-07",
-      "count": 0
-    },
-    {
-      "date": "2025-10-08",
-      "count": 0
-    },
-    {
-      "date": "2025-10-09",
-      "count": 0
-    },
-    {
-      "date": "2025-10-10",
-      "count": 0
-    },
-    {
-      "date": "2025-10-11",
-      "count": 0
-    },
     {
       "date": "2025-10-12",
       "count": 0
@@ -1931,7 +1908,7 @@
     },
     {
       "date": "2026-09-26",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-09-27",
@@ -1947,11 +1924,11 @@
     },
     {
       "date": "2026-09-30",
-      "count": 1
+      "count": 5
     },
     {
       "date": "2026-10-01",
-      "count": 0
+      "count": 4
     },
     {
       "date": "2026-10-02",
@@ -1960,13 +1937,41 @@
     {
       "date": "2026-10-03",
       "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 0
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 0
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 2
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
     }
   ],
   "recentIssues": [
     {
       "number": 37,
       "title": "drive: report best_energy_milli disagrees with the miner's own attempt energies",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/37",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/37",
       "createdAt": "2026-09-22T22:20:34Z",
       "comments": 1,
       "labels": [],
@@ -1975,7 +1980,7 @@
     {
       "number": 36,
       "title": "drive: advantage2-system1 preset does not match the Aglais chain topology",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/36",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/36",
       "createdAt": "2026-09-22T22:20:32Z",
       "comments": 1,
       "labels": [],
@@ -1984,7 +1989,7 @@
     {
       "number": 35,
       "title": "PoW instance is miner-selectable via nonce-derived couplings; block competition reduces to instance grinding",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/35",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/35",
       "createdAt": "2026-09-22T13:33:27Z",
       "comments": 1,
       "labels": [],
@@ -1993,7 +1998,7 @@
     {
       "number": 34,
       "title": "Invite to launch",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/34",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/34",
       "createdAt": "2026-09-13T17:14:27Z",
       "comments": 0,
       "labels": [],
@@ -2002,7 +2007,7 @@
     {
       "number": 33,
       "title": "Round transition leaves the GPU idle for 4-87s (avg ~37s) between `new round` and the miner actually starting work",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/33",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/33",
       "createdAt": "2026-09-11T15:10:30Z",
       "comments": 1,
       "labels": [],
@@ -2011,7 +2016,7 @@
     {
       "number": 31,
       "title": "CPU scaling issue: 4 vs 8 vs 10 CPUs — quip-miner-cpu 0.3.2-rc3",
-      "url": "https://github.com/QuipNetwork/quip-miner/issues/31",
+      "url": "https://github.com/QuipNetwork/quip-solver/issues/31",
       "createdAt": "2026-09-06T22:47:24Z",
       "comments": 1,
       "labels": [],
@@ -2398,7 +2403,7 @@
     {
       "day": 3,
       "hour": 3,
-      "commits": 6
+      "commits": 7
     },
     {
       "day": 3,
@@ -2433,7 +2438,7 @@
     {
       "day": 3,
       "hour": 10,
-      "commits": 14
+      "commits": 17
     },
     {
       "day": 3,
@@ -2603,7 +2608,7 @@
     {
       "day": 4,
       "hour": 20,
-      "commits": 17
+      "commits": 20
     },
     {
       "day": 4,
@@ -2618,7 +2623,7 @@
     {
       "day": 4,
       "hour": 23,
-      "commits": 23
+      "commits": 24
     },
     {
       "day": 5,
@@ -2718,7 +2723,7 @@
     {
       "day": 5,
       "hour": 19,
-      "commits": 14
+      "commits": 16
     },
     {
       "day": 5,
@@ -2843,7 +2848,7 @@
     {
       "day": 6,
       "hour": 20,
-      "commits": 5
+      "commits": 8
     },
     {
       "day": 6,
@@ -2862,88 +2867,88 @@
     }
   ],
   "participation": {
-    "all": 1698,
+    "all": 1715,
     "owner": 0,
-    "community": 1698
+    "community": 1715
   },
   "recentCommits": [
     {
-      "sha": "b0927ba",
-      "message": "Merge branch 'feature/solver-core-0.0.2-rc3-leases' into 'main'",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/b0927ba23a30e5c8eb000e6b2dc06ef1b2443ae9",
-      "date": "2026-10-01T03:04:53Z",
+      "sha": "73a5f62",
+      "message": "Merge branch 'chore/rename-quip-solver' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/73a5f6278a08400f56cf8a12575b101799a791e6",
+      "date": "2026-10-09T23:54:31Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "94f3388",
-      "message": "Merge origin/main into the protocol v2 lease branch",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/94f338899374e2f484310ee5e30f7f3bc046f643",
-      "date": "2026-10-01T02:49:26Z",
+      "sha": "453cd54",
+      "message": "chore: release 0.3.5-rc12",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/453cd54be2ae051cafda4bf589afb46f2bce6a46",
+      "date": "2026-10-09T23:35:14Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "024fc78",
-      "message": "Report raw_best_energy_milli in drive job rows",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/024fc7835327c18ceb010f0dc9e1d9d4e2bb34cc",
-      "date": "2026-09-30T07:53:29Z",
+      "sha": "d52562a",
+      "message": "refactor: rename quip-miner to quip-solver",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/d52562a7d9dd482444c4416831deb3bad0252e65",
+      "date": "2026-10-09T23:04:18Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "38a5b67",
-      "message": "Tidy lease and edge follow-ups",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/38a5b67d113ba8c1b8939a13bb73eeb05676f8e0",
-      "date": "2026-09-24T05:44:44Z",
+      "sha": "d58a7c7",
+      "message": "Merge branch 'perf/lease-sizing-rc11' into 'main'",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/d58a7c79826c22b9bc071850a8f3bb453dd186b5",
+      "date": "2026-10-02T03:18:03Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "6e8e1b2",
-      "message": "Document protocol v2, salt leases, and the v1 edge",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/6e8e1b2bc5d41f1ff56f5f88415386e123364bd1",
-      "date": "2026-09-24T05:38:05Z",
+      "sha": "93f0ce5",
+      "message": "chore: release 0.3.5-rc11",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/93f0ce523fb90ab02df04c097c667bd0abb4c8a5",
+      "date": "2026-10-02T03:13:13Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "9d753e1",
-      "message": "Add drive --source lease for lease throughput runs",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/9d753e1bb511f1e6f3ba1f75c379fdcc73040ed3",
-      "date": "2026-09-24T05:29:26Z",
+      "sha": "73e5b56",
+      "message": "Drop empty lease Results, keep PoW stash logs at info, test stash identity",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/73e5b56c356a31734022216c524c624665a70135",
+      "date": "2026-09-30T14:39:44Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "66347da",
-      "message": "Serve v1 and v2 miners on one session edge",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/66347dadd023ae5d26f6e47b85d785d94c8503b2",
-      "date": "2026-09-24T05:22:11Z",
+      "sha": "0cac4b3",
+      "message": "Log lease stash decisions at debug and test the lease stash path",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/0cac4b3be585d94c9e5e45f71a44c040ad7f2756",
+      "date": "2026-09-30T14:32:53Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "4fd0559",
-      "message": "Serve salt leases in the mock miner",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/4fd0559b8ba503e4c6c647297a826495dcefc489",
-      "date": "2026-09-24T05:15:20Z",
+      "sha": "eb78dec",
+      "message": "Log lease issue and completion timing in coordinator session/runtime",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/eb78dec83102a5e18f2f47bdbc6a8ed046ca75fb",
+      "date": "2026-09-30T14:00:31Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "259341c",
-      "message": "Verify and settle lease winners",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/259341ce276264b43559b5eeac36cc746fefb5ab",
-      "date": "2026-09-24T05:10:02Z",
+      "sha": "6b6828e",
+      "message": "Log each miner's lease salts this round and its salt rate",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/6b6828e275f7e765fedef7ae934a49b4760765e9",
+      "date": "2026-09-30T07:01:42Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     },
     {
-      "sha": "6e709c6",
-      "message": "Stage salt leases for lease-capable miners in the feeder",
-      "url": "https://github.com/QuipNetwork/quip-miner/commit/6e709c6dec90b7c6204ab497a874ef3bf01a6612",
-      "date": "2026-09-24T05:02:51Z",
+      "sha": "816c539",
+      "message": "Seed lease sizing with a per-slot rate and start each miner's clock at its first lease",
+      "url": "https://github.com/QuipNetwork/quip-solver/commit/816c53911fd1878e11ecaffd73d6e56947b86de5",
+      "date": "2026-09-27T00:56:59Z",
       "author": "rcarback",
       "avatarUrl": "https://avatars.githubusercontent.com/u/4186089?v=4"
     }
@@ -2953,121 +2958,121 @@
       "name": ".github",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/.github"
+      "url": "https://github.com/QuipNetwork/quip-solver/tree/main/.github"
     },
     {
       "name": ".serena",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/.serena"
+      "url": "https://github.com/QuipNetwork/quip-solver/tree/main/.serena"
     },
     {
       "name": "crates",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/crates"
+      "url": "https://github.com/QuipNetwork/quip-solver/tree/main/crates"
     },
     {
       "name": "docker",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/docker"
+      "url": "https://github.com/QuipNetwork/quip-solver/tree/main/docker"
     },
     {
       "name": "docs",
       "type": "dir",
       "size": 0,
-      "url": "https://github.com/QuipNetwork/quip-miner/tree/main/docs"
+      "url": "https://github.com/QuipNetwork/quip-solver/tree/main/docs"
     },
     {
       "name": ".dockerignore",
       "type": "file",
       "size": 578,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.dockerignore"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/.dockerignore"
     },
     {
       "name": ".gitignore",
       "type": "file",
       "size": 1257,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitignore"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/.gitignore"
     },
     {
       "name": ".gitlab-ci.yml",
       "type": "file",
-      "size": 22588,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/.gitlab-ci.yml"
+      "size": 22628,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/.gitlab-ci.yml"
     },
     {
       "name": "AGENTS.md",
       "type": "file",
-      "size": 6001,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/AGENTS.md"
+      "size": 6005,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/AGENTS.md"
     },
     {
       "name": "ARCHITECTURE.md",
       "type": "file",
-      "size": 11601,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/ARCHITECTURE.md"
+      "size": 11888,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/ARCHITECTURE.md"
     },
     {
       "name": "Cargo.lock",
       "type": "file",
-      "size": 137528,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Cargo.lock"
+      "size": 137502,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/Cargo.lock"
     },
     {
       "name": "Cargo.toml",
       "type": "file",
       "size": 1677,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/Cargo.toml"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/Cargo.toml"
     },
     {
       "name": "clippy.toml",
       "type": "file",
       "size": 112,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/clippy.toml"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/clippy.toml"
     },
     {
       "name": "COORDINATOR.md",
       "type": "file",
-      "size": 32992,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/COORDINATOR.md"
+      "size": 33791,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/COORDINATOR.md"
     },
     {
       "name": "genesis_block.json",
       "type": "file",
       "size": 553,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/genesis_block.json"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/genesis_block.json"
     },
     {
       "name": "LICENSE",
       "type": "file",
       "size": 34273,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/LICENSE"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/LICENSE"
     },
     {
       "name": "NEWMINER.md",
       "type": "file",
-      "size": 4830,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/NEWMINER.md"
+      "size": 4868,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/NEWMINER.md"
     },
     {
       "name": "newplan.md",
       "type": "file",
       "size": 11891,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/newplan.md"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/newplan.md"
     },
     {
       "name": "README.md",
       "type": "file",
-      "size": 5133,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/README.md"
+      "size": 5137,
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/README.md"
     },
     {
       "name": "rust-toolchain.toml",
       "type": "file",
       "size": 66,
-      "url": "https://github.com/QuipNetwork/quip-miner/blob/main/rust-toolchain.toml"
+      "url": "https://github.com/QuipNetwork/quip-solver/blob/main/rust-toolchain.toml"
     }
   ],
   "manifestDependencies": {
@@ -3116,13 +3121,13 @@
     ],
     "total": 10
   },
-  "branchCount": 16,
-  "tagCount": 136,
+  "branchCount": 18,
+  "tagCount": 139,
   "recentPulls": [
     {
       "number": 38,
       "title": "feat(coordinator): feed the CUDA miner from a quip-screen sidecar",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/38",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/38",
       "state": "open",
       "updatedAt": "2026-09-23T00:45:48Z",
       "author": "rdyplayerB",
@@ -3131,7 +3136,7 @@
     {
       "number": 32,
       "title": "feat(telemetry): ISO-8601 last_successful_submission on /api/v1/status",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/32",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/32",
       "state": "closed",
       "updatedAt": "2026-09-13T11:21:28Z",
       "author": "erkancamli",
@@ -3140,7 +3145,7 @@
     {
       "number": 30,
       "title": "Split miner/coordinator stream reads from writes",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/30",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/30",
       "state": "closed",
       "updatedAt": "2026-07-27T04:14:30Z",
       "author": "rcarback",
@@ -3149,7 +3154,7 @@
     {
       "number": 17,
       "title": "Python client lockstep: per-topology difficulty + mineable-topology whitelist",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/17",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/17",
       "state": "merged",
       "updatedAt": "2026-07-27T03:20:39Z",
       "author": "rcarback",
@@ -3158,7 +3163,7 @@
     {
       "number": 1,
       "title": ".Update README.md",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/1",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/1",
       "state": "closed",
       "updatedAt": "2026-07-13T21:47:12Z",
       "author": "mmbala12",
@@ -3167,7 +3172,7 @@
     {
       "number": 2,
       "title": "Update README.md",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/2",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/2",
       "state": "closed",
       "updatedAt": "2026-07-13T21:46:51Z",
       "author": "shahabsadat456-code",
@@ -3176,7 +3181,7 @@
     {
       "number": 4,
       "title": "fix: replace 3 bare except clauses with except Exception",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/4",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/4",
       "state": "closed",
       "updatedAt": "2026-07-13T21:46:33Z",
       "author": "haosenwang1018",
@@ -3185,7 +3190,7 @@
     {
       "number": 7,
       "title": "Rename README.md to README.mdn",
-      "url": "https://github.com/QuipNetwork/quip-miner/pull/7",
+      "url": "https://github.com/QuipNetwork/quip-solver/pull/7",
       "state": "closed",
       "updatedAt": "2026-07-13T21:45:53Z",
       "author": "ephraimh64-cell",
@@ -3203,9 +3208,9 @@
     {
       "name": "CI",
       "status": "failure",
-      "url": "https://github.com/QuipNetwork/quip-miner/actions/runs/36812872910",
+      "url": "https://github.com/QuipNetwork/quip-solver/actions/runs/38006944248",
       "branch": "main",
-      "updatedAt": "2026-10-01T03:57:32Z"
+      "updatedAt": "2026-10-09T23:58:17Z"
     }
   ],
   "fundingLinks": [],
@@ -3224,11 +3229,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "codeFrequency": [
-    {
-      "week": "2025-10-05",
-      "additions": 0,
-      "deletions": 0
-    },
     {
       "week": "2025-10-12",
       "additions": 2118,
@@ -3476,17 +3476,22 @@
     },
     {
       "week": "2026-09-20",
-      "additions": 4319,
-      "deletions": 1107
+      "additions": 4450,
+      "deletions": 1175
     },
     {
       "week": "2026-09-27",
-      "additions": 11,
-      "deletions": 0
+      "additions": 409,
+      "deletions": 137
+    },
+    {
+      "week": "2026-10-04",
+      "additions": 845,
+      "deletions": 845
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-10-01T13:18:10.984Z",
+  "factsUpdatedAt": "2026-10-10T20:12:32.066Z",
   "aiSummary": {
     "oneLiner": "A Python mining stack for the Quip network that solves Ising models using CPU, GPU, and D-Wave QPU backends.",
     "whatItDoes": "quip-miner is the official mining software for the quip-protocol-rs Substrate chain, built to solve complex Quantum Proof of Work challenges. The miner continuously fetches the latest mining snapshot from the chain, derives a cryptographic nonce, and generates an Ising model based on that nonce. It then dispatches this model to specialized worker processes targeting CPU (Simulated Annealing), GPU (CUDA/Metal/Modal), or quantum hardware (D-Wave QPUs) to search for valid solutions. Once a valid sample set is found, the miner encodes the result and submits a QuantumPow.submit_proof extrinsic back to the chain, handling all necessary telemetry and receipt classification.",
@@ -3531,7 +3536,8 @@
     "version": 7
   },
   "aliases": [
-    "QuipNetwork/quip-protocol"
+    "QuipNetwork/quip-protocol",
+    "QuipNetwork/quip-miner"
   ],
   "changelog": [
     {
