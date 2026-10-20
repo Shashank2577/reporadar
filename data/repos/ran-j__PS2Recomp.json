@@ -230,6 +230,11 @@
       "date": "2026-10-18",
       "stars": 3566,
       "forks": 190
+    },
+    {
+      "date": "2026-10-20",
+      "stars": 3622,
+      "forks": 200
     }
   ],
   "trendingHistory": [
@@ -265,23 +270,23 @@
     "static-recompilation",
     "tool"
   ],
-  "stars": 3566,
-  "forks": 190,
-  "watchers": 100,
-  "openIssues": 156,
+  "stars": 3622,
+  "forks": 200,
+  "watchers": 98,
+  "openIssues": 172,
   "createdAt": "2025-04-12T06:48:01Z",
   "pushedAt": "2026-10-14T13:47:18Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-10-18T06:08:46.165Z",
+  "updatedAt": "2026-10-20T22:28:06.781Z",
   "languages": {
-    "C++": 15873645,
+    "C++": 15902468,
     "Java": 51261,
-    "CMake": 42409,
+    "CMake": 42447,
     "Shell": 8268,
     "C": 34
   },
-  "commitCount": 168,
+  "commitCount": 169,
   "readmeExcerpt": "## PS2Recomp: PlayStation 2 Static Recompiler (Experimental)\n\n\n\nAlso check our [WIKI](https://github.com/ran-j/PS2Recomp/wiki)\n\n\nThis project statically recompiles PS2 ELF binaries into C++ and provides a runtime to execute the generated code.\n\n### Modules\n\n* `ps2xAnalyzer`: scans ELF/functions and writes TOML config (`stubs`, `skip`, instruction patches).\n* `ps2xRecomp`: reads TOML + ELF, decodes R5900 instructions, and generates C++ output.\n* `ps2xRuntime`: hosts memory, function registration, syscall dispatch, and hardware stubs.\n* `ps2xIOP`: R3000A IRX execution, a virtual IOP kernel, and generic HLE fallbacks.\n\n### Features\n\n* Translates MIPS R5900 instructions to C++ code\n* PS2-specific MMI and VU0 macro support.\n* Single-file or multi-file output.\n* Configurable stubs, skips, and instruction patches.\n* Instruction-driven syscall handling.\n\n### How It Works\nPS2Recomp works by:\n\n* Parsing a PS2 ELF file to extract functions, symbols, and relocations\n* Decoding the MIPS R5900 instructions in each function\n* Translating those instructions to equivalent C++ code\n* Generating a runtime that can execute the recompiled code\n\nThe translated code is very literal, with each MIPS instruction mapping to a C++ operation. For example, `addiu $r4, $r4, 0x20` becomes `ctx->r4 = ADD32(ctx->r4, 0X20);`.\n\n### Current Behavior\n\n* `stubs` entries generate wrappers that call known runtime syscall/stub handlers by name.\n* `stubs` also supports address bindings with `handler@0xADDRESS` for stripped games (for example `sceCdRead@0x00123456`).\n* Address bindings also support generic return handlers for triage: `ret0`, `ret1`, `reta0`.\n* Recompiler now tries relocation-symbol auto-binding at callsites (`J/JAL`) before raw address dispatch; when relocation symbol is known (for example `sceCdRead`), it can call runtime handlers without manual address mapping.\n* Recompiler discovers additional internal static entry targets and emits `entry_...` wrappers for those addresses.\n* For unresolved static `J/JAL` sites, generated code falls back to `runtime->lookupFunction(0x...)`.\n* `skip` entries are not recompiled and generate explicit `ps2_stubs::TODO_NAMED(...)` wrappers.\n* Recompiled `SYSCALL` now calls `runtime->handleSyscall(...)` with the encoded syscall immediate.\n* Runtime syscall dispatch tries encoded syscall ID first, then falls back to `$v1`.\n\n### Requirements\n\n* CMake 3.20+\n* C++20 compiler (currently tested mainly with MSVC)\n* SSE4/AVX host support for some vector paths\n\n### Build\n\n```bash\ngit clone --recurse-submodules https://github.com/ran-j/PS2Recomp.git\ncd PS2Recomp\n\ncmake -S . -B out/build\ncmake --build out/build --config Debug\n```\n\n### Usage\n\nPreferred workflow for retail or stripped games:\n\n1. Open the ELF in Ghidra.\n2. Run `ps2xRecomp/tools/ghidra/ExportPS2Functions.java`.\n3. Use the exported TOML and CSV map.\n4. Recompile with the exported TOML:\n\n```bash\n./ps2_recomp config.toml\n```\n\nFallback workflow for quick local experiments or ELFs with debug symbol :\n\n```bash\n./ps2_analyzer your_game.elf config.toml\n```\n\nSee the [Ghidra Workflow](ps2xAnalyzer/Readme.md#3-ghidra-integration-for-retail-and-stripped-games-preferred) for ghdira instructions.\n\nThen build generated output and link with `ps2xRuntime`.\n\n### Configuration\n\nMain fields in `config.toml`:\n\n* `general.input`: source ELF path.\n* `general.ghidra_output`: recommended function map CSV exported from Ghidra.\n* `general.output`: generated C++ output folder.\n* `general.single_file_output`: one combined cpp or one file per function.\n* `general.low_memory_mode`: reduce peak output-generation memory by avoiding retained disassembly strings and forcing serial output generation. Generated instruction comments are still emitted; disassembly text is produced while writing each output file instead of being kept in memory.\n* `general.output_worker_threads`: number of output-generation workers (clamped to nproc * 2). A positive value uses exactly that many workers. `0` uses `nproc - 1` when at least two hardware threads are available, otherwise serial output generation. `1` forces serial output generation.\n* `general.patch_syscalls`: apply configured patches to `SYSCALL` instructions (`false` recommended).\n* `general.patch_cop0`: apply configured patches to COP0 instructions.\n* `general.patch_cache`: apply configured patches to CACHE instructions.\n* `general.stubs`: names to force as stubs. Also accepts `handler@0xADDRESS` to bind a stripped function address directly to a runtime syscall/stub handler. Includes generic handlers `ret0`, `ret1`, `reta0`.\n* `general.skip`: names to force as skipped wrappers.\n* `patches.instructions`: raw instruction replacements by address.\n\nAddress binding for stripped ELFs:\n\n* Use `handler@0xADDRESS` inside `general.stubs` to map a stripped function start directly to a runtime handler.\n* Example: `sceCdRead@0x00123456` binds function start `0x00123456` to `ps2_stubs::sceCdRead(...)`.\n* Generic temporary handlers are available: `ret0@0xADDR`, `ret1@0xADDR`, `reta0@0xADDR`.\n* Before manual binding, prefer recompilation from a Ghidra-exported TOML/CSV first. The extra boundaries and synthetic entry points are usually more important than manual early triage.\n* The address must be the function start in that exact ELF build.\n* Addresses are not portable across different games/regions/builds.\n* The handler name must exist in runtime call lists (`PS2_SYSCALL_LIST` or `PS2_STUB_LIST`).\n\nExample:\n\n```toml\n# stripped function binding by address:\nstubs = [\"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"]\n# temporary return handlers:\nstubs = [\"ret0@0x001D9410\", \"ret1@0x001D5BC8\", \"reta0@0x0024B7C0\"]\n# mixed example:\nstubs = [\"printf\", \"sceCdRead@0x00123456\", \"SifLoadModule@0x00127890\"] \n```\n\n### Runtime\n\nTo execute the recompiled code.\n\n`ps2xRuntime` currently provides:\n\n* Guest memory model and function dispatch table.\n* Some syscall dispatcher with common kernel IDs.\n* Basic GS/VU/file/system stubs.\n* Foundation to expand and port your game.\n* `ps2xIOP` execution of original IRX modules with generic HLE fallbacks.\n\nSee [IOP emulation](ps2xIOP/README.md) for module execution and the service boundary.\n\n### Game Override Hooks\n\nGame overrides are runtime-side, build-scoped patch modules.\n\nA game override is C++ code that runs during `loadELF` and can replace EE function bindings by address for one specific game build. IOP RPC/DMA behavior is handled by the `ps2xIOP` emulator and its runtime transport. This is separate from recompilation output and separate from global runtime stubs/syscalls.\n\nAPI:\n\n* Header: `ps2xRuntime/include/game_overrides.h`\n* Register macro: `PS2_REGISTER_GAME_OVERRIDE(name, elfName, entry, crc32, applyFn)`\n* Direct bind helper: `ps2_game_overrides::bindAddressHandler(runtime, addr, \"handler\")`\n\nUse Game Override modules when:\n\n* You need per-game/per-build routing or patches without polluting global behavior.\n* You need to bind many addresses, or install custom replacement logic for a specific title.\n\n#### Recommended Iteration Loop\n\n1. Run with minimal config and no aggressive skipping.\n2. Fix hard blockers first (`function not found`, syscall TODO, critical IO stubs).\n3. Use temporary return stubs only to classify call importance.\n4. Promote temporary fixes to real implementations.\n5. Move per-game hacks into game overrides keyed by ELF metadata.\n6. Re-test from cold boot after each batch.\n\n### Describing Your Game Project\n\nA game project built with PS2Recomp can describe itself in a `.recomp.json` file at the root of its repository. Lists of recomp and decomp projects, such as [recomp.board](https://recomp.fyi), read that file instead of guessing the game, system and status from the README.\n\n> [!NOTE]\n> This file is optional: PS2Recomp does not read it and works the same without it. `.recomp.json` and recomp.board are third-party projects; the PS2Recomp developers have no ties to them.\n\nStarter file:\n\n```json\n{\n  \"$schema\": \"https://recomp.fyi/schema/v1.json\",\n  \"game\": \"<title as it shipped>\",\n  \"system\": \"PS2\",\n  \"type\": \"recomp\",\n  \"toolchain\": \"PS2Recomp\",\n  \"status\": \"in-progress\",\n  \"original\": { \"region\": \"USA\", \"serial\": \"SLUS-20312\" }\n}\n```\n\n* `original` is the release a user must own. On retail discs the ELF is named after the serial (`SLUS_203.12` is `SLUS-20312`), and the prefix gives the region: `SLUS`/`SCUS` USA, `SLES`/`SCES` Europe, `SLPS`/`SLPM`/`SCPS` Japan.\n* `status` is one of `exploring`, `in-progress`, `playable`, `released`, `complete`, `paused`. Edit it when the project moves on: a stale status is worse than none.\n* Never put a game file, or a link to one, in the file.\n\nOther fields (Wikidata item, target platforms, maintainers, links, what help is wanted) and the JSON Schema are in the [specification](https://recomp.fyi/spec).\n\n### Limitations\n \n* Performance is very bad for VU and GS\n* Hardware emulation is partial and many paths are stubbed.\n\n###  Acknowledgments\n\n* Inspired by N64Recomp\n* Uses ELFIO for ELF parsing\n* Uses toml11 for TOML parsing\n* Uses fmt for string formatting\n* Reference for runtime PCSX2",
   "contributors": [
     {
@@ -401,40 +406,40 @@
   "firstCommitAt": "2025-04-12T06:49:35Z",
   "recentIssues": [
     {
-      "number": 273,
-      "title": "Runtime: SampleTexture casts unbounded or NaN texture coordinates to int, which is undefined behaviour",
-      "url": "https://github.com/ran-j/PS2Recomp/issues/273",
-      "createdAt": "2026-10-01T15:05:49Z",
-      "comments": 2,
-      "labels": [],
-      "author": "penpenlovesrei-dotcom"
-    },
-    {
-      "number": 264,
-      "title": "Game overrides registered from the static library are silently never applied (static-initializer discard)",
-      "url": "https://github.com/ran-j/PS2Recomp/issues/264",
-      "createdAt": "2026-09-30T21:53:57Z",
+      "number": 370,
+      "title": "Recompiler: a delay slot past the function end is replaced by a NOP",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/370",
+      "createdAt": "2026-10-20T13:29:36Z",
       "comments": 0,
       "labels": [],
-      "author": "penpenlovesrei-dotcom"
+      "author": "lfsayrn"
     },
     {
-      "number": 263,
-      "title": "Build: /Qspectre- is MSVC-only and breaks every Release target under clang-cl",
-      "url": "https://github.com/ran-j/PS2Recomp/issues/263",
-      "createdAt": "2026-09-30T21:30:02Z",
+      "number": 365,
+      "title": "GS CPU backend: DrawSprite, DrawLine and points drop the sub-pixel part of XYZ and XYOFFSET",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/365",
+      "createdAt": "2026-10-18T23:57:03Z",
       "comments": 0,
       "labels": [],
-      "author": "penpenlovesrei-dotcom"
+      "author": "danfreitas97"
     },
     {
-      "number": 262,
-      "title": "Recompiler: vcallmsr reads ctx->vi[27], out of bounds on uint16_t vi[16], instead of ctx->vu0_cmsar0",
-      "url": "https://github.com/ran-j/PS2Recomp/issues/262",
-      "createdAt": "2026-09-30T21:29:59Z",
-      "comments": 1,
+      "number": 362,
+      "title": "GS CPU rasterizer has no fill rule: pixels on shared triangle edges are drawn twice",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/362",
+      "createdAt": "2026-10-18T20:32:45Z",
+      "comments": 0,
       "labels": [],
-      "author": "penpenlovesrei-dotcom"
+      "author": "Boodax78"
+    },
+    {
+      "number": 361,
+      "title": "sceVu0MulMatrix HLE stub multiplies its two source matrices in the opposite order to libvu0",
+      "url": "https://github.com/ran-j/PS2Recomp/issues/361",
+      "createdAt": "2026-10-18T20:28:54Z",
+      "comments": 0,
+      "labels": [],
+      "author": "Boodax78"
     }
   ],
   "contributorCount": 21,
@@ -842,7 +847,7 @@
     {
       "day": 3,
       "hour": 8,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -1281,81 +1286,81 @@
     }
   ],
   "participation": {
-    "all": 124,
+    "all": 125,
     "owner": 69,
-    "community": 55
+    "community": 56
   },
   "recentPulls": [
     {
-      "number": 254,
-      "title": "Compile whole VU1 programs and run sound IRX modules natively (DQ8 fork)",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/254",
+      "number": 372,
+      "title": "Implement DMAC MFIFO (fromSPR ring + VIF1/GIF drain) and D_ENABLER readback",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/372",
       "state": "open",
-      "updatedAt": "2026-10-09T10:09:43Z",
-      "author": "Sinan-Karakaya",
-      "draft": true
+      "updatedAt": "2026-10-20T22:26:41Z",
+      "author": "Lautreck",
+      "draft": false
     },
     {
-      "number": 276,
-      "title": "Step c",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/276",
+      "number": 371,
+      "title": "Skip heuristic function starts that land in a delay slot",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/371",
       "state": "open",
-      "updatedAt": "2026-10-08T03:07:20Z",
-      "author": "siddharthakumar-98",
+      "updatedAt": "2026-10-20T13:29:50Z",
+      "author": "lfsayrn",
       "draft": false
     },
     {
-      "number": 214,
-      "title": "Start the main thread with COP0 Status.IE set",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/214",
-      "state": "merged",
-      "updatedAt": "2026-10-06T16:10:08Z",
-      "author": "Sinan-Karakaya",
+      "number": 369,
+      "title": "Advance COP0 Count with the EE cycle clock",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/369",
+      "state": "open",
+      "updatedAt": "2026-10-20T02:40:34Z",
+      "author": "lfsayrn",
       "draft": false
     },
     {
-      "number": 211,
-      "title": "Return true after queueing a guest syscall override",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/211",
-      "state": "closed",
-      "updatedAt": "2026-10-06T16:10:08Z",
-      "author": "Sinan-Karakaya",
+      "number": 277,
+      "title": "Fix SQRT.S operand selection in the FPU translator",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/277",
+      "state": "open",
+      "updatedAt": "2026-10-19T18:24:46Z",
+      "author": "yanm1103",
       "draft": false
     },
     {
-      "number": 210,
-      "title": "Let a thread resume at the instruction after a syscall",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/210",
-      "state": "merged",
-      "updatedAt": "2026-10-06T16:10:08Z",
-      "author": "Sinan-Karakaya",
+      "number": 368,
+      "title": "Never start a function at a delay slot named by a data pointer table",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/368",
+      "state": "open",
+      "updatedAt": "2026-10-19T03:38:19Z",
+      "author": "danfreitas97",
       "draft": false
     },
     {
-      "number": 128,
-      "title": "Reduce recompiler output memory usage, and added multi-threading to recomp process",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/128",
-      "state": "merged",
-      "updatedAt": "2026-10-06T16:10:08Z",
-      "author": "Sinan-Karakaya",
+      "number": 359,
+      "title": "Fix boot hangs from BIOS-only CD search and IOP module loading paths",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/359",
+      "state": "open",
+      "updatedAt": "2026-10-19T03:38:02Z",
+      "author": "AlenDavid",
       "draft": false
     },
     {
-      "number": 274,
-      "title": "Dispatch syscalls 0x79/0x7A to the existing SIF register handlers",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/274",
-      "state": "merged",
-      "updatedAt": "2026-10-05T19:21:28Z",
-      "author": "llesieur99",
+      "number": 367,
+      "title": "Raise the VIF INTC interrupt for VIFcodes with the I bit",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/367",
+      "state": "open",
+      "updatedAt": "2026-10-19T03:36:54Z",
+      "author": "danfreitas97",
       "draft": false
     },
     {
-      "number": 271,
-      "title": "fix(recomp): register resume points for standalone entry_* functions",
-      "url": "https://github.com/ran-j/PS2Recomp/pull/271",
-      "state": "merged",
-      "updatedAt": "2026-10-05T14:57:47Z",
-      "author": "drakolordx7",
+      "number": 366,
+      "title": "Keep the sub-pixel part of XYZ and XYOFFSET for GS sprites and points",
+      "url": "https://github.com/ran-j/PS2Recomp/pull/366",
+      "state": "open",
+      "updatedAt": "2026-10-19T00:26:08Z",
+      "author": "danfreitas97",
       "draft": false
     }
   ],
@@ -1447,6 +1452,14 @@
   ],
   "recentCommits": [
     {
+      "sha": "eb8688b",
+      "message": "Emulate PS2 float semantics for EE FPU results and DIV.S/RSQRT.S (#272)",
+      "url": "https://github.com/ran-j/PS2Recomp/commit/eb8688b2fd191129f103a39543002c005b33409c",
+      "date": "2026-10-14T13:47:18Z",
+      "author": "drakolordx7",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/98249188?v=4"
+    },
+    {
       "sha": "2c5fbb9",
       "message": "Dispatch syscalls 0x79/0x7A to the existing SIF register handlers (#274)",
       "url": "https://github.com/ran-j/PS2Recomp/commit/2c5fbb9389e11dd95693385969490c9e8e6f57b4",
@@ -1517,14 +1530,6 @@
       "date": "2026-08-11T14:35:50Z",
       "author": "ran-j",
       "avatarUrl": "https://avatars.githubusercontent.com/u/17410205?v=4"
-    },
-    {
-      "sha": "f49ca4e",
-      "message": "refactor: refactor VU1 (#191)",
-      "url": "https://github.com/ran-j/PS2Recomp/commit/f49ca4edbcd0306ffb1e8883bbd226fb0f242c4c",
-      "date": "2026-08-05T17:50:24Z",
-      "author": "ran-j",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/17410205?v=4"
     }
   ],
   "branchCount": 3,
@@ -1533,9 +1538,9 @@
     {
       "name": "build",
       "status": "action_required",
-      "url": "https://github.com/ran-j/PS2Recomp/actions/runs/37721210328",
-      "branch": "stepC",
-      "updatedAt": "2026-10-08T03:07:24Z"
+      "url": "https://github.com/ran-j/PS2Recomp/actions/runs/39508152664",
+      "branch": "dmac-mfifo",
+      "updatedAt": "2026-10-20T22:26:45Z"
     }
   ],
   "community": {
@@ -1546,14 +1551,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 31,
-  "openPRs": 54,
+  "openIssuesOnly": 40,
+  "openPRs": 132,
   "releaseCount": 5,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
   "closedIssues": 43,
-  "mergedPRs": 88,
+  "mergedPRs": 89,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
@@ -1561,14 +1566,6 @@
   "codeOfConduct": null,
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-10-12",
-      "commits": 0
-    },
-    {
-      "week": "2025-10-19",
-      "commits": 0
-    },
     {
       "week": "2025-10-26",
       "commits": 0
@@ -1768,65 +1765,17 @@
     {
       "week": "2026-10-04",
       "commits": 2
+    },
+    {
+      "week": "2026-10-11",
+      "commits": 1
+    },
+    {
+      "week": "2026-10-18",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-10-12",
-      "count": 0
-    },
-    {
-      "date": "2025-10-13",
-      "count": 0
-    },
-    {
-      "date": "2025-10-14",
-      "count": 0
-    },
-    {
-      "date": "2025-10-15",
-      "count": 0
-    },
-    {
-      "date": "2025-10-16",
-      "count": 0
-    },
-    {
-      "date": "2025-10-17",
-      "count": 0
-    },
-    {
-      "date": "2025-10-18",
-      "count": 0
-    },
-    {
-      "date": "2025-10-19",
-      "count": 0
-    },
-    {
-      "date": "2025-10-20",
-      "count": 0
-    },
-    {
-      "date": "2025-10-21",
-      "count": 0
-    },
-    {
-      "date": "2025-10-22",
-      "count": 0
-    },
-    {
-      "date": "2025-10-23",
-      "count": 0
-    },
-    {
-      "date": "2025-10-24",
-      "count": 0
-    },
-    {
-      "date": "2025-10-25",
-      "count": 0
-    },
     {
       "date": "2025-10-26",
       "count": 0
@@ -3226,10 +3175,66 @@
     {
       "date": "2026-10-10",
       "count": 0
+    },
+    {
+      "date": "2026-10-11",
+      "count": 0
+    },
+    {
+      "date": "2026-10-12",
+      "count": 0
+    },
+    {
+      "date": "2026-10-13",
+      "count": 0
+    },
+    {
+      "date": "2026-10-14",
+      "count": 1
+    },
+    {
+      "date": "2026-10-15",
+      "count": 0
+    },
+    {
+      "date": "2026-10-16",
+      "count": 0
+    },
+    {
+      "date": "2026-10-17",
+      "count": 0
+    },
+    {
+      "date": "2026-10-18",
+      "count": 0
+    },
+    {
+      "date": "2026-10-19",
+      "count": 0
+    },
+    {
+      "date": "2026-10-20",
+      "count": 0
+    },
+    {
+      "date": "2026-10-21",
+      "count": 0
+    },
+    {
+      "date": "2026-10-22",
+      "count": 0
+    },
+    {
+      "date": "2026-10-23",
+      "count": 0
+    },
+    {
+      "date": "2026-10-24",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-10-09T12:08:19.520Z",
+  "factsUpdatedAt": "2026-10-20T22:28:18.156Z",
   "aiSummary": {
     "oneLiner": "A static recompiler for PlayStation 2 games, converting MIPS binaries to native executable formats.",
     "whatItDoes": "PS2Recomp is an experimental toolchain that statically recompiles PlayStation 2 game binaries into native C++ code. Unlike traditional emulators that interpret instructions dynamically at runtime, this project translates the original MIPS architecture code ahead-of-time, allowing games to run natively on modern operating systems. It parses the game's ELF executable, handles complex instruction translation, and outputs source files that can be compiled with standard modern toolchains like MSVC or GCC. This novel approach provides significantly higher performance and lays the foundation for deep modding, wide-screen support, and reverse engineering of classic titles.",
