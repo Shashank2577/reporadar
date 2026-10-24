@@ -125,7 +125,7 @@ export default function HomePage() {
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
                 <h3 className="text-xl font-semibold">
-                  <Link href={`/repos/${featured.id}`} className="text-accent hover:underline">
+                  <Link prefetch={false} href={`/repos/${featured.id}`} className="text-accent hover:underline">
                     {featured.id}
                   </Link>
                 </h3>
@@ -139,6 +139,7 @@ export default function HomePage() {
                   {featured.license ? ` · ${featured.license}` : ""}
                 </p>
                 <Link
+                  prefetch={false}
                   href={`/repos/${featured.id}`}
                   className="mt-4 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90"
                 >
@@ -190,7 +191,7 @@ export default function HomePage() {
                 <li key={repo.id} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="w-5 shrink-0 text-sm tabular-nums text-muted">{i + 1}</span>
                   <div className="min-w-0 flex-1">
-                    <Link href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
+                    <Link prefetch={false} href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
                       {repo.id}
                     </Link>
                     <p className="truncate text-xs text-muted">{repo.description}</p>
@@ -211,7 +212,7 @@ export default function HomePage() {
                 <li key={repo.id} className="flex items-center gap-3 px-4 py-2.5">
                   <span className="w-5 shrink-0 text-sm tabular-nums text-muted">{i + 1}</span>
                   <div className="min-w-0 flex-1">
-                    <Link href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
+                    <Link prefetch={false} href={`/repos/${repo.id}`} className="text-sm font-medium text-accent hover:underline">
                       {repo.id}
                     </Link>
                     <p className="truncate text-xs text-muted">

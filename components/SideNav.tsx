@@ -11,7 +11,7 @@ const nav = [
   { href: "/trending/daily", label: "Trending today" },
   { href: "/trending/weekly", label: "Trending this week" },
   { href: "/trending/monthly", label: "Trending this month" },
-  { href: "/trending/archive", label: "Trending archive (by date)" },
+  { href: "/trending/archive", label: "Trending archive (by date)", prefetch: false },
   { href: "/reports", label: "Reports archive" },
   { href: "/topics", label: "All topics" },
   { href: "/languages", label: "All languages" },
@@ -31,6 +31,7 @@ export default function SideNav() {
           <li key={item.href}>
             <Link
               href={item.href}
+              prefetch={item.prefetch}
               className="block rounded-md px-2 py-1.5 hover:bg-surface"
             >
               {item.label}
@@ -45,6 +46,7 @@ export default function SideNav() {
           {topRepos.map((r) => (
             <li key={r.id}>
               <Link
+                prefetch={false}
                 href={`/repos/${r.id}`}
                 className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-surface"
               >

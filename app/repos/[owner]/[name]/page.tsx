@@ -528,7 +528,7 @@ export default async function RepoPage({ params }: { params: Promise<Params> }) 
               <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {related.map((r) => (
                   <li key={r.id} className="rounded-md border border-border p-3">
-                    <Link href={`/repos/${r.id}`} className="text-sm font-medium text-accent hover:underline">
+                    <Link prefetch={false} href={`/repos/${r.id}`} className="text-sm font-medium text-accent hover:underline">
                       {r.id}
                     </Link>
                     <p className="mt-0.5 line-clamp-2 text-xs text-muted">{r.description}</p>

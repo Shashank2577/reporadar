@@ -37,6 +37,7 @@ export default function TrendingArchivePage() {
             <div className="flex flex-wrap gap-1.5">
               {days.map((d) => (
                 <Link
+                  prefetch={false}
                   key={d}
                   href={`/trending/archive/${d}`}
                   className="rounded-md border border-border bg-surface px-2.5 py-1 text-sm text-accent hover:bg-border/40"

@@ -117,7 +117,7 @@ export default function RepoBrowser({ repos, pageSize = 40 }: { repos: BrowserRe
             <div className="min-w-0 flex-1">
               <h3 className="font-medium">
                 {r.rank ? <span className="mr-1.5 text-muted">{r.rank}.</span> : null}
-                <Link href={`/repos/${r.id}`} className="text-accent hover:underline break-words">
+                <Link prefetch={false} href={`/repos/${r.id}`} className="text-accent hover:underline break-words">
                   {r.id}
                 </Link>
               </h3>
