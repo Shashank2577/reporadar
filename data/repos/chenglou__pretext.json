@@ -235,6 +235,11 @@
       "date": "2026-10-22",
       "stars": 50872,
       "forks": 2761
+    },
+    {
+      "date": "2026-10-25",
+      "stars": 50903,
+      "forks": 2764
     }
   ],
   "trendingHistory": [
@@ -318,31 +323,31 @@
   "license": "Other",
   "language": "TypeScript",
   "topics": [],
-  "stars": 50872,
-  "forks": 2761,
-  "watchers": 140,
+  "stars": 50903,
+  "forks": 2764,
+  "watchers": 135,
   "openIssues": 65,
   "createdAt": "2026-03-07T21:06:28Z",
   "pushedAt": "2026-10-15T17:09:24Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-10-22T18:41:05.876Z",
+  "updatedAt": "2026-10-25T10:11:51.196Z",
   "languages": {
-    "TypeScript": 2016598,
+    "TypeScript": 2040938,
     "C": 503526,
     "C++": 318200,
     "HTML": 62632,
     "Swift": 7168,
     "Shell": 1737
   },
-  "commitCount": 2337,
+  "commitCount": 2349,
   "readmeExcerpt": "# Pretext\n\nPure JavaScript/TypeScript library for multiline text measurement & layout. Fast, accurate & supports all the languages you didn't even know about. Allows rendering to DOM, Canvas and SVG.\n\nPretext side-steps the need for DOM measurements (e.g. `getBoundingClientRect`, `offsetHeight`), which trigger layout reflow, one of the most expensive operations in the browser. It implements its own text measurement logic, using the browsers' own font engine as ground truth (very AI-friendly iteration method).\n\n## Installation\n\n```sh\nnpm install @chenglou/pretext\n```\n\n## Demos\n\nThe demos are exemplary API usage patterns we encourage you to read. They don't ship in the npm package, so clone the repo, run `bun install`, then `bun start`, and open <http://localhost:3000/demos> in your browser. On Windows, use `bun run start:windows`.\nAlternatively, see them live at [chenglou.me/pretext](https://chenglou.me/pretext/). Some more at [somnai-dreams.github.io/pretext-demos](https://somnai-dreams.github.io/pretext-demos/)\nBuilding a chat or another long list? [pages/demos/markdown-chat.md](https://github.com/chenglou/pretext/blob/main/pages/demos/markdown-chat.md) walks through the Markdown chat demo's patterns and when you can skip each.\n\n## API\n\nPretext serves 2 use cases:\n\n### 1. Measure a paragraph's height _without ever touching DOM_\n\n```ts\nimport { prepare, layout } from '@chenglou/pretext'\n\nconst prepared = prepare('AGI 春天到了. بدأت الرحلة 🚀‎', '16px Inter')\nconst { height, lineCount } = layout(prepared, 320, 20) // pure arithmetic. No DOM layout & reflow!\n```\n\n`prepare()` does the one-time work: normalize whitespace, segment the text at its break opportunities, measure the segments with canvas, and return an opaque handle. `layout()` is the cheap hot path after that: pure arithmetic over cached widths. Do not rerun `prepare()` for the same text, font and options; that'd defeat its precomputation. For example, on resize, only rerun `layout()`.\n\nTo paint the text, give one element that `font`, the `line-height` and content `width` you passed to `layout()`, and `overflow-wrap: break-word`: the browser wraps it to the same lines. Text in several fonts or with padded pieces goes through the rich inline text API below, and is painted a line at a time.\n\nIf you want textarea-like text where ordinary spaces, `\\t` tabs, and `\\n` hard breaks stay visible, pass `{ whiteSpace: 'pre-wrap' }` to `prepare()`:\n\n```ts\nconst prepared = prepare(textareaValue, '16px Inter', { whiteSpace: 'pre-wrap' })\nconst { height } = layout(prepared, textareaWidth, 20)\n// A <textarea> shows one more line than this when its value is empty or ends with \\n\n\n// Long text edited live: prepare each paragraph apart, keeping its \\n, and re-prepare only the one an edit touches\nconst paragraphs = textareaValue.split(/(?<=\\n)/).map(p => prepare(p, '16px Inter', { whiteSpace: 'pre-wrap' }))\nconst lineCount = paragraphs.reduce((n, p) => n + layout(p, textareaWidth, 20).lineCount, 0)\n```\n\nOther `prepare()` options are `{ wordBreak: 'keep-all' }` for CSS-like `word-break: keep-all`, and `{ letterSpacing: n }` to match CSS `letter-spacing` (`n` is treated as a px value).\n\nThe returned height is the crucial last piece for unlocking web UIs:\n- proper virtualization/occlusion without guesstimates & caching\n- fancy userland layouts: masonry, JS-driven flexbox-like implementations, nudging a few layout values without CSS hacks (imagine that), etc.\n- _development time_ verification (especially now with AI) that labels on e.g. buttons don't overflow to the next line, browser-free\n- prevent layout shift when new text loads and you wanna re-anchor the scroll position\n\nThe same `prepare()` handle also works with the APIs below that don't return text (`measureLineStats()`, `measureNaturalWidth()`, `walkLineRanges()`, `layoutNextLineRange()`), e.g. to shrink-wrap a chat bubble to its widest line.\n\n### 2. Lay out the paragraph lines manually yourself\n\nSwitch out `prepare` with `prepareWithSegments` (the APIs that return a line's text need it: `layoutWithLines()`, `layoutNextLine()`, `materializeLineRange()`), then:\n\n- `layoutWithLines()` gives you all the lines at a fixed width:\n\n```ts\nimport { prepareWithSegments, layoutWithLines } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments('AGI 春天到了. بدأت الرحلة 🚀', '18px \"Helvetica Neue\"')\nconst { lines } = layoutWithLines(prepared, 320, 26) // 320px max width, 26px line height\nfor (let i = 0; i < lines.length; i++) ctx.fillText(lines[i].text, 0, i * 26)\n```\n\n- `measureLineStats()` and `walkLineRanges()` give you line counts, widths and cursors without building the text strings:\n\n```ts\nimport { measureLineStats, walkLineRanges } from '@chenglou/pretext'\n\nconst { lineCount, maxLineWidth } = measureLineStats(prepared, 320)\nlet maxW = 0\nwalkLineRanges(prepared, 320, line => { if (line.width > maxW) maxW = line.width })\n// maxW is now the widest line — the tightest container width that still fits the text! This multiline \"shrink wrap\" has been missing from web\n```\n\nSize an element to `Math.ceil(maxW)`, capped at the `maxWidth` you passed, as the `/demos/bubbles` demo does. At the exact fractional width the browser can wrap the widest line. Without the cap the element can come out a pixel wider than `maxWidth`.\n\n- `layoutNextLineRange()` lets you route text one row at a time when width changes as you go:\n\n```ts\nimport { layoutNextLineRange, materializeLineRange, prepareWithSegments, type LayoutCursor } from '@chenglou/pretext'\n\nconst prepared = prepareWithSegments(article, BODY_FONT)\nlet cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }\nlet y = 0\n\n// Flow text around a floated image: lines beside the image are narrower\nwhile (true) {\n  const width = y < image.bottom ? columnWidth - image.width : columnWidth\n  const range = layoutNextLineRange(prepared, width, cursor)\n  if (range === null) break\n\n  const line = materializeLineRange(prepared, range)\n  ctx.fillText(line.text, 0, y)\n  cursor = range.end\n  y += 26\n}\n```\n\nSee the `/demos/dynamic-layout` demo for a richer example, and the `/demos/ellipsis` demo for a paragraph clamped to a number of lines with an ellipsis, as CSS `-webkit-line-clamp` does, and a path cut in its middle.\n\nFor hyphenation, insert soft hyphens before calling `prepare()` or `prepareWithSegments()`. They stay invisible unless the line breaks there, in which case the line ends with a hyphen, which its `width` counts. For mixed-language or user-generated app text, prefer conservative, locale-aware insertion over aggressive pattern hyphenation.\n\nTo lay out text with mixed fonts, code spans, mentions, chips or images, use `@chenglou/pretext/rich-inline`:\n\n```ts\nimport { materializeRichInlineLineRange, prepareRichInline, walkRichInlineLineRanges } from '@chenglou/pretext/rich-inline'\n\nconst prepared = prepareRichInline([\n  { text: 'Ship ', font: '500 17px Inter' },\n  { text: '@maya', font: '700 12px Inter', break: 'never', extraWidth: 22 },\n  { text: \"'s rich-note \", font: '500 17px Inter' },\n  { width: 20 }, // a custom emoji\n])\n\nwalkRichInlineLineRanges(prepared, 320, range => {\n  const line = materializeRichInlineLineRange(prepared, range)\n  // each fragment keeps its source item index, text slice, where that slice sits in the item's text, gapBefore and gapItemIndex\n})\n```\n\nPass a flat list of items. For an image, a custom emoji, a formula or a badge inside a line, pass a box, `{ width }`: its element's margin box, padding and border included, in whole or quarter pixels. A line can break on either side of a box, as at an `<img>`, and its fragment has no text; a box is an item with no `text`. For a size not known yet, prepare with a placeholder and again when it arrives; for an image capped at `max-width: 100%`, pass `min(its width, the paragraph's width)` and prepare again when that changes. Heights are yours: give each box `vertical-align: top`, and each line is as tall as the paragraph's line height or its tallest box, whichever is taller.\n\nA line count is a height only while no item grows its line. A line is as tall as the paragraph's line height while its text keeps the paragraph font's size, ascent and descent; text in another size, or in a face whose ascent and descent differ (Helvetica Neue's bold on macOS), makes its line taller. Give each item's element `line-height: 1`, as the rich-note demo does, and the count times the paragraph's line height is the block's height. An inline-block item's vertical padding counts in its line too: a chip whose box comes within a few pixels of the line's height makes the line taller.\n\nFor `white-space: pre-wrap` or `word-break: keep-all` on the paragraph, pass `{ whiteSpace: 'pre-wrap' }` or `{ wordBreak: 'keep-all' }` as the second argument; it applies to every item. In `pre-wrap` every item but a `break: 'never'` one keeps its spaces, tabs and newlines. Paint each line with `white-space: pre`: a line painted alone in `pre-wrap` can wrap again. This is not a general CSS inline formatting engine.\n\n### API Glossary\n\nUse-case 1 APIs:\n```ts\nprepare(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedText // one-time text analysis + measurement pass, returns an opaque value to pass to `layout()` and to the APIs below that don't return text. Make sure `font` and `letterSpacing` are synced with your CSS for the text you're measuring. `font` is the same format as what you'd use for `myCanvasContext.font = ...`, e.g. `16px Inter`; `letterSpacing` is a CSS pixel value, and must be finite.\nlayout(prepared: PreparedText, maxWidth: number, lineHeight: number): { height: number, lineCount: number } // calculates text height given a max width and lineHeight. Make sure `lineHeight` is synced with your css `line-height` declaration for the text you're measuring.\n```\n\nUse-case 2 APIs:\n```ts\nprepareWithSegments(text: string, font: string, options?: { whiteSpace?: 'normal' | 'pre-wrap', wordBreak?: 'normal' | 'keep-all', letterSpacing?: number }): PreparedTextWithSegments // same as `prepare()`, but returns a richer structure for manual line layout needs\nlayoutWithLines(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { height: number, lineCount: number, lines: LayoutLine[] } // high-level api for manual layout needs. Accepts a fixed max width for all lines. Similar to `layout()`'s return, but additionally returns the lines info\nwalkLineRanges(prepared: PreparedText, maxWidth: number, onLine: (line: LayoutLineRange) => void): number // low-level api for manual layout needs. Accepts a fixed max width for all lines. Calls `onLine` once per line with its actual calculated line width and start/end cursors, without building line text strings. Very useful for certain cases where you wanna speculatively test a few width and height boundaries (e.g. binary search a nice width value by repeatedly calling walkLineRanges and checking the line count, and therefore height, is \"nice\" too). You can have text messages shrinkwrap and balanced text layout this way. After walkLineRanges calls, you'd call layoutWithLines once, with your satisfying max width, to get the actual lines info.\nmeasureLineStats(prepared: PreparedText, maxWidth: number): { lineCount: number, maxLineWidth: number } // returns only how many lines this width produces, and how wide the widest one is. Avoids line/string allocations.\nmeasureNaturalWidth(prepared: PreparedText): number // Returns the width of the widest line when only explicit line breaks apply.\nlayoutNextLine(prepared: PreparedTextWithSegments, maxWidth: number, start?: LayoutCursor): LayoutLine | null // iterator-like api for laying out each line with a different width! Returns the LayoutLine starting from `start`, or `null` when the paragraph's exhausted. Pass the previous line's `end` cursor as the next `start`.\nlayoutNextLineRange(prepared: PreparedText, maxWidth: number, start?: LayoutCursor):",
   "contributors": [
     {
       "login": "chenglou",
       "url": "https://github.com/chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4",
-      "contributions": 2328
+      "contributions": 2340
     },
     {
       "login": "beeegee",
@@ -403,20 +408,38 @@
       "prerelease": false,
       "body": "Lines break where the browser breaks them in many more cases: in Chrome, Safari and Firefox, Pretext now finds where lines can break with a port of that browser's own line breaker and its data, in place of its own rules, and rich inline lays its items out as one paragraph, as a browser lays out a paragraph's spans.\n\nAgainst 0.0.9, `layout()` at a new width is three to six times as fast and `prepare()` of text it has measured before 1.1 to 13 times as fast, while loading the library takes about 0.4 ms more on each page in Chrome, 0.7 ms in Safari and 1.1 ms in Firefox.\n\nBundles are larger: the main entry is about 40 KB gzipped, up from 16 KB, and `@chenglou/pretext/rich-inline` about 44 KB, up from 16 KB.\n\nAn app on 0.0.9 has to change every call of `layoutNextLine()` and `layoutNextLineRange()`, which now take the width before the cursor: swap the second and third arguments. It also has to change where it reads rich-inline cursors as places in an item's text (read a fragment's `sourceStart` and `sourceEnd` instead), where it reads `segLevels`, which is gone, or any field of a `prepareWithSegments()` handle other than `segments`, `kinds` and `widths`, where it passes a `font` string",
       "downloads": 0,
-      "reactions": 6
+      "reactions": 25
     }
   ],
   "firstCommitAt": "2026-03-03T09:14:22Z",
   "contributorCount": 9,
   "recentIssues": [
     {
-      "number": 521,
-      "title": "Bug: ZWSP after an oversized inline image stays on the image line",
-      "url": "https://github.com/chenglou/pretext/issues/521",
-      "createdAt": "2026-10-14T01:59:22Z",
+      "number": 528,
+      "title": "WebKit profile: a tab skips its stop when under half a `0` from it, not half a space",
+      "url": "https://github.com/chenglou/pretext/issues/528",
+      "createdAt": "2026-10-19T20:02:18Z",
+      "comments": 0,
+      "labels": [],
+      "author": "LewisAlderman"
+    },
+    {
+      "number": 526,
+      "title": "Required ligatures that match across a space measure a word too wide",
+      "url": "https://github.com/chenglou/pretext/issues/526",
+      "createdAt": "2026-10-15T03:20:57Z",
+      "comments": 0,
+      "labels": [],
+      "author": "mordechaim"
+    },
+    {
+      "number": 524,
+      "title": "Direction aware ligatures",
+      "url": "https://github.com/chenglou/pretext/issues/524",
+      "createdAt": "2026-10-14T19:12:14Z",
       "comments": 1,
       "labels": [],
-      "author": "ChuanfengZhang"
+      "author": "mordechaim"
     },
     {
       "number": 504,
@@ -442,24 +465,6 @@
       "url": "https://github.com/chenglou/pretext/issues/454",
       "createdAt": "2026-10-07T08:35:49Z",
       "comments": 0,
-      "labels": [],
-      "author": "chenglou"
-    },
-    {
-      "number": 433,
-      "title": "Chromium profile keeps a soft-hyphen break whose hyphen overflows, after an explicit hyphen-minus",
-      "url": "https://github.com/chenglou/pretext/issues/433",
-      "createdAt": "2026-10-06T02:25:49Z",
-      "comments": 2,
-      "labels": [],
-      "author": "Z003Y89"
-    },
-    {
-      "number": 422,
-      "title": "lineFitEpsilon matches no engine at a width with a fraction (Firefox keeps a line up to 1/120px over; pretext breaks from 0.005px)",
-      "url": "https://github.com/chenglou/pretext/issues/422",
-      "createdAt": "2026-10-04T01:35:13Z",
-      "comments": 1,
       "labels": [],
       "author": "chenglou"
     }
@@ -868,7 +873,7 @@
     {
       "day": 3,
       "hour": 8,
-      "commits": 2
+      "commits": 5
     },
     {
       "day": 3,
@@ -903,22 +908,22 @@
     {
       "day": 3,
       "hour": 15,
-      "commits": 4
+      "commits": 7
     },
     {
       "day": 3,
       "hour": 16,
-      "commits": 0
-    },
-    {
-      "day": 3,
-      "hour": 17,
       "commits": 1
     },
     {
       "day": 3,
+      "hour": 17,
+      "commits": 3
+    },
+    {
+      "day": 3,
       "hour": 18,
-      "commits": 9
+      "commits": 11
     },
     {
       "day": 3,
@@ -1308,14 +1313,6 @@
   ],
   "commitActivity": [
     {
-      "week": "2025-10-18",
-      "commits": 0
-    },
-    {
-      "week": "2025-10-25",
-      "commits": 0
-    },
-    {
       "week": "2025-11-01",
       "commits": 0
     },
@@ -1513,66 +1510,18 @@
     },
     {
       "week": "2026-10-11",
-      "commits": 113
+      "commits": 124
+    },
+    {
+      "week": "2026-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-25",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-10-18",
-      "count": 0
-    },
-    {
-      "date": "2025-10-19",
-      "count": 0
-    },
-    {
-      "date": "2025-10-20",
-      "count": 0
-    },
-    {
-      "date": "2025-10-21",
-      "count": 0
-    },
-    {
-      "date": "2025-10-22",
-      "count": 0
-    },
-    {
-      "date": "2025-10-23",
-      "count": 0
-    },
-    {
-      "date": "2025-10-24",
-      "count": 0
-    },
-    {
-      "date": "2025-10-25",
-      "count": 0
-    },
-    {
-      "date": "2025-10-26",
-      "count": 0
-    },
-    {
-      "date": "2025-10-27",
-      "count": 0
-    },
-    {
-      "date": "2025-10-28",
-      "count": 0
-    },
-    {
-      "date": "2025-10-29",
-      "count": 0
-    },
-    {
-      "date": "2025-10-30",
-      "count": 0
-    },
-    {
-      "date": "2025-10-31",
-      "count": 0
-    },
     {
       "date": "2025-11-01",
       "count": 0
@@ -2959,7 +2908,7 @@
     },
     {
       "date": "2026-10-14",
-      "count": 3
+      "count": 14
     },
     {
       "date": "2026-10-15",
@@ -2972,96 +2921,179 @@
     {
       "date": "2026-10-17",
       "count": 0
+    },
+    {
+      "date": "2026-10-18",
+      "count": 0
+    },
+    {
+      "date": "2026-10-19",
+      "count": 0
+    },
+    {
+      "date": "2026-10-20",
+      "count": 0
+    },
+    {
+      "date": "2026-10-21",
+      "count": 0
+    },
+    {
+      "date": "2026-10-22",
+      "count": 0
+    },
+    {
+      "date": "2026-10-23",
+      "count": 0
+    },
+    {
+      "date": "2026-10-24",
+      "count": 0
+    },
+    {
+      "date": "2026-10-25",
+      "count": 0
+    },
+    {
+      "date": "2026-10-26",
+      "count": 0
+    },
+    {
+      "date": "2026-10-27",
+      "count": 0
+    },
+    {
+      "date": "2026-10-28",
+      "count": 0
+    },
+    {
+      "date": "2026-10-29",
+      "count": 0
+    },
+    {
+      "date": "2026-10-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-31",
+      "count": 0
     }
   ],
   "participation": {
-    "all": 2332,
-    "owner": 2323,
+    "all": 2349,
+    "owner": 2340,
     "community": 9
   },
   "recentCommits": [
     {
-      "sha": "0a27bbe",
-      "message": "Merge pull request #523 from chenglou/report-210-rich-zwsp",
-      "url": "https://github.com/chenglou/pretext/commit/0a27bbe0f109c689b0a2af2fb1d2e659ddabf5b8",
-      "date": "2026-10-14T12:50:02Z",
+      "sha": "0d102a5",
+      "message": "Merge pull request #525 from chenglou/zwsp-after-overflow",
+      "url": "https://github.com/chenglou/pretext/commit/0d102a5cd933611e86a7e60bda7b4baa5995c6b0",
+      "date": "2026-10-15T17:02:17Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "38807c3",
-      "message": "Harness: the case from #210's comment of 2026-10-13, a zero-width space alone on a rich-inline paragraph's first and last lines. Five items ",
-      "url": "https://github.com/chenglou/pretext/commit/38807c3746f2d0935d2418f604bb32a347e30972",
-      "date": "2026-10-14T12:48:16Z",
+      "sha": "358381b",
+      "message": "Docs: the pull request's number, #525, where the docs name this change, and where builds of main with one changed file each place Firefox's ",
+      "url": "https://github.com/chenglou/pretext/commit/358381bd3ef7dad4cd8e06d362c7eed07f37a71d",
+      "date": "2026-10-15T01:53:50Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "5e37ed9",
-      "message": "Merge pull request #522 from chenglou/pin-chrome-155",
-      "url": "https://github.com/chenglou/pretext/commit/5e37ed97e6233bcb0c44d528109b72c59877e4a7",
-      "date": "2026-10-14T12:41:46Z",
+      "sha": "a1bb342",
+      "message": "Docs: what a second set of probes and timings found around a zero-width space as content of no width. ENGINE_FOLLOWUPS.md: the entry on a wo",
+      "url": "https://github.com/chenglou/pretext/commit/a1bb34295f49dec617834f2fd6ce8d67ab2ef8b6",
+      "date": "2026-10-15T01:09:16Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "d2056a7",
-      "message": "Pin Chrome 155.0.8059.80, which records every case as 154.0.8037.98 does. The installed Chrome updated itself to 155.0.8059.40 on 2026-10-12",
-      "url": "https://github.com/chenglou/pretext/commit/d2056a70d1a9376740ab4ea7ae456eb5293bfedf",
-      "date": "2026-10-14T12:39:19Z",
+      "sha": "b4bec56",
+      "message": "Harness: two zero-width spaces before a tab, which no checked-in case held. One facts template (facts/layout.test.ts:1320, the unit test's l",
+      "url": "https://github.com/chenglou/pretext/commit/b4bec56d581c17c0d276b9e7982edd5c51f2cbeb",
+      "date": "2026-10-15T00:07:00Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "4a98f37",
-      "message": "Release 1.0.0",
-      "url": "https://github.com/chenglou/pretext/commit/4a98f37b1e5396a73197f17c13f3128c15d8c17c",
-      "date": "2026-10-14T12:23:10Z",
+      "sha": "474acee",
+      "message": "No line ends between two zero-width spaces: the analysis marks the second of two as a segment no break comes before (UNBROKEN), as UAX #14 L",
+      "url": "https://github.com/chenglou/pretext/commit/474acee69c2baa2d1b56fcbe98772661f2af12bb",
+      "date": "2026-10-15T00:02:50Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "0e6b75f",
-      "message": "Merge pull request #520 from chenglou/changelog-speed-entry",
-      "url": "https://github.com/chenglou/pretext/commit/0e6b75fb70271111d6dd05550088741ff497e100",
-      "date": "2026-10-13T12:57:21Z",
+      "sha": "834da97",
+      "message": "Docs: the Decisions Log's entry on a zero-width space as content of no width states the cost as the bench reads the walker's final form, in ",
+      "url": "https://github.com/chenglou/pretext/commit/834da976ab4a3afee7b142b8dfe900d6a2b7417f",
+      "date": "2026-10-14T23:04:41Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "db2456b",
-      "message": "Speed entry: what a second reader of the bench's samples corrected. Chrome's worst group completed one session, not two as the commit before",
-      "url": "https://github.com/chenglou/pretext/commit/db2456b1637565d68ffe04a9466994069b3d00ae",
-      "date": "2026-10-13T12:56:49Z",
+      "sha": "6f337e6",
+      "message": "The full walker makes its tests for a zero-width space only where a break segment overflows, and reads the rule's two fields only there. It ",
+      "url": "https://github.com/chenglou/pretext/commit/6f337e6302f4b692a2357d7744dee3d921f82572",
+      "date": "2026-10-14T22:48:35Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "955105a",
-      "message": "Changelog: the speed entry from the release's bench against 0.0.9. Timed on 2026-10-13 in focused windows, three sessions each, in pinned Ch",
-      "url": "https://github.com/chenglou/pretext/commit/955105a1b9bdf3459759ee8998d93f95a477f4b4",
-      "date": "2026-10-13T12:13:59Z",
+      "sha": "d198093",
+      "message": "Docs: the Decisions Log's entry on a zero-width space as content of no width takes in a third run of every row and the readings on the full ",
+      "url": "https://github.com/chenglou/pretext/commit/d1980934bf8c81b890efd6ba93c5d3a5a4f4e107",
+      "date": "2026-10-14T22:40:16Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "848f550",
-      "message": "Merge pull request #519 from chenglou/changelog-against-009",
-      "url": "https://github.com/chenglou/pretext/commit/848f5501954fa4b64feffaf78ca1925166841735",
-      "date": "2026-10-13T03:55:24Z",
+      "sha": "ab8b253",
+      "message": "Docs: the Decisions Log's entry on a zero-width space as content of no width states what the change costs in speed, as the bench reads the f",
+      "url": "https://github.com/chenglou/pretext/commit/ab8b2530fc51c5044304ebf0fce32ca6545e8a9b",
+      "date": "2026-10-14T22:14:46Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     },
     {
-      "sha": "bfa3612",
-      "message": "Changelog: the unreleased section read against 0.0.9 once more. A font string Canvas ignores now throws a RangeError (#502), which no entry ",
-      "url": "https://github.com/chenglou/pretext/commit/bfa3612c3c04f737c3a4e9e5ed14e41caefe84e3",
-      "date": "2026-10-13T03:55:11Z",
+      "sha": "e9e2102",
+      "message": "Docs for a zero-width space as content of no width (#521). ENGINE_FOLLOWUPS.md: the entry on a ZWSP after content that overflows its line an",
+      "url": "https://github.com/chenglou/pretext/commit/e9e2102acce77638805b5dc53b29b91118572a48",
+      "date": "2026-10-14T15:46:14Z",
       "author": "chenglou",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1909539?v=4"
     }
   ],
   "recentPulls": [
+    {
+      "number": 525,
+      "title": "A zero-width space gets the line the browser gives it (#521)",
+      "url": "https://github.com/chenglou/pretext/pull/525",
+      "state": "merged",
+      "updatedAt": "2026-10-23T06:05:41Z",
+      "author": "chenglou",
+      "draft": false
+    },
+    {
+      "number": 90,
+      "title": "Add source span mapping to rich layout APIs",
+      "url": "https://github.com/chenglou/pretext/pull/90",
+      "state": "open",
+      "updatedAt": "2026-10-16T22:55:43Z",
+      "author": "somnai-dreams",
+      "draft": false
+    },
+    {
+      "number": 527,
+      "title": "A pass over #525's code: layout()'s counting loop tests a space once, the analysis marks the soft hyphen Firefox drops",
+      "url": "https://github.com/chenglou/pretext/pull/527",
+      "state": "open",
+      "updatedAt": "2026-10-15T17:09:25Z",
+      "author": "chenglou",
+      "draft": true
+    },
     {
       "number": 523,
       "title": "Harness: the case from #210's comment, a zero-width space alone on a rich-inline paragraph's first and last lines",
@@ -3099,38 +3131,11 @@
       "draft": false
     },
     {
-      "number": 90,
-      "title": "Add source span mapping to rich layout APIs",
-      "url": "https://github.com/chenglou/pretext/pull/90",
-      "state": "open",
-      "updatedAt": "2026-10-13T07:59:41Z",
-      "author": "somnai-dreams",
-      "draft": false
-    },
-    {
       "number": 519,
       "title": "Changelog: the unreleased section checked against 0.0.9 on today's main",
       "url": "https://github.com/chenglou/pretext/pull/519",
       "state": "merged",
       "updatedAt": "2026-10-13T03:55:29Z",
-      "author": "chenglou",
-      "draft": false
-    },
-    {
-      "number": 518,
-      "title": "Harness: a flag written the wrong way stops the run",
-      "url": "https://github.com/chenglou/pretext/pull/518",
-      "state": "merged",
-      "updatedAt": "2026-10-12T22:23:30Z",
-      "author": "chenglou",
-      "draft": false
-    },
-    {
-      "number": 517,
-      "title": "AGENTS.md: three statements made true; README's emoji caveat covers Safari",
-      "url": "https://github.com/chenglou/pretext/pull/517",
-      "state": "merged",
-      "updatedAt": "2026-10-12T21:58:26Z",
       "author": "chenglou",
       "draft": false
     }
@@ -3211,7 +3216,7 @@
     {
       "name": "CHANGELOG.md",
       "type": "file",
-      "size": 52357,
+      "size": 53209,
       "url": "https://github.com/chenglou/pretext/blob/main/CHANGELOG.md"
     },
     {
@@ -3223,7 +3228,7 @@
     {
       "name": "ENGINE_FOLLOWUPS.md",
       "type": "file",
-      "size": 376640,
+      "size": 384319,
       "url": "https://github.com/chenglou/pretext/blob/main/ENGINE_FOLLOWUPS.md"
     },
     {
@@ -3259,7 +3264,7 @@
     {
       "name": "RESEARCH.md",
       "type": "file",
-      "size": 672077,
+      "size": 675394,
       "url": "https://github.com/chenglou/pretext/blob/main/RESEARCH.md"
     },
     {
@@ -3297,12 +3302,12 @@
     {
       "name": "Publish Demo Site",
       "status": "success",
-      "url": "https://github.com/chenglou/pretext/actions/runs/38566858171",
+      "url": "https://github.com/chenglou/pretext/actions/runs/38773977379",
       "branch": "main",
-      "updatedAt": "2026-10-14T12:50:38Z"
+      "updatedAt": "2026-10-15T17:03:16Z"
     }
   ],
-  "branchCount": 89,
+  "branchCount": 90,
   "tagCount": 9,
   "community": {
     "healthPercentage": 57,
@@ -3312,14 +3317,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 40,
-  "openPRs": 22,
+  "openIssuesOnly": 42,
+  "openPRs": 23,
   "releaseCount": 1,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 97,
-  "mergedPRs": 252,
+  "closedIssues": 98,
+  "mergedPRs": 253,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": false,
@@ -3492,12 +3497,22 @@
     },
     {
       "week": "2026-10-11",
-      "additions": 16783,
-      "deletions": 14620
+      "additions": 17988,
+      "deletions": 15864
+    },
+    {
+      "week": "2026-10-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-25",
+      "additions": 0,
+      "deletions": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-10-14T18:46:14.728Z",
+  "factsUpdatedAt": "2026-10-25T10:11:54.323Z",
   "aiSummary": {
     "oneLiner": "Pure JS/TS library for extremely fast, DOM-free multiline text measurement and layout.",
     "whatItDoes": "Pretext is a highly optimized JavaScript/TypeScript library specifically designed to handle complex multiline text measurement and layout entirely outside the DOM. By completely avoiding expensive DOM operations like `getBoundingClientRect`, which famously trigger massive layout reflows, Pretext offers dramatically faster performance. It ingeniously uses the browser's own font engine via the Canvas API as the absolute ground truth to accurately measure text segments, smoothly handling complex scripts and whitespace normalization. This highly predictable approach allows developers to pre-calculate layouts for DOM, SVG, Canvas, or even server-side rendering with pure arithmetic speed.",
