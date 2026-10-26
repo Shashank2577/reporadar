@@ -30,7 +30,7 @@ export default function WatchlistClient() {
       {list.map((r) => (
         <li key={r.id} className="flex items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
-            <Link href={`/repos/${r.id}`} className="font-medium text-accent hover:underline">
+            <Link prefetch={false} href={`/repos/${r.id}`} className="font-medium text-accent hover:underline">
               {r.id}
             </Link>
             {r.description ? <p className="truncate text-sm text-muted">{r.description}</p> : null}

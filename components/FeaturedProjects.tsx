@@ -12,7 +12,7 @@ export default function FeaturedProjects({ projects }: { projects: FeaturedProje
         <article key={repo.id} className="flex flex-col rounded-md border border-border p-4">
           <div className="flex items-start justify-between gap-3">
             <h3 className="min-w-0 break-words font-semibold">
-              <Link href={`/repos/${repo.id}`} className="text-accent hover:underline">
+              <Link prefetch={false} href={`/repos/${repo.id}`} className="text-accent hover:underline">
                 {repo.id}
               </Link>
             </h3>

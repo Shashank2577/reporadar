@@ -45,19 +45,19 @@ export default async function TrendingArchiveDatePage({ params }: { params: Prom
   return (
     <div>
       <p className="text-sm text-muted">
-        <Link href="/trending/archive" className="hover:underline">Trending archive</Link>
+        <Link prefetch={false} href="/trending/archive" className="hover:underline">Trending archive</Link>
       </p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">
         Trending on {formatDate(date)}
       </h1>
       <nav className="mt-4 flex justify-between text-sm" aria-label="Archive day navigation">
         {older ? (
-          <Link href={`/trending/archive/${older}`} className="text-accent hover:underline">
+          <Link prefetch={false} href={`/trending/archive/${older}`} className="text-accent hover:underline">
             ← {formatDate(older)}
           </Link>
         ) : <span />}
         {newer ? (
-          <Link href={`/trending/archive/${newer}`} className="text-accent hover:underline">
+          <Link prefetch={false} href={`/trending/archive/${newer}`} className="text-accent hover:underline">
             {formatDate(newer)} →
           </Link>
         ) : <span />}
