@@ -50,7 +50,7 @@ export default function HomePage() {
           {site.name} tracks {repos.length}+ trending GitHub repositories across {categories.length}{" "}
           categories, twice a day: star history, unusual star jumps, licenses, tech stacks,
           contributors, and what each project is actually for. Browse{" "}
-          <Link href="/repos" className="text-accent hover:underline">
+          <Link prefetch={false} href="/repos" className="text-accent hover:underline">
             every tracked repository
           </Link>{" "}
           at once, or see what&apos;s{" "}
