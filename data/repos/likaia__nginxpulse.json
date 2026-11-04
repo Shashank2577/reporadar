@@ -255,6 +255,11 @@
       "date": "2026-11-01",
       "stars": 2716,
       "forks": 208
+    },
+    {
+      "date": "2026-11-04",
+      "stars": 2717,
+      "forks": 207
     }
   ],
   "trendingHistory": [
@@ -284,24 +289,25 @@
   "license": "MIT",
   "language": "Go",
   "topics": [],
-  "stars": 2716,
-  "forks": 208,
+  "stars": 2717,
+  "forks": 207,
   "watchers": 9,
-  "openIssues": 14,
+  "openIssues": 12,
   "createdAt": "2026-01-13T04:19:14Z",
-  "pushedAt": "2026-05-19T16:46:38Z",
+  "pushedAt": "2026-11-04T11:07:39Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-11-01T02:23:58.740Z",
+  "updatedAt": "2026-11-04T22:01:45.461Z",
   "languages": {
-    "Go": 696584,
-    "Vue": 595431,
-    "TypeScript": 134006,
-    "SCSS": 131236,
-    "Shell": 65501,
+    "Go": 753269,
+    "Vue": 597168,
+    "TypeScript": 134311,
+    "SCSS": 131303,
+    "Shell": 74779,
     "Python": 14091,
     "HTML": 9580,
-    "Dockerfile": 3072,
+    "Dockerfile": 3258,
+    "PLpgSQL": 1114,
     "Makefile": 1066,
     "JavaScript": 76
   },
@@ -310,7 +316,7 @@
       "login": "likaia",
       "url": "https://github.com/likaia",
       "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4",
-      "contributions": 28
+      "contributions": 30
     },
     {
       "login": "wuxxfree",
@@ -337,12 +343,32 @@
       "contributions": 1
     }
   ],
-  "commitCount": 197,
-  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\" alt=\"NginxPulse Logo\" width=\"120\" height=\"120\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/likaia/nginxpulse/blob/main/README_EN.md\">English</a> | 简体中文\n</p>\n\n# NginxPulse\n\n轻量级 Nginx 访问日志分析与可视化面板，提供实时统计、PV 过滤、IP 归属地与客户端解析。\n\n源码仓库：https://github.com/likaia/nginxpulse\n\n## 文档站点（推荐）\n\n> **在线文档站点：<https://nginx-pulse-docs.kaisir.cn/>**\n\n\n> ⚠️注意：此文档只讲解了如何使用这个项目，详细文档与示例配置请移步[在线文档站点](https://nginx-pulse-docs.kaisir.cn/)\n\n\n\n\n## 目录\n- [项目开发技术栈](#项目开发技术栈)\n- [IP 归属地查询策略](#ip-归属地查询策略)\n- [如何使用项目](#如何使用项目)\n  - [1) Docker](#1-docker)\n  - [2) Docker Compose](#2-docker-compose)\n  - [时区设置（重要）](#时区设置重要)\n  - [3) 手动构建（前端、后端）](#3-手动构建前端后端)\n  - [4) 单体部署（单进程）](#4-单体部署单进程)\n  - [5) Makefile 常用命令](#5-makefile-常用命令)\n- [Docker 部署权限说明](#docker-部署权限说明)\n- [常见问题](#常见问题)\n- [目录结构与主要文件](#目录结构与主要文件)\n- [致谢](#致谢)\n\n## 项目开发技术栈\n**重要提示（版本 > 1.5.3）**：已完全弃用 SQLite；单体部署必须自备 PostgreSQL 并配置 `DB_DSN`（或 `database.dsn`）。\n- **后端**：`Go 1.24.x` · `Gin` · `Logrus`\n- **数据**：`PostgreSQL (pgx)`\n- **IP 归属地**：`ip2region`（本地库） + `ip-api.com`（远程批量）\n- **前端**：`Vue 3` · `Vite` · `TypeScript` · `PrimeVue` · `ECharts/Chart.js` · `Scss`\n- **容器**：`Docker / Docker Compose` · `Nginx`（前端静态部署）\n\n### IP 归属地查询策略\n1. **快速过滤**：空值/本地/回环地址返回“本地”，内网地址返回“内网/本地网络”。\n2. **解析解耦**：日志解析阶段仅入库并标记“待解析”，IP 归属地由后台任务异步补齐并回填。\n3. **缓存优先**：持久化缓存 + 内存缓存命中直接返回（默认上限 1,000,000 条）。\n4. **本地优先（IPv4/IPv6）**：优先查 ip2region，本地结果可用时直接使用。\n5. **远程补齐**：本地返回“未知”或解析失败时，调用远端 API（默认 `ip-api.com/batch`，可配置）批量查询（超时 1.2s，单批最多 100 个）。\n6. **远程失败**：返回“未知”。\n\n> 归属地解析未完成时，页面会显示“待解析”，地域统计可能不完整。\n\n> 本地数据库 `ip2region_v4.xdb` 与 `ip2region_v6.xdb` 内嵌在二进制中，首次启动会自动解压到 `./var/nginxpulse_data/`，并尝试加载向量索引提升查询性能。\n\n> 本项目会访问外网 IP 归属地 API（默认 `ip-api.com`），部署环境需放行该域名的出站访问。同时也支持自己搭建IP归属地查询服务，详见下文。\n\n## 如何使用项目\n\n### 1) Docker\n单镜像（前端 Nginx + 后端服务）：\n> 镜像内置 PostgreSQL，启动时会自动初始化数据库（未自备数据库时）。**必须挂载数据目录**：`/app/var/nginxpulse_data` 与 `/app/var/pgdata`。未挂载时容器会直接退出并报错。\n> 如果你准备在**初始化向导**里配置外部数据库，可先不挂载 `pgdata`，容器能正常启动；配置完成后重启容器即可生效。\n\n一键启动（极简配置，首次启动进入初始化向导）：\n\n```bash\ndocker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest\n```\n\n> 注意：docker_local请替换为你宿主机存在的目录，确保文件权限设置正确，能被容器正常访问，否则会出现无日志的情况。\n\n\n> 如果更偏好配置文件方式，可将 `configs/nginxpulse_config.json` 挂载到容器内的 `/app/configs/nginxpulse_config.json`。\n> 若未提供配置文件/环境变量，首次启动会进入“初始化配置向导”。保存后会写入 `configs/nginxpulse_config.json`，需重启容器生效（建议挂载 `/app/configs` 以持久化）。\n\n### 2) Docker Compose\n使用远程镜像（Docker Hub）：\n```yaml\nservices:\n  nginxpulse:\n    image: magiccoders/nginxpulse:latest\n    container_name: local_nginxpulse\n    ports:\n      - \"8088:8088\"\n      - \"8089:8089\"\n    volumes:\n      - ./docker_local/logs:/share/logs\n      - ./docker_local/nginxpulse_data:/app/var/nginxpulse_data\n      - ./docker_local/pgdata:/app/var/pgdata\n      - ./docker_local/configs:/app/configs\n      - /etc/localtime:/etc/localtime\n    stop_grace_period: 90s\n    restart: unless-stopped\n```\n\n```bash\ndocker compose up -d\n```\n\n> 建议保留 `stop_grace_period`（如 `90s`），让内置 PostgreSQL 在 `docker compose stop` 时有足够时间完成一致性关闭，避免下次启动进入恢复重试。\n\n### 时区设置（重要）\n本项目使用**系统时区**进行日志时间解析与统计，请确保运行环境时区正确。\n\n**Docker / Docker Compose**\n- 推荐挂载宿主机时区：`-v /etc/localtime:/etc/localtime:ro`（Linux）\n- 若宿主机提供 `/etc/timezone`，可额外挂载：`-v /etc/timezone:/etc/timezone:ro`\n- 若你只想指定时区，可设置 `TZ=Asia/Shanghai`，但需保证容器内有时区数据（例如安装 `tzdata` 或挂载 `/usr/share/zoneinfo`）\n\n**单体部署（单进程）**\n- 默认使用当前系统时区\n- 可通过环境变量临时指定：`TZ=Asia/Shanghai ./nginxpulse`\n\n### 移动端访问（/m）\n- 入口地址：`http://<host>:8088/m`\n- 移动端仅提供 **概览 / 日报 / 实时 / 日志** 四个页面\n- **首次初始化必须在电脑端完成**，移动端会提示在电脑打开\n\n### 3) 手动构建（前端、后端）\n前端构建：\n\n```bash\ncd webapp\npnpm install\npnpm run build\n```\n\n移动端构建（/m）：\n\n```bash\ncd webapp_mobile\npnpm install\npnpm run build\n```\n\n后端构建：\n\n```bash\ngo mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go\n```\n\n本地开发（前后端一起跑）：\n\n```bash\n./scripts/dev_local.sh\n```\n\n> 前端开发服务默认端口 8088，并会将 `/api` 代理到 `http://127.0.0.1:8089`。\n> 本地开发前请准备好日志文件，放在 `var/log/` 下（或确保 `configs/nginxpulse_config.json` 的 `logPath` 指向对应文件）。\n\n### 4) 单体部署（单进程）\n**重要提示（版本 > 1.5.3）**：已彻底弃用 SQLite。单体部署必须自备 PostgreSQL 并配置 `DB_DSN`（或在 `configs/nginxpulse_config.json` 填好 `database.dsn`）。  \n从仓库的releases下载对应平台的二进制文件，执行即可。\n\n执行后会生成单体可执行文件（已内置前端静态资源），启动后即可同时提供前后端服务：\n- 前端：`http://localhost:8088`\n- 后端：`http://localhost:8088/api/...`\n\n#### 单体部署的配置方式\n单体运行时读取配置有两种方式（任选其一）：\n\n**方式 A：配置文件（默认）**\n1. 在运行目录创建 `configs/`\n2. 放入 `configs/nginxpulse_config.json`\n3. 启动：`./nginxpulse`\n\n**方式 B：环境变量注入（无需文件）**\n```bash\nCONFIG_JSON=\"$(cat /path/to/nginxpulse_config.json)\" ./nginxpulse\n```\n\n注意事项：\n- 配置文件路径为相对路径 `./configs/nginxpulse_config.json`，请确保运行时工作目录正确。\n- 如果使用 systemd，请设置 `WorkingDirectory`，或改用 `CONFIG_JSON` 注入。\n- 数据目录 `./var/nginxpulse_data` 也是相对路径；找不到目录时请先确认当前进程的工作目录。\n\n### 5) Makefile 构建\n此项目也支持了通过Makefile来构建相关资源，命令如下：\n```bash\nmake frontend   # 构建前端（含移动端）webapp/dist + webapp_mobile/dist\nmake frontend-mobile # 仅构建移动端 webapp_mobile/dist\nmake backend    # 构建后端 bin/nginxpulse（不内嵌前端）\nmake single     # 构建单体包（内嵌前端 + 复制配置与gzip示例）\nmake dev        # 启动本地开发（前端8088，后端8089）\nmake clean      # 清理构建产物\n```\n\n指定版本号示例：\n```bash\nVERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend\n```\n\n说明：\n- `make single` 默认构建 `linux/amd64` 与 `linux/arm64`，产物在 `bin/linux_amd64/` 与 `bin/linux_arm64/`。\n- 单平台构建时，产物在 `bin/nginxpulse`，配置在 `bin/configs/nginxpulse_config.json`（端口默认 `:8088`），gzip 示例在 `bin/var/log/gz-log-read-test/`。\n\n## Docker 部署权限说明\n\n镜像默认以非 root 用户（`nginxpulse`）运行。容器里能否读取日志、写入数据，**取决于宿主机目录的权限**。你在容器里用 `cat` 看到日志，通常是因为 `docker exec` 默认是 root，不代表应用用户有权限。\n\n推荐做法：**让容器内用户的 UID/GID 与宿主机日志/数据目录的属主一致**。\n\n步骤 1：查看宿主机目录的 UID/GID\n```bash\nls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n# 或\nstat -c '%u %g %n' /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n```\n\n步骤 2：启动容器时传入 `PUID/PGID`（与上面一致）\n```bash\ndocker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...\n```\n\n步骤 3：确保目录对该 UID/GID 可读/可写\n```bash\nchown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs\n```\n\n如果你使用外部数据库（设置 `DB_DSN`），可以不挂载 `pgdata`。外置 PG **推荐使用 16 版本**。\n若你通过**初始化向导**配置外部数据库，同样可以不挂载 `pgdata`，保存后重启容器生效。\n\nSELinux 说明（RHEL/CentOS/Fedora 等）：\n- 这些系统默认启用 SELinux，Docker 挂载目录可能因安全上下文导致“看得见但不可访问”。\n- 解决办法是在 volume 后加 `:z` 或 `:Z` 重新打标签：\n  - `:Z` 让该目录仅供当前容器使用（更严格）。\n  - `:z` 让该目录可被多个容器共享使用。\n```bash\ndocker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...\n```\n\n不推荐做法：直接 `chmod -R 777`。这虽然省事，但权限过宽不安全，仅建议临时排查时使用。\n\n## 常见问题\n\n1) 日志明细无内容  \n通常是容器内无权限访问宿主机日志文件。请先阅读《Docker 部署权限说明》并按步骤处理权限。\n\n2) 日志存在，但 PV/UV 无法统计  \n默认规则会排除内网 IP。若你希望统计内网流量，请将 `PV_EXCLUDE_IPS` 设为空数组并重启：\n```bash\nPV_EXCLUDE_IPS='[]'\n```\n重启后在“日志明细”页面点击“重新解析”按钮。\n\n3) 日志时间不正确  \n通常是运行环境时区未同步导致。请确认 Docker/系统时区正确，并按“时区设置（重要）”章节调整后重新解析日志。\n\n4) 无法启动\n报错 tmp 目录无权限写入问题（旧版本可能出现），如果容器启动后出现如下所示的报错，请确认 `nginxpulse_data` 可写（具体权限问题请阅读《Docker 部署权限说明》），或设置 `TMPDIR` 到可写目录。\n```bash\nnginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can't create /tmp/tmp.KOdAPn: Permission denied\n```\n解决办法（任选其一）：\n```bash\n-e TMPDIR=/app/var/nginxpulse_data/tmp\n```\n\n5) 解析入库的数据会一直保留吗  \n不会。入库后的访问数据会按 `system.logRetentionDays` 定时清理（默认 30 天）。  \n例如你一次解析了几个月数据，后续仍会逐步清理掉保留天数之外的数据。  \n注意：该参数不影响原始 Nginx 日志文件，也不等于系统运行日志（`var/nginxpulse_data/nginxpulse.log`）的轮转策略。\n\n## 目录结构与主要文件\n\n```\n.\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\n```\n\n---\n\n如需更详细的统计口径或 API 扩展，建议从 `internal/analytics/` 与 `internal/web/handler.go` 开始。\n\n## 致谢\n\n非常感谢诸位好兄弟/姐妹对此项目的[投币](https://resource.kaisir.cn/uploads/MarkDownImg/20260128/pEZcuA.jpg)支持。\n\n<p align=\"left\">\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\" width=\"60\" height=\"60\" alt=\"supporter-1\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\" width=\"60\" height=\"60\" alt=\"supporter-2\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\" width=\"60\" height=\"60\" alt=\"supporter-3\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\" width=\"60\" height=\"60\" alt=\"supporter-4\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\" width=\"60\" height=\"60\" alt=\"supporter-5\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\" width=\"60\" height=\"60\" alt=\"supporter-6\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\" width=\"60\" height=\"60\" alt=\"supporter-7\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\" width=\"60\" height=\"60\" alt=\"supporter-8\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\" width=\"60\" height=\"60\" alt=\"supporter-9\" />\n</p>\n\n## 写在最后\n\n本项目大部分代码通过codex生成，我投喂了很多开源项目和资料让他做参考，在此感谢大家对开源社区的贡献。\n\n* [有没有好用的 nginx 日志看板展示项目](https://v2ex.com/t/1178789)\n* [nixvis](https://github.com/BeyondXinXin/nixvis)\n* [goaccess](https://github.com/allinurl/goaccess)\n* [prometheus监控nginx的两种方式原创](https://blog.csdn.net/lvan_test/article/details/123579531)\n* [通过nginx-prometheus-exporter监控nginx指标](https://maxidea.gitbook.io/k8s-testing/prometheus-he-grafana-de-dan-ji-bian-pai/tong-guo-nginxprometheusexporter-jian-kong-nginx)\n* [Prometheus 监控nginx服务 ](https://www.cnblogs.com/zmh520/p/17758730.html)\n* [Prometheus监控Nginx](https://zhuanlan.zhihu.com/p/460300628)\n",
+  "commitCount": 199,
+  "readmeExcerpt": "<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\" alt=\"NginxPulse Logo\" width=\"120\" height=\"120\">\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/likaia/nginxpulse/blob/main/README_EN.md\">English</a> | 简体中文\n</p>\n\n# NginxPulse\n\n轻量级 Nginx 访问日志分析与可视化面板，提供实时统计、PV 过滤、IP 归属地与客户端解析。\n\n源码仓库：https://github.com/likaia/nginxpulse\n\n## 文档站点（推荐）\n\n> **在线文档站点：<https://nginx-pulse-docs.kaisir.cn/>**\n\n\n> ⚠️注意：此文档只讲解了如何使用这个项目，详细文档与示例配置请移步[在线文档站点](https://nginx-pulse-docs.kaisir.cn/)\n\n\n\n\n## 目录\n- [项目开发技术栈](#项目开发技术栈)\n- [IP 归属地查询策略](#ip-归属地查询策略)\n- [如何使用项目](#如何使用项目)\n  - [1) Docker](#1-docker)\n  - [2) Docker Compose](#2-docker-compose)\n  - [时区设置（重要）](#时区设置重要)\n  - [3) 手动构建（前端、后端）](#3-手动构建前端后端)\n  - [4) 单体部署（单进程）](#4-单体部署单进程)\n  - [5) Makefile 常用命令](#5-makefile-常用命令)\n- [Docker 部署权限说明](#docker-部署权限说明)\n- [常见问题](#常见问题)\n- [目录结构与主要文件](#目录结构与主要文件)\n- [致谢](#致谢)\n\n## 项目开发技术栈\n**重要提示（版本 > 1.5.3）**：已完全弃用 SQLite；单体部署必须自备 PostgreSQL 并配置 `DB_DSN`（或 `database.dsn`）。\n- **后端**：`Go 1.24.x` · `Gin` · `Logrus`\n- **数据**：`PostgreSQL (pgx)`\n- **IP 归属地**：`ip2region`（本地库） + `ip-api.com`（远程批量）\n- **前端**：`Vue 3` · `Vite` · `TypeScript` · `PrimeVue` · `ECharts/Chart.js` · `Scss`\n- **容器**：`Docker / Docker Compose` · `Nginx`（前端静态部署）\n\n### IP 归属地查询策略\n1. **快速过滤**：空值/本地/回环地址返回“本地”，内网地址返回“内网/本地网络”。\n2. **解析解耦**：日志解析阶段仅入库并标记“待解析”，IP 归属地由后台任务异步补齐并回填。\n3. **缓存优先**：持久化缓存 + 内存缓存命中直接返回（默认上限 1,000,000 条）。\n4. **本地优先（IPv4/IPv6）**：优先查 ip2region，本地结果可用时直接使用。\n5. **远程补齐**：本地返回“未知”或解析失败时，调用远端 API（默认 `ip-api.com/batch`，可配置）批量查询（超时 1.2s，单批最多 100 个）。\n6. **远程失败**：返回“未知”。\n\n> 归属地解析未完成时，页面会显示“待解析”，地域统计可能不完整。\n\n> 本地数据库 `ip2region_v4.xdb` 与 `ip2region_v6.xdb` 内嵌在二进制中，首次启动会自动解压到 `./var/nginxpulse_data/`，并尝试加载向量索引提升查询性能。\n\n> 本项目会访问外网 IP 归属地 API（默认 `ip-api.com`），部署环境需放行该域名的出站访问。同时也支持自己搭建IP归属地查询服务，详见下文。\n\n## 如何使用项目\n\n### 1) Docker\n单镜像（前端 Nginx + 后端服务）：\n> 镜像内置 PostgreSQL，启动时会自动初始化数据库（未自备数据库时）。**必须挂载数据目录**：`/app/var/nginxpulse_data` 与 `/app/var/pgdata`。未挂载时容器会直接退出并报错。\n> 如果你准备在**初始化向导**里配置外部数据库，可先不挂载 `pgdata`，容器能正常启动；配置完成后重启容器即可生效。\n\n一键启动（极简配置，首次启动进入初始化向导）：\n\n```bash\ndocker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest\n```\n\n> 注意：docker_local请替换为你宿主机存在的目录，确保文件权限设置正确，能被容器正常访问，否则会出现无日志的情况。\n\n\n> 如果更偏好配置文件方式，可将 `configs/nginxpulse_config.json` 挂载到容器内的 `/app/configs/nginxpulse_config.json`。\n> 若未提供配置文件/环境变量，首次启动会进入“初始化配置向导”。保存后会写入 `configs/nginxpulse_config.json`，需重启容器生效（建议挂载 `/app/configs` 以持久化）。\n\n### 2) Docker Compose\n使用远程镜像（Docker Hub）：\n```yaml\nservices:\n  nginxpulse:\n    image: magiccoders/nginxpulse:latest\n    container_name: local_nginxpulse\n    ports:\n      - \"8088:8088\"\n      - \"8089:8089\"\n    volumes:\n      - ./docker_local/logs:/share/logs\n      - ./docker_local/nginxpulse_data:/app/var/nginxpulse_data\n      - ./docker_local/pgdata:/app/var/pgdata\n      - ./docker_local/configs:/app/configs\n      - /etc/localtime:/etc/localtime\n    stop_grace_period: 90s\n    restart: unless-stopped\n```\n\n```bash\ndocker compose up -d\n```\n\n> 建议保留 `stop_grace_period`（如 `90s`），让内置 PostgreSQL 在 `docker compose stop` 时有足够时间完成一致性关闭，避免下次启动进入恢复重试。\n\n### 时区设置（重要）\n本项目使用**系统时区**进行日志时间解析与统计，请确保运行环境时区正确。\n\n**Docker / Docker Compose**\n- 推荐挂载宿主机时区：`-v /etc/localtime:/etc/localtime:ro`（Linux）\n- 若宿主机提供 `/etc/timezone`，可额外挂载：`-v /etc/timezone:/etc/timezone:ro`\n- 若你只想指定时区，可设置 `TZ=Asia/Shanghai`，但需保证容器内有时区数据（例如安装 `tzdata` 或挂载 `/usr/share/zoneinfo`）\n\n**单体部署（单进程）**\n- 默认使用当前系统时区\n- 可通过环境变量临时指定：`TZ=Asia/Shanghai ./nginxpulse`\n\n### 移动端访问（/m）\n- 入口地址：`http://<host>:8088/m`\n- 移动端仅提供 **概览 / 日报 / 实时 / 日志** 四个页面\n- **首次初始化必须在电脑端完成**，移动端会提示在电脑打开\n\n### 3) 手动构建（前端、后端）\n前端构建：\n\n```bash\ncd webapp\npnpm install\npnpm run build\n```\n\n移动端构建（/m）：\n\n```bash\ncd webapp_mobile\npnpm install\npnpm run build\n```\n\n后端构建：\n\n```bash\ngo mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go\n```\n\n本地开发（前后端一起跑）：\n\n```bash\n./scripts/dev_local.sh\n```\n\n> 前端开发服务默认端口 8088，并会将 `/api` 代理到 `http://127.0.0.1:8089`。\n> 本地开发前请准备好日志文件，放在 `var/log/` 下（或确保 `configs/nginxpulse_config.json` 的 `logPath` 指向对应文件）。\n\n### 4) 单体部署（单进程）\n**重要提示（版本 > 1.5.3）**：已彻底弃用 SQLite。单体部署必须自备 PostgreSQL 并配置 `DB_DSN`（或在 `configs/nginxpulse_config.json` 填好 `database.dsn`）。  \n从仓库的releases下载对应平台的二进制文件，执行即可。\n\n执行后会生成单体可执行文件（已内置前端静态资源），启动后即可同时提供前后端服务：\n- 前端：`http://localhost:8088`\n- 后端：`http://localhost:8088/api/...`\n\n#### 单体部署的配置方式\n单体运行时读取配置有两种方式（任选其一）：\n\n**方式 A：配置文件（默认）**\n1. 在运行目录创建 `configs/`\n2. 放入 `configs/nginxpulse_config.json`\n3. 启动：`./nginxpulse`\n\n**方式 B：环境变量注入（无需文件）**\n```bash\nCONFIG_JSON=\"$(cat /path/to/nginxpulse_config.json)\" ./nginxpulse\n```\n\n注意事项：\n- 配置文件路径为相对路径 `./configs/nginxpulse_config.json`，请确保运行时工作目录正确。\n- 如果使用 systemd，请设置 `WorkingDirectory`，或改用 `CONFIG_JSON` 注入。\n- 数据目录 `./var/nginxpulse_data` 也是相对路径；找不到目录时请先确认当前进程的工作目录。\n\n### 5) Makefile 构建\n此项目也支持了通过Makefile来构建相关资源，命令如下：\n```bash\nmake frontend   # 构建前端（含移动端）webapp/dist + webapp_mobile/dist\nmake frontend-mobile # 仅构建移动端 webapp_mobile/dist\nmake backend    # 构建后端 bin/nginxpulse（不内嵌前端）\nmake single     # 构建单体包（内嵌前端 + 复制配置与gzip示例）\nmake dev        # 启动本地开发（前端8088，后端8089）\nmake clean      # 清理构建产物\n```\n\n指定版本号示例：\n```bash\nVERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend\n```\n\n说明：\n- `make single` 默认构建 `linux/amd64` 与 `linux/arm64`，产物在 `bin/linux_amd64/` 与 `bin/linux_arm64/`。\n- 单平台构建时，产物在 `bin/nginxpulse`，配置在 `bin/configs/nginxpulse_config.json`（端口默认 `:8088`），gzip 示例在 `bin/var/log/gz-log-read-test/`。\n\n## Docker 部署权限说明\n\n镜像默认以非 root 用户（`nginxpulse`）运行。容器里能否读取日志、写入数据，**取决于宿主机目录的权限**。你在容器里用 `cat` 看到日志，通常是因为 `docker exec` 默认是 root，不代表应用用户有权限。\n\n推荐做法：**让容器内用户的 UID/GID 与宿主机日志/数据目录的属主一致**。\n\n步骤 1：查看宿主机目录的 UID/GID\n```bash\nls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n# 或\nstat -c '%u %g %n' /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n```\n\n步骤 2：启动容器时传入 `PUID/PGID`（与上面一致）\n```bash\ndocker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...\n```\n\n步骤 3：确保目录对该 UID/GID 可读/可写\n```bash\nchown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs\n```\n\n如果你使用外部数据库（设置 `DB_DSN`），可以不挂载 `pgdata`。外置 PG **推荐使用 16 版本**。\n若你通过**初始化向导**配置外部数据库，同样可以不挂载 `pgdata`，保存后重启容器生效。\n\nSELinux 说明（RHEL/CentOS/Fedora 等）：\n- 这些系统默认启用 SELinux，Docker 挂载目录可能因安全上下文导致“看得见但不可访问”。\n- 解决办法是在 volume 后加 `:z` 或 `:Z` 重新打标签：\n  - `:Z` 让该目录仅供当前容器使用（更严格）。\n  - `:z` 让该目录可被多个容器共享使用。\n```bash\ndocker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...\n```\n\n不推荐做法：直接 `chmod -R 777`。这虽然省事，但权限过宽不安全，仅建议临时排查时使用。\n\n## 常见问题\n\n1) 日志明细无内容  \n通常是容器内无权限访问宿主机日志文件。请先阅读《Docker 部署权限说明》并按步骤处理权限。\n\n2) 日志存在，但 PV/UV 无法统计  \n默认规则会排除内网 IP。若你希望统计内网流量，请将 `PV_EXCLUDE_IPS` 设为空数组并重启：\n```bash\nPV_EXCLUDE_IPS='[]'\n```\n重启后在“日志明细”页面点击“重新解析”按钮。\n\n3) 日志时间不正确  \n通常是运行环境时区未同步导致。请确认 Docker/系统时区正确，并按“时区设置（重要）”章节调整后重新解析日志。\n\n4) 无法启动\n报错 tmp 目录无权限写入问题（旧版本可能出现），如果容器启动后出现如下所示的报错，请确认 `nginxpulse_data` 可写（具体权限问题请阅读《Docker 部署权限说明》），或设置 `TMPDIR` 到可写目录。\n```bash\nnginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can't create /tmp/tmp.KOdAPn: Permission denied\n```\n解决办法（任选其一）：\n```bash\n-e TMPDIR=/app/var/nginxpulse_data/tmp\n```\n\n5) 解析入库的数据会一直保留吗  \n不会。入库后的访问数据会按 `system.logRetentionDays` 定时清理（默认 30 天）。  \n例如你一次解析了几个月数据，后续仍会逐步清理掉保留天数之外的数据。  \n注意：该参数不影响原始 Nginx 日志文件，也不等于系统运行日志（`var/nginxpulse_data/nginxpulse.log`）的轮转策略。\n\n6) 页面可访问，但当天统计长时间不增长\n\n先核对原始访问日志是否增长、扫描断点是否更新，以及 PostgreSQL 的 `pg_stat_activity`。清理任务使用独立工作器：启动后先采集，再尝试清理，成功后在下一次本地时间 02:00 运行。失败从 1 分钟开始指数退避，最多 1 小时；只运行一份任务，已完成阶段在本进程内续跑，重启后安全重做。\n\n维护 SQL 最长 30 秒、锁等待最长 1 秒、单站点预算 45 秒、整轮预算 2 分钟。为防止维表和统计重建与写入交叉，必要的维护互斥仍会产生有限等待；不再出现清理语句无限运行、挡住后续所有采集的情况。日志包含 `website_id`、`stage`、`table`、耗时、删除数和 `retry_at`，可直接定位卡在哪个步骤。超时后会释放维护锁、回滚正在执行的重建事务，不清空原始日志或扫描断点。\n\n维护回归测试：\n\n```bash\ngo test -race ./...\n# PostgreSQL 集成测试只接受本机的 nginxpulse_cleanup_test 专用数据库，切勿填生产库。\nNGINXPULSE_TEST_PG_DSN='postgres://postgres:password@127.0.0.1:5432/nginxpulse_cleanup_test?sslmode=disable' \\\n  go test -race -count=1 ./internal/store ./internal/worker\n```\n\n本次维护优化无需手工建表或迁移 SQL。更新镜像时继续挂载原 `/app/var/nginxpulse_data`、`/app/var/pgdata`、配置和访问日志目录；不要删除数据目录或使用 `docker compose down -v`。\n\n## 目录结构与主要文件\n\n```\n.\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\n```\n\n---\n\n如需更详细的统计口径或 API 扩展，建议从 `internal/analytics/` 与 `internal/web/handler.go` 开始。\n\n## 致谢\n\n非常感谢诸位好兄弟/姐妹对此项目的[投币](https://resource.kaisir.cn/uploads/MarkDownImg/20260128/pEZcuA.jpg)支持。\n\n<p align=\"left\">\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\" width=\"60\" height=\"60\" alt=\"supporter-1\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\" width=\"60\" height=\"60\" alt=\"supporter-2\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\" width=\"60\" height=\"60\" alt=\"supporter-3\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\" width=\"60\" height=\"60\" alt=\"supporter-4\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\" width=\"60\" height=\"60\" alt=\"supporter-5\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\" width=\"60\" height=\"60\" alt=\"supporter-6\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\" width=\"60\" height=\"60\" alt=\"supporter-7\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\" width=\"60\" height=\"60\" alt=\"supporter-8\" />\n  <img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\" width=\"60\" height=\"60\" alt=\"supporter-9\" />\n</p>\n\n## 写在最后\n\n本项目大部分代码通过codex生成，我投喂了很多开源项目和资料让他做参考，在此感谢大家对开源社区的贡献。\n\n* [有没有好用的 nginx 日志看板展示项目](https://v2ex.com/t/1178789)\n* [nixvis](https://github.com/BeyondXinXin/nixvis)\n* [goaccess](https://github.com/allinurl/goaccess)\n* [prometheus监控nginx的两种方式原创](https://blog.csdn.net/lvan_test/article/details/123579531)\n* [通过nginx-prometheus-exporter监控nginx指标](https://maxidea.gitbook.io/k8s-testing/prometheus-he-grafana-de-dan-ji-bian-pai/tong-guo-nginxprometheusexporter-jian-kong-nginx)\n* [Prometheus 监控nginx服务 ](https://www.cnblogs.com/zmh520/p/17758730.html)\n* [Prometheus监控Nginx](https://zhuanlan.zhihu.com/p/460300628)\n",
   "contributorCount": 9,
   "firstCommitAt": "2026-01-13T04:01:24Z",
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\" alt=\"NginxPulse Logo\" width=\"120\" height=\"120\" style=\"max-width: 100%; height: auto; max-height: 120px;; aspect-ratio: 120 / 120; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/likaia/nginxpulse/blob/main/README_EN.md\">English</a> | 简体中文\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">NginxPulse</h1></div>\n<p dir=\"auto\">轻量级 Nginx 访问日志分析与可视化面板，提供实时统计、PV 过滤、IP 归属地与客户端解析。</p>\n<p dir=\"auto\">源码仓库：<a href=\"https://github.com/likaia/nginxpulse\">https://github.com/likaia/nginxpulse</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">文档站点（推荐）</h2></div>\n<blockquote>\n<p dir=\"auto\"><strong>在线文档站点：<a href=\"https://nginx-pulse-docs.kaisir.cn/\" rel=\"nofollow\">https://nginx-pulse-docs.kaisir.cn/</a></strong></p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji>注意：此文档只讲解了如何使用这个项目，详细文档与示例配置请移步<a href=\"https://nginx-pulse-docs.kaisir.cn/\" rel=\"nofollow\">在线文档站点</a></p>\n</blockquote>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-1.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-1.png\" alt=\"demo-img-1.png\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-2.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-2.png\" alt=\"demo-img-2.png\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">目录</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"#%E9%A1%B9%E7%9B%AE%E5%BC%80%E5%8F%91%E6%8A%80%E6%9C%AF%E6%A0%88\">项目开发技术栈</a></li>\n<li><a href=\"#ip-%E5%BD%92%E5%B1%9E%E5%9C%B0%E6%9F%A5%E8%AF%A2%E7%AD%96%E7%95%A5\">IP 归属地查询策略</a></li>\n<li><a href=\"#%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E9%A1%B9%E7%9B%AE\">如何使用项目</a>\n<ul dir=\"auto\">\n<li><a href=\"#1-docker\">1) Docker</a></li>\n<li><a href=\"#2-docker-compose\">2) Docker Compose</a></li>\n<li><a href=\"#%E6%97%B6%E5%8C%BA%E8%AE%BE%E7%BD%AE%E9%87%8D%E8%A6%81\">时区设置（重要）</a></li>\n<li><a href=\"#3-%E6%89%8B%E5%8A%A8%E6%9E%84%E5%BB%BA%E5%89%8D%E7%AB%AF%E5%90%8E%E7%AB%AF\">3) 手动构建（前端、后端）</a></li>\n<li><a href=\"#4-%E5%8D%95%E4%BD%93%E9%83%A8%E7%BD%B2%E5%8D%95%E8%BF%9B%E7%A8%8B\">4) 单体部署（单进程）</a></li>\n<li><a href=\"#5-makefile-%E5%B8%B8%E7%94%A8%E5%91%BD%E4%BB%A4\">5) Makefile 常用命令</a></li>\n</ul>\n</li>\n<li><a href=\"#docker-%E9%83%A8%E7%BD%B2%E6%9D%83%E9%99%90%E8%AF%B4%E6%98%8E\">Docker 部署权限说明</a></li>\n<li><a href=\"#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98\">常见问题</a></li>\n<li><a href=\"#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84%E4%B8%8E%E4%B8%BB%E8%A6%81%E6%96%87%E4%BB%B6\">目录结构与主要文件</a></li>\n<li><a href=\"#%E8%87%B4%E8%B0%A2\">致谢</a></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">项目开发技术栈</h2></div>\n<p dir=\"auto\"><strong>重要提示（版本 &gt; 1.5.3）</strong>：已完全弃用 SQLite；单体部署必须自备 PostgreSQL 并配置 <code>DB_DSN</code>（或 <code>database.dsn</code>）。</p>\n<ul dir=\"auto\">\n<li><strong>后端</strong>：<code>Go 1.24.x</code> · <code>Gin</code> · <code>Logrus</code></li>\n<li><strong>数据</strong>：<code>PostgreSQL (pgx)</code></li>\n<li><strong>IP 归属地</strong>：<code>ip2region</code>（本地库） + <code>ip-api.com</code>（远程批量）</li>\n<li><strong>前端</strong>：<code>Vue 3</code> · <code>Vite</code> · <code>TypeScript</code> · <code>PrimeVue</code> · <code>ECharts/Chart.js</code> · <code>Scss</code></li>\n<li><strong>容器</strong>：<code>Docker / Docker Compose</code> · <code>Nginx</code>（前端静态部署）</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">IP 归属地查询策略</h3></div>\n<ol dir=\"auto\">\n<li><strong>快速过滤</strong>：空值/本地/回环地址返回“本地”，内网地址返回“内网/本地网络”。</li>\n<li><strong>解析解耦</strong>：日志解析阶段仅入库并标记“待解析”，IP 归属地由后台任务异步补齐并回填。</li>\n<li><strong>缓存优先</strong>：持久化缓存 + 内存缓存命中直接返回（默认上限 1,000,000 条）。</li>\n<li><strong>本地优先（IPv4/IPv6）</strong>：优先查 ip2region，本地结果可用时直接使用。</li>\n<li><strong>远程补齐</strong>：本地返回“未知”或解析失败时，调用远端 API（默认 <code>ip-api.com/batch</code>，可配置）批量查询（超时 1.2s，单批最多 100 个）。</li>\n<li><strong>远程失败</strong>：返回“未知”。</li>\n</ol>\n<blockquote>\n<p dir=\"auto\">归属地解析未完成时，页面会显示“待解析”，地域统计可能不完整。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">本地数据库 <code>ip2region_v4.xdb</code> 与 <code>ip2region_v6.xdb</code> 内嵌在二进制中，首次启动会自动解压到 <code>./var/nginxpulse_data/</code>，并尝试加载向量索引提升查询性能。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">本项目会访问外网 IP 归属地 API（默认 <code>ip-api.com</code>），部署环境需放行该域名的出站访问。同时也支持自己搭建IP归属地查询服务，详见下文。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">如何使用项目</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1) Docker</h3></div>\n<p dir=\"auto\">单镜像（前端 Nginx + 后端服务）：</p>\n<blockquote>\n<p dir=\"auto\">镜像内置 PostgreSQL，启动时会自动初始化数据库（未自备数据库时）。<strong>必须挂载数据目录</strong>：<code>/app/var/nginxpulse_data</code> 与 <code>/app/var/pgdata</code>。未挂载时容器会直接退出并报错。\n如果你准备在<strong>初始化向导</strong>里配置外部数据库，可先不挂载 <code>pgdata</code>，容器能正常启动；配置完成后重启容器即可生效。</p>\n</blockquote>\n<p dir=\"auto\">一键启动（极简配置，首次启动进入初始化向导）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest\"><pre>docker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest</pre></div>\n<blockquote>\n<p dir=\"auto\">注意：docker_local请替换为你宿主机存在的目录，确保文件权限设置正确，能被容器正常访问，否则会出现无日志的情况。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">如果更偏好配置文件方式，可将 <code>configs/nginxpulse_config.json</code> 挂载到容器内的 <code>/app/configs/nginxpulse_config.json</code>。\n若未提供配置文件/环境变量，首次启动会进入“初始化配置向导”。保存后会写入 <code>configs/nginxpulse_config.json</code>，需重启容器生效（建议挂载 <code>/app/configs</code> 以持久化）。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2) Docker Compose</h3></div>\n<p dir=\"auto\">使用远程镜像（Docker Hub）：</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"services:\n  nginxpulse:\n    image: magiccoders/nginxpulse:latest\n    container_name: local_nginxpulse\n    ports:\n      - &quot;8088:8088&quot;\n      - &quot;8089:8089&quot;\n    volumes:\n      - ./docker_local/logs:/share/logs\n      - ./docker_local/nginxpulse_data:/app/var/nginxpulse_data\n      - ./docker_local/pgdata:/app/var/pgdata\n      - ./docker_local/configs:/app/configs\n      - /etc/localtime:/etc/localtime\n    stop_grace_period: 90s\n    restart: unless-stopped\"><pre><span class=\"pl-ent\">services</span>:\n  <span class=\"pl-ent\">nginxpulse</span>:\n    <span class=\"pl-ent\">image</span>: <span class=\"pl-s\">magiccoders/nginxpulse:latest</span>\n    <span class=\"pl-ent\">container_name</span>: <span class=\"pl-s\">local_nginxpulse</span>\n    <span class=\"pl-ent\">ports</span>:\n      - <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>8088:8088<span class=\"pl-pds\">\"</span></span>\n      - <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>8089:8089<span class=\"pl-pds\">\"</span></span>\n    <span class=\"pl-ent\">volumes</span>:\n      - <span class=\"pl-s\">./docker_local/logs:/share/logs</span>\n      - <span class=\"pl-s\">./docker_local/nginxpulse_data:/app/var/nginxpulse_data</span>\n      - <span class=\"pl-s\">./docker_local/pgdata:/app/var/pgdata</span>\n      - <span class=\"pl-s\">./docker_local/configs:/app/configs</span>\n      - <span class=\"pl-s\">/etc/localtime:/etc/localtime</span>\n    <span class=\"pl-ent\">stop_grace_period</span>: <span class=\"pl-c1\">90s</span>\n    <span class=\"pl-ent\">restart</span>: <span class=\"pl-s\">unless-stopped</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker compose up -d\"><pre>docker compose up -d</pre></div>\n<blockquote>\n<p dir=\"auto\">建议保留 <code>stop_grace_period</code>（如 <code>90s</code>），让内置 PostgreSQL 在 <code>docker compose stop</code> 时有足够时间完成一致性关闭，避免下次启动进入恢复重试。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">时区设置（重要）</h3></div>\n<p dir=\"auto\">本项目使用<strong>系统时区</strong>进行日志时间解析与统计，请确保运行环境时区正确。</p>\n<p dir=\"auto\"><strong>Docker / Docker Compose</strong></p>\n<ul dir=\"auto\">\n<li>推荐挂载宿主机时区：<code>-v /etc/localtime:/etc/localtime:ro</code>（Linux）</li>\n<li>若宿主机提供 <code>/etc/timezone</code>，可额外挂载：<code>-v /etc/timezone:/etc/timezone:ro</code></li>\n<li>若你只想指定时区，可设置 <code>TZ=Asia/Shanghai</code>，但需保证容器内有时区数据（例如安装 <code>tzdata</code> 或挂载 <code>/usr/share/zoneinfo</code>）</li>\n</ul>\n<p dir=\"auto\"><strong>单体部署（单进程）</strong></p>\n<ul dir=\"auto\">\n<li>默认使用当前系统时区</li>\n<li>可通过环境变量临时指定：<code>TZ=Asia/Shanghai ./nginxpulse</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">移动端访问（/m）</h3></div>\n<ul dir=\"auto\">\n<li>入口地址：<code>http://&lt;host&gt;:8088/m</code></li>\n<li>移动端仅提供 <strong>概览 / 日报 / 实时 / 日志</strong> 四个页面</li>\n<li><strong>首次初始化必须在电脑端完成</strong>，移动端会提示在电脑打开</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3) 手动构建（前端、后端）</h3></div>\n<p dir=\"auto\">前端构建：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd webapp\npnpm install\npnpm run build\"><pre><span class=\"pl-c1\">cd</span> webapp\npnpm install\npnpm run build</pre></div>\n<p dir=\"auto\">移动端构建（/m）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd webapp_mobile\npnpm install\npnpm run build\"><pre><span class=\"pl-c1\">cd</span> webapp_mobile\npnpm install\npnpm run build</pre></div>\n<p dir=\"auto\">后端构建：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go\"><pre>go mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go</pre></div>\n<p dir=\"auto\">本地开发（前后端一起跑）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./scripts/dev_local.sh\"><pre>./scripts/dev_local.sh</pre></div>\n<blockquote>\n<p dir=\"auto\">前端开发服务默认端口 8088，并会将 <code>/api</code> 代理到 <code>http://127.0.0.1:8089</code>。\n本地开发前请准备好日志文件，放在 <code>var/log/</code> 下（或确保 <code>configs/nginxpulse_config.json</code> 的 <code>logPath</code> 指向对应文件）。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">4) 单体部署（单进程）</h3></div>\n<p dir=\"auto\"><strong>重要提示（版本 &gt; 1.5.3）</strong>：已彻底弃用 SQLite。单体部署必须自备 PostgreSQL 并配置 <code>DB_DSN</code>（或在 <code>configs/nginxpulse_config.json</code> 填好 <code>database.dsn</code>）。<br>\n从仓库的releases下载对应平台的二进制文件，执行即可。</p>\n<p dir=\"auto\">执行后会生成单体可执行文件（已内置前端静态资源），启动后即可同时提供前后端服务：</p>\n<ul dir=\"auto\">\n<li>前端：<code>http://localhost:8088</code></li>\n<li>后端：<code>http://localhost:8088/api/...</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">单体部署的配置方式</h4></div>\n<p dir=\"auto\">单体运行时读取配置有两种方式（任选其一）：</p>\n<p dir=\"auto\"><strong>方式 A：配置文件（默认）</strong></p>\n<ol dir=\"auto\">\n<li>在运行目录创建 <code>configs/</code></li>\n<li>放入 <code>configs/nginxpulse_config.json</code></li>\n<li>启动：<code>./nginxpulse</code></li>\n</ol>\n<p dir=\"auto\"><strong>方式 B：环境变量注入（无需文件）</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"CONFIG_JSON=&quot;$(cat /path/to/nginxpulse_config.json)&quot; ./nginxpulse\"><pre>CONFIG_JSON=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-s\"><span class=\"pl-pds\">$(</span>cat /path/to/nginxpulse_config.json<span class=\"pl-pds\">)</span></span><span class=\"pl-pds\">\"</span></span> ./nginxpulse</pre></div>\n<p dir=\"auto\">注意事项：</p>\n<ul dir=\"auto\">\n<li>配置文件路径为相对路径 <code>./configs/nginxpulse_config.json</code>，请确保运行时工作目录正确。</li>\n<li>如果使用 systemd，请设置 <code>WorkingDirectory</code>，或改用 <code>CONFIG_JSON</code> 注入。</li>\n<li>数据目录 <code>./var/nginxpulse_data</code> 也是相对路径；找不到目录时请先确认当前进程的工作目录。</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">5) Makefile 构建</h3></div>\n<p dir=\"auto\">此项目也支持了通过Makefile来构建相关资源，命令如下：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make frontend   # 构建前端（含移动端）webapp/dist + webapp_mobile/dist\nmake frontend-mobile # 仅构建移动端 webapp_mobile/dist\nmake backend    # 构建后端 bin/nginxpulse（不内嵌前端）\nmake single     # 构建单体包（内嵌前端 + 复制配置与gzip示例）\nmake dev        # 启动本地开发（前端8088，后端8089）\nmake clean      # 清理构建产物\"><pre>make frontend   <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建前端（含移动端）webapp/dist + webapp_mobile/dist</span>\nmake frontend-mobile <span class=\"pl-c\"><span class=\"pl-c\">#</span> 仅构建移动端 webapp_mobile/dist</span>\nmake backend    <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建后端 bin/nginxpulse（不内嵌前端）</span>\nmake single     <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建单体包（内嵌前端 + 复制配置与gzip示例）</span>\nmake dev        <span class=\"pl-c\"><span class=\"pl-c\">#</span> 启动本地开发（前端8088，后端8089）</span>\nmake clean      <span class=\"pl-c\"><span class=\"pl-c\">#</span> 清理构建产物</span></pre></div>\n<p dir=\"auto\">指定版本号示例：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"VERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend\"><pre>VERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend</pre></div>\n<p dir=\"auto\">说明：</p>\n<ul dir=\"auto\">\n<li><code>make single</code> 默认构建 <code>linux/amd64</code> 与 <code>linux/arm64</code>，产物在 <code>bin/linux_amd64/</code> 与 <code>bin/linux_arm64/</code>。</li>\n<li>单平台构建时，产物在 <code>bin/nginxpulse</code>，配置在 <code>bin/configs/nginxpulse_config.json</code>（端口默认 <code>:8088</code>），gzip 示例在 <code>bin/var/log/gz-log-read-test/</code>。</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Docker 部署权限说明</h2></div>\n<p dir=\"auto\">镜像默认以非 root 用户（<code>nginxpulse</code>）运行。容器里能否读取日志、写入数据，<strong>取决于宿主机目录的权限</strong>。你在容器里用 <code>cat</code> 看到日志，通常是因为 <code>docker exec</code> 默认是 root，不代表应用用户有权限。</p>\n<p dir=\"auto\">推荐做法：<strong>让容器内用户的 UID/GID 与宿主机日志/数据目录的属主一致</strong>。</p>\n<p dir=\"auto\">步骤 1：查看宿主机目录的 UID/GID</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"ls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n# 或\nstat -c '%u %g %n' /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\"><pre>ls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 或</span>\nstat -c <span class=\"pl-s\"><span class=\"pl-pds\">'</span>%u %g %n<span class=\"pl-pds\">'</span></span> /path/to/logs /path/to/nginxpulse_data /path/to/pgdata</pre></div>\n<p dir=\"auto\">步骤 2：启动容器时传入 <code>PUID/PGID</code>（与上面一致）</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...\"><pre>docker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...</pre></div>\n<p dir=\"auto\">步骤 3：确保目录对该 UID/GID 可读/可写</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"chown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs\"><pre>chown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs</pre></div>\n<p dir=\"auto\">如果你使用外部数据库（设置 <code>DB_DSN</code>），可以不挂载 <code>pgdata</code>。外置 PG <strong>推荐使用 16 版本</strong>。\n若你通过<strong>初始化向导</strong>配置外部数据库，同样可以不挂载 <code>pgdata</code>，保存后重启容器生效。</p>\n<p dir=\"auto\">SELinux 说明（RHEL/CentOS/Fedora 等）：</p>\n<ul dir=\"auto\">\n<li>这些系统默认启用 SELinux，Docker 挂载目录可能因安全上下文导致“看得见但不可访问”。</li>\n<li>解决办法是在 volume 后加 <code>:z</code> 或 <code>:Z</code> 重新打标签：\n<ul dir=\"auto\">\n<li><code>:Z</code> 让该目录仅供当前容器使用（更严格）。</li>\n<li><code>:z</code> 让该目录可被多个容器共享使用。</li>\n</ul>\n</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...\"><pre>docker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...</pre></div>\n<p dir=\"auto\">不推荐做法：直接 <code>chmod -R 777</code>。这虽然省事，但权限过宽不安全，仅建议临时排查时使用。</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">常见问题</h2></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\">日志明细无内容<br>\n通常是容器内无权限访问宿主机日志文件。请先阅读《Docker 部署权限说明》并按步骤处理权限。</p>\n</li>\n<li>\n<p dir=\"auto\">日志存在，但 PV/UV 无法统计<br>\n默认规则会排除内网 IP。若你希望统计内网流量，请将 <code>PV_EXCLUDE_IPS</code> 设为空数组并重启：</p>\n</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"PV_EXCLUDE_IPS='[]'\"><pre>PV_EXCLUDE_IPS=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>[]<span class=\"pl-pds\">'</span></span></pre></div>\n<p dir=\"auto\">重启后在“日志明细”页面点击“重新解析”按钮。</p>\n<ol start=\"3\" dir=\"auto\">\n<li>\n<p dir=\"auto\">日志时间不正确<br>\n通常是运行环境时区未同步导致。请确认 Docker/系统时区正确，并按“时区设置（重要）”章节调整后重新解析日志。</p>\n</li>\n<li>\n<p dir=\"auto\">无法启动\n报错 tmp 目录无权限写入问题（旧版本可能出现），如果容器启动后出现如下所示的报错，请确认 <code>nginxpulse_data</code> 可写（具体权限问题请阅读《Docker 部署权限说明》），或设置 <code>TMPDIR</code> 到可写目录。</p>\n</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"nginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can't create /tmp/tmp.KOdAPn: Permission denied\"><pre>nginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can<span class=\"pl-s\"><span class=\"pl-pds\">'</span>t create /tmp/tmp.KOdAPn: Permission denied</span></pre></div>\n<p dir=\"auto\">解决办法（任选其一）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"-e TMPDIR=/app/var/nginxpulse_data/tmp\"><pre>-e TMPDIR=/app/var/nginxpulse_data/tmp</pre></div>\n<ol start=\"5\" dir=\"auto\">\n<li>解析入库的数据会一直保留吗<br>\n不会。入库后的访问数据会按 <code>system.logRetentionDays</code> 定时清理（默认 30 天）。<br>\n例如你一次解析了几个月数据，后续仍会逐步清理掉保留天数之外的数据。<br>\n注意：该参数不影响原始 Nginx 日志文件，也不等于系统运行日志（<code>var/nginxpulse_data/nginxpulse.log</code>）的轮转策略。</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">目录结构与主要文件</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\".\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\"><pre class=\"notranslate\"><code>.\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\n</code></pre></div>\n<hr>\n<p dir=\"auto\">如需更详细的统计口径或 API 扩展，建议从 <code>internal/analytics/</code> 与 <code>internal/web/handler.go</code> 开始。</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">致谢</h2></div>\n<p dir=\"auto\">非常感谢诸位好兄弟/姐妹对此项目的<a href=\"https://resource.kaisir.cn/uploads/MarkDownImg/20260128/pEZcuA.jpg\" rel=\"nofollow\">投币</a>支持。</p>\n<p align=\"left\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\" width=\"60\" height=\"60\" alt=\"supporter-1\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\" width=\"60\" height=\"60\" alt=\"supporter-2\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\" width=\"60\" height=\"60\" alt=\"supporter-3\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\" width=\"60\" height=\"60\" alt=\"supporter-4\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\" width=\"60\" height=\"60\" alt=\"supporter-5\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\" width=\"60\" height=\"60\" alt=\"supporter-6\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\" width=\"60\" height=\"60\" alt=\"supporter-7\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\" width=\"60\" height=\"60\" alt=\"supporter-8\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\" width=\"60\" height=\"60\" alt=\"supporter-9\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">写在最后</h2></div>\n<p dir=\"auto\">本项目大部分代码通过codex生成，我投喂了很多开源项目和资料让他做参考，在此感谢大家对开源社区的贡献。</p>\n<ul dir=\"auto\">\n<li><a href=\"https://v2ex.com/t/1178789\" rel=\"nofollow\">有没有好用的 nginx 日志看板展示项目</a></li>\n<li><a href=\"https://github.com/BeyondXinXin/nixvis\">nixvis</a></li>\n<li><a href=\"https://github.com/allinurl/goaccess\">goaccess</a></li>\n<li><a href=\"https://blog.csdn.net/lvan_test/article/details/123579531\" rel=\"nofollow\">prometheus监控nginx的两种方式原创</a></li>\n<li><a href=\"https://maxidea.gitbook.io/k8s-testing/prometheus-he-grafana-de-dan-ji-bian-pai/tong-guo-nginxprometheusexporter-jian-kong-nginx\" rel=\"nofollow\">通过nginx-prometheus-exporter监控nginx指标</a></li>\n<li><a href=\"https://www.cnblogs.com/zmh520/p/17758730.html\" rel=\"nofollow\">Prometheus 监控nginx服务 </a></li>\n<li><a href=\"https://zhuanlan.zhihu.com/p/460300628\" rel=\"nofollow\">Prometheus监控Nginx</a></li>\n</ul>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p align=\"center\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/brand-mark.svg\" alt=\"NginxPulse Logo\" width=\"120\" height=\"120\" style=\"max-width: 100%; height: auto; max-height: 120px;; aspect-ratio: 120 / 120; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<p align=\"center\" dir=\"auto\">\n  <a href=\"https://github.com/likaia/nginxpulse/blob/main/README_EN.md\">English</a> | 简体中文\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">NginxPulse</h1></div>\n<p dir=\"auto\">轻量级 Nginx 访问日志分析与可视化面板，提供实时统计、PV 过滤、IP 归属地与客户端解析。</p>\n<p dir=\"auto\">源码仓库：<a href=\"https://github.com/likaia/nginxpulse\">https://github.com/likaia/nginxpulse</a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">文档站点（推荐）</h2></div>\n<blockquote>\n<p dir=\"auto\"><strong>在线文档站点：<a href=\"https://nginx-pulse-docs.kaisir.cn/\" rel=\"nofollow\">https://nginx-pulse-docs.kaisir.cn/</a></strong></p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji>注意：此文档只讲解了如何使用这个项目，详细文档与示例配置请移步<a href=\"https://nginx-pulse-docs.kaisir.cn/\" rel=\"nofollow\">在线文档站点</a></p>\n</blockquote>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-1.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-1.png\" alt=\"demo-img-1.png\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-2.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/demo-img-2.png\" alt=\"demo-img-2.png\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">目录</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"#%E9%A1%B9%E7%9B%AE%E5%BC%80%E5%8F%91%E6%8A%80%E6%9C%AF%E6%A0%88\">项目开发技术栈</a></li>\n<li><a href=\"#ip-%E5%BD%92%E5%B1%9E%E5%9C%B0%E6%9F%A5%E8%AF%A2%E7%AD%96%E7%95%A5\">IP 归属地查询策略</a></li>\n<li><a href=\"#%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E9%A1%B9%E7%9B%AE\">如何使用项目</a>\n<ul dir=\"auto\">\n<li><a href=\"#1-docker\">1) Docker</a></li>\n<li><a href=\"#2-docker-compose\">2) Docker Compose</a></li>\n<li><a href=\"#%E6%97%B6%E5%8C%BA%E8%AE%BE%E7%BD%AE%E9%87%8D%E8%A6%81\">时区设置（重要）</a></li>\n<li><a href=\"#3-%E6%89%8B%E5%8A%A8%E6%9E%84%E5%BB%BA%E5%89%8D%E7%AB%AF%E5%90%8E%E7%AB%AF\">3) 手动构建（前端、后端）</a></li>\n<li><a href=\"#4-%E5%8D%95%E4%BD%93%E9%83%A8%E7%BD%B2%E5%8D%95%E8%BF%9B%E7%A8%8B\">4) 单体部署（单进程）</a></li>\n<li><a href=\"#5-makefile-%E5%B8%B8%E7%94%A8%E5%91%BD%E4%BB%A4\">5) Makefile 常用命令</a></li>\n</ul>\n</li>\n<li><a href=\"#docker-%E9%83%A8%E7%BD%B2%E6%9D%83%E9%99%90%E8%AF%B4%E6%98%8E\">Docker 部署权限说明</a></li>\n<li><a href=\"#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98\">常见问题</a></li>\n<li><a href=\"#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84%E4%B8%8E%E4%B8%BB%E8%A6%81%E6%96%87%E4%BB%B6\">目录结构与主要文件</a></li>\n<li><a href=\"#%E8%87%B4%E8%B0%A2\">致谢</a></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">项目开发技术栈</h2></div>\n<p dir=\"auto\"><strong>重要提示（版本 &gt; 1.5.3）</strong>：已完全弃用 SQLite；单体部署必须自备 PostgreSQL 并配置 <code>DB_DSN</code>（或 <code>database.dsn</code>）。</p>\n<ul dir=\"auto\">\n<li><strong>后端</strong>：<code>Go 1.24.x</code> · <code>Gin</code> · <code>Logrus</code></li>\n<li><strong>数据</strong>：<code>PostgreSQL (pgx)</code></li>\n<li><strong>IP 归属地</strong>：<code>ip2region</code>（本地库） + <code>ip-api.com</code>（远程批量）</li>\n<li><strong>前端</strong>：<code>Vue 3</code> · <code>Vite</code> · <code>TypeScript</code> · <code>PrimeVue</code> · <code>ECharts/Chart.js</code> · <code>Scss</code></li>\n<li><strong>容器</strong>：<code>Docker / Docker Compose</code> · <code>Nginx</code>（前端静态部署）</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">IP 归属地查询策略</h3></div>\n<ol dir=\"auto\">\n<li><strong>快速过滤</strong>：空值/本地/回环地址返回“本地”，内网地址返回“内网/本地网络”。</li>\n<li><strong>解析解耦</strong>：日志解析阶段仅入库并标记“待解析”，IP 归属地由后台任务异步补齐并回填。</li>\n<li><strong>缓存优先</strong>：持久化缓存 + 内存缓存命中直接返回（默认上限 1,000,000 条）。</li>\n<li><strong>本地优先（IPv4/IPv6）</strong>：优先查 ip2region，本地结果可用时直接使用。</li>\n<li><strong>远程补齐</strong>：本地返回“未知”或解析失败时，调用远端 API（默认 <code>ip-api.com/batch</code>，可配置）批量查询（超时 1.2s，单批最多 100 个）。</li>\n<li><strong>远程失败</strong>：返回“未知”。</li>\n</ol>\n<blockquote>\n<p dir=\"auto\">归属地解析未完成时，页面会显示“待解析”，地域统计可能不完整。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">本地数据库 <code>ip2region_v4.xdb</code> 与 <code>ip2region_v6.xdb</code> 内嵌在二进制中，首次启动会自动解压到 <code>./var/nginxpulse_data/</code>，并尝试加载向量索引提升查询性能。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">本项目会访问外网 IP 归属地 API（默认 <code>ip-api.com</code>），部署环境需放行该域名的出站访问。同时也支持自己搭建IP归属地查询服务，详见下文。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">如何使用项目</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1) Docker</h3></div>\n<p dir=\"auto\">单镜像（前端 Nginx + 后端服务）：</p>\n<blockquote>\n<p dir=\"auto\">镜像内置 PostgreSQL，启动时会自动初始化数据库（未自备数据库时）。<strong>必须挂载数据目录</strong>：<code>/app/var/nginxpulse_data</code> 与 <code>/app/var/pgdata</code>。未挂载时容器会直接退出并报错。\n如果你准备在<strong>初始化向导</strong>里配置外部数据库，可先不挂载 <code>pgdata</code>，容器能正常启动；配置完成后重启容器即可生效。</p>\n</blockquote>\n<p dir=\"auto\">一键启动（极简配置，首次启动进入初始化向导）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest\"><pre>docker run -d --name nginxpulse \\\n  -p 8088:8088 \\\n  -v ./docker_local/logs:/share/logs:ro \\\n  -v ./docker_local/nginxpulse_data:/app/var/nginxpulse_data \\\n  -v ./docker_local/pgdata:/app/var/pgdata \\\n  -v ./docker_local/configs:/app/configs \\\n  -v /etc/localtime:/etc/localtime:ro \\\n  magiccoders/nginxpulse:latest</pre></div>\n<blockquote>\n<p dir=\"auto\">注意：docker_local请替换为你宿主机存在的目录，确保文件权限设置正确，能被容器正常访问，否则会出现无日志的情况。</p>\n</blockquote>\n<blockquote>\n<p dir=\"auto\">如果更偏好配置文件方式，可将 <code>configs/nginxpulse_config.json</code> 挂载到容器内的 <code>/app/configs/nginxpulse_config.json</code>。\n若未提供配置文件/环境变量，首次启动会进入“初始化配置向导”。保存后会写入 <code>configs/nginxpulse_config.json</code>，需重启容器生效（建议挂载 <code>/app/configs</code> 以持久化）。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2) Docker Compose</h3></div>\n<p dir=\"auto\">使用远程镜像（Docker Hub）：</p>\n<div class=\"highlight highlight-source-yaml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"services:\n  nginxpulse:\n    image: magiccoders/nginxpulse:latest\n    container_name: local_nginxpulse\n    ports:\n      - &quot;8088:8088&quot;\n      - &quot;8089:8089&quot;\n    volumes:\n      - ./docker_local/logs:/share/logs\n      - ./docker_local/nginxpulse_data:/app/var/nginxpulse_data\n      - ./docker_local/pgdata:/app/var/pgdata\n      - ./docker_local/configs:/app/configs\n      - /etc/localtime:/etc/localtime\n    stop_grace_period: 90s\n    restart: unless-stopped\"><pre><span class=\"pl-ent\">services</span>:\n  <span class=\"pl-ent\">nginxpulse</span>:\n    <span class=\"pl-ent\">image</span>: <span class=\"pl-s\">magiccoders/nginxpulse:latest</span>\n    <span class=\"pl-ent\">container_name</span>: <span class=\"pl-s\">local_nginxpulse</span>\n    <span class=\"pl-ent\">ports</span>:\n      - <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>8088:8088<span class=\"pl-pds\">\"</span></span>\n      - <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>8089:8089<span class=\"pl-pds\">\"</span></span>\n    <span class=\"pl-ent\">volumes</span>:\n      - <span class=\"pl-s\">./docker_local/logs:/share/logs</span>\n      - <span class=\"pl-s\">./docker_local/nginxpulse_data:/app/var/nginxpulse_data</span>\n      - <span class=\"pl-s\">./docker_local/pgdata:/app/var/pgdata</span>\n      - <span class=\"pl-s\">./docker_local/configs:/app/configs</span>\n      - <span class=\"pl-s\">/etc/localtime:/etc/localtime</span>\n    <span class=\"pl-ent\">stop_grace_period</span>: <span class=\"pl-c1\">90s</span>\n    <span class=\"pl-ent\">restart</span>: <span class=\"pl-s\">unless-stopped</span></pre></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker compose up -d\"><pre>docker compose up -d</pre></div>\n<blockquote>\n<p dir=\"auto\">建议保留 <code>stop_grace_period</code>（如 <code>90s</code>），让内置 PostgreSQL 在 <code>docker compose stop</code> 时有足够时间完成一致性关闭，避免下次启动进入恢复重试。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">时区设置（重要）</h3></div>\n<p dir=\"auto\">本项目使用<strong>系统时区</strong>进行日志时间解析与统计，请确保运行环境时区正确。</p>\n<p dir=\"auto\"><strong>Docker / Docker Compose</strong></p>\n<ul dir=\"auto\">\n<li>推荐挂载宿主机时区：<code>-v /etc/localtime:/etc/localtime:ro</code>（Linux）</li>\n<li>若宿主机提供 <code>/etc/timezone</code>，可额外挂载：<code>-v /etc/timezone:/etc/timezone:ro</code></li>\n<li>若你只想指定时区，可设置 <code>TZ=Asia/Shanghai</code>，但需保证容器内有时区数据（例如安装 <code>tzdata</code> 或挂载 <code>/usr/share/zoneinfo</code>）</li>\n</ul>\n<p dir=\"auto\"><strong>单体部署（单进程）</strong></p>\n<ul dir=\"auto\">\n<li>默认使用当前系统时区</li>\n<li>可通过环境变量临时指定：<code>TZ=Asia/Shanghai ./nginxpulse</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">移动端访问（/m）</h3></div>\n<ul dir=\"auto\">\n<li>入口地址：<code>http://&lt;host&gt;:8088/m</code></li>\n<li>移动端仅提供 <strong>概览 / 日报 / 实时 / 日志</strong> 四个页面</li>\n<li><strong>首次初始化必须在电脑端完成</strong>，移动端会提示在电脑打开</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3) 手动构建（前端、后端）</h3></div>\n<p dir=\"auto\">前端构建：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd webapp\npnpm install\npnpm run build\"><pre><span class=\"pl-c1\">cd</span> webapp\npnpm install\npnpm run build</pre></div>\n<p dir=\"auto\">移动端构建（/m）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd webapp_mobile\npnpm install\npnpm run build\"><pre><span class=\"pl-c1\">cd</span> webapp_mobile\npnpm install\npnpm run build</pre></div>\n<p dir=\"auto\">后端构建：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go\"><pre>go mod download\ngo build -o bin/nginxpulse ./cmd/nginxpulse/main.go</pre></div>\n<p dir=\"auto\">本地开发（前后端一起跑）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./scripts/dev_local.sh\"><pre>./scripts/dev_local.sh</pre></div>\n<blockquote>\n<p dir=\"auto\">前端开发服务默认端口 8088，并会将 <code>/api</code> 代理到 <code>http://127.0.0.1:8089</code>。\n本地开发前请准备好日志文件，放在 <code>var/log/</code> 下（或确保 <code>configs/nginxpulse_config.json</code> 的 <code>logPath</code> 指向对应文件）。</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">4) 单体部署（单进程）</h3></div>\n<p dir=\"auto\"><strong>重要提示（版本 &gt; 1.5.3）</strong>：已彻底弃用 SQLite。单体部署必须自备 PostgreSQL 并配置 <code>DB_DSN</code>（或在 <code>configs/nginxpulse_config.json</code> 填好 <code>database.dsn</code>）。<br>\n从仓库的releases下载对应平台的二进制文件，执行即可。</p>\n<p dir=\"auto\">执行后会生成单体可执行文件（已内置前端静态资源），启动后即可同时提供前后端服务：</p>\n<ul dir=\"auto\">\n<li>前端：<code>http://localhost:8088</code></li>\n<li>后端：<code>http://localhost:8088/api/...</code></li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">单体部署的配置方式</h4></div>\n<p dir=\"auto\">单体运行时读取配置有两种方式（任选其一）：</p>\n<p dir=\"auto\"><strong>方式 A：配置文件（默认）</strong></p>\n<ol dir=\"auto\">\n<li>在运行目录创建 <code>configs/</code></li>\n<li>放入 <code>configs/nginxpulse_config.json</code></li>\n<li>启动：<code>./nginxpulse</code></li>\n</ol>\n<p dir=\"auto\"><strong>方式 B：环境变量注入（无需文件）</strong></p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"CONFIG_JSON=&quot;$(cat /path/to/nginxpulse_config.json)&quot; ./nginxpulse\"><pre>CONFIG_JSON=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span><span class=\"pl-s\"><span class=\"pl-pds\">$(</span>cat /path/to/nginxpulse_config.json<span class=\"pl-pds\">)</span></span><span class=\"pl-pds\">\"</span></span> ./nginxpulse</pre></div>\n<p dir=\"auto\">注意事项：</p>\n<ul dir=\"auto\">\n<li>配置文件路径为相对路径 <code>./configs/nginxpulse_config.json</code>，请确保运行时工作目录正确。</li>\n<li>如果使用 systemd，请设置 <code>WorkingDirectory</code>，或改用 <code>CONFIG_JSON</code> 注入。</li>\n<li>数据目录 <code>./var/nginxpulse_data</code> 也是相对路径；找不到目录时请先确认当前进程的工作目录。</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">5) Makefile 构建</h3></div>\n<p dir=\"auto\">此项目也支持了通过Makefile来构建相关资源，命令如下：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"make frontend   # 构建前端（含移动端）webapp/dist + webapp_mobile/dist\nmake frontend-mobile # 仅构建移动端 webapp_mobile/dist\nmake backend    # 构建后端 bin/nginxpulse（不内嵌前端）\nmake single     # 构建单体包（内嵌前端 + 复制配置与gzip示例）\nmake dev        # 启动本地开发（前端8088，后端8089）\nmake clean      # 清理构建产物\"><pre>make frontend   <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建前端（含移动端）webapp/dist + webapp_mobile/dist</span>\nmake frontend-mobile <span class=\"pl-c\"><span class=\"pl-c\">#</span> 仅构建移动端 webapp_mobile/dist</span>\nmake backend    <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建后端 bin/nginxpulse（不内嵌前端）</span>\nmake single     <span class=\"pl-c\"><span class=\"pl-c\">#</span> 构建单体包（内嵌前端 + 复制配置与gzip示例）</span>\nmake dev        <span class=\"pl-c\"><span class=\"pl-c\">#</span> 启动本地开发（前端8088，后端8089）</span>\nmake clean      <span class=\"pl-c\"><span class=\"pl-c\">#</span> 清理构建产物</span></pre></div>\n<p dir=\"auto\">指定版本号示例：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"VERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend\"><pre>VERSION=v0.4.8 make single\nVERSION=v0.4.8 make backend</pre></div>\n<p dir=\"auto\">说明：</p>\n<ul dir=\"auto\">\n<li><code>make single</code> 默认构建 <code>linux/amd64</code> 与 <code>linux/arm64</code>，产物在 <code>bin/linux_amd64/</code> 与 <code>bin/linux_arm64/</code>。</li>\n<li>单平台构建时，产物在 <code>bin/nginxpulse</code>，配置在 <code>bin/configs/nginxpulse_config.json</code>（端口默认 <code>:8088</code>），gzip 示例在 <code>bin/var/log/gz-log-read-test/</code>。</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Docker 部署权限说明</h2></div>\n<p dir=\"auto\">镜像默认以非 root 用户（<code>nginxpulse</code>）运行。容器里能否读取日志、写入数据，<strong>取决于宿主机目录的权限</strong>。你在容器里用 <code>cat</code> 看到日志，通常是因为 <code>docker exec</code> 默认是 root，不代表应用用户有权限。</p>\n<p dir=\"auto\">推荐做法：<strong>让容器内用户的 UID/GID 与宿主机日志/数据目录的属主一致</strong>。</p>\n<p dir=\"auto\">步骤 1：查看宿主机目录的 UID/GID</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"ls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n# 或\nstat -c '%u %g %n' /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\"><pre>ls -n /path/to/logs /path/to/nginxpulse_data /path/to/pgdata\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 或</span>\nstat -c <span class=\"pl-s\"><span class=\"pl-pds\">'</span>%u %g %n<span class=\"pl-pds\">'</span></span> /path/to/logs /path/to/nginxpulse_data /path/to/pgdata</pre></div>\n<p dir=\"auto\">步骤 2：启动容器时传入 <code>PUID/PGID</code>（与上面一致）</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...\"><pre>docker run ... \\\n  -e PUID=1000 \\\n  -e PGID=1000 \\\n  -v /path/to/logs:/var/log/nginx:ro \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw \\\n  -v /path/to/pgdata:/app/var/pgdata:rw \\\n  ...</pre></div>\n<p dir=\"auto\">步骤 3：确保目录对该 UID/GID 可读/可写</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"chown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs\"><pre>chown -R 1000:1000 /path/to/nginxpulse_data /path/to/pgdata\nchmod -R u+rx /path/to/logs</pre></div>\n<p dir=\"auto\">如果你使用外部数据库（设置 <code>DB_DSN</code>），可以不挂载 <code>pgdata</code>。外置 PG <strong>推荐使用 16 版本</strong>。\n若你通过<strong>初始化向导</strong>配置外部数据库，同样可以不挂载 <code>pgdata</code>，保存后重启容器生效。</p>\n<p dir=\"auto\">SELinux 说明（RHEL/CentOS/Fedora 等）：</p>\n<ul dir=\"auto\">\n<li>这些系统默认启用 SELinux，Docker 挂载目录可能因安全上下文导致“看得见但不可访问”。</li>\n<li>解决办法是在 volume 后加 <code>:z</code> 或 <code>:Z</code> 重新打标签：\n<ul dir=\"auto\">\n<li><code>:Z</code> 让该目录仅供当前容器使用（更严格）。</li>\n<li><code>:z</code> 让该目录可被多个容器共享使用。</li>\n</ul>\n</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"docker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...\"><pre>docker run ... \\\n  -v /path/to/logs:/var/log/nginx:ro,Z \\\n  -v /path/to/nginxpulse_data:/app/var/nginxpulse_data:rw,Z \\\n  -v /path/to/pgdata:/app/var/pgdata:rw,Z \\\n  ...</pre></div>\n<p dir=\"auto\">不推荐做法：直接 <code>chmod -R 777</code>。这虽然省事，但权限过宽不安全，仅建议临时排查时使用。</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">常见问题</h2></div>\n<ol dir=\"auto\">\n<li>\n<p dir=\"auto\">日志明细无内容<br>\n通常是容器内无权限访问宿主机日志文件。请先阅读《Docker 部署权限说明》并按步骤处理权限。</p>\n</li>\n<li>\n<p dir=\"auto\">日志存在，但 PV/UV 无法统计<br>\n默认规则会排除内网 IP。若你希望统计内网流量，请将 <code>PV_EXCLUDE_IPS</code> 设为空数组并重启：</p>\n</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"PV_EXCLUDE_IPS='[]'\"><pre>PV_EXCLUDE_IPS=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>[]<span class=\"pl-pds\">'</span></span></pre></div>\n<p dir=\"auto\">重启后在“日志明细”页面点击“重新解析”按钮。</p>\n<ol start=\"3\" dir=\"auto\">\n<li>\n<p dir=\"auto\">日志时间不正确<br>\n通常是运行环境时区未同步导致。请确认 Docker/系统时区正确，并按“时区设置（重要）”章节调整后重新解析日志。</p>\n</li>\n<li>\n<p dir=\"auto\">无法启动\n报错 tmp 目录无权限写入问题（旧版本可能出现），如果容器启动后出现如下所示的报错，请确认 <code>nginxpulse_data</code> 可写（具体权限问题请阅读《Docker 部署权限说明》），或设置 <code>TMPDIR</code> 到可写目录。</p>\n</li>\n</ol>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"nginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can't create /tmp/tmp.KOdAPn: Permission denied\"><pre>nginxpulse: initializing postgres data dir at /app/var/pgdata\n/app/entrypoint.sh: line 91: can<span class=\"pl-s\"><span class=\"pl-pds\">'</span>t create /tmp/tmp.KOdAPn: Permission denied</span></pre></div>\n<p dir=\"auto\">解决办法（任选其一）：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"-e TMPDIR=/app/var/nginxpulse_data/tmp\"><pre>-e TMPDIR=/app/var/nginxpulse_data/tmp</pre></div>\n<ol start=\"5\" dir=\"auto\">\n<li>\n<p dir=\"auto\">解析入库的数据会一直保留吗<br>\n不会。入库后的访问数据会按 <code>system.logRetentionDays</code> 定时清理（默认 30 天）。<br>\n例如你一次解析了几个月数据，后续仍会逐步清理掉保留天数之外的数据。<br>\n注意：该参数不影响原始 Nginx 日志文件，也不等于系统运行日志（<code>var/nginxpulse_data/nginxpulse.log</code>）的轮转策略。</p>\n</li>\n<li>\n<p dir=\"auto\">页面可访问，但当天统计长时间不增长</p>\n</li>\n</ol>\n<p dir=\"auto\">先核对原始访问日志是否增长、扫描断点是否更新，以及 PostgreSQL 的 <code>pg_stat_activity</code>。清理任务使用独立工作器：启动后先采集，再尝试清理，成功后在下一次本地时间 02:00 运行。失败从 1 分钟开始指数退避，最多 1 小时；只运行一份任务，已完成阶段在本进程内续跑，重启后安全重做。</p>\n<p dir=\"auto\">维护 SQL 最长 30 秒、锁等待最长 1 秒、单站点预算 45 秒、整轮预算 2 分钟。为防止维表和统计重建与写入交叉，必要的维护互斥仍会产生有限等待；不再出现清理语句无限运行、挡住后续所有采集的情况。日志包含 <code>website_id</code>、<code>stage</code>、<code>table</code>、耗时、删除数和 <code>retry_at</code>，可直接定位卡在哪个步骤。超时后会释放维护锁、回滚正在执行的重建事务，不清空原始日志或扫描断点。</p>\n<p dir=\"auto\">维护回归测试：</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go test -race ./...\n# PostgreSQL 集成测试只接受本机的 nginxpulse_cleanup_test 专用数据库，切勿填生产库。\nNGINXPULSE_TEST_PG_DSN='postgres://postgres:password@127.0.0.1:5432/nginxpulse_cleanup_test?sslmode=disable' \\\n  go test -race -count=1 ./internal/store ./internal/worker\"><pre>go <span class=\"pl-c1\">test</span> -race ./...\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> PostgreSQL 集成测试只接受本机的 nginxpulse_cleanup_test 专用数据库，切勿填生产库。</span>\nNGINXPULSE_TEST_PG_DSN=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>postgres://postgres:password@127.0.0.1:5432/nginxpulse_cleanup_test?sslmode=disable<span class=\"pl-pds\">'</span></span> \\\n  go <span class=\"pl-c1\">test</span> -race -count=1 ./internal/store ./internal/worker</pre></div>\n<p dir=\"auto\">本次维护优化无需手工建表或迁移 SQL。更新镜像时继续挂载原 <code>/app/var/nginxpulse_data</code>、<code>/app/var/pgdata</code>、配置和访问日志目录；不要删除数据目录或使用 <code>docker compose down -v</code>。</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">目录结构与主要文件</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\".\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\"><pre class=\"notranslate\"><code>.\n├── cmd/\n│   └── nginxpulse/\n│       └── main.go                 # 程序入口\n├── internal/                       # 核心逻辑（解析、统计、存储、API）\n│   ├── app/\n│   │   └── app.go                  # 初始化、依赖装配、任务调度\n│   ├── analytics/                  # 统计口径与聚合\n│   ├── enrich/\n│   │   ├── ip_geo.go               # IP 归属地（远程+本地）与缓存\n│   │   └── pv_filter.go            # PV 过滤规则\n│   ├── ingest/\n│   │   └── log_parser.go           # 日志扫描、解析与入库\n│   ├── server/\n│   │   └── http.go                 # HTTP 服务与中间件\n│   ├── store/\n│   │   └── repository.go           # PostgreSQL 结构与写入\n│   ├── version/\n│   │   └── info.go                 # 版本信息注入\n│   ├── webui/\n│   │   └── dist/                   # 单体嵌入的前端静态资源\n│   └── web/\n│       └── handler.go              # API 路由\n├── webapp/\n│   └── src/\n│       └── main.ts                 # 前端入口\n├── webapp_mobile/                  # 移动端前端（/m）\n│   └── src/\n│       └── main.ts                 # 移动端入口\n├── configs/\n│   ├── nginxpulse_config.json      # 核心配置入口\n│   ├── nginxpulse_config.dev.json  # 本地开发配置\n│   └── nginx_frontend.conf         # 内置 Nginx 配置\n├── docs/\n│   └── versioning.md               # 版本管理与发布说明\n├── scripts/\n│   ├── build_single.sh             # 单体构建脚本\n│   ├── dev_local.sh                # 本地一键启动\n│   └── publish_docker.sh           # 推送 Docker 镜像\n├── var/                            # 数据目录（运行时生成/挂载）\n│   └── log/\n│       └── gz-log-read-test/       # gzip 参考日志\n├── Dockerfile\n└── docker-compose.yml\n</code></pre></div>\n<hr>\n<p dir=\"auto\">如需更详细的统计口径或 API 扩展，建议从 <code>internal/analytics/</code> 与 <code>internal/web/handler.go</code> 开始。</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">致谢</h2></div>\n<p dir=\"auto\">非常感谢诸位好兄弟/姐妹对此项目的<a href=\"https://resource.kaisir.cn/uploads/MarkDownImg/20260128/pEZcuA.jpg\" rel=\"nofollow\">投币</a>支持。</p>\n<p align=\"left\" dir=\"auto\">\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-1.png\" width=\"60\" height=\"60\" alt=\"supporter-1\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-2.png\" width=\"60\" height=\"60\" alt=\"supporter-2\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-3.png\" width=\"60\" height=\"60\" alt=\"supporter-3\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-4.png\" width=\"60\" height=\"60\" alt=\"supporter-4\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-5.png\" width=\"60\" height=\"60\" alt=\"supporter-5\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-6.png\" width=\"60\" height=\"60\" alt=\"supporter-6\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-7.png\" width=\"60\" height=\"60\" alt=\"supporter-7\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-8.png\" width=\"60\" height=\"60\" alt=\"supporter-8\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n  <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\"><img src=\"https://raw.githubusercontent.com/likaia/nginxpulse/main/docs/thanks/supporter-9.png\" width=\"60\" height=\"60\" alt=\"supporter-9\" style=\"max-width: 100%; height: auto; max-height: 60px;; aspect-ratio: 60 / 60; background-color: var(--bgColor-muted); border-radius: 6px\" class=\"js-gh-image-fallback\"></a>\n</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">写在最后</h2></div>\n<p dir=\"auto\">本项目大部分代码通过codex生成，我投喂了很多开源项目和资料让他做参考，在此感谢大家对开源社区的贡献。</p>\n<ul dir=\"auto\">\n<li><a href=\"https://v2ex.com/t/1178789\" rel=\"nofollow\">有没有好用的 nginx 日志看板展示项目</a></li>\n<li><a href=\"https://github.com/BeyondXinXin/nixvis\">nixvis</a></li>\n<li><a href=\"https://github.com/allinurl/goaccess\">goaccess</a></li>\n<li><a href=\"https://blog.csdn.net/lvan_test/article/details/123579531\" rel=\"nofollow\">prometheus监控nginx的两种方式原创</a></li>\n<li><a href=\"https://maxidea.gitbook.io/k8s-testing/prometheus-he-grafana-de-dan-ji-bian-pai/tong-guo-nginxprometheusexporter-jian-kong-nginx\" rel=\"nofollow\">通过nginx-prometheus-exporter监控nginx指标</a></li>\n<li><a href=\"https://www.cnblogs.com/zmh520/p/17758730.html\" rel=\"nofollow\">Prometheus 监控nginx服务 </a></li>\n<li><a href=\"https://zhuanlan.zhihu.com/p/460300628\" rel=\"nofollow\">Prometheus监控Nginx</a></li>\n</ul>\n</article></div>",
   "releases": [
+    {
+      "name": "v1.6.26",
+      "tag": "v1.6.26",
+      "url": "https://github.com/likaia/nginxpulse/releases/tag/v1.6.26",
+      "publishedAt": "2026-11-04T11:10:00Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 26,
+      "reactions": 0
+    },
+    {
+      "name": "v1.6.25",
+      "tag": "v1.6.25",
+      "url": "https://github.com/likaia/nginxpulse/releases/tag/v1.6.25",
+      "publishedAt": "2026-11-04T08:49:42Z",
+      "prerelease": false,
+      "body": "",
+      "downloads": 32,
+      "reactions": 0
+    },
     {
       "name": "v1.6.24",
       "tag": "v1.6.24",
@@ -350,7 +376,7 @@
       "publishedAt": "2026-05-19T16:48:40Z",
       "prerelease": false,
       "body": "",
-      "downloads": 690,
+      "downloads": 730,
       "reactions": 0
     },
     {
@@ -360,7 +386,7 @@
       "publishedAt": "2026-05-13T15:36:53Z",
       "prerelease": false,
       "body": "",
-      "downloads": 210,
+      "downloads": 226,
       "reactions": 0
     },
     {
@@ -370,40 +396,11 @@
       "publishedAt": "2026-05-08T13:43:30Z",
       "prerelease": false,
       "body": "",
-      "downloads": 91,
-      "reactions": 0
-    },
-    {
-      "name": "v1.6.21",
-      "tag": "v1.6.21",
-      "url": "https://github.com/likaia/nginxpulse/releases/tag/v1.6.21",
-      "publishedAt": "2026-04-30T17:30:35Z",
-      "prerelease": false,
-      "body": "",
-      "downloads": 92,
-      "reactions": 0
-    },
-    {
-      "name": "v1.6.20",
-      "tag": "v1.6.20",
-      "url": "https://github.com/likaia/nginxpulse/releases/tag/v1.6.20",
-      "publishedAt": "2026-04-25T16:13:24Z",
-      "prerelease": false,
-      "body": "",
-      "downloads": 133,
+      "downloads": 107,
       "reactions": 0
     }
   ],
   "recentIssues": [
-    {
-      "number": 102,
-      "title": "能否加个登录鉴权？",
-      "url": "https://github.com/likaia/nginxpulse/issues/102",
-      "createdAt": "2026-09-03T07:44:33Z",
-      "comments": 1,
-      "labels": [],
-      "author": "gxnas"
-    },
     {
       "number": 101,
       "title": "如图, 建议增加测试连接的按钮",
@@ -436,7 +433,7 @@
       "title": "日志清理SQL问题导致postgresql CPU 100%",
       "url": "https://github.com/likaia/nginxpulse/issues/96",
       "createdAt": "2026-07-13T10:19:31Z",
-      "comments": 2,
+      "comments": 3,
       "labels": [],
       "author": "developer-playable"
     },
@@ -448,6 +445,15 @@
       "comments": 0,
       "labels": [],
       "author": "staugur"
+    },
+    {
+      "number": 94,
+      "title": "是否考虑加一个请求参数的功能",
+      "url": "https://github.com/likaia/nginxpulse/issues/94",
+      "createdAt": "2026-07-01T00:51:16Z",
+      "comments": 0,
+      "labels": [],
+      "author": "codeses"
     }
   ],
   "punchCard": [
@@ -894,7 +900,7 @@
     {
       "day": 3,
       "hour": 16,
-      "commits": 4
+      "commits": 5
     },
     {
       "day": 3,
@@ -909,7 +915,7 @@
     {
       "day": 3,
       "hour": 19,
-      "commits": 0
+      "commits": 1
     },
     {
       "day": 3,
@@ -1294,6 +1300,22 @@
   ],
   "recentCommits": [
     {
+      "sha": "f9416be",
+      "message": "fix: 修复sql注入问题",
+      "url": "https://github.com/likaia/nginxpulse/commit/f9416bea3be892a394cd24a6d4a2afbd8397e926",
+      "date": "2026-11-04T11:06:39Z",
+      "author": "likaia",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4"
+    },
+    {
+      "sha": "e15b335",
+      "message": "fix: 修复sql清理语句引发的卡死问题",
+      "url": "https://github.com/likaia/nginxpulse/commit/e15b335e23aa72ad31c346dc5dc27c4526d0904d",
+      "date": "2026-11-04T08:46:46Z",
+      "author": "likaia",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4"
+    },
+    {
       "sha": "0d41264",
       "message": "feat: 数据日报添加URL筛选并优化异常洞察样式",
       "url": "https://github.com/likaia/nginxpulse/commit/0d41264ae441ddfcb595551f2e2f374f707dae22",
@@ -1354,22 +1376,6 @@
       "message": "fix: Setup 页补充说明，明确 logRegex 优先级，以及 autoDiscoverHosts 的触发时机",
       "url": "https://github.com/likaia/nginxpulse/commit/d785385fd6770d1145bf8a4f08db00a99adc95dc",
       "date": "2026-05-07T03:11:11Z",
-      "author": "likaia",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4"
-    },
-    {
-      "sha": "edde0f5",
-      "message": "docs: 文档同步修改",
-      "url": "https://github.com/likaia/nginxpulse/commit/edde0f5ae89cc2ac40de162f95c63b5d03280324",
-      "date": "2026-05-05T09:31:20Z",
-      "author": "likaia",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4"
-    },
-    {
-      "sha": "0c9a427",
-      "message": "style：统一全局弹窗样式与下拉框样式",
-      "url": "https://github.com/likaia/nginxpulse/commit/0c9a427a0eb6f8f21cb6f0ad6f0739ac1e75ed5f",
-      "date": "2026-04-30T17:22:46Z",
       "author": "likaia",
       "avatarUrl": "https://avatars.githubusercontent.com/u/35120858?v=4"
     }
@@ -1503,7 +1509,7 @@
     {
       "name": "Dockerfile",
       "type": "file",
-      "size": 3072,
+      "size": 3258,
       "url": "https://github.com/likaia/nginxpulse/blob/main/Dockerfile"
     },
     {
@@ -1515,7 +1521,7 @@
     {
       "name": "entrypoint.sh",
       "type": "file",
-      "size": 14858,
+      "size": 13332,
       "url": "https://github.com/likaia/nginxpulse/blob/main/entrypoint.sh"
     },
     {
@@ -1575,7 +1581,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 16942,
+      "size": 18437,
       "url": "https://github.com/likaia/nginxpulse/blob/main/README.md"
     }
   ],
@@ -1708,21 +1714,21 @@
     }
   ],
   "branchCount": 1,
-  "tagCount": 41,
+  "tagCount": 43,
   "workflowRuns": [
     {
       "name": "release",
       "status": "success",
-      "url": "https://github.com/likaia/nginxpulse/actions/runs/26111696899",
-      "branch": "v1.6.24",
-      "updatedAt": "2026-05-19T17:01:50Z"
+      "url": "https://github.com/likaia/nginxpulse/actions/runs/41818797524",
+      "branch": "v1.6.26",
+      "updatedAt": "2026-11-04T11:22:56Z"
     },
     {
       "name": "Update Docker Hub Description",
       "status": "success",
-      "url": "https://github.com/likaia/nginxpulse/actions/runs/25368616790",
+      "url": "https://github.com/likaia/nginxpulse/actions/runs/41802232079",
       "branch": "main",
-      "updatedAt": "2026-05-05T09:31:46Z"
+      "updatedAt": "2026-11-04T08:47:47Z"
     }
   ],
   "community": {
@@ -1733,13 +1739,13 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 13,
+  "openIssuesOnly": 12,
   "openPRs": 0,
-  "releaseCount": 38,
+  "releaseCount": 40,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 78,
+  "closedIssues": 81,
   "mergedPRs": 8,
   "environmentCount": 0,
   "isFork": false,
@@ -1747,14 +1753,10 @@
   "securityPolicyUrl": null,
   "codeOfConduct": null,
   "latestRelease": {
-    "tag": "v1.6.24",
-    "publishedAt": "2026-05-19T16:48:40Z"
+    "tag": "v1.6.26",
+    "publishedAt": "2026-11-04T11:10:00Z"
   },
   "commitActivity": [
-    {
-      "week": "2025-11-01",
-      "commits": 0
-    },
     {
       "week": "2025-11-09",
       "commits": 0
@@ -1958,37 +1960,13 @@
     {
       "week": "2026-10-25",
       "commits": 0
+    },
+    {
+      "week": "2026-11-01",
+      "commits": 2
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-11-01",
-      "count": 0
-    },
-    {
-      "date": "2025-11-02",
-      "count": 0
-    },
-    {
-      "date": "2025-11-03",
-      "count": 0
-    },
-    {
-      "date": "2025-11-04",
-      "count": 0
-    },
-    {
-      "date": "2025-11-05",
-      "count": 0
-    },
-    {
-      "date": "2025-11-06",
-      "count": 0
-    },
-    {
-      "date": "2025-11-07",
-      "count": 0
-    },
     {
       "date": "2025-11-09",
       "count": 0
@@ -3416,10 +3394,38 @@
     {
       "date": "2026-10-31",
       "count": 0
+    },
+    {
+      "date": "2026-11-01",
+      "count": 0
+    },
+    {
+      "date": "2026-11-02",
+      "count": 0
+    },
+    {
+      "date": "2026-11-03",
+      "count": 0
+    },
+    {
+      "date": "2026-11-04",
+      "count": 2
+    },
+    {
+      "date": "2026-11-05",
+      "count": 0
+    },
+    {
+      "date": "2026-11-06",
+      "count": 0
+    },
+    {
+      "date": "2026-11-07",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-10-25T22:41:53.483Z",
+  "factsUpdatedAt": "2026-11-04T22:01:51.965Z",
   "aiSummary": {
     "oneLiner": "A lightweight Nginx access log analysis and real-time visualization dashboard.",
     "whatItDoes": "NginxPulse is a lightweight, Go-based application that parses Nginx access logs to provide a real-time analytics dashboard. It is designed to offer critical insights into web traffic without the massive resource overhead of traditional ELK stacks. The tool processes log files to generate live statistics on page views, apply PV filtering, and perform IP attribution to determine visitor origins. It also handles client parsing to break down user agents into understandable browser and device metrics, presenting everything in an elegant visual interface. It integrates with PostgreSQL to persist stats and analysis data efficiently.",
@@ -3460,5 +3466,229 @@
     "category": "infrastructure",
     "source": "jules",
     "version": 11
-  }
+  },
+  "codeFrequency": [
+    {
+      "week": "2026-01-11",
+      "additions": 27469,
+      "deletions": 406
+    },
+    {
+      "week": "2026-01-18",
+      "additions": 18297,
+      "deletions": 3310
+    },
+    {
+      "week": "2026-01-25",
+      "additions": 9936,
+      "deletions": 2107
+    },
+    {
+      "week": "2026-02-01",
+      "additions": 6522,
+      "deletions": 552
+    },
+    {
+      "week": "2026-02-08",
+      "additions": 8704,
+      "deletions": 5927
+    },
+    {
+      "week": "2026-02-15",
+      "additions": 322,
+      "deletions": 22
+    },
+    {
+      "week": "2026-02-22",
+      "additions": 4343,
+      "deletions": 74
+    },
+    {
+      "week": "2026-03-01",
+      "additions": 1690,
+      "deletions": 310
+    },
+    {
+      "week": "2026-03-08",
+      "additions": 2412,
+      "deletions": 141
+    },
+    {
+      "week": "2026-03-15",
+      "additions": 48945,
+      "deletions": 38082
+    },
+    {
+      "week": "2026-03-22",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-03-29",
+      "additions": 1855,
+      "deletions": 296
+    },
+    {
+      "week": "2026-04-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-04-19",
+      "additions": 5244,
+      "deletions": 679
+    },
+    {
+      "week": "2026-04-26",
+      "additions": 9333,
+      "deletions": 3647
+    },
+    {
+      "week": "2026-05-03",
+      "additions": 642,
+      "deletions": 39
+    },
+    {
+      "week": "2026-05-10",
+      "additions": 131,
+      "deletions": 4
+    },
+    {
+      "week": "2026-05-17",
+      "additions": 1109,
+      "deletions": 357
+    },
+    {
+      "week": "2026-05-24",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-05-31",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-07",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-14",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-21",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-06-28",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-05",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-12",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-19",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-07-26",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-02",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-09",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-16",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-23",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-08-30",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-06",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-13",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-20",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-09-27",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-04",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-11",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-25",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-11-01",
+      "additions": 2073,
+      "deletions": 211
+    }
+  ],
+  "changelog": [
+    {
+      "date": "2026-11-04",
+      "type": "release",
+      "summary": "New release v1.6.26 (previously v1.6.24)."
+    }
+  ]
 }
