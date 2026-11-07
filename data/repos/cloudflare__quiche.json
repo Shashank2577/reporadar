@@ -115,6 +115,11 @@
       "date": "2026-11-03",
       "stars": 12842,
       "forks": 1193
+    },
+    {
+      "date": "2026-11-07",
+      "stars": 12854,
+      "forks": 1195
     }
   ],
   "trendingHistory": [
@@ -207,18 +212,18 @@
     "quic",
     "rust"
   ],
-  "stars": 12842,
-  "forks": 1193,
-  "watchers": 167,
-  "openIssues": 401,
+  "stars": 12854,
+  "forks": 1195,
+  "watchers": 166,
+  "openIssues": 407,
   "createdAt": "2018-09-29T18:22:05Z",
-  "pushedAt": "2026-11-03T21:17:18Z",
+  "pushedAt": "2026-11-06T22:35:54Z",
   "defaultBranch": "master",
   "archived": false,
-  "updatedAt": "2026-11-03T23:33:08.316Z",
+  "updatedAt": "2026-11-07T15:49:00.789Z",
   "languages": {
-    "Rust": 4838556,
-    "C": 112773,
+    "Rust": 4900103,
+    "C": 113223,
     "JavaScript": 28744,
     "Shell": 11076,
     "HTML": 9173,
@@ -226,7 +231,7 @@
     "Dockerfile": 2535,
     "CSS": 2053
   },
-  "commitCount": 2573,
+  "commitCount": 2586,
   "readmeExcerpt": "\n\n\n\n\n\n\n[quiche] is an implementation of the QUIC transport protocol and HTTP/3 as\nspecified by the [IETF]. It provides a low level API for processing QUIC packets\nand handling connection state. The application is responsible for providing I/O\n(e.g. sockets handling) as well as an event loop with support for timers.\n\nFor more information on how quiche came about and some insights into its design\nyou can read a [post] on Cloudflare's blog that goes into some more detail.\n\n[quiche]: https://docs.quic.tech/quiche/\n[ietf]: https://quicwg.org/\n[post]: https://blog.cloudflare.com/enjoy-a-slice-of-quic-and-rust/\n\nWho uses quiche?\n----------------\n\n### Cloudflare\n\nquiche powers Cloudflare edge network's [HTTP/3 support][cloudflare-http3]. The\n[cloudflare-quic.com](https://cloudflare-quic.com) website can be used for\ntesting and experimentation.\n\n### Android\n\nAndroid's DNS resolver uses quiche to [implement DNS over HTTP/3][android-http3].\n\n### curl\n\nquiche can be [integrated into curl][curl-http3] to provide support for HTTP/3.\n\n[cloudflare-http3]: https://blog.cloudflare.com/http3-the-past-present-and-future/\n[android-http3]: https://security.googleblog.com/2022/07/dns-over-http3-in-android.html\n[curl-http3]: https://github.com/curl/curl/blob/master/docs/HTTP3.md#quiche-version\n\nGetting Started\n---------------\n\n### Command-line apps\n\nBefore diving into the quiche API, here are a few examples on how to use the\nquiche tools provided as part of the [quiche-apps](apps/) crate. These are not\nsuitable for production environments; see [disclaimers and\nnotes](#disclaimers-and-notes).\n\nAfter cloning the project according to the command mentioned in the [building](#building) section, the client can be run as follows:\n\n```bash\n $ cargo run --bin quiche-client -- https://cloudflare-quic.com/\n```\n\nwhile the server can be run as follows:\n\n```bash\n $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key\n```\n\n(note that the certificate provided is self-signed and should not be used in\nproduction)\n\nUse the `--help` command-line flag to get a more detailed description of each\ntool's options.\n\n### Configuring connections\n\nThe first step in establishing a QUIC connection using quiche is creating a\n[`Config`] object:\n\n```rust\nlet mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;\nconfig.set_application_protos(&[b\"example-proto\"]);\n\n// Additional configuration specific to application and use case...\n```\n\nThe [`Config`] object controls important aspects of the QUIC connection such\nas QUIC version, ALPN IDs, flow control, congestion control, idle timeout\nand other properties or features.\n\nQUIC is a general-purpose transport protocol and there are several\nconfiguration properties where there is no reasonable default value. For\nexample, the permitted number of concurrent streams of any particular type\nis dependent on the application running over QUIC, and other use-case\nspecific concerns.\n\nquiche defaults several properties to zero, applications most likely need\nto set these to something else to satisfy their needs using the following:\n\n- [`set_initial_max_streams_bidi()`]\n- [`set_initial_max_streams_uni()`]\n- [`set_initial_max_data()`]\n- [`set_initial_max_stream_data_bidi_local()`]\n- [`set_initial_max_stream_data_bidi_remote()`]\n- [`set_initial_max_stream_data_uni()`]\n\n[`Config`] also holds TLS configuration. This can be changed by mutators on\nthe an existing object, or by constructing a TLS context manually and\ncreating a configuration using [`with_boring_ssl_ctx_builder()`].\n\nA configuration object can be shared among multiple connections.\n\n### Connection setup\n\nOn the client-side the [`connect()`] utility function can be used to create\na new connection, while [`accept()`] is for servers:\n\n```rust\n// Client connection.\nlet conn = quiche::connect(Some(&server_name), &scid, local, peer, &mut config)?;\n\n// Server connection.\nlet conn = quiche::accept(&scid, None, local, peer, &mut config)?;\n```\n\n### Handling incoming packets\n\nUsing the connection's [`recv()`] method the application can process\nincoming packets that belong to that connection from the network:\n\n```rust\nlet to = socket.local_addr().unwrap();\n\nloop {\n    let (read, from) = socket.recv_from(&mut buf).unwrap();\n\n    let recv_info = quiche::RecvInfo { from, to };\n\n    let read = match conn.recv(&mut buf[..read], recv_info) {\n        Ok(v) => v,\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n}\n```\n\n### Generating outgoing packets\n\nOutgoing packet are generated using the connection's [`send()`] method\ninstead:\n\n```rust\nloop {\n    let (write, send_info) = match conn.send(&mut out) {\n        Ok(v) => v,\n\n        Err(quiche::Error::Done) => {\n            // Done writing.\n            break;\n        },\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&out[..write], &send_info.to).unwrap();\n}\n```\n\nWhen packets are sent, the application is responsible for maintaining a\ntimer to react to time-based connection events. The timer expiration can be\nobtained using the connection's [`timeout()`] method.\n\n```rust\nlet timeout = conn.timeout();\n```\n\nThe application is responsible for providing a timer implementation, which\ncan be specific to the operating system or networking framework used. When\na timer expires, the connection's [`on_timeout()`] method should be called,\nafter which additional packets might need to be sent on the network:\n\n```rust\n// Timeout expired, handle it.\nconn.on_timeout();\n\n// Send more packets as needed after timeout.\nloop {\n    let (write, send_info) = match conn.send(&mut out) {\n        Ok(v) => v,\n\n        Err(quiche::Error::Done) => {\n            // Done writing.\n            break;\n        },\n\n        Err(e) => {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&out[..write], &send_info.to).unwrap();\n}\n```\n\n#### Pacing\n\nIt is recommended that applications [pace] sending of outgoing packets to\navoid creating packet bursts that could cause short-term congestion and\nlosses in the network.\n\nquiche exposes pacing hints for outgoing packets through the [`at`] field\nof the [`SendInfo`] structure that is returned by the [`send()`] method.\nThis field represents the time when a specific packet should be sent into\nthe network.\n\nApplications can use these hints by artificially delaying the sending of\npackets through platform-specific mechanisms (such as the [`SO_TXTIME`]\nsocket option on Linux), or custom methods (for example by using user-space\ntimers).\n\n[pace]: https://datatracker.ietf.org/doc/html/rfc9002#section-7.7\n[`SO_TXTIME`]: https://man7.org/linux/man-pages/man8/tc-etf.8.html\n\n### Sending and receiving stream data\n\nAfter some back and forth, the connection will complete its handshake and\nwill be ready for sending or receiving application data.\n\nData can be sent on a stream by using the [`stream_send()`] method:\n\n```rust\nif conn.is_established() {\n    // Handshake completed, send some data on stream 0.\n    conn.stream_send(0, b\"hello\", true)?;\n}\n```\n\nThe application can check whether there are any readable streams by using\nthe connection's [`readable()`] method, which returns an iterator over all\nthe streams that have outstanding data to read.\n\nThe [`stream_recv()`] method can then be used to retrieve the application\ndata from the readable stream:\n\n```rust\nif conn.is_established() {\n    // Iterate over readable streams.\n    for stream_id in conn.readable() {\n        // Stream is readable, read until there's no more data.\n        while let Ok((read, fin)) = conn.stream_recv(stream_id, &mut buf) {\n            println!(\"Got {} bytes on stream {}\", read, stream_id);\n        }\n    }\n}\n```\n\n### HTTP/3\n\nThe quiche [HTTP/3 module] provides a high level API for sending and\nreceiving HTTP requests and responses on top of the QUIC transport protocol.\n\n[`Config`]: https://docs.quic.tech/quiche/struct.Config.html\n[`set_initial_max_streams_bidi()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_bidi\n[`set_initial_max_streams_uni()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_uni\n[`set_initial_max_data()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_data\n[`set_initial_max_stream_data_bidi_local()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_local\n[`set_initial_max_stream_data_bidi_remote()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_remote\n[`set_initial_max_stream_data_uni()`]: https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_uni\n[`with_boring_ssl_ctx_builder()`]: https://docs.quic.tech/quiche/struct.Config.html#method.with_boring_ssl_ctx_builder\n[`connect()`]: https://docs.quic.tech/quiche/fn.connect.html\n[`accept()`]: https://docs.quic.tech/quiche/fn.accept.html\n[`recv()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.recv\n[`send()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.send\n[`timeout()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.timeout\n[`on_timeout()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.on_timeout\n[`stream_send()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.stream_send\n[`readable()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.readable\n[`stream_recv()`]: https://docs.quic.tech/quiche/struct.Connection.html#method.stream_recv\n[HTTP/3 module]: https://docs.quic.tech/quiche/h3/index.html\n\nHave a look at the [quiche/examples/] directory for more complete examples on\nhow to use the quiche API, including examples on how to use quiche in C/C++\napplications (see below for more information).\n\n[examples/]: quiche/examples/\n\nCalling quiche from C/C++\n-------------------------\n\nquiche exposes a [thin C API] on top of the Rust API that can be used to more\neasily integrate quiche into C/C++ applications (as well as in other languages\nthat allow calling C APIs via some form of FFI). The C API follows the same\ndesign of the Rust one, modulo the constraints imposed by the C language itself.\n\nWhen running ``cargo build``, a static library called ``libquiche.a`` will be\nbuilt automatically alongside the Rust one. This is fully stand-alone and can\nbe linked directly into C/C++ applications.\n\nNote that in order to enable the FFI API, the ``ffi`` feature must be enabled (it\nis disabled by default), by passing ``--features ffi`` to ``cargo``.\n\n[thin C API]: https://github.com/cloudflare/quiche/blob/master/quiche/include/quiche.h\n\nBuilding\n--------\n\nquiche requires Rust 1.88 or later to build. The latest stable Rust release can\nbe installed using [rustup](https://rustup.rs/).\n\nOnce the Rust build environment is setup, the quiche source code can be fetched\nusing git:\n\n```bash\n $ git clone https://github.com/cloudflare/quiche\n```\n\nand then built using cargo:\n\n```bash\n $ cargo build --examples\n```\n\ncargo can also be used to run the testsuite:\n\n```bash\n $ cargo test\n```\n\nNote that [BoringSSL], which is used to implement QUIC's cryptographic handshake\nbased on TLS, needs to be built and linked to quiche. This is done automatically\nby the [boring-sys] crate when building with cargo, but requires the `cmake`\ncommand to be available during the build process.\n\nOn Windows [NASM](https://www.nasm.us/) is also required. The [official BoringSSL\ndocumentation](https://github.com/google/boringssl/blob/master/BUILDING.md) has\nmore details.\n\nIn alternative you can use your own custom build of BoringSSL by configuring\nthe BoringSSL directory with the ``BORING_BSSL_PATH`` environment variable:\n\n```bash\n $ BORING_BSSL_PATH=\"/path/to/boringssl\" cargo build --examples\n```\n\n[BoringSSL]: https://boringssl.googlesource.com/boringssl/\n[boring-sys]: https://crates.io/crates/boring-sys\n\n##",
   "releases": [
     {
@@ -285,13 +290,13 @@
       "login": "ghedo",
       "url": "https://github.com/ghedo",
       "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4",
-      "contributions": 1423
+      "contributions": 1426
     },
     {
       "login": "LPardue",
       "url": "https://github.com/LPardue",
       "avatarUrl": "https://avatars.githubusercontent.com/u/6571445?v=4",
-      "contributions": 303
+      "contributions": 305
     },
     {
       "login": "antoniovicente",
@@ -330,29 +335,47 @@
       "contributions": 31
     },
     {
-      "login": "gregor-cf",
-      "url": "https://github.com/gregor-cf",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/201137280?v=4",
-      "contributions": 23
-    },
-    {
       "login": "TheJokr",
       "url": "https://github.com/TheJokr",
       "avatarUrl": "https://avatars.githubusercontent.com/u/7347535?v=4",
-      "contributions": 21
+      "contributions": 24
+    },
+    {
+      "login": "gregor-cf",
+      "url": "https://github.com/gregor-cf",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/201137280?v=4",
+      "contributions": 24
     }
   ],
   "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/cloudflare/quiche/blob/master/quiche.svg\"><img src=\"https://raw.githubusercontent.com/cloudflare/quiche/master/quiche.svg\" alt=\"quiche\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://crates.io/crates/quiche\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/09a33f8095652cd252543d88df3fba08eba4a4791d855b822fd198e7e0835f57/68747470733a2f2f696d672e736869656c64732e696f2f6372617465732f762f7175696368652e737667\" alt=\"crates.io\" data-canonical-src=\"https://img.shields.io/crates/v/quiche.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://docs.rs/quiche\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/8963f896c9e983f89c32e6317d66db8f85e07d3013db26260baa970e61dac544/68747470733a2f2f646f63732e72732f7175696368652f62616467652e737667\" alt=\"docs.rs\" data-canonical-src=\"https://docs.rs/quiche/badge.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://opensource.org/licenses/BSD-2-Clause\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/ba160bfc62df73ef0338e9f26d246fa254b399a5802653767c032408df057176/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f6c6963656e73652f636c6f7564666c6172652f7175696368652e737667\" alt=\"license\" data-canonical-src=\"https://img.shields.io/github/license/cloudflare/quiche.svg\" style=\"max-width: 100%;\"></a>\n<a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://camo.githubusercontent.com/e5891469c3a415c43e7b7419b1da0bcacdb369176215d708395df693dadca085/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f636c6f7564666c6172652f7175696368652f737461626c652e796d6c3f6272616e63683d6d6173746572\"><img src=\"https://camo.githubusercontent.com/e5891469c3a415c43e7b7419b1da0bcacdb369176215d708395df693dadca085/68747470733a2f2f696d672e736869656c64732e696f2f6769746875622f616374696f6e732f776f726b666c6f772f7374617475732f636c6f7564666c6172652f7175696368652f737461626c652e796d6c3f6272616e63683d6d6173746572\" alt=\"build\" data-canonical-src=\"https://img.shields.io/github/actions/workflow/status/cloudflare/quiche/stable.yml?branch=master\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><a href=\"https://docs.quic.tech/quiche/\" rel=\"nofollow\">quiche</a> is an implementation of the QUIC transport protocol and HTTP/3 as\nspecified by the <a href=\"https://quicwg.org/\" rel=\"nofollow\">IETF</a>. It provides a low level API for processing QUIC packets\nand handling connection state. The application is responsible for providing I/O\n(e.g. sockets handling) as well as an event loop with support for timers.</p>\n<p dir=\"auto\">For more information on how quiche came about and some insights into its design\nyou can read a <a href=\"https://blog.cloudflare.com/enjoy-a-slice-of-quic-and-rust/\" rel=\"nofollow\">post</a> on Cloudflare's blog that goes into some more detail.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Who uses quiche?</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Cloudflare</h3></div>\n<p dir=\"auto\">quiche powers Cloudflare edge network's <a href=\"https://blog.cloudflare.com/http3-the-past-present-and-future/\" rel=\"nofollow\">HTTP/3 support</a>. The\n<a href=\"https://cloudflare-quic.com\" rel=\"nofollow\">cloudflare-quic.com</a> website can be used for\ntesting and experimentation.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Android</h3></div>\n<p dir=\"auto\">Android's DNS resolver uses quiche to <a href=\"https://security.googleblog.com/2022/07/dns-over-http3-in-android.html\" rel=\"nofollow\">implement DNS over HTTP/3</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">curl</h3></div>\n<p dir=\"auto\">quiche can be <a href=\"https://github.com/curl/curl/blob/master/docs/HTTP3.md#quiche-version\">integrated into curl</a> to provide support for HTTP/3.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Getting Started</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Command-line apps</h3></div>\n<p dir=\"auto\">Before diving into the quiche API, here are a few examples on how to use the\nquiche tools provided as part of the <a href=\"https://github.com/cloudflare/quiche/blob/master/apps/\">quiche-apps</a> crate. These are not\nsuitable for production environments; see <a href=\"#disclaimers-and-notes\">disclaimers and\nnotes</a>.</p>\n<p dir=\"auto\">After cloning the project according to the command mentioned in the <a href=\"#building\">building</a> section, the client can be run as follows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo run --bin quiche-client -- https://cloudflare-quic.com/\"><pre> $ cargo run --bin quiche-client -- https://cloudflare-quic.com/</pre></div>\n<p dir=\"auto\">while the server can be run as follows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key\"><pre> $ cargo run --bin quiche-server -- --cert apps/src/bin/cert.crt --key apps/src/bin/cert.key</pre></div>\n<p dir=\"auto\">(note that the certificate provided is self-signed and should not be used in\nproduction)</p>\n<p dir=\"auto\">Use the <code>--help</code> command-line flag to get a more detailed description of each\ntool's options.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Configuring connections</h3></div>\n<p dir=\"auto\">The first step in establishing a QUIC connection using quiche is creating a\n<a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> object:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;\nconfig.set_application_protos(&amp;[b&quot;example-proto&quot;]);\n\n// Additional configuration specific to application and use case...\"><pre><span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-v\">PROTOCOL_VERSION</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">set_application_protos</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-kos\">[</span><span class=\"pl-s\">b\"example-proto\"</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Additional configuration specific to application and use case...</span></pre></div>\n<p dir=\"auto\">The <a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> object controls important aspects of the QUIC connection such\nas QUIC version, ALPN IDs, flow control, congestion control, idle timeout\nand other properties or features.</p>\n<p dir=\"auto\">QUIC is a general-purpose transport protocol and there are several\nconfiguration properties where there is no reasonable default value. For\nexample, the permitted number of concurrent streams of any particular type\nis dependent on the application running over QUIC, and other use-case\nspecific concerns.</p>\n<p dir=\"auto\">quiche defaults several properties to zero, applications most likely need\nto set these to something else to satisfy their needs using the following:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_bidi\" rel=\"nofollow\"><code>set_initial_max_streams_bidi()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_streams_uni\" rel=\"nofollow\"><code>set_initial_max_streams_uni()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_data\" rel=\"nofollow\"><code>set_initial_max_data()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_local\" rel=\"nofollow\"><code>set_initial_max_stream_data_bidi_local()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_bidi_remote\" rel=\"nofollow\"><code>set_initial_max_stream_data_bidi_remote()</code></a></li>\n<li><a href=\"https://docs.rs/quiche/latest/quiche/struct.Config.html#method.set_initial_max_stream_data_uni\" rel=\"nofollow\"><code>set_initial_max_stream_data_uni()</code></a></li>\n</ul>\n<p dir=\"auto\"><a href=\"https://docs.quic.tech/quiche/struct.Config.html\" rel=\"nofollow\"><code>Config</code></a> also holds TLS configuration. This can be changed by mutators on\nthe an existing object, or by constructing a TLS context manually and\ncreating a configuration using <a href=\"https://docs.quic.tech/quiche/struct.Config.html#method.with_boring_ssl_ctx_builder\" rel=\"nofollow\"><code>with_boring_ssl_ctx_builder()</code></a>.</p>\n<p dir=\"auto\">A configuration object can be shared among multiple connections.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Connection setup</h3></div>\n<p dir=\"auto\">On the client-side the <a href=\"https://docs.quic.tech/quiche/fn.connect.html\" rel=\"nofollow\"><code>connect()</code></a> utility function can be used to create\na new connection, while <a href=\"https://docs.quic.tech/quiche/fn.accept.html\" rel=\"nofollow\"><code>accept()</code></a> is for servers:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Client connection.\nlet conn = quiche::connect(Some(&amp;server_name), &amp;scid, local, peer, &amp;mut config)?;\n\n// Server connection.\nlet conn = quiche::accept(&amp;scid, None, local, peer, &amp;mut config)?;\"><pre><span class=\"pl-c\">// Client connection.</span>\n<span class=\"pl-k\">let</span> conn = quiche<span class=\"pl-kos\">::</span><span class=\"pl-en\">connect</span><span class=\"pl-kos\">(</span><span class=\"pl-en\">Some</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>server_name<span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>scid<span class=\"pl-kos\">,</span> local<span class=\"pl-kos\">,</span> peer<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> config<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Server connection.</span>\n<span class=\"pl-k\">let</span> conn = quiche<span class=\"pl-kos\">::</span><span class=\"pl-en\">accept</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>scid<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span> local<span class=\"pl-kos\">,</span> peer<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> config<span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Handling incoming packets</h3></div>\n<p dir=\"auto\">Using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.recv\" rel=\"nofollow\"><code>recv()</code></a> method the application can process\nincoming packets that belong to that connection from the network:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let to = socket.local_addr().unwrap();\n\nloop {\n    let (read, from) = socket.recv_from(&amp;mut buf).unwrap();\n\n    let recv_info = quiche::RecvInfo { from, to };\n\n    let read = match conn.recv(&amp;mut buf[..read], recv_info) {\n        Ok(v) =&gt; v,\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n}\"><pre><span class=\"pl-k\">let</span> to = socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">local_addr</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>read<span class=\"pl-kos\">,</span> from<span class=\"pl-kos\">)</span> = socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">recv_from</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n    <span class=\"pl-k\">let</span> recv_info = quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">RecvInfo</span> <span class=\"pl-kos\">{</span> from<span class=\"pl-kos\">,</span> to <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    <span class=\"pl-k\">let</span> read = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">recv</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">[</span>..read<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> recv_info<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Generating outgoing packets</h3></div>\n<p dir=\"auto\">Outgoing packet are generated using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.send\" rel=\"nofollow\"><code>send()</code></a> method\ninstead:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"loop {\n    let (write, send_info) = match conn.send(&amp;mut out) {\n        Ok(v) =&gt; v,\n\n        Err(quiche::Error::Done) =&gt; {\n            // Done writing.\n            break;\n        },\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&amp;out[..write], &amp;send_info.to).unwrap();\n}\"><pre><span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>write<span class=\"pl-kos\">,</span> send_info<span class=\"pl-kos\">)</span> = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> out<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Error</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Done</span><span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// Done writing.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">send_to</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>out<span class=\"pl-kos\">[</span>..write<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>send_info<span class=\"pl-kos\">.</span><span class=\"pl-c1\">to</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">When packets are sent, the application is responsible for maintaining a\ntimer to react to time-based connection events. The timer expiration can be\nobtained using the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.timeout\" rel=\"nofollow\"><code>timeout()</code></a> method.</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let timeout = conn.timeout();\"><pre><span class=\"pl-k\">let</span> timeout = conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">timeout</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">The application is responsible for providing a timer implementation, which\ncan be specific to the operating system or networking framework used. When\na timer expires, the connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.on_timeout\" rel=\"nofollow\"><code>on_timeout()</code></a> method should be called,\nafter which additional packets might need to be sent on the network:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"// Timeout expired, handle it.\nconn.on_timeout();\n\n// Send more packets as needed after timeout.\nloop {\n    let (write, send_info) = match conn.send(&amp;mut out) {\n        Ok(v) =&gt; v,\n\n        Err(quiche::Error::Done) =&gt; {\n            // Done writing.\n            break;\n        },\n\n        Err(e) =&gt; {\n            // An error occurred, handle it.\n            break;\n        },\n    };\n\n    socket.send_to(&amp;out[..write], &amp;send_info.to).unwrap();\n}\"><pre><span class=\"pl-c\">// Timeout expired, handle it.</span>\nconn<span class=\"pl-kos\">.</span><span class=\"pl-en\">on_timeout</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Send more packets as needed after timeout.</span>\n<span class=\"pl-k\">loop</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-k\">let</span> <span class=\"pl-kos\">(</span>write<span class=\"pl-kos\">,</span> send_info<span class=\"pl-kos\">)</span> = <span class=\"pl-k\">match</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> out<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span>v<span class=\"pl-kos\">)</span> =&gt; v<span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>quiche<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Error</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Done</span><span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// Done writing.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n\n        <span class=\"pl-v\">Err</span><span class=\"pl-kos\">(</span>e<span class=\"pl-kos\">)</span> =&gt; <span class=\"pl-kos\">{</span>\n            <span class=\"pl-c\">// An error occurred, handle it.</span>\n            <span class=\"pl-k\">break</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n\n    socket<span class=\"pl-kos\">.</span><span class=\"pl-en\">send_to</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>out<span class=\"pl-kos\">[</span>..write<span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span>send_info<span class=\"pl-kos\">.</span><span class=\"pl-c1\">to</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Pacing</h4></div>\n<p dir=\"auto\">It is recommended that applications <a href=\"https://datatracker.ietf.org/doc/html/rfc9002#section-7.7\" rel=\"nofollow\">pace</a> sending of outgoing packets to\navoid creating packet bursts that could cause short-term congestion and\nlosses in the network.</p>\n<p dir=\"auto\">quiche exposes pacing hints for outgoing packets through the [<code>at</code>] field\nof the [<code>SendInfo</code>] structure that is returned by the <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.send\" rel=\"nofollow\"><code>send()</code></a> method.\nThis field represents the time when a specific packet should be sent into\nthe network.</p>\n<p dir=\"auto\">Applications can use these hints by artificially delaying the sending of\npackets through platform-specific mechanisms (such as the <a href=\"https://man7.org/linux/man-pages/man8/tc-etf.8.html\" rel=\"nofollow\"><code>SO_TXTIME</code></a>\nsocket option on Linux), or custom methods (for example by using user-space\ntimers).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Sending and receiving stream data</h3></div>\n<p dir=\"auto\">After some back and forth, the connection will complete its handshake and\nwill be ready for sending or receiving application data.</p>\n<p dir=\"auto\">Data can be sent on a stream by using the <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.stream_send\" rel=\"nofollow\"><code>stream_send()</code></a> method:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"if conn.is_established() {\n    // Handshake completed, send some data on stream 0.\n    conn.stream_send(0, b&quot;hello&quot;, true)?;\n}\"><pre><span class=\"pl-k\">if</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">is_established</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Handshake completed, send some data on stream 0.</span>\n    conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">stream_send</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">0</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"hello\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span>?<span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">The application can check whether there are any readable streams by using\nthe connection's <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.readable\" rel=\"nofollow\"><code>readable()</code></a> method, which returns an iterator over all\nthe streams that have outstanding data to read.</p>\n<p dir=\"auto\">The <a href=\"https://docs.quic.tech/quiche/struct.Connection.html#method.stream_recv\" rel=\"nofollow\"><code>stream_recv()</code></a> method can then be used to retrieve the application\ndata from the readable stream:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"if conn.is_established() {\n    // Iterate over readable streams.\n    for stream_id in conn.readable() {\n        // Stream is readable, read until there's no more data.\n        while let Ok((read, fin)) = conn.stream_recv(stream_id, &amp;mut buf) {\n            println!(&quot;Got {} bytes on stream {}&quot;, read, stream_id);\n        }\n    }\n}\"><pre><span class=\"pl-k\">if</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">is_established</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c\">// Iterate over readable streams.</span>\n    <span class=\"pl-k\">for</span> stream_id <span class=\"pl-k\">in</span> conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">readable</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n        <span class=\"pl-c\">// Stream is readable, read until there's no more data.</span>\n        <span class=\"pl-k\">while</span> <span class=\"pl-k\">let</span> <span class=\"pl-v\">Ok</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">(</span>read<span class=\"pl-kos\">,</span> fin<span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span> = conn<span class=\"pl-kos\">.</span><span class=\"pl-en\">stream_recv</span><span class=\"pl-kos\">(</span>stream_id<span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buf<span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n            <span class=\"pl-en\">println</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"Got {} bytes on stream {}\"</span><span class=\"pl-kos\">,</span> read<span class=\"pl-kos\">,</span> stream_id<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n        <span class=\"pl-kos\">}</span>\n    <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">HTTP/3</h3></div>\n<p dir=\"auto\">The quiche <a href=\"https://docs.quic.tech/quiche/h3/index.html\" rel=\"nofollow\">HTTP/3 module</a> provides a high level API for sending and\nreceiving HTTP requests and responses on top of the QUIC transport protocol.</p>\n<p dir=\"auto\">Have a look at the [quiche/examples/] directory for more complete examples on\nhow to use the quiche API, including examples on how to use quiche in C/C++\napplications (see below for more information).</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Calling quiche from C/C++</h2></div>\n<p dir=\"auto\">quiche exposes a <a href=\"https://github.com/cloudflare/quiche/blob/master/quiche/include/quiche.h\">thin C API</a> on top of the Rust API that can be used to more\neasily integrate quiche into C/C++ applications (as well as in other languages\nthat allow calling C APIs via some form of FFI). The C API follows the same\ndesign of the Rust one, modulo the constraints imposed by the C language itself.</p>\n<p dir=\"auto\">When running <code>cargo build</code>, a static library called <code>libquiche.a</code> will be\nbuilt automatically alongside the Rust one. This is fully stand-alone and can\nbe linked directly into C/C++ applications.</p>\n<p dir=\"auto\">Note that in order to enable the FFI API, the <code>ffi</code> feature must be enabled (it\nis disabled by default), by passing <code>--features ffi</code> to <code>cargo</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building</h2></div>\n<p dir=\"auto\">quiche requires Rust 1.88 or later to build. The latest stable Rust release can\nbe installed using <a href=\"https://rustup.rs/\" rel=\"nofollow\">rustup</a>.</p>\n<p dir=\"auto\">Once the Rust build environment is setup, the quiche source code can be fetched\nusing git:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ git clone https://github.com/cloudflare/quiche\"><pre> $ git clone https://github.com/cloudflare/quiche</pre></div>\n<p dir=\"auto\">and then built using cargo:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo build --examples\"><pre> $ cargo build --examples</pre></div>\n<p dir=\"auto\">cargo can also be used to run the testsuite:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo test\"><pre> $ cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">Note that <a href=\"https://boringssl.googlesource.com/boringssl/\" rel=\"nofollow\">BoringSSL</a>, which is used to implement QUIC's cryptographic handshake\nbased on TLS, needs to be built and linked to quiche. This is done automatically\nby the <a href=\"https://crates.io/crates/boring-sys\" rel=\"nofollow\">boring-sys</a> crate when building with cargo, but requires the <code>cmake</code>\ncommand to be available during the build process.</p>\n<p dir=\"auto\">On Windows <a href=\"https://www.nasm.us/\" rel=\"nofollow\">NASM</a> is also required. The <a href=\"https://github.com/google/boringssl/blob/master/BUILDING.md\">official BoringSSL\ndocumentation</a> has\nmore details.</p>\n<p dir=\"auto\">In alternative you can use your own custom build of BoringSSL by configuring\nthe BoringSSL directory with the <code>BORING_BSSL_PATH</code> environment variable:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ BORING_BSSL_PATH=&quot;/path/to/boringssl&quot; cargo build --examples\"><pre> $ BORING_BSSL_PATH=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>/path/to/boringssl<span class=\"pl-pds\">\"</span></span> cargo build --examples</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for Android</h3></div>\n<p dir=\"auto\">Building quiche for Android (NDK version 19 or higher, 21 recommended), can be\ndone using <a href=\"https://docs.rs/crate/cargo-ndk\" rel=\"nofollow\">cargo-ndk</a> (v2.0 or later).</p>\n<p dir=\"auto\">First the <a href=\"https://developer.android.com/ndk\" rel=\"nofollow\">Android NDK</a> needs to be installed, either using Android Studio or\ndirectly, and the <code>ANDROID_NDK_HOME</code> environment variable needs to be set to the\nNDK installation path, e.g.:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ export ANDROID_NDK_HOME=/usr/local/share/android-ndk\"><pre> $ <span class=\"pl-k\">export</span> ANDROID_NDK_HOME=/usr/local/share/android-ndk</pre></div>\n<p dir=\"auto\">Then the Rust toolchain for the Android architectures needed can be installed as\nfollows:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android\"><pre> $ rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android</pre></div>\n<p dir=\"auto\">Note that the minimum API level is 21 for all target architectures.</p>\n<p dir=\"auto\"><a href=\"https://docs.rs/crate/cargo-ndk\" rel=\"nofollow\">cargo-ndk</a> (v2.0 or later) also needs to be installed:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo install cargo-ndk\"><pre> $ cargo install cargo-ndk</pre></div>\n<p dir=\"auto\">Finally the quiche library can be built using the following procedure. Note that\nthe <code>-t &lt;architecture&gt;</code> and <code>-p &lt;NDK version&gt;</code> options are mandatory.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo ndk -t arm64-v8a -p 21 -- build --features ffi\"><pre> $ cargo ndk -t arm64-v8a -p 21 -- build --features ffi</pre></div>\n<p dir=\"auto\">See <a href=\"https://github.com/cloudflare/quiche/blob/master/tools/android/build_android_ndk19.sh\">build_android_ndk19.sh</a> for more information.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building for iOS</h3></div>\n<p dir=\"auto\">To build quiche for iOS, you need the following:</p>\n<ul dir=\"auto\">\n<li>Install Xcode command-line tools. You can install them with Xcode or with the\nfollowing command:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ xcode-select --install\"><pre> $ xcode-select --install</pre></div>\n<ul dir=\"auto\">\n<li>Install the Rust toolchain for iOS architectures:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ rustup target add aarch64-apple-ios x86_64-apple-ios\"><pre> $ rustup target add aarch64-apple-ios x86_64-apple-ios</pre></div>\n<ul dir=\"auto\">\n<li>Install <code>cargo-lipo</code>:</li>\n</ul>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo install cargo-lipo\"><pre> $ cargo install cargo-lipo</pre></div>\n<p dir=\"auto\">To build libquiche, run the following command:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo lipo --features ffi\"><pre> $ cargo lipo --features ffi</pre></div>\n<p dir=\"auto\">or</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ cargo lipo --features ffi --release\"><pre> $ cargo lipo --features ffi --release</pre></div>\n<p dir=\"auto\">iOS build is tested in Xcode 10.1 and Xcode 11.2.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building Docker images</h3></div>\n<p dir=\"auto\">In order to build the Docker images, simply run the following command:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\" $ make docker-build\"><pre> $ make docker-build</pre></div>\n<p dir=\"auto\">You can find the quiche Docker images on the following Docker Hub repositories:</p>\n<ul dir=\"auto\">\n<li><a href=\"https://hub.docker.com/repository/docker/cloudflare/quiche\" rel=\"nofollow\">cloudflare/quiche</a></li>\n<li><a href=\"https://hub.docker.com/repository/docker/cloudflare/quiche-qns\" rel=\"nofollow\">cloudflare/quiche-qns</a></li>\n</ul>\n<p dir=\"auto\">The <code>latest</code> tag will be updated whenever quiche master branch updates.</p>\n<p dir=\"auto\"><strong>cloudflare/quiche</strong></p>\n<p dir=\"auto\">Provides a server and client installed in /usr/local/bin.</p>\n<p dir=\"auto\"><strong>cloudflare/quiche-qns</strong></p>\n<p dir=\"auto\">Provides the script to test quiche within the <a href=\"https://github.com/marten-seemann/quic-interop-runner\">quic-interop-runner</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Disclaimers and Notes</h2></div>\n<p dir=\"auto\"><g-emoji class=\"g-emoji\" alias=\"warning\">⚠️</g-emoji> This repository includes a number of client and server example\napplications that are provided to demonstrate simple usage of the quiche library\nAPI. They are not intended to be used in production environments; no\nperformance, security or reliability guarantees are provided.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Copyright</h2></div>\n<p dir=\"auto\">Copyright (C) 2018-2019, Cloudflare, Inc.</p>\n<p dir=\"auto\">See <a href=\"https://github.com/cloudflare/quiche/tree/master/COPYING\">COPYING</a> for the license.</p>\n</article></div>",
   "firstCommitAt": "2018-10-16T20:08:00Z",
   "recentIssues": [
     {
-      "number": 2847,
-      "title": "h3i panics when a HEADERS frame cannot be QPACK-decoded",
-      "url": "https://github.com/cloudflare/quiche/issues/2847",
-      "createdAt": "2026-10-24T16:25:42Z",
+      "number": 2876,
+      "title": "Best channel to follow up on a security report (PVR vs HackerOne)?",
+      "url": "https://github.com/cloudflare/quiche/issues/2876",
+      "createdAt": "2026-11-06T12:37:57Z",
       "comments": 0,
       "labels": [],
-      "author": "RaphaelFakhri"
+      "author": "joaoviictorti"
+    },
+    {
+      "number": 2861,
+      "title": "quiche-client: Http09Conn::send_requests drops the rest of a partially written request and its FIN",
+      "url": "https://github.com/cloudflare/quiche/issues/2861",
+      "createdAt": "2026-11-01T09:45:58Z",
+      "comments": 3,
+      "labels": [],
+      "author": "jbevemyr"
+    },
+    {
+      "number": 2860,
+      "title": "Initial packets with only PADDING frames received by a client lock peer SCID and record packet numbers",
+      "url": "https://github.com/cloudflare/quiche/issues/2860",
+      "createdAt": "2026-10-31T05:04:33Z",
+      "comments": 0,
+      "labels": [],
+      "author": "HeartyYF"
     }
   ],
   "punchCard": [
@@ -539,17 +562,17 @@
     {
       "day": 1,
       "hour": 12,
-      "commits": 34
+      "commits": 35
     },
     {
       "day": 1,
       "hour": 13,
-      "commits": 39
+      "commits": 40
     },
     {
       "day": 1,
       "hour": 14,
-      "commits": 36
+      "commits": 37
     },
     {
       "day": 1,
@@ -599,7 +622,7 @@
     {
       "day": 2,
       "hour": 0,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 2,
@@ -649,12 +672,12 @@
     {
       "day": 2,
       "hour": 10,
-      "commits": 29
+      "commits": 30
     },
     {
       "day": 2,
       "hour": 11,
-      "commits": 34
+      "commits": 36
     },
     {
       "day": 2,
@@ -694,7 +717,7 @@
     {
       "day": 2,
       "hour": 19,
-      "commits": 17
+      "commits": 18
     },
     {
       "day": 2,
@@ -774,7 +797,7 @@
     {
       "day": 3,
       "hour": 11,
-      "commits": 24
+      "commits": 25
     },
     {
       "day": 3,
@@ -784,7 +807,7 @@
     {
       "day": 3,
       "hour": 13,
-      "commits": 35
+      "commits": 36
     },
     {
       "day": 3,
@@ -839,7 +862,7 @@
     {
       "day": 4,
       "hour": 0,
-      "commits": 8
+      "commits": 9
     },
     {
       "day": 4,
@@ -929,7 +952,7 @@
     {
       "day": 4,
       "hour": 18,
-      "commits": 20
+      "commits": 21
     },
     {
       "day": 4,
@@ -939,7 +962,7 @@
     {
       "day": 4,
       "hour": 20,
-      "commits": 16
+      "commits": 17
     },
     {
       "day": 4,
@@ -1199,90 +1222,90 @@
   ],
   "contributorCount": 155,
   "participation": {
-    "all": 310,
+    "all": 309,
     "owner": 0,
-    "community": 310
+    "community": 309
   },
   "recentCommits": [
     {
-      "sha": "acf560f",
-      "message": "h3: handle resets consumed by recv_body() as poll() does",
-      "url": "https://github.com/cloudflare/quiche/commit/acf560f2e4a3d9254a1b668a50af0e114c84fe6f",
-      "date": "2026-10-14T09:52:29Z",
+      "sha": "fa0e480",
+      "message": "test read shutdown of completed peer-initiated uni streams.",
+      "url": "https://github.com/cloudflare/quiche/commit/fa0e48072e945ff2da5bb9a21684f86a91f35877",
+      "date": "2025-05-12T13:07:29Z",
+      "author": "LPardue",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6571445?v=4"
+    },
+    {
+      "sha": "d7387df",
+      "message": "qpack: prepare decoder dynamic table for future integration (#2862)",
+      "url": "https://github.com/cloudflare/quiche/commit/d7387df4b92f061cd23c4b726490c24592acddc9",
+      "date": "2026-11-03T17:34:53Z",
+      "author": "inamdarminaz",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/56728168?v=4"
+    },
+    {
+      "sha": "0775560",
+      "message": "ci: disable seccomp for cross test containers",
+      "url": "https://github.com/cloudflare/quiche/commit/07755601c7ae45e8031401820567c471c49ad6bb",
+      "date": "2026-11-03T10:49:02Z",
       "author": "ghedo",
       "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
     },
     {
-      "sha": "a237d40",
-      "message": "stream: deliver the first FIN carried by consumed data",
-      "url": "https://github.com/cloudflare/quiche/commit/a237d40558892a2ce2bf6b3767ebaf1d18e964e4",
-      "date": "2026-10-12T11:09:08Z",
+      "sha": "87f4b77",
+      "message": "tokio-quiche: serialize client Initial sends",
+      "url": "https://github.com/cloudflare/quiche/commit/87f4b779b5406288f4ef9c1412899c50181cf863",
+      "date": "2026-10-27T23:33:02Z",
+      "author": "cf-rhett",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/164098248?v=4"
+    },
+    {
+      "sha": "ba8c528",
+      "message": "tests: don't assume the server's flight fills cwnd (#2856)",
+      "url": "https://github.com/cloudflare/quiche/commit/ba8c528cc928aed643c0311d523b649c2235a428",
+      "date": "2026-10-29T20:13:52Z",
       "author": "ghedo",
       "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
     },
     {
-      "sha": "2f21a5b",
-      "message": "stream: preserve unread reset notifications after FIN",
-      "url": "https://github.com/cloudflare/quiche/commit/2f21a5baeff294b2f0b5a3b259e97178c18746c0",
-      "date": "2026-10-12T11:06:58Z",
+      "sha": "e4966ce",
+      "message": "stream: retain reset streams until RESET_STREAM is acknowledged",
+      "url": "https://github.com/cloudflare/quiche/commit/e4966ce5f0720c01e9549e62eef8c01bae3218a0",
+      "date": "2026-10-12T11:20:57Z",
       "author": "ghedo",
       "avatarUrl": "https://avatars.githubusercontent.com/u/117643?v=4"
     },
     {
-      "sha": "c06ccd6",
-      "message": "Replace HTTP/3 stream wait futures with custom wakers",
-      "url": "https://github.com/cloudflare/quiche/commit/c06ccd66aa88d81423517d9bf4ca83ce42c61025",
-      "date": "2026-10-13T08:24:51Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
+      "sha": "89a58f2",
+      "message": "tests: derive cwnd-related expectations instead of hardcoding",
+      "url": "https://github.com/cloudflare/quiche/commit/89a58f2e89a0f83b2669427e69555314107210a3",
+      "date": "2026-10-29T17:11:54Z",
+      "author": "Lekensteyn",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/164530?v=4"
     },
     {
-      "sha": "514a33a",
-      "message": "Preserve pending peer FIN until application delivery",
-      "url": "https://github.com/cloudflare/quiche/commit/514a33a118c0d78234457dff7860eec7ef62c95f",
-      "date": "2026-10-12T14:38:04Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
+      "sha": "db2f162",
+      "message": "h3i: make the command-line tool optional (#2836)",
+      "url": "https://github.com/cloudflare/quiche/commit/db2f1629eee3f081ad350b84fc6dda9cdb16fed7",
+      "date": "2026-10-29T00:21:37Z",
+      "author": "LPardue",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/6571445?v=4"
     },
     {
-      "sha": "424aa56",
-      "message": "Represent HTTP/3 driver lifecycle with explicit states",
-      "url": "https://github.com/cloudflare/quiche/commit/424aa56b2a2488de75df274c445fb928b58c313e",
-      "date": "2026-10-12T14:35:14Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
+      "sha": "c99613b",
+      "message": "recovery: Update max send payload size when receiving peer TPs (#2845)",
+      "url": "https://github.com/cloudflare/quiche/commit/c99613b66bfafdfecc3b963ed95b0c1338524a6f",
+      "date": "2026-10-28T12:13:42Z",
+      "author": "TheJokr",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7347535?v=4"
     },
     {
-      "sha": "6bf9adf",
-      "message": "Represent peer STOP_SENDING notifications with explicit states",
-      "url": "https://github.com/cloudflare/quiche/commit/6bf9adf9c5d70f128f099fc08edeb10b4bbbab45",
-      "date": "2026-10-12T14:29:23Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
-    },
-    {
-      "sha": "4b216a0",
-      "message": "Derive QUIC stream completion from transport state",
-      "url": "https://github.com/cloudflare/quiche/commit/4b216a0c06cc7aea978699b3244f8b156061f232",
-      "date": "2026-10-12T14:23:53Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
-    },
-    {
-      "sha": "d0a0833",
-      "message": "Guard queued HTTP/3 output against channel readiness",
-      "url": "https://github.com/cloudflare/quiche/commit/d0a083336e8be3f27292a4271a4a97bddb3047b2",
-      "date": "2026-10-12T13:16:04Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
-    },
-    {
-      "sha": "c4f5991",
-      "message": "Await complete HTTP/3 responses in migration tests",
-      "url": "https://github.com/cloudflare/quiche/commit/c4f59911d24ef3e883142c112f0fad73fa9b6262",
-      "date": "2026-10-13T22:50:08Z",
-      "author": "nox",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/123095?v=4"
+      "sha": "dff31c4",
+      "message": "qlog: release 0.18.2 (#2852)",
+      "url": "https://github.com/cloudflare/quiche/commit/dff31c45cfdc6db754f3b25dbf2d915d9bee878f",
+      "date": "2026-10-28T10:24:23Z",
+      "author": "nmicht",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1750293?v=4"
     }
   ],
   "fileTree": [
@@ -1403,13 +1426,13 @@
     {
       "name": "AGENTS.md",
       "type": "file",
-      "size": 7206,
+      "size": 7264,
       "url": "https://github.com/cloudflare/quiche/blob/master/AGENTS.md"
     },
     {
       "name": "Cargo.toml",
       "type": "file",
-      "size": 3605,
+      "size": 3631,
       "url": "https://github.com/cloudflare/quiche/blob/master/Cargo.toml"
     },
     {
@@ -1483,108 +1506,108 @@
     {
       "name": "Semgrep config",
       "status": "success",
-      "url": "https://github.com/cloudflare/quiche/actions/runs/40146117924",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/42316400756",
       "branch": "master",
-      "updatedAt": "2026-10-25T00:25:40Z"
-    },
-    {
-      "name": "Nightly",
-      "status": "action_required",
-      "url": "https://github.com/cloudflare/quiche/actions/runs/40111564712",
-      "branch": "h3i-qpack-decode-error",
-      "updatedAt": "2026-10-24T16:26:27Z"
+      "updatedAt": "2026-11-07T00:14:19Z"
     },
     {
       "name": "Stable",
-      "status": "action_required",
-      "url": "https://github.com/cloudflare/quiche/actions/runs/40111564700",
-      "branch": "h3i-qpack-decode-error",
-      "updatedAt": "2026-10-24T16:26:27Z"
+      "status": "skipped",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/42305947857",
+      "branch": "minaz/decode-dynamic-ref",
+      "updatedAt": "2026-11-06T22:36:09Z"
     },
     {
-      "name": "Bonk",
-      "status": "action_required",
-      "url": "https://github.com/cloudflare/quiche/actions/runs/40111564699",
-      "branch": "h3i-qpack-decode-error",
-      "updatedAt": "2026-10-24T16:26:27Z"
+      "name": "Nightly",
+      "status": "skipped",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/42305947839",
+      "branch": "minaz/decode-dynamic-ref",
+      "updatedAt": "2026-11-06T22:36:02Z"
+    },
+    {
+      "name": "PR #2875",
+      "status": "success",
+      "url": "https://github.com/cloudflare/quiche/actions/runs/42305940556",
+      "branch": "refs/pull/2875/head",
+      "updatedAt": "2026-11-06T22:36:57Z"
     }
   ],
   "recentPulls": [
     {
-      "number": 2848,
-      "title": "h3i: return an error instead of panicking on undecodable HEADERS",
-      "url": "https://github.com/cloudflare/quiche/pull/2848",
+      "number": 2875,
+      "title": "qpack: decode dynamic references in HEADERS",
+      "url": "https://github.com/cloudflare/quiche/pull/2875",
       "state": "open",
-      "updatedAt": "2026-10-25T09:05:58Z",
-      "author": "RaphaelFakhri",
-      "draft": false
-    },
-    {
-      "number": 2846,
-      "title": "fix: cargo fmt changes on latest nightly",
-      "url": "https://github.com/cloudflare/quiche/pull/2846",
-      "state": "open",
-      "updatedAt": "2026-10-23T21:27:57Z",
-      "author": "TheJokr",
-      "draft": false
-    },
-    {
-      "number": 2845,
-      "title": "recovery: Update max send payload size when receiving peer TPs",
-      "url": "https://github.com/cloudflare/quiche/pull/2845",
-      "state": "open",
-      "updatedAt": "2026-10-23T13:54:13Z",
-      "author": "TheJokr",
-      "draft": false
-    },
-    {
-      "number": 1351,
-      "title": "Explicit Congestion Notification support",
-      "url": "https://github.com/cloudflare/quiche/pull/1351",
-      "state": "open",
-      "updatedAt": "2026-10-23T10:25:32Z",
-      "author": "qdeconinck",
-      "draft": false
-    },
-    {
-      "number": 2811,
-      "title": "qlog-dancer: escape log-derived text in HTML reports",
-      "url": "https://github.com/cloudflare/quiche/pull/2811",
-      "state": "open",
-      "updatedAt": "2026-10-23T07:56:56Z",
-      "author": "uchiha-bug-hunter",
-      "draft": false
-    },
-    {
-      "number": 2843,
-      "title": "h3: expose cumulative received HEADERS sizes through tokio-quiche",
-      "url": "https://github.com/cloudflare/quiche/pull/2843",
-      "state": "open",
-      "updatedAt": "2026-10-22T21:18:50Z",
+      "updatedAt": "2026-11-06T22:35:56Z",
       "author": "inamdarminaz",
       "draft": false
     },
     {
-      "number": 2735,
-      "title": "build(deps): update rstest requirement from 0.26.1 to 0.27.0",
-      "url": "https://github.com/cloudflare/quiche/pull/2735",
-      "state": "closed",
-      "updatedAt": "2026-10-22T13:03:13Z",
-      "author": "dependabot[bot]",
+      "number": 2873,
+      "title": "qpack: wire peer encoder instructions into HTTP/3",
+      "url": "https://github.com/cloudflare/quiche/pull/2873",
+      "state": "open",
+      "updatedAt": "2026-11-06T22:15:32Z",
+      "author": "inamdarminaz",
       "draft": false
     },
     {
-      "number": 2844,
-      "title": "build(deps): update rstest requirement from 0.26.1 to 0.28.0",
-      "url": "https://github.com/cloudflare/quiche/pull/2844",
+      "number": 2866,
+      "title": "qpack: parse encoder instructions and apply them to the dynamic table",
+      "url": "https://github.com/cloudflare/quiche/pull/2866",
       "state": "open",
-      "updatedAt": "2026-10-22T13:03:06Z",
-      "author": "dependabot[bot]",
+      "updatedAt": "2026-11-06T21:48:30Z",
+      "author": "inamdarminaz",
+      "draft": false
+    },
+    {
+      "number": 2054,
+      "title": "Properly clean up peer-initiated uni streams when shutdown for reading",
+      "url": "https://github.com/cloudflare/quiche/pull/2054",
+      "state": "merged",
+      "updatedAt": "2026-11-06T12:00:50Z",
+      "author": "LPardue",
+      "draft": false
+    },
+    {
+      "number": 2872,
+      "title": "qpack: wire peer encoder instructions into HTTP/3",
+      "url": "https://github.com/cloudflare/quiche/pull/2872",
+      "state": "closed",
+      "updatedAt": "2026-11-05T19:18:52Z",
+      "author": "inamdarminaz",
+      "draft": true
+    },
+    {
+      "number": 2871,
+      "title": "Fixing type signature *c_void instead of *u8 on SSL_CTX_set_tlsext_ticket_keys",
+      "url": "https://github.com/cloudflare/quiche/pull/2871",
+      "state": "open",
+      "updatedAt": "2026-11-05T13:53:51Z",
+      "author": "emarteca",
+      "draft": false
+    },
+    {
+      "number": 2870,
+      "title": "Const-correct on the ALPN callback signature",
+      "url": "https://github.com/cloudflare/quiche/pull/2870",
+      "state": "open",
+      "updatedAt": "2026-11-05T08:54:17Z",
+      "author": "dingxiangfei2009",
+      "draft": false
+    },
+    {
+      "number": 2869,
+      "title": "fix: defer PING-only packets too short for header protection",
+      "url": "https://github.com/cloudflare/quiche/pull/2869",
+      "state": "open",
+      "updatedAt": "2026-11-04T19:01:30Z",
+      "author": "bhavyaKhatri2703",
       "draft": false
     }
   ],
-  "branchCount": 151,
-  "tagCount": 146,
+  "branchCount": 153,
+  "tagCount": 147,
   "community": {
     "healthPercentage": 87,
     "hasCodeOfConduct": true,
@@ -1593,14 +1616,14 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 199,
-  "openPRs": 199,
+  "openIssuesOnly": 201,
+  "openPRs": 206,
   "releaseCount": 51,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
-  "closedIssues": 628,
-  "mergedPRs": 1483,
+  "closedIssues": 630,
+  "mergedPRs": 1496,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": true,
@@ -1614,10 +1637,6 @@
     "publishedAt": "2026-09-17T16:16:12Z"
   },
   "commitActivity": [
-    {
-      "week": "2025-11-02",
-      "commits": 6
-    },
     {
       "week": "2025-11-09",
       "commits": 7
@@ -1812,7 +1831,7 @@
     },
     {
       "week": "2026-10-11",
-      "commits": 15
+      "commits": 16
     },
     {
       "week": "2026-10-18",
@@ -1820,38 +1839,14 @@
     },
     {
       "week": "2026-10-25",
-      "commits": 0
+      "commits": 9
+    },
+    {
+      "week": "2026-11-01",
+      "commits": 2
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-11-02",
-      "count": 1
-    },
-    {
-      "date": "2025-11-03",
-      "count": 1
-    },
-    {
-      "date": "2025-11-04",
-      "count": 0
-    },
-    {
-      "date": "2025-11-05",
-      "count": 1
-    },
-    {
-      "date": "2025-11-06",
-      "count": 1
-    },
-    {
-      "date": "2025-11-07",
-      "count": 2
-    },
-    {
-      "date": "2025-11-08",
-      "count": 0
-    },
     {
       "date": "2025-11-09",
       "count": 0
@@ -3202,7 +3197,7 @@
     },
     {
       "date": "2026-10-12",
-      "count": 8
+      "count": 9
     },
     {
       "date": "2026-10-13",
@@ -3258,19 +3253,19 @@
     },
     {
       "date": "2026-10-26",
-      "count": 0
+      "count": 1
     },
     {
       "date": "2026-10-27",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-10-28",
-      "count": 0
+      "count": 2
     },
     {
       "date": "2026-10-29",
-      "count": 0
+      "count": 3
     },
     {
       "date": "2026-10-30",
@@ -3279,10 +3274,38 @@
     {
       "date": "2026-10-31",
       "count": 0
+    },
+    {
+      "date": "2026-11-01",
+      "count": 0
+    },
+    {
+      "date": "2026-11-02",
+      "count": 0
+    },
+    {
+      "date": "2026-11-03",
+      "count": 2
+    },
+    {
+      "date": "2026-11-04",
+      "count": 0
+    },
+    {
+      "date": "2026-11-05",
+      "count": 0
+    },
+    {
+      "date": "2026-11-06",
+      "count": 0
+    },
+    {
+      "date": "2026-11-07",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-10-25T10:12:14.881Z",
+  "factsUpdatedAt": "2026-11-07T15:49:07.219Z",
   "starHistory": {
     "version": 2,
     "points": [
@@ -4937,31 +4960,6 @@
   },
   "codeFrequency": [
     {
-      "week": "2025-10-05",
-      "additions": 5382,
-      "deletions": 5367
-    },
-    {
-      "week": "2025-10-12",
-      "additions": 207,
-      "deletions": 123
-    },
-    {
-      "week": "2025-10-19",
-      "additions": 2694,
-      "deletions": 80
-    },
-    {
-      "week": "2025-10-26",
-      "additions": 2435,
-      "deletions": 32
-    },
-    {
-      "week": "2025-11-02",
-      "additions": 12889,
-      "deletions": 45
-    },
-    {
       "week": "2025-11-09",
       "additions": 128,
       "deletions": 22
@@ -5193,8 +5191,33 @@
     },
     {
       "week": "2026-09-27",
-      "additions": 1072,
-      "deletions": 145
+      "additions": 1697,
+      "deletions": 261
+    },
+    {
+      "week": "2026-10-04",
+      "additions": 1606,
+      "deletions": 233
+    },
+    {
+      "week": "2026-10-11",
+      "additions": 3335,
+      "deletions": 1137
+    },
+    {
+      "week": "2026-10-18",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-10-25",
+      "additions": 785,
+      "deletions": 205
+    },
+    {
+      "week": "2026-11-01",
+      "additions": 906,
+      "deletions": 3
     }
   ]
 }
