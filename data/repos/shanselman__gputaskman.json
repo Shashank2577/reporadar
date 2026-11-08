@@ -1,0 +1,2991 @@
+{
+  "id": "shanselman/gputaskman",
+  "snapshots": [
+    {
+      "date": "2026-11-08",
+      "stars": 633,
+      "forks": 31
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-11-08",
+      "period": "daily",
+      "rank": 21,
+      "starsGained": null
+    }
+  ],
+  "owner": "shanselman",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4",
+  "ownerType": "User",
+  "name": "gputaskman",
+  "description": "A GPU task manager for Windows, Linux, and WSL: per-process VRAM, GPU activity, and LLM model/KV-cache insights (Windows AMD and NVIDIA).",
+  "url": "https://github.com/shanselman/gputaskman",
+  "homepage": null,
+  "license": "MIT",
+  "language": "Python",
+  "topics": [],
+  "stars": 633,
+  "forks": 31,
+  "watchers": 4,
+  "openIssues": 3,
+  "createdAt": "2026-11-03T00:49:34Z",
+  "pushedAt": "2026-11-08T06:27:14Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-11-08T12:17:11.208Z",
+  "languages": {
+    "Python": 473106,
+    "Nix": 2937
+  },
+  "readmeExcerpt": "# gputaskman\n\n**An `htop` for what's inside your GPU, not just how full it is.**\n\nWindows + NVIDIA/AMD, with Linux and WSL support (NVIDIA everywhere, AMD on native Linux; see\n[Linux and WSL](#linux-and-wsl)) and macOS on Apple Silicon (see [macOS](#macos-apple-silicon)). A terminal UI\nthat connects per-process GPU memory and engine activity with loaded runtimes, model files, and\nLLM buffer breakdowns.\n\nTask Manager says \"15 GB used.\" This tries to answer: *by what? Model weights? KV cache?\nYour browser? The desktop compositor? And why is so much GPU memory in system RAM?*\n\n**Scope: local GPU workloads, not cloud services.** Decision models, vision, speech, LLM inference,\ntraining/fine-tuning (including Unsloth), graphics, and video all belong here. Visibility varies:\nprocess memory and engine activity are measured; identifying individual models and their work\nrequires supporting evidence. A PyTorch/CUDA DLL alone cannot identify a model or prove training,\nand a mapped file does not prove that model is resident on the GPU or being exercised.\nCPU-only, NPU-only, and cloud workloads are out of scope.\n\n\n\n> Early, experimental software. Device and process counters are measurements; classifications\n> and GGUF-derived breakdowns are estimates. This does not dump VRAM or enumerate a game's textures.\n\n## Install from PyPI\n\n[gputaskman is on PyPI](https://pypi.org/project/gputaskman/). No repository clone is needed:\n\n```powershell\nuv tool install gputaskman\ngputaskman\n```\n\nOr, with [pipx](https://pipx.pypa.io/):\n\n```powershell\npipx install gputaskman\ngputaskman\n```\n\nWorks on Windows, Linux/WSL, and macOS with Python 3.11+ and the supported GPU/driver\nconfiguration described below. Both installers keep the app in an isolated environment.\nThe shorter `gtm` command is also available. Upgrade with `uv tool upgrade gputaskman`\nor `pipx upgrade gputaskman`. For Windows without Python, use the portable download below.\n\n## Portable Windows download\n\nThe [Releases page](https://github.com/shanselman/gputaskman/releases) is where tagged builds\npublish two portable ZIPs: `gputaskman-VERSION-windows-x64.zip` for Intel/AMD Windows PCs, and\n`gputaskman-VERSION-windows-arm64.zip` for native Windows ARM64. These are separate native builds,\nnot a universal executable.\n\nExtract the **entire ZIP**, keeping `_internal` beside `gputaskman.exe`. Open Windows Terminal\nor PowerShell in the extracted folder:\n\n```powershell\n.\\gputaskman.exe\n.\\gputaskman.exe --once\n.\\gputaskman.exe --json\n```\n\nNo Python, uv, CUDA Toolkit, model download, or installation is needed. A supported GPU with a\ncurrent Windows WDDM driver is required. Builds are currently **unsigned**; code signing\nand an installer are not part of this initial distribution. Each ZIP includes licenses and a\n`.zip.sha256` companion file is published for integrity checks.\n\n## Clone and run\n\nUse **64-bit Windows 10/11**, an **NVIDIA or AMD GPU with a current WDDM driver**, and a terminal\n(Windows Terminal is recommended). Live workload checks have included an RTX 4080 SUPER and an\nRTX Spark N1X on Windows ARM64. CUDA workloads are supported on ARM64 with a compatible NVIDIA\ndriver and ARM64 CUDA runtime.\n\nAMD live check: Radeon 860M Graphics on Windows 11 Enterprise build 26300, AMD driver 32.0.22050.1003.\nDuring desktop/browser activity, WDDM reported per-process VRAM and AMD ADL reported GPU utilization,\nclocks, and ASIC power; temperature, memory activity, and PCIe readings were unavailable. Vulkan/ROCm\nworkloads were not tested on this machine.\n\nInstall [Git for Windows](https://git-scm.com/downloads/win) and\n[uv](https://docs.astral.sh/uv/getting-started/installation/) if needed. With WinGet:\n\n```powershell\nwinget install --id Git.Git --exact\nwinget install --id astral-sh.uv --exact\n```\n\nOpen a new PowerShell window so those tools are on `PATH`, then:\n\n```powershell\ngit clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\nuv run --locked gputaskman\n```\n\n**That's it.** uv obtains the pinned Python version if needed, creates `.venv`, and installs\nthe locked dependencies. The first run needs internet access. There is no CUDA Toolkit,\nVisual Studio, administrator session, API key, or model download required to monitor the GPU.\nNVML ships with the NVIDIA driver; AMD ADL is supplied by supported AMD Windows drivers.\n\nAlready have Python 3.11+ and prefer pip?\n\n```powershell\ngit clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\npy -m venv .venv\n.\\.venv\\Scripts\\python.exe -m pip install .\n.\\.venv\\Scripts\\gputaskman.exe\n```\n\nNo PowerShell activation script or execution-policy change is needed. The pip route resolves\ncompatible dependencies; the uv route uses the checked-in lockfile.\n\nIf an alternate package index makes `--locked` report a stale lockfile on an unchanged checkout,\n`uv run --frozen gputaskman` uses the checked-in lockfile without re-resolving it. `--frozen`\nskips the consistency check, so do not use it after changing dependencies.\n\n## Linux and WSL\n\nTagged releases include portable Linux builds: `gputaskman-VERSION-linux-x64.tar.gz` and\n`gputaskman-VERSION-linux-arm64.tar.gz`. They need glibc 2.35 or newer (Ubuntu 22.04, Debian 12,\nor newer) and an NVIDIA driver (or, on native Linux, an AMD GPU on the `amdgpu` driver), and work\nnatively, in containers, and in WSL:\n\n```bash\ntar -xzf gputaskman-VERSION-linux-x64.tar.gz\ncd gputaskman-VERSION-linux-x64\n./gputaskman\n```\n\nOr clone and run from source, in a Linux or WSL shell:\n\n```bash\ngit clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\nuv run --locked gputaskman\n```\n\nWhat can be measured depends on where it runs, and the UI says which mode it is in.\n\n| | Native Linux | WSL, interop on (default) | WSL, interop off or `--no-host` |\n|---|---|---|---|\n| Device totals, load, temperature, power, clocks | NVML | NVML | NVML |\n| Per-process VRAM | NVML, measured (in a container: owner matched, `*` or `?`) | Matched from the Windows host, marked `*` or `?` | `n/a` |\n| Per-process GPU load | NVML (SM, encoder, decoder) | `n/a` for Linux processes | `n/a` |\n| Spill / Paged | Not available (blank) | Windows rows only | Not available |\n| WSL VM total, Windows apps | — | Windows host counters | — |\n| Runtimes, model files, LLM breakdown | `/proc/<pid>/maps`, command line | Same | Same |\n\n**Native Linux** reads per-process memory from NVML's running compute and graphics process lists\nand per-process SM, encoder, and decoder load from NVML utilization samples. Linux has no\nequivalent of WDDM's shared-memory or commit counters, so Spill and Paged stay blank rather than\nshowing zero. Only processes you can inspect are listed; other users' processes need `sudo`.\n\nJSON uses `null` for unavailable counters, not a measured zero: spill/commit/paged values on\nnative Linux, and per-process engine load for WSL Linux rows. Native NVML engine readings remain\navailable even if NVML hides that process's VRAM. Windows host rows retain their measured counters.\n\n**Containers** (Docker, Kubernetes, rented GPU boxes) need one more step: NVML reports *host*\nPIDs, which mean nothing in the container's `/proc`, and the container cannot see the host PID of\nits own processes. gputaskman pairs NVML's unresolved PIDs with the container's processes that\nhave `libcuda.so` mapped (NVML-only tools such as `nvidia-smi` open the same device files but\nnever load libcuda). Both PID namespaces number processes in creation order, so the pairing is by\norder: `*` when the counts match or a process starting while gputaskman runs pins it, `?` when\nNVML lists more compute processes than the container has (another container on the same GPU).\nPer-process GPU load follows the match. Anything left over is shown as `H:<pid>`,\n*outside this container* (for example, the host's display server), and is never looked up locally.\n\nLive check, on a Vast.ai Docker container (Ubuntu 22.04, RTX 3060 Ti, driver 580.82.09): two\nPyTorch jobs already running at startup, a third started while watching, and one killed, were all\nmatched to the right container PIDs with their NVML sizes (1.12, 2.52 and 1.59 GB) and live GPU%.\nAn Ollama `qwen3:0.6b` runner was detected and named from Ollama's store with `api+mapped+cmdline`\nevidence, its weights / KV-cache / compute split shown, and the TUI rendered. Bare-metal Linux\n(same PID namespace, no matching needed) is covered by tests but has not been run on hardware.\n\n**AMD GPUs on native Linux** (the `amdgpu` driver) need no ROCm, AMD SMI, or extra package: the\nkernel already exposes what's needed.\n\n| | Source |\n|---|---|\n| Device VRAM, GTT, load, temperature, power, clocks, fan, PCIe link | `/sys/class/drm/card*/device` and its `hwmon` |\n| Per-process VRAM and GTT | `drm-resident-vram` / `drm-resident-gtt` (older kernels: `drm-memory-*`) and `drm-shared-*` in `/proc/<pid>/fdinfo/<fd>` |\n| Per-process engine load (gfx, compute, video) | `drm-engine-*` busy time, sampled twice (`n/a` until a new client has two samples); `n/a` for ROCm/HIP processes (see below) |\n\nGTT is GPU-accessible system RAM, so it fills the SPILL column (and `shared (in system RAM)` for\nthe device), like WDDM's non-local usage. On an APU (an integrated GPU, detected by amdgpu not\nreporting a VRAM vendor, a heuristic validated on one APU) GTT is the GPU's normal memory and \"VRAM\"\nis only a RAM carve-out, so GTT is still shown but never flagged as spill, and an LLM's memory is its\nVRAM plus GTT. The SDMA engine (`dma`) fills the COPY column. Paged stays blank: there is no commit\ncounter. VRAM and SPILL are charged to a process only when nothing else can hold its bytes: each of\nits DRM clients has exactly one visible holder, was opened through a render node (`/dev/dri/renderD*`),\nand reports zero bytes in every `drm-shared-*` region. Then its resident VRAM and GTT are its own and add\nup without double counting. Otherwise the process shows VRAM and SPILL as `n/a` (`null` in JSON, with\n`vram_unattributed_reason`) and its bytes stay in *unattributed*:\n\n- **Shared client** (fd passing, fork; 1Password and its crash handler on the test desktop): one set of\n  counters, and nothing says which process uses it. GPU% is `n/a` too.\n- **Shared buffers** (a window a compositor imports, video frames): `drm-shared-*` counts a buffer by\n  where it *prefers* to live, resident or not, while `drm-resident-*` counts where buffers *are*, so\n  resident minus shared is not private memory and is never computed.\n- **Primary node** (`/dev/dri/card*`, typically a compositor): root-owned logind keeps a copy of that\n  fd, which a normal user can't see, so a single holder can't be proven.\n- **Legacy**: older kernels whose amdgpu fdinfo lacks `drm-shared-vram`/`drm-shared-gtt`.\n- **Incomplete**: some of the process's fds or fdinfo could not be read (GPU% is `n/a` too).\n- **Partial scan**: the TUI's 50 ms listing budget ran out this refresh, so a process it skipped might\n  hold the same client (GPU% is `n/a` too). Expected to be rare on a desktop (~9 ms for ~8,000 fds,\n  not yet re-measured with this rule); one-shot output always scans fully.\n\nThe inspector and JSON (`vram_resident_bytes`, `gtt_resident_bytes`) still show every buffer the\nprocess can reach, shared ones included; the same buffer can appear under several processes, so these\nare a reference and are never summed. Unparseable or missing values are unknown (`null`), not 0. amdgpu has no device-wide\nvideo engine counter, so the device's encode/decode load stays N/A; per-process video load is\nmeasured. On VCN 4 and later (RDNA3 and newer, including the RX 9070) decode and encode share one\nring, so it is reported as `video` rather than split. Only processes you can inspect are listed; the header and JSON (`process_status`) say how many could not be, and `sudo` includes other users'. `--gpu 1`\nselects the next card, such as an APU's integrated GPU next to a discrete one. A ROCm/HIP process\n(tagged `HIP`) has its VRAM in fdinfo like any other. Its GPU% is not: HIP submits compute through user-mode ",
+  "commitCount": 48,
+  "contributors": [
+    {
+      "login": "shanselman",
+      "url": "https://github.com/shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4",
+      "contributions": 33
+    },
+    {
+      "login": "samehkhamis",
+      "url": "https://github.com/samehkhamis",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/845989?v=4",
+      "contributions": 10
+    },
+    {
+      "login": "kdrapel",
+      "url": "https://github.com/kdrapel",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/12449790?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "Pinta365",
+      "url": "https://github.com/Pinta365",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/19735646?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "jihoo12",
+      "url": "https://github.com/jihoo12",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/134384139?v=4",
+      "contributions": 1
+    }
+  ],
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">gputaskman</h1></div>\n<p dir=\"auto\"><strong>An <code>htop</code> for what's inside your GPU, not just how full it is.</strong></p>\n<p dir=\"auto\">Windows + NVIDIA/AMD, with Linux and WSL support (NVIDIA everywhere, AMD on native Linux; see\n<a href=\"#linux-and-wsl\">Linux and WSL</a>) and macOS on Apple Silicon (see <a href=\"#macos-apple-silicon\">macOS</a>). A terminal UI\nthat connects per-process GPU memory and engine activity with loaded runtimes, model files, and\nLLM buffer breakdowns.</p>\n<p dir=\"auto\">Task Manager says \"15 GB used.\" This tries to answer: <em>by what? Model weights? KV cache?\nYour browser? The desktop compositor? And why is so much GPU memory in system RAM?</em></p>\n<p dir=\"auto\"><strong>Scope: local GPU workloads, not cloud services.</strong> Decision models, vision, speech, LLM inference,\ntraining/fine-tuning (including Unsloth), graphics, and video all belong here. Visibility varies:\nprocess memory and engine activity are measured; identifying individual models and their work\nrequires supporting evidence. A PyTorch/CUDA DLL alone cannot identify a model or prove training,\nand a mapped file does not prove that model is resident on the GPU or being exercised.\nCPU-only, NPU-only, and cloud workloads are out of scope.</p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/shanselman/gputaskman/blob/main/docs/screenshots/overview.png\"><img src=\"https://raw.githubusercontent.com/shanselman/gputaskman/main/docs/screenshots/overview.png\" alt=\"Live GPU overview with an LLM's weights, KV cache, and compute buffer breakdown\" style=\"max-width: 100%;\"></a></p>\n<blockquote>\n<p dir=\"auto\">Early, experimental software. Device and process counters are measurements; classifications\nand GGUF-derived breakdowns are estimates. This does not dump VRAM or enumerate a game's textures.</p>\n</blockquote>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Install from PyPI</h2></div>\n<p dir=\"auto\"><a href=\"https://pypi.org/project/gputaskman/\" rel=\"nofollow\">gputaskman is on PyPI</a>. No repository clone is needed:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv tool install gputaskman\ngputaskman\"><pre>uv tool install gputaskman\ngputaskman</pre></div>\n<p dir=\"auto\">Or, with <a href=\"https://pipx.pypa.io/\" rel=\"nofollow\">pipx</a>:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"pipx install gputaskman\ngputaskman\"><pre>pipx install gputaskman\ngputaskman</pre></div>\n<p dir=\"auto\">Works on Windows, Linux/WSL, and macOS with Python 3.11+ and the supported GPU/driver\nconfiguration described below. Both installers keep the app in an isolated environment.\nThe shorter <code>gtm</code> command is also available. Upgrade with <code>uv tool upgrade gputaskman</code>\nor <code>pipx upgrade gputaskman</code>. For Windows without Python, use the portable download below.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Portable Windows download</h2></div>\n<p dir=\"auto\">The <a href=\"https://github.com/shanselman/gputaskman/releases\">Releases page</a> is where tagged builds\npublish two portable ZIPs: <code>gputaskman-VERSION-windows-x64.zip</code> for Intel/AMD Windows PCs, and\n<code>gputaskman-VERSION-windows-arm64.zip</code> for native Windows ARM64. These are separate native builds,\nnot a universal executable.</p>\n<p dir=\"auto\">Extract the <strong>entire ZIP</strong>, keeping <code>_internal</code> beside <code>gputaskman.exe</code>. Open Windows Terminal\nor PowerShell in the extracted folder:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\".\\gputaskman.exe\n.\\gputaskman.exe --once\n.\\gputaskman.exe --json\"><pre>.\\<span class=\"pl-c1\">gputaskman.exe</span>\n.\\<span class=\"pl-c1\">gputaskman.exe</span> <span class=\"pl-k\">--</span>once\n.\\<span class=\"pl-c1\">gputaskman.exe</span> <span class=\"pl-k\">--</span>json</pre></div>\n<p dir=\"auto\">No Python, uv, CUDA Toolkit, model download, or installation is needed. A supported GPU with a\ncurrent Windows WDDM driver is required. Builds are currently <strong>unsigned</strong>; code signing\nand an installer are not part of this initial distribution. Each ZIP includes licenses and a\n<code>.zip.sha256</code> companion file is published for integrity checks.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Clone and run</h2></div>\n<p dir=\"auto\">Use <strong>64-bit Windows 10/11</strong>, an <strong>NVIDIA or AMD GPU with a current WDDM driver</strong>, and a terminal\n(Windows Terminal is recommended). Live workload checks have included an RTX 4080 SUPER and an\nRTX Spark N1X on Windows ARM64. CUDA workloads are supported on ARM64 with a compatible NVIDIA\ndriver and ARM64 CUDA runtime.</p>\n<p dir=\"auto\">AMD live check: Radeon 860M Graphics on Windows 11 Enterprise build 26300, AMD driver 32.0.22050.1003.\nDuring desktop/browser activity, WDDM reported per-process VRAM and AMD ADL reported GPU utilization,\nclocks, and ASIC power; temperature, memory activity, and PCIe readings were unavailable. Vulkan/ROCm\nworkloads were not tested on this machine.</p>\n<p dir=\"auto\">Install <a href=\"https://git-scm.com/downloads/win\" rel=\"nofollow\">Git for Windows</a> and\n<a href=\"https://docs.astral.sh/uv/getting-started/installation/\" rel=\"nofollow\">uv</a> if needed. With WinGet:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"winget install --id Git.Git --exact\nwinget install --id astral-sh.uv --exact\"><pre>winget install <span class=\"pl-k\">--</span>id Git.Git <span class=\"pl-k\">--</span>exact\nwinget install <span class=\"pl-k\">--</span>id astral<span class=\"pl-k\">-</span>sh.uv <span class=\"pl-k\">--</span>exact</pre></div>\n<p dir=\"auto\">Open a new PowerShell window so those tools are on <code>PATH</code>, then:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\nuv run --locked gputaskman\"><pre>git clone https:<span class=\"pl-k\">//</span><span class=\"pl-c1\">github.com</span><span class=\"pl-k\">/</span>shanselman<span class=\"pl-k\">/</span>gputaskman.git\ncd gputaskman\nuv run <span class=\"pl-k\">--</span>locked gputaskman</pre></div>\n<p dir=\"auto\"><strong>That's it.</strong> uv obtains the pinned Python version if needed, creates <code>.venv</code>, and installs\nthe locked dependencies. The first run needs internet access. There is no CUDA Toolkit,\nVisual Studio, administrator session, API key, or model download required to monitor the GPU.\nNVML ships with the NVIDIA driver; AMD ADL is supplied by supported AMD Windows drivers.</p>\n<p dir=\"auto\">Already have Python 3.11+ and prefer pip?</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\npy -m venv .venv\n.\\.venv\\Scripts\\python.exe -m pip install .\n.\\.venv\\Scripts\\gputaskman.exe\"><pre>git clone https:<span class=\"pl-k\">//</span><span class=\"pl-c1\">github.com</span><span class=\"pl-k\">/</span>shanselman<span class=\"pl-k\">/</span>gputaskman.git\ncd gputaskman\npy <span class=\"pl-k\">-</span>m venv .venv\n.\\.venv\\Scripts\\<span class=\"pl-c1\">python.exe</span> <span class=\"pl-k\">-</span>m pip install .\n.\\.venv\\Scripts\\<span class=\"pl-c1\">gputaskman.exe</span></pre></div>\n<p dir=\"auto\">No PowerShell activation script or execution-policy change is needed. The pip route resolves\ncompatible dependencies; the uv route uses the checked-in lockfile.</p>\n<p dir=\"auto\">If an alternate package index makes <code>--locked</code> report a stale lockfile on an unchanged checkout,\n<code>uv run --frozen gputaskman</code> uses the checked-in lockfile without re-resolving it. <code>--frozen</code>\nskips the consistency check, so do not use it after changing dependencies.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Linux and WSL</h2></div>\n<p dir=\"auto\">Tagged releases include portable Linux builds: <code>gputaskman-VERSION-linux-x64.tar.gz</code> and\n<code>gputaskman-VERSION-linux-arm64.tar.gz</code>. They need glibc 2.35 or newer (Ubuntu 22.04, Debian 12,\nor newer) and an NVIDIA driver (or, on native Linux, an AMD GPU on the <code>amdgpu</code> driver), and work\nnatively, in containers, and in WSL:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"tar -xzf gputaskman-VERSION-linux-x64.tar.gz\ncd gputaskman-VERSION-linux-x64\n./gputaskman\"><pre>tar -xzf gputaskman-VERSION-linux-x64.tar.gz\n<span class=\"pl-c1\">cd</span> gputaskman-VERSION-linux-x64\n./gputaskman</pre></div>\n<p dir=\"auto\">Or clone and run from source, in a Linux or WSL shell:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"git clone https://github.com/shanselman/gputaskman.git\ncd gputaskman\nuv run --locked gputaskman\"><pre>git clone https://github.com/shanselman/gputaskman.git\n<span class=\"pl-c1\">cd</span> gputaskman\nuv run --locked gputaskman</pre></div>\n<p dir=\"auto\">What can be measured depends on where it runs, and the UI says which mode it is in.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>Native Linux</th>\n<th>WSL, interop on (default)</th>\n<th>WSL, interop off or <code>--no-host</code></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Device totals, load, temperature, power, clocks</td>\n<td>NVML</td>\n<td>NVML</td>\n<td>NVML</td>\n</tr>\n<tr>\n<td>Per-process VRAM</td>\n<td>NVML, measured (in a container: owner matched, <code>*</code> or <code>?</code>)</td>\n<td>Matched from the Windows host, marked <code>*</code> or <code>?</code></td>\n<td><code>n/a</code></td>\n</tr>\n<tr>\n<td>Per-process GPU load</td>\n<td>NVML (SM, encoder, decoder)</td>\n<td><code>n/a</code> for Linux processes</td>\n<td><code>n/a</code></td>\n</tr>\n<tr>\n<td>Spill / Paged</td>\n<td>Not available (blank)</td>\n<td>Windows rows only</td>\n<td>Not available</td>\n</tr>\n<tr>\n<td>WSL VM total, Windows apps</td>\n<td>—</td>\n<td>Windows host counters</td>\n<td>—</td>\n</tr>\n<tr>\n<td>Runtimes, model files, LLM breakdown</td>\n<td><code>/proc/&lt;pid&gt;/maps</code>, command line</td>\n<td>Same</td>\n<td>Same</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\"><strong>Native Linux</strong> reads per-process memory from NVML's running compute and graphics process lists\nand per-process SM, encoder, and decoder load from NVML utilization samples. Linux has no\nequivalent of WDDM's shared-memory or commit counters, so Spill and Paged stay blank rather than\nshowing zero. Only processes you can inspect are listed; other users' processes need <code>sudo</code>.</p>\n<p dir=\"auto\">JSON uses <code>null</code> for unavailable counters, not a measured zero: spill/commit/paged values on\nnative Linux, and per-process engine load for WSL Linux rows. Native NVML engine readings remain\navailable even if NVML hides that process's VRAM. Windows host rows retain their measured counters.</p>\n<p dir=\"auto\"><strong>Containers</strong> (Docker, Kubernetes, rented GPU boxes) need one more step: NVML reports <em>host</em>\nPIDs, which mean nothing in the container's <code>/proc</code>, and the container cannot see the host PID of\nits own processes. gputaskman pairs NVML's unresolved PIDs with the container's processes that\nhave <code>libcuda.so</code> mapped (NVML-only tools such as <code>nvidia-smi</code> open the same device files but\nnever load libcuda). Both PID namespaces number processes in creation order, so the pairing is by\norder: <code>*</code> when the counts match or a process starting while gputaskman runs pins it, <code>?</code> when\nNVML lists more compute processes than the container has (another container on the same GPU).\nPer-process GPU load follows the match. Anything left over is shown as <code>H:&lt;pid&gt;</code>,\n<em>outside this container</em> (for example, the host's display server), and is never looked up locally.</p>\n<p dir=\"auto\">Live check, on a Vast.ai Docker container (Ubuntu 22.04, RTX 3060 Ti, driver 580.82.09): two\nPyTorch jobs already running at startup, a third started while watching, and one killed, were all\nmatched to the right container PIDs with their NVML sizes (1.12, 2.52 and 1.59 GB) and live GPU%.\nAn Ollama <code>qwen3:0.6b</code> runner was detected and named from Ollama's store with <code>api+mapped+cmdline</code>\nevidence, its weights / KV-cache / compute split shown, and the TUI rendered. Bare-metal Linux\n(same PID namespace, no matching needed) is covered by tests but has not been run on hardware.</p>\n<p dir=\"auto\"><strong>AMD GPUs on native Linux</strong> (the <code>amdgpu</code> driver) need no ROCm, AMD SMI, or extra package: the\nkernel already exposes what's needed.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th>Source</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Device VRAM, GTT, load, temperature, power, clocks, fan, PCIe link</td>\n<td><code>/sys/class/drm/card*/device</code> and its <code>hwmon</code></td>\n</tr>\n<tr>\n<td>Per-process VRAM and GTT</td>\n<td><code>drm-resident-vram</code> / <code>drm-resident-gtt</code> (older kernels: <code>drm-memory-*</code>) and <code>drm-shared-*</code> in <code>/proc/&lt;pid&gt;/fdinfo/&lt;fd&gt;</code></td>\n</tr>\n<tr>\n<td>Per-process engine load (gfx, compute, video)</td>\n<td><code>drm-engine-*</code> busy time, sampled twice (<code>n/a</code> until a new client has two samples); <code>n/a</code> for ROCm/HIP processes (see below)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">GTT is GPU-accessible system RAM, so it fills the SPILL column (and <code>shared (in system RAM)</code> for\nthe device), like WDDM's non-local usage. On an APU (an integrated GPU, detected by amdgpu not\nreporting a VRAM vendor, a heuristic validated on one APU) GTT is the GPU's normal memory and \"VRAM\"\nis only a RAM carve-out, so GTT is still shown but never flagged as spill, and an LLM's memory is its\nVRAM plus GTT. The SDMA engine (<code>dma</code>) fills the COPY column. Paged stays blank: there is no commit\ncounter. VRAM and SPILL are charged to a process only when nothing else can hold its bytes: each of\nits DRM clients has exactly one visible holder, was opened through a render node (<code>/dev/dri/renderD*</code>),\nand reports zero bytes in every <code>drm-shared-*</code> region. Then its resident VRAM and GTT are its own and add\nup without double counting. Otherwise the process shows VRAM and SPILL as <code>n/a</code> (<code>null</code> in JSON, with\n<code>vram_unattributed_reason</code>) and its bytes stay in <em>unattributed</em>:</p>\n<ul dir=\"auto\">\n<li><strong>Shared client</strong> (fd passing, fork; 1Password and its crash handler on the test desktop): one set of\ncounters, and nothing says which process uses it. GPU% is <code>n/a</code> too.</li>\n<li><strong>Shared buffers</strong> (a window a compositor imports, video frames): <code>drm-shared-*</code> counts a buffer by\nwhere it <em>prefers</em> to live, resident or not, while <code>drm-resident-*</code> counts where buffers <em>are</em>, so\nresident minus shared is not private memory and is never computed.</li>\n<li><strong>Primary node</strong> (<code>/dev/dri/card*</code>, typically a compositor): root-owned logind keeps a copy of that\nfd, which a normal user can't see, so a single holder can't be proven.</li>\n<li><strong>Legacy</strong>: older kernels whose amdgpu fdinfo lacks <code>drm-shared-vram</code>/<code>drm-shared-gtt</code>.</li>\n<li><strong>Incomplete</strong>: some of the process's fds or fdinfo could not be read (GPU% is <code>n/a</code> too).</li>\n<li><strong>Partial scan</strong>: the TUI's 50 ms listing budget ran out this refresh, so a process it skipped might\nhold the same client (GPU% is <code>n/a</code> too). Expected to be rare on a desktop (~9 ms for ~8,000 fds,\nnot yet re-measured with this rule); one-shot output always scans fully.</li>\n</ul>\n<p dir=\"auto\">The inspector and JSON (<code>vram_resident_bytes</code>, <code>gtt_resident_bytes</code>) still show every buffer the\nprocess can reach, shared ones included; the same buffer can appear under several processes, so these\nare a reference and are never summed. Unparseable or missing values are unknown (<code>null</code>), not 0. amdgpu has no device-wide\nvideo engine counter, so the device's encode/decode load stays N/A; per-process video load is\nmeasured. On VCN 4 and later (RDNA3 and newer, including the RX 9070) decode and encode share one\nring, so it is reported as <code>video</code> rather than split. Only processes you can inspect are listed; the header and JSON (<code>process_status</code>) say how many could not be, and <code>sudo</code> includes other users'. <code>--gpu 1</code>\nselects the next card, such as an APU's integrated GPU next to a discrete one. A ROCm/HIP process\n(tagged <code>HIP</code>) has its VRAM in fdinfo like any other. Its GPU% is not: HIP submits compute through user-mode queues on <code>/dev/kfd</code>, which the kernel\ndoes not time per process, so a process holding <code>/dev/kfd</code> shows engines as <code>n/a</code> (<code>null</code> in JSON)\nrather than a measured-looking 0. The device's <code>AMD gfx</code> load does include that work.\nThis path is native-Linux only; under WSL the GPU is <code>/dev/dxg</code>, with no DRM driver involved.</p>\n<p dir=\"auto\">Live check, bare-metal Arch-based Linux (kernel 7.2.15, <code>amdgpu</code>), Radeon RX 9070-series (Navi 48)\nplus a Radeon 610M iGPU: both cards were found, named, and read; VAAPI HEVC encode and decode with <code>ffmpeg</code>\neach showed as a <code>video</code> row at ~95-100% video load (on the RX 9070 both were charged to amdgpu's\nunified <code>enc</code> ring, hence <code>video</code>); desktop processes' VRAM summed\nto less than the card's used VRAM, with the compositor's imported windows listed as shared.\nllama.cpp's ROCm server image (<code>ghcr.io/ggml-org/llama.cpp:server-rocm</code>, Qwen3-4B-Instruct-2507\nQ4_K_M, <code>-ngl 99 -c 8192</code>, next to a running game) showed as an <code>LLM</code> row with <code>llama.cpp+ggml+HIP</code>\nand 3.95 GB of VRAM, matching the 2.49 GB of weights plus 1.21 GB of f16 KV cache plus compute\nbuffers, and the 4.11 GB KFD reports for the process in <code>/sys/class/kfd/kfd/proc/&lt;pid&gt;/vram_*</code>.\nWhile it generated at 103 tok/s the device read 99% gfx and 339 W, but fdinfo had no engine lines\nfor it, which is why ROCm rows show engines as <code>n/a</code>. PyTorch-ROCm has not been run on this path.\nThat check predates the stricter attribution above (no subtraction of shared bytes; render-node,\nsingle-holder and complete-scan requirements; per-client timestamps; PID-reuse checks), which is\ncovered by unit tests only and <strong>not yet validated on AMD hardware</strong>.</p>\n<p dir=\"auto\"><strong>WSL</strong> is different, because Windows owns the GPU. Linux cannot see how much VRAM its own\nprocesses use: <code>nvidia-smi</code> lists no processes, NVML's per-process samples carry <em>Windows</em> PIDs\n(never looked up in Linux's <code>/proc</code>), and Windows charges all Linux GPU memory to the VM worker\nprocess, <code>vmwp.exe</code>. When WSL interop is enabled (<code>/proc/sys/fs/binfmt_misc/WSLInterop</code> reads\n<code>enabled</code>), gputaskman starts one long-lived <code>powershell.exe</code> that reads the Windows GPU counters\nthrough the same PDH array API as the Windows backend and streams them back once a second:</p>\n<ul dir=\"auto\">\n<li><strong>WSL VM (<code>vmwp.exe</code>)</strong> is the exact total of Linux GPU memory, across every distro, WSLg, and\nDocker Desktop.</li>\n<li><strong>Windows apps</strong> appear as <code>W:&lt;pid&gt;</code> rows with their VRAM, spill, paged, and engine load.\nWindows and Linux PIDs are separate namespaces, so the prefix keeps them apart.</li>\n<li><strong>Linux rows</strong> get a size by matching <code>vmwp.exe</code>'s GPU contexts to Linux processes (below).</li>\n</ul>\n<p dir=\"auto\">The first host sample takes about 2.5 s; the TUI shows <code>starting</code> until then, and <code>--once</code> waits\nfor it. The host adapter is paired with the NVML device by memory usage, because WSL's adapter\nLUIDs differ from the host's. An ambiguous pairing shows <code>unmatched</code> instead of guessing. With other\nHyper-V VMs or Windows Sandbox running, the row is labeled <code>VM worker</code> because it cannot be tied\nto WSL alone. <code>--no-host</code> turns the host stream off; without interop you get device-wide numbers\nand a list of the Linux processes that hold <code>/dev/dxg</code>, with VRAM shown as <code>n/a</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">How WSL per-process VRAM is matched</h3></div>\n<p dir=\"auto\"><code>vmwp.exe</code> exposes one GPU-memory instance per guest GPU context, all with the same name: sizes\nwithout owners. Measured on WSL2 with driver 610.88, every Linux process that opens <code>/dev/dxg</code>\ngets exactly one context (an NVML-only process too, at 0 bytes), and Windows lists them <strong>newest\nfirst</strong>, keeping that order as contexts come and go. Contexts from outside this distro (WSLg, other\ndistros, Docker, services you cannot inspect) are interleaved by their own age.</p>\n<p dir=\"auto\">gputaskman follows the contexts from sample to sample and labels them with evidence:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Marker</th>\n<th>Meaning</th>\n<th>Established by</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>*</code> matched</td>\n<td>Windows' exact size; the owner is inferred, and only one explanation fits (or every one that fits gives the same size)</td>\n<td>A new Linux GPU process and a new context appearing together; elimination; this monitor's own context being the only zero-byte candidate at startup; candidate contexts that are exactly the same size</td>\n</tr>\n<tr>\n<td><code>?</code> guess</td>\n<td>Heuristic owner for processes that were already running</td>\n<td>Newer process ↔ newer context, outside contexts assumed oldest; cached foreign sizes can rank extra candidates but never establish ownership</td>\n</tr>\n<tr>\n<td><code>n/a</code></td>\n<td>No context could be assigned</td>\n<td>For example, a process that has not created its GPU context yet</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">A guess is recomputed every refresh and never counts as evidence for itself. An exited process's\ncontext is held aside until it disappears, so it is not handed to a newcomer, and a context that\ngrows by gigabytes between refreshes (weights uploading) keeps an established owner. Multiple\nzero-byte contexts at startup do not pin the monitor to an arbitrary one that might later grow.\nForeign sizes observed while only the monitor is running are cached per WSL boot in\n<code>~/.cache/gputaskman/</code>, but remain hints: a process may exit while the monitor is off and a local\nprocess may reuse its size. Observed foreign-context exits and idle samples clear obsolete hints.</p>\n<p dir=\"auto\">The matched size also feeds VRAM sorting, initial model selection, the bounded model-file scan\npriority, and the LLM weights / KV-cache breakdown. Inferred Linux rows remain below the VM total\nand are never added to it again. The inspector and <code>--json</code> (<code>vram_inferred_by</code>) say which kind\nof match each row has.</p>\n<p dir=\"auto\">In one live check, a 2 GB and a 5 GB PyTorch allocation were matched to the right PIDs at\n2.119 GiB and 4.914 GiB: the allocator's own figure plus about 0.26 GiB of CUDA context.\nThat is one machine and driver, not a guarantee. A process that started long before it first used\nthe GPU can break the start-order guess, and processes started in the same refresh are ordered by\nguess unless their sizes match.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">NixOS</h3></div>\n<p dir=\"auto\">With flakes enabled, run directly from this checkout:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"nix run path:.\nnix run path:. -- --list-gpus\nnix run path:. -- --once\nnix run path:. -- --json\"><pre>nix run path:.\nnix run path:. -- --list-gpus\nnix run path:. -- --once\nnix run path:. -- --json</pre></div>\n<p dir=\"auto\">Build both <code>gputaskman</code> and its <code>gtm</code> alias with <code>nix build path:.</code> (executables are in\n<code>result/bin/</code>). The flake provides packages for <code>x86_64-linux</code> and <code>aarch64-linux</code>; <code>flake.lock</code>\npins nixpkgs. Dependencies come from nixpkgs, independently of <code>uv.lock</code>. No pip installation,\nvirtual environment, CUDA Toolkit, or ROCm installation is needed. GPU drivers remain supplied by\nthe host, never bundled with the package. NVIDIA's nixpkgs Python binding finds NVML through\n<code>/run/opengl-driver/lib</code>; AMD uses kernel sysfs and DRM fdinfo interfaces directly.</p>\n<p dir=\"auto\">For source development and tests:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"nix develop path:.\npython -m gputaskman --once\npython -m unittest discover -s tests -q\"><pre>nix develop path:.\npython -m gputaskman --once\npython -m unittest discover -s tests -q</pre></div>\n<p dir=\"auto\"><code>nix flake check path:.</code> builds the package and runs the same hardware-independent tests.\nFor a flake-based NixOS configuration, add this repository as a <code>gputaskman</code> input, then include\n<code>inputs.gputaskman.packages.${pkgs.stdenv.hostPlatform.system}.default</code> in\n<code>environment.systemPackages</code>. Enable your GPU's normal NixOS driver configuration first.\nThe flake was contributed and checked on x86_64 NixOS 26.05; CI does not build it, and ARM64 has\nnot been validated.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">macOS (Apple Silicon)</h2></div>\n<p dir=\"auto\">Run from a clone (<code>uv run gputaskman</code>); there is no portable macOS download yet. Apple GPUs share\none pool of memory with the CPU, so there is no VRAM to split and no spill/commit counters. What\nmacOS exposes without root:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Column</th>\n<th>Source</th>\n<th>Who</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>GPU memory (header)</td>\n<td>IOAccelerator <code>PerformanceStatistics</code>: <code>Alloc system memory</code> (all GPU allocations) out of physical RAM</td>\n<td>device</td>\n</tr>\n<tr>\n<td>GPU% (header)</td>\n<td><code>Device Utilization %</code></td>\n<td>device</td>\n</tr>\n<tr>\n<td>GPU%</td>\n<td>Each Metal client (<code>AGXDeviceUserClient</code>) names its creator PID and keeps a cumulative <code>accumulatedGPUTime</code>; the rate between samples, per client (a closed client never hides the others' work)</td>\n<td>every process</td>\n</tr>\n<tr>\n<td>VRAM</td>\n<td><code>footprint</code>: the process's memory macOS charges to graphics (the <code>(graphics)</code> categories: Metal buffers, textures)</td>\n<td>your own processes</td>\n</tr>\n<tr>\n<td>Runtime, model files</td>\n<td>Mapped files from <code>proc_pidinfo</code> region walks (psutil has no memory maps on macOS): <code>libggml*.dylib</code>, <code>libllama*.dylib</code>, <code>libmlx*.dylib</code>, <code>libtorch_cpu.dylib</code>, the Metal driver bundle</td>\n<td>your own processes</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Other users' processes (WindowServer, system daemons) show GPU% with memory <code>n/a</code>: <code>footprint</code> needs\nroot for them. Idle ones are left out of the table, except WindowServer. Run with <code>sudo</code> to measure\nevery process's memory. <code>footprint</code> takes ~70 ms per process, so it runs in a background thread:\nbusy processes and new ones every pass (~2 s), idle ones every 30 s. A new process shows <code>n/a</code> for a\nsecond or two until its first measurement; a single failed measurement keeps the last size, and three\nin a row back off for a minute. Measurements are tied to the process's start time, so a reused PID\nnever shows the previous process's numbers.</p>\n<p dir=\"auto\">Metal reports one GPU time per process, with no 3D/compute/copy/video split, so those columns show\n<code>n/a</code>; a Metal process above 10% GPU is classified <code>3D/game</code> unless something more specific applies\n(AI runtime, browser, compositor). Spill, paged, clocks, power, and temperature are not available, so\nthe chart picker offers only GPU and GPU memory. Handy's log is read from\n<code>~/Library/Logs/com.pais.handy/handy.log</code>.</p>\n<p dir=\"auto\">Live check on an M4 Mac mini (macOS 26.3.1): a PyTorch MPS job with a 2 GiB buffer and a matmul loop\nshowed <code>Python  AI  PyTorch+Metal  3.06 GB  99%</code>, with device utilization at 99% and allocated GPU\nmemory rising by the same amount.</p>\n<p dir=\"auto\">Scans skip other apps' sandbox containers (<code>~/Library/Containers</code>, <code>~/Library/Group Containers</code>) and\nsystem files without opening them: opening a file in a protected container blocks while macOS waits\nfor a privacy consent prompt.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">What you get</h2></div>\n<ul dir=\"auto\">\n<li><strong>Device view:</strong> VRAM usage, GPU activity, memory activity, PCIe traffic, temperature, power,\nvideo-engine clock, and responsive history charts with an all-charts or single-metric view.</li>\n<li><strong>Process view:</strong> local GPU memory, GPU-accessible system RAM, estimated non-resident commit,\nengine activity, and detected runtimes such as CUDA, HIP, Vulkan, Direct3D, ggml and ONNX Runtime.</li>\n<li><strong>Model inspector:</strong> which model each process holds (LLM, decision, embedding, speech, or diffusion), how\nit was identified, architecture, quantization, layer count, weights, estimated KV cost, and\nbuffer sizes from compatible load logs.</li>\n<li><strong>Live server hints:</strong> context size, busy slots, throughput when available, and friendly Ollama\nor LM Studio model names.</li>\n<li><strong>Scriptable output:</strong> one-shot text and JSON, using the same collector as the TUI.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Screenshots</h3></div>\n<p dir=\"auto\">These are captures of real local workloads through Textual's screenshot renderer, not mock data.\nFull filesystem paths and command lines were omitted in the capture copy. Measurements vary\nwith the workload; the examples are not benchmarks.</p>\n<p dir=\"auto\"><strong>The compositor, without treating all shared surfaces as its private VRAM</strong></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/shanselman/gputaskman/blob/main/docs/screenshots/compositor.png\"><img src=\"https://raw.githubusercontent.com/shanselman/gputaskman/main/docs/screenshots/compositor.png\" alt=\"Compositor selected, showing local memory and the explanation of shared-surface accounting\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><strong>GPU-accessible system RAM, sorted by the Spill column</strong></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/shanselman/gputaskman/blob/main/docs/screenshots/system-memory.png\"><img src=\"https://raw.githubusercontent.com/shanselman/gputaskman/main/docs/screenshots/system-memory.png\" alt=\"Processes sorted by system-memory usage, alongside the selected process's memory explanation\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><strong>An explanation of what is measured, inferred, and unavailable</strong></p>\n<p dir=\"auto\"><a target=\"_blank\" rel=\"noopener noreferrer\" href=\"https://github.com/shanselman/gputaskman/blob/main/docs/screenshots/help.png\"><img src=\"https://raw.githubusercontent.com/shanselman/gputaskman/main/docs/screenshots/help.png\" alt=\"Built-in help explaining GPU counters and the limits of memory introspection\" style=\"max-width: 100%;\"></a></p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Usage</h2></div>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run --locked gputaskman              # live TUI\nuv run --locked gtm                     # shorter alias\nuv run --locked gputaskman -i 2         # sample every two seconds\nuv run --locked gputaskman --once       # one text snapshot\nuv run --locked gputaskman --json       # one JSON snapshot; implies --once\nuv run --locked gputaskman diff before.json after.json   # compare two --json snapshots\nuv run --locked gputaskman --no-host    # WSL: don't read Windows host counters through interop\nuv run --locked gputaskman --help\"><pre>uv run <span class=\"pl-k\">--</span>locked gputaskman              <span class=\"pl-c\"><span class=\"pl-c\">#</span> live TUI</span>\nuv run <span class=\"pl-k\">--</span>locked gtm                     <span class=\"pl-c\"><span class=\"pl-c\">#</span> shorter alias</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">-</span>i <span class=\"pl-c1\">2</span>         <span class=\"pl-c\"><span class=\"pl-c\">#</span> sample every two seconds</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>once       <span class=\"pl-c\"><span class=\"pl-c\">#</span> one text snapshot</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>json       <span class=\"pl-c\"><span class=\"pl-c\">#</span> one JSON snapshot; implies --once</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman diff before.json after.json   <span class=\"pl-c\"><span class=\"pl-c\">#</span> compare two --json snapshots</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>no<span class=\"pl-k\">-</span>host    <span class=\"pl-c\"><span class=\"pl-c\">#</span> WSL: don't read Windows host counters through interop</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>help</pre></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Key</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Up / Down</td>\n<td>Select a process and inspect it</td>\n</tr>\n<tr>\n<td><code>s</code></td>\n<td>Cycle sort: VRAM, GPU%, spill, paged, name</td>\n</tr>\n<tr>\n<td><code>c</code></td>\n<td>Cycle all charts or a single metric (also available in the <strong>Charts</strong> dropdown)</td>\n</tr>\n<tr>\n<td><code>a</code></td>\n<td>Switch between top and all collected processes</td>\n</tr>\n<tr>\n<td><code>m</code></td>\n<td>Toggle full diagnostics / slim monitoring</td>\n</tr>\n<tr>\n<td><code>p</code></td>\n<td>Pause / resume collection</td>\n</tr>\n<tr>\n<td><code>?</code></td>\n<td>Explain the counters and their limits</td>\n</tr>\n<tr>\n<td>Escape</td>\n<td>Close help</td>\n</tr>\n<tr>\n<td><code>q</code></td>\n<td>Quit</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">A wide terminal (roughly 140 columns or more) makes the full table easier to read.\nThe TUI starts in <strong>Full diagnostics</strong> mode. Press <code>m</code> (or click <strong>Slim/Full</strong> in the\nfooter) for <strong>Slim monitoring</strong>: each GPU header hides driver/CUDA versions, PCI bus\naddress, driver model, PCIe generation/width, compute capability, power/clock limits,\nperformance state, and secondary memory/video clocks. GPU identity, memory bars and\nprovenance/availability warnings, utilization, PCIe throughput, temperature, current power\nand SM/GFX clock, throttling alerts, charts, processes, and process inspection remain.\nThe header border names the active mode; press <code>m</code> again to restore the full details.\nThis is a session-only display toggle, applies to every GPU, and does not change collection\nor one-shot text/JSON output.\nAll eight history charts are shown by default: GPU, SM clock (GFX clock on AMD), VRAM, memory activity,\ntemperature, power, encoder, and decoder. They stack in narrow terminals and share rows as\nthe window widens. Click the <strong>Charts</strong> dropdown to focus on one metric or return to <strong>All charts</strong>.\nA blank sample means no reading; zero is drawn at the baseline. Percentages use a 0–100%\nscale, temperature uses 0–120°C, and the power and clock scales are displayed below the charts.\nThe dashboard and inspector scroll independently in short terminals so the process list stays usable.\nModel/runtime discovery is throttled, so newly loaded models may take about 15 seconds to appear.</p>\n<p dir=\"auto\">On multi-GPU systems, the TUI stacks a header and trend charts for each GPU and adds a <strong>GPU</strong>\ncolumn to the combined process list. A process using two GPUs has a separate row for each;\nselecting a row inspects its memory on that GPU. Single-GPU layouts are unchanged.\nMemory totals and histories stay separate per device; model files and runtime buffer logs\ncan span devices and do not prove per-device model placement. Discovery's 150 ms scan budget\nis divided across GPUs, though each GPU has its own counter and telemetry queries.\nThis layout is covered by synthetic tests, <strong>not yet validated on multi-GPU hardware</strong>.\nUnder multi-GPU WSL, host attribution is disabled with a reason rather than risking matching\ntwo devices by memory usage; Linux processes are listed once with GPU <code>?</code>, because <code>/dev/dxg</code>\ndoes not identify their GPU. <code>--gpu N</code> retains the existing single-device host matching.</p>\n<p dir=\"auto\"><code>--list-gpus</code> lists selectable hardware adapters with their vendor and LUID. <code>--gpu N</code> selects\none of these adapters: NVIDIA adapters are listed first, followed by other vendors, with each\ngroup ordered by dedicated memory. An out-of-range\nindex is rejected rather than silently selecting another device. Compute-only devices such as an\nNPU are not graphics adapters. AMD and NVIDIA hardware coverage is described below; configurations\nwith multiple GPUs and mixed vendors need further hardware validation. <code>--once</code> and <code>--json</code>\nstill default to GPU 0; use <code>--gpu N</code> to collect another device without changing the snapshot format.\nDevice telemetry is matched to WDDM adapters by PCI location, not display name or enumeration order.\nIf a unique match cannot be established, telemetry is unavailable; buffer logs can still span devices,\nso model-buffer attribution across GPUs is not yet reliable. This conservative matching also applies\nto NVIDIA and may suppress telemetry when Windows does not expose a usable PCI address.</p>\n<p dir=\"auto\">AMD adapters can be selected and use the existing Windows GPU process counters; HIP runtime DLLs\nare recognized as runtime evidence. On supported drivers, the AMD Display Library supplied by the\nWindows driver can provide graphics activity, clocks, edge temperature, board or ASIC power, fan\nand PCIe lane count. An optional AMD SMI Python installation is a fallback and may provide graphics\nactivity, edge temperature and socket power. Both require a PCI match to the selected WDDM adapter.\nThe SMI library and its native dependencies must be available to the Python environment; it is not\nbundled in the portable build. The RX 9060 XT HIP workload and ADL telemetry have been observed on\nthis machine; AMD SMI telemetry and Vulkan workloads remain unvalidated.\nA loaded DLL does not prove GPU execution.</p>\n<p dir=\"auto\">Unavailable utilization, temperature, power, clock and PCIe readings are displayed as <code>N/A</code> in\ntext and the TUI and as <code>null</code> in JSON. For example, a missing NVML power limit means that the\ndriver did not expose that reading; it does not by itself indicate a hardware fault.\nMissing per-process memory or engine samples likewise show <code>N/A</code>/<code>null</code>; the paged estimate is\nunavailable when any of its input counters is missing.</p>\n<p dir=\"auto\">On GPU-paravirtualized VMs, including Windows Sandbox, Windows may expose GPU counter LUIDs that\ndo not match the selected DXGI adapter. When that happens, the counters cannot safely be assigned\nto the adapter: the process list and usage are unavailable, not zero. The text and TUI explain\nthe mismatch; JSON reports it in <code>counter_status</code> and sets <code>counter_adapter_matched</code> to <code>false</code>\n(<code>null</code> when the check does not apply).\nGPU-PV guests may also omit adapter memory counters. Counter values that are actually reported as\nzero remain zero; a zero alone does not establish that a counter is unavailable.</p>\n<p dir=\"auto\">Live check: Windows Sandbox on Windows 11 build 26100, hosted by an RTX 4080 SUPER with NVIDIA\ndriver 630.20. <code>D3DKMTEnumAdapters2/3</code> exposed the PDH LUID <code>0x4BF1</code> as a software adapter with a\ndifferent adapter/render GUID from DXGI's <code>0x4BB7</code>; it was not a proven alias for the NVIDIA GPU.\nThe portable build's <code>--once</code> explanation and <code>--json</code> unmatched status were verified in the guest.\nOther Hyper-V GPU-PV configurations have not been validated.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Comparing snapshots</h3></div>\n<p dir=\"auto\">To see which memory bucket actually grew when you load a model or change the context length, save\na JSON snapshot before and after and compare them:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run --locked gputaskman --json &gt; before.json\n# load the model, or restart the server with a different -c, then send it one request\nuv run --locked gputaskman --json &gt; after.json\nuv run --locked gputaskman diff before.json after.json          # add --json for machine-readable output\"><pre>uv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>json <span class=\"pl-k\">&gt;</span> before.json\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> load the model, or restart the server with a different -c, then send it one request</span>\nuv run <span class=\"pl-k\">--</span>locked gputaskman <span class=\"pl-k\">--</span>json <span class=\"pl-k\">&gt;</span> after.json\nuv run <span class=\"pl-k\">--</span>locked gputaskman diff before.json after.json          <span class=\"pl-c\"><span class=\"pl-c\">#</span> add --json for machine-readable output</span></pre></div>\n<p dir=\"auto\">The device and process tables compare <strong>measured</strong> counters only. Runtime-reported segments\n(llama.cpp buffer logs) and estimates (KV cache from GGUF metadata and <code>-c</code>) are listed separately\nunder each process and are never added to measured totals. A model file that appears in a process\nis listed as evidence that the process opened or named it, not as GPU growth.</p>\n<p dir=\"auto\">Processes are paired by PID, then by name and listening ports, then by a unique name, because a\nmodel reload often restarts the server under a new PID. A process missing from one snapshot shows\n<code>not listed</code>, not zero: it was not running or used too little GPU to be listed. Processes that\nmoved by less than 16 MB are hidden from the text output but included in <code>--json</code>.</p>\n<p dir=\"auto\">Take the \"after\" snapshot once the model has answered one request: CUDA and Vulkan can allocate\nlazily, and allocators keep freed memory cached, so shrinkage may appear late. On an RTX 4080 SUPER\nwith Docker Model Runner's llama-server (Vulkan) and gemma-3-270m, changing <code>-c 4096</code> to <code>-c 32768</code>\nestimated +504 MB of KV cache, but the server's measured dedicated memory grew by only +83 MB.\nGemma 3 uses sliding-window attention, so the estimate is an upper bound. The comparison makes\nthat gap visible instead of hiding it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How can it know what's inside?</h2></div>\n<p dir=\"auto\">It combines evidence rather than reading arbitrary GPU memory. Windows' graphics kernel supplies\nper-process memory and engine counters, while NVML or AMD ADL/SMI supplies device metrics. Process DLLs suggest\nthe runtime, and mapped files or command-line arguments identify candidate models. GGUF metadata\nand tensor offsets let it estimate weights and KV-cache costs; compatible runtime logs and local\nserver APIs add allocated buffer sizes and live state. That can explain a llama.cpp process well,\nbut a runtime DLL or filename alone does not prove which allocation contains which object.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Question</th>\n<th>Evidence</th>\n<th>Confidence / limitation</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>How full and busy is the card?</td>\n<td>WDDM adapter counters and NVML or AMD ADL/SMI</td>\n<td>Measured; driver support varies by metric</td>\n</tr>\n<tr>\n<td>Which process uses GPU memory?</td>\n<td>WDDM process counters; NVML on Linux</td>\n<td>Measured accounting, not a resource ownership graph</td>\n</tr>\n<tr>\n<td>Which WSL process uses GPU memory?</td>\n<td>Windows host counters for <code>vmwp.exe</code>, matched to Linux processes</td>\n<td>Exact VM total; per-process owner inferred (<code>*</code>) or guessed (<code>?</code>)</td>\n</tr>\n<tr>\n<td>Which engines are active?</td>\n<td>WDDM engine counters</td>\n<td>CUDA can appear on the <strong>3D</strong> engine</td>\n</tr>\n<tr>\n<td>Which runtime is loaded?</td>\n<td>Mapped DLL names</td>\n<td>Detection, not proof that every library is doing GPU work</td>\n</tr>\n<tr>\n<td>Which model file is present?</td>\n<td>Mapped files, CLI flags, GGUF magic/header</td>\n<td>A file mapping does not prove GPU placement</td>\n</tr>\n<tr>\n<td>Weights / KV / compute sizes?</td>\n<td>Load logs, GGUF math, server state</td>\n<td>Log-reported allocations or estimates, not a VRAM scan</td>\n</tr>\n<tr>\n<td>Which texture, tensor, or kernel is this?</td>\n<td>Not available here</td>\n<td>Use PIX, Nsight, or runtime-specific instrumentation</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Why not just <code>nvidia-smi</code>?</h3></div>\n<p dir=\"auto\">On GeForce under <strong>WDDM</strong>, Windows manages GPU memory and NVML may report per-process memory as\n<code>N/A</code>. Windows GPU counters can still attribute memory and activity across Direct3D, Vulkan,\nOpenGL, and CUDA. NVML remains useful for device-level readings. Under WSL, <code>nvidia-smi</code> lists\nno processes at all; see <a href=\"#linux-and-wsl\">Linux and WSL</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">DWM, Spill, and Paged: read these carefully</h3></div>\n<p dir=\"auto\"><strong>DWM is not everything.</strong> Windows' per-process <code>Dedicated Usage</code> includes resources shared\nbetween processes. The same surface may appear against its application, <code>csrss.exe</code>, and\n<code>dwm.exe</code>. Adding those rows double-counts memory. This tool prefers <code>Local Usage</code> and\n<code>Non Local Usage</code>; it falls back to <code>Dedicated Usage</code> / <code>Shared Usage</code> when the preferred\ncounters cannot be added. The adapter total remains the reference. See Microsoft's\n<a href=\"https://devblogs.microsoft.com/directx/gpus-in-the-task-manager/\" rel=\"nofollow\">GPU accounting explanation</a>.</p>\n<p dir=\"auto\">In one live sample, DWM's older counter read about 15.3 GiB while <code>Local Usage</code> was about\n1.4 GiB. The latter reduced the inflated process sum substantially. This is an observed\nimprovement, not a guarantee that every driver's process counters add up exactly.\nWhen the row sum exceeds the adapter total, the category bar is normalized to fit;\nlegend values remain raw, and the UI labels the normalization.</p>\n<p dir=\"auto\"><strong>Spill means GPU-accessible system RAM, not proven overflow.</strong> It can include intentionally\nallocated or pinned host buffers. Large usage alongside a nearly full GPU can indicate\nfallback and slower inference, but the counter alone cannot establish why it was allocated.</p>\n<p dir=\"auto\"><strong>Paged is an estimate:</strong> <code>max(Total Committed - Local Usage - Non Local Usage, 0)</code>.\nIt is not an eviction trace, a pagefile measurement, or proof that Windows just moved\nthose bytes out of VRAM. The value is also less reliable when fallback counters are in use.</p>\n<p dir=\"auto\">Memory labels currently use <code>GB</code> / <code>MB</code> for binary units (GiB / MiB). The <code>Mem activity</code>\nreading is NVML's memory-activity percentage, <strong>not measured bandwidth in GB/s</strong>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">LLM and model support</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Runtime</th>\n<th>Current support</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>llama.cpp / llama-server</td>\n<td>GGUF discovery, CLI settings, buffer logs, <code>/props</code> + <code>/v1/models</code> state; exercised live</td>\n</tr>\n<tr>\n<td>Ollama</td>\n<td>Bundled runners, mapped GGUF blobs named from Ollama manifests (<code>qwen3:14b</code>), parent <code>/api/ps</code>, compatible <code>server.log</code>; exercised live</td>\n</tr>\n<tr>\n<td>LM Studio</td>\n<td>Mapped files named from its models folder, <code>/api/v1/models</code> (falls back to <code>/api/v0/models</code>); tested with fixture responses, not yet end to end</td>\n</tr>\n<tr>\n<td>stable-diffusion.cpp (<code>--diffusion-model</code>)</td>\n<td>Diffusion, text-encoder and VAE files from launch arguments; no LLM memory breakdown</td>\n</tr>\n<tr>\n<td>Hugging Face cache</td>\n<td><code>models--org--repo</code> paths are named <code>org/repo</code></td>\n</tr>\n<tr>\n<td>Other AI runtimes</td>\n<td>DLL detection, plus model files installed with the app (marked <em>not proven loaded</em>)</td>\n</tr>\n<tr>\n<td>Handy</td>\n<td>Reads selected model from settings and bounded load/start/preview/unload events from <code>handy.log</code>; selection is not load evidence and log events are historical, not proof of current residency</td>\n</tr>\n<tr>\n<td>WinML / local helper processes</td>\n<td>GPU-backed execution is in scope; generic process counters and runtime detection only. No WinML-specific model/session or client-to-helper attribution yet</td>\n</tr>\n<tr>\n<td>Windows Studio Effects</td>\n<td>Only any observable GPU portion is in scope. NPU inference is out of scope; do not interpret GPU camera/render activity as proof of model execution</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">WinML can select different execution backends; a local helper/service is still <strong>local</strong>, not\ncloud-hosted. The GPU counters belong to whichever process holds/uses the GPU resources.\nParent-PID lookup currently helps find Ollama/LM Studio APIs; it is not a general cross-process\nownership graph for shared Windows services.</p>\n<p dir=\"auto\">GPU-backed WinML and Studio Effects paths have <strong>not been validated on a Copilot+ PC</strong>. A future\nhardware check should compare idle versus active workload samples, record the actual GPU adapter\nand resource-owning PID (including helpers), and verify the execution provider using runtime\ndiagnostics. Match any reported model/session to that PID before claiming attribution. If execution\nis CPU/NPU-only, record it as out of scope rather than a missing GPU model. No NPU collector is planned.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">How models are identified</h3></div>\n<p dir=\"auto\">Every model row shows its <strong>evidence</strong>, strongest first:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Evidence</th>\n<th>Meaning</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>api</code></td>\n<td>The runtime's local API reports the model as loaded</td>\n</tr>\n<tr>\n<td><code>mapped</code></td>\n<td>Windows shows the file memory-mapped into the process right now</td>\n</tr>\n<tr>\n<td><code>cmdline</code></td>\n<td>The file was a launch argument (<code>-m model.gguf</code>)</td>\n</tr>\n<tr>\n<td><code>installed</code></td>\n<td>Found in the app's install or data folder; nothing proves it is loaded</td>\n</tr>\n<tr>\n<td>Handy settings / log</td>\n<td>Settings show selection; timestamped log events show what Handy reported, not current residency</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Two sources including <code>api</code> or <code>mapped</code> show as <strong>confirmed</strong>. Runtime logs can report model events,\nbut are displayed as timestamped history and do not prove current residency. Model-store folders\nonly supply a friendly name. The authoritative model <em>kind</em> comes from GGUF header keys: <code>decision.type</code> marks a\ndecision model (for example <a href=\"https://huggingface.co/ggml-org/Laya-GGUF\" rel=\"nofollow\">Laya</a>), <code>pooling_type</code>\nan embedding model or reranker, <code>stt.*</code> a speech model, and a causal model with layers and a\ntrained context an LLM. llama-server's <code>/v1/models</code> <code>output_modalities</code> (<code>text</code>, <code>decisions</code>)\nconfirms it. Non-causal encoders such as Laya allocate no KV cache, so none is estimated.</p>\n<p dir=\"auto\">When a file lacks specific kind metadata, known local decision-model names (<code>openjev</code>, <code>laya</code>,\n<code>julia-1</code>, <code>lev</code>, <code>kev</code>) supply a <strong>likely decision model (name)</strong> hint. Matching uses delimited\nnames in the filename, immediate model folder, or resolved store model name, not arbitrary path\nsubstrings, publishers, or Ollama tags. The process category is <code>decision?</code>; specific GGUF kinds\ntake precedence. Hints do not change loading evidence, causal/KV calculations, or installed-candidate\nstatus. JSON preserves the header-derived <code>kind</code> separately from <code>kind_hint</code> and <code>kind_label</code>.</p>\n<p dir=\"auto\">For example, <a href=\"https://huggingface.co/ggml-org/OpenJev-GGUF\" rel=\"nofollow\">ggml-org/OpenJev-GGUF</a> includes\n<code>qwen35.decision.type=openjev</code>; the inspected community\n<a href=\"https://huggingface.co/openjev/openjev-GGUF\" rel=\"nofollow\">openjev/openjev-GGUF</a> Q4_K_M header lacks that key and\nuses the generic internal name <code>Snapshot_Cfg</code>, so its filename or store name supplies only a hint.\nNeither a type hint nor an API/file match proves which model produced the process's GPU activity.</p>\n<p dir=\"auto\">Some runtimes (ONNX Runtime, whisper.cpp) read a model into memory and close the file. Windows then\nhas no record of which file is loaded, so the app's installed models are listed as candidates only.\nFor Handy, gputaskman reads the configured <code>selected_model</code> and only model-load, streaming-start,\npreview, and unload events from its local log. Settings prove selection; a fresh log event proves\nHandy reported that event after the current process started. Neither proves continuous GPU residency.\nLog parsing is bounded to the last 512 KiB, cached until the file changes, and ignores transcription\ncontent. Handy's selected Hugging Face model can live outside its Roaming <code>models</code> folder. Handy\nlogs in UTC; JSON keeps that UTC timestamp and the TUI/text output show local time.</p>\n<p dir=\"auto\"><strong>Other speech and vision apps.</strong> Handy is the first <em>app adapter</em>: a read-only recipe for where an\napp keeps its settings and which log lines mark a model load or unload. Most whisper-style apps\n(whisper.cpp, faster-whisper, sherpa-onnx, ONNX Runtime) read a model and close the file, so the OS\nkeeps no record of it. Adapters give exact names when an app logs them, but each app needs its own\nrecipe, and a log-format change can break it. The runtime-agnostic answer is to see the file being\nopened during the load: Windows kernel file-I/O ETW events record which process opened which model\nfile. Combined with that process's VRAM jump, this identifies the model without app-specific code.\nIt needs elevation and must already be running when the load happens, so it is planned as an\nopt-in mode. Until then, unknown apps show their runtime DLLs, VRAM, engine activity, and installed\ncandidates. Reading model names out of another process's memory is deliberately not done.</p>\n<p dir=\"auto\">Identification is designed to stay cheap. Measured on one Windows machine:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Probe</th>\n<th>Cost</th>\n<th>Used</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Process list, command line, listening ports</td>\n<td>under 1 ms</td>\n<td>Once per process / every 5 s</td>\n</tr>\n<tr>\n<td>Memory-map scan (DLLs + mapped files)</td>\n<td>1-50 ms per process</td>\n<td>New processes, a 64 MiB / 10% memory change, or every 2 min; at most 150 ms per refresh</td>\n</tr>\n<tr>\n<td>GGUF header, model-store manifests</td>\n<td>ms, cached</td>\n<td>Once per file / every 60 s</td>\n</tr>\n<tr>\n<td>Local API probes</td>\n<td>ms, local only</td>\n<td>llama-server <code>/v1/models</code> only when its model path changes</td>\n</tr>\n<tr>\n<td><code>psutil.open_files()</code></td>\n<td>0.6-2.5 s per process</td>\n<td>Never</td>\n</tr>\n<tr>\n<td>AMD on Linux: DRM fdinfo scan (<code>readlink</code> every fd, read fdinfo of <code>/dev/dri</code> ones)</td>\n<td>~9 ms for ~8,000 fds (Linux desktop)</td>\n<td>Every refresh, only when an amdgpu card is shown; listing fds is bounded to 50 ms in the TUI and resumes next refresh, known GPU fds are still read</td>\n</tr>\n<tr>\n<td>macOS: <code>ioreg</code> device stats + Metal clients</td>\n<td>~10 ms</td>\n<td>Every refresh</td>\n</tr>\n<tr>\n<td>macOS: memory-map scan (<code>proc_pidinfo</code> region walk)</td>\n<td>~4 ms per process</td>\n<td>Same policy as the memory-map scan above</td>\n</tr>\n<tr>\n<td>macOS: <code>footprint</code> GPU memory</td>\n<td>~70 ms per process, background thread</td>\n<td>Busy and new processes every ~2 s, idle ones every 30 s (54 runs in 40 s with 27 GPU processes, M4 Mac mini)</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">With two llama-servers running, a steady refresh costs roughly 15-30 ms of CPU (about 340 ms before\nprocess details were cached).</p>\n<p dir=\"auto\">For log-reported buffer sizes, start your own llama-server with logging enabled:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"llama-server.exe -m .\\model.gguf -ngl 99 -c 8192 --metrics --log-file server.log -lv 4\"><pre><span class=\"pl-c1\">llama-server.exe</span> <span class=\"pl-k\">-</span>m .\\model.gguf <span class=\"pl-k\">-</span>ngl <span class=\"pl-c1\">99</span> <span class=\"pl-k\">-</span>c <span class=\"pl-c1\">8192</span> <span class=\"pl-k\">--</span>metrics <span class=\"pl-k\">--</span>log<span class=\"pl-k\">-</span>file server.log <span class=\"pl-k\">-</span>lv <span class=\"pl-c1\">4</span></pre></div>\n<p dir=\"auto\">Use a real model you already have. This is an example workload, <strong>not a prerequisite for\nrunning gputaskman</strong>. Verbosity 4 was needed to capture the buffer-size lines in the tested\nllama.cpp build. Prefer an absolute log path if the server and monitor use different\nworking directories.</p>\n<p dir=\"auto\">The collector probes existing local listening ports with GET requests to <code>/props</code>, <code>/slots</code>,\n<code>/metrics</code>, <code>/v1/models</code>, <code>/api/ps</code>, <code>/api/v1/models</code>, and <code>/api/v0/models</code>. Endpoints may be\nabsent, disabled, or authenticated; other evidence is still useful. It does not launch <code>ollama</code>,\n<code>lms</code>, or an inference request. Throughput may update only after a request completes.</p>\n<p dir=\"auto\">Ollama's local <code>server.log</code> is considered when one Ollama runner is detected. Log formats,\nrotation, and stale load blocks can affect attribution, so compare the reported model and\nprocess when interpreting logs. Log sizes describe allocations at load time, not necessarily\nwhich pages remain resident now. An inferred remainder is runtime/unknown overhead, not an\nexact measurement of the CUDA context.</p>\n<p dir=\"auto\">Without logs, estimates assume llama.cpp-style placement. Architecture, partial offload,\nKV quantization, sliding-window attention, and multiple models in one process can all change\nthe result. Separate runner processes get separate rows; per-model KV accounting within\none process is not yet supported.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Spot checks against llama.cpp</h3></div>\n<p dir=\"auto\">The following comparisons used llama.cpp b12061, CUDA 13.4, and an RTX 4080 SUPER.\nThey validate these examples, not every model architecture or backend.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Allocation</th>\n<th>GGUF estimate</th>\n<th>Runtime log</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Qwen3-0.6B Q8_0 GPU weights</td>\n<td>604.15 MiB</td>\n<td>604.15 MiB</td>\n</tr>\n<tr>\n<td>Qwen3-0.6B KV, 8,192 context, f16</td>\n<td>896 MiB</td>\n<td>896 MiB</td>\n</tr>\n<tr>\n<td>Gemma-3-270M GPU weights</td>\n<td>271.81 MiB</td>\n<td>271.86 MiB</td>\n</tr>\n<tr>\n<td>Gemma-3-270M KV, 4,096 context</td>\n<td>72 MiB upper bound</td>\n<td>49.5 MiB with sliding-window attention</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Privacy and troubleshooting</h2></div>\n<p dir=\"auto\">The monitor reads local process metadata, compatible model headers, load logs, and local server\nresponses. It does not dump model weights or send telemetry. <strong>The normal inspector and JSON\noutput can contain paths, command-line flags, model names, and local ports. Review and redact\ncaptures before posting them publicly.</strong> The screenshot helper omits command lines and full\nfile paths, but model and process names still require review.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Symptom</th>\n<th>What to check</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>uv</code> or <code>git</code> is not recognized</td>\n<td>Install the prerequisites, then open a new terminal</td>\n</tr>\n<tr>\n<td>Empty or incomplete GPU readings</td>\n<td>Check the GPU driver and WDDM 2.0+ support in <code>dxdiag</code>; use a normal local desktop session</td>\n</tr>\n<tr>\n<td>\"supports Windows and Linux/WSL only\"</td>\n<td>macOS is not supported</td>\n</tr>\n<tr>\n<td>WSL: <code>Windows host counters: off (WSL interop is disabled)</code></td>\n<td>Enable <code>[interop]</code> in <code>/etc/wsl.conf</code>, then <code>wsl --shutdown</code>; or accept device-wide numbers</td>\n</tr>\n<tr>\n<td>WSL: <code>starting</code> for a few seconds</td>\n<td>The first Windows counter sample takes about 2.5 s</td>\n</tr>\n<tr>\n<td>WSL: <code>unmatched</code></td>\n<td>No Windows adapter's usage matched the NVML device; multi-GPU WSL is not validated</td>\n</tr>\n<tr>\n<td>WSL: Linux rows show <code>?</code></td>\n<td>Processes were running before gputaskman started; they become <code>*</code> with evidence (see the matching table)</td>\n</tr>\n<tr>\n<td>Linux: a GPU process is missing</td>\n<td>Processes owned by other users need <code>sudo</code>; Docker and other WSL distros are not visible from this one</td>\n</tr>\n<tr>\n<td>Linux container: <code>H:&lt;pid&gt;</code> rows</td>\n<td>GPU processes outside this container's PID namespace (host or other containers); NVML sees them, the container cannot name them</td>\n</tr>\n<tr>\n<td>Missing DLLs or model details</td>\n<td>Protected processes may deny inspection; basic counters can still work without elevation</td>\n</tr>\n<tr>\n<td>No exact LLM breakdown</td>\n<td>Enable compatible buffer logging, or use the GGUF estimate; API/log access is optional</td>\n</tr>\n<tr>\n<td>The screen looks cramped</td>\n<td>Widen the terminal or use <code>--once</code> / <code>--json</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv sync --locked\nuv run --locked python -m unittest discover -s tests -v\nuv build\"><pre>uv sync <span class=\"pl-k\">--</span>locked\nuv run <span class=\"pl-k\">--</span>locked python <span class=\"pl-k\">-</span>m unittest discover <span class=\"pl-k\">-</span>s tests <span class=\"pl-k\">-</span>v\nuv build</pre></div>\n<p dir=\"auto\">CI runs hardware-independent checks on Windows, Ubuntu and macOS, Python 3.11 and 3.13. Live GPU behavior\nstill needs real hardware; the CI does not pretend to validate that. The WSL matching tests replay\ncontext sequences measured on a real WSL2 machine.</p>\n<p dir=\"auto\">Contributors and coding agents: <a href=\"https://github.com/shanselman/gputaskman/blob/main/AGENTS.md\">AGENTS.md</a> lists the evidence rules every change must\nkeep, a module map, verification steps, and the release process.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building portable releases</h3></div>\n<p dir=\"auto\">Use Python 3.13 of the <strong>target architecture</strong>. PyInstaller does not cross-compile: an x64\nPython process makes an x64 executable even when running under ARM64 emulation.</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv sync --locked --group release --python 3.13\nuv run --locked --group release python tools\\build_portable.py --arch x64\n# On a native ARM64 interpreter, use --arch arm64 instead.\"><pre>uv sync <span class=\"pl-k\">--</span>locked <span class=\"pl-k\">--</span>group release <span class=\"pl-k\">--</span>python <span class=\"pl-c1\">3.13</span>\nuv run <span class=\"pl-k\">--</span>locked <span class=\"pl-k\">--</span>group release python tools\\build_portable.py <span class=\"pl-k\">--</span>arch x64\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> On a native ARM64 interpreter, use --arch arm64 instead.</span></pre></div>\n<p dir=\"auto\">The same command on Linux (<code>tools/build_portable.py</code>) produces a <code>.tar.gz</code>, which keeps the\nexecutable bit. The builder refuses to package NVIDIA driver libraries (<code>libnvidia-ml.so</code>,\n<code>libcuda.so</code>) on either platform; they come from the installed driver.</p>\n<p dir=\"auto\">The builder verifies the interpreter and executable architectures, includes Textual resources\nand dependency licenses, and writes the complete portable ZIP and SHA-256 file to <code>dist</code>.\nIt does not bundle Windows or GPU driver DLLs, inference servers, or models. Keep uv for development;\nthe executable ZIP is for running the monitor without a Python environment.</p>\n<p dir=\"auto\">The <strong>Portable release</strong> GitHub Actions workflow builds on <code>windows-2022</code> (x64), <code>windows-11-arm</code>\n(ARM64), <code>ubuntu-22.04</code> (Linux x64), and <code>ubuntu-22.04-arm</code> (Linux ARM64). Linux builds use the\noldest supported Ubuntu because the frozen binary needs the build machine's glibc or newer. A manual run produces downloadable workflow artifacts without publishing\na release. A pushed <code>vVERSION</code> tag must match <code>project.version</code> in <code>pyproject.toml</code>; once all builds\npass, the workflow publishes all four archives and checksums together with generated release notes.\nThe workflow also builds a Python wheel and source distribution. On tags, after all builds\nsucceed, a separate job publishes them to PyPI using Trusted Publishing (GitHub OIDC), with no\nstored API token. Manual runs produce artifacts only and publish neither a GitHub release nor\na PyPI package.</p>\n<p dir=\"auto\">Before the first PyPI publication, configure a pending publisher for project <code>gputaskman</code> on\nPyPI: owner <code>shanselman</code>, repository <code>gputaskman</code>, workflow <code>release.yml</code>, environment <code>pypi</code>.\nThe workflow uses that exact GitHub environment; any environment approval rules must be satisfied\nbefore publishing. The first successful tagged publication creates the PyPI project. Once\npublished, install with <code>uv tool install gputaskman</code> or <code>pipx install gputaskman</code> (Python 3.11+).</p>\n<p dir=\"auto\">Build jobs have read-only permissions; only the tag-triggered GitHub release job can write releases,\nand only the PyPI publishing job has <code>id-token: write</code>.\nCI checks the extracted executable's <code>--help</code> outside the checkout with Python removed from <code>PATH</code>;\ninteractive rendering and real GPU snapshots require local hardware testing.</p>\n<p dir=\"auto\">To capture native SVG screenshots of your own running workloads:</p>\n<div class=\"highlight highlight-source-powershell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"uv run --locked python tools\\capture_screenshots.py --output .\\captures\"><pre>uv run <span class=\"pl-k\">--</span>locked python tools\\capture_screenshots.py <span class=\"pl-k\">--</span>output .\\captures</pre></div>\n<p dir=\"auto\">The checked-in gallery uses PNG renderings of these captures. No models, logs, or executable\ndownloads are bundled in this repository.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Module</th>\n<th>Responsibility</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>pdh.py</code> / <code>dxgi.py</code></td>\n<td>Windows counters and adapter enumeration</td>\n</tr>\n<tr>\n<td><code>linux.py</code></td>\n<td>Linux backend: NVML adapters and per-process usage, container PID matching, WSL detection, <code>/dev/dxg</code> holders</td>\n</tr>\n<tr>\n<td><code>drm.py</code></td>\n<td>AMD on native Linux: amdgpu cards and device readings from sysfs, per-process VRAM/GTT/engine time from DRM fdinfo</td>\n</tr>\n<tr>\n<td><code>wslhost.py</code></td>\n<td>WSL: interop check, Windows host counter stream, adapter pairing, context matching</td>\n</tr>\n<tr>\n<td><code>macos.py</code></td>\n<td>macOS backend: IOKit device stats and per-process GPU time, <code>footprint</code> GPU memory poller, libproc memory maps</td>\n</tr>\n<tr>\n<td><code>nvml.py</code></td>\n<td>NVIDIA device readings</td>\n</tr>\n<tr>\n<td><code>adl.py</code>, <code>amdsmi.py</code></td>\n<td>Optional AMD device readings</td>\n</tr>\n<tr>\n<td><code>procinfo.py</code></td>\n<td>Runtime, mapped-file, and process discovery</td>\n</tr>\n<tr>\n<td><code>stores.py</code></td>\n<td>Friendly names from Ollama, LM Studio, and Hugging Face model stores</td>\n</tr>\n<tr>\n<td><code>gguf.py</code></td>\n<td>Model metadata, kind, and size estimates</td>\n</tr>\n<tr>\n<td><code>llm.py</code></td>\n<td>Buffer logs, local server probing, and breakdowns</td>\n</tr>\n<tr>\n<td><code>collector.py</code></td>\n<td>Shared snapshot collection</td>\n</tr>\n<tr>\n<td><code>app.py</code> / <code>report.py</code> / <code>cli.py</code></td>\n<td>TUI, text/JSON, and command-line entry points</td>\n</tr>\n<tr>\n<td><code>diff.py</code></td>\n<td>Before/after comparison of two <code>--json</code> snapshots</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Next</h2></div>\n<ul dir=\"auto\">\n<li>Model identity for non-GGUF runtimes (ONNX Runtime, PyTorch, TensorRT) beyond installed candidates.</li>\n<li>Explicit provenance and availability for every counter and estimate.</li>\n<li>Reliable multi-GPU matching and per-device model placement.</li>\n<li>Bare-metal Linux validation on NVIDIA hardware; Intel GPUs (<code>i915</code>/<code>xe</code>) through the same DRM fdinfo path as AMD.</li>\n<li>macOS: a portable build, Ollama/llama.cpp/MLX validation, and compressed GPU memory (footprint's\n<code>swapped</code>) as the paged column.</li>\n<li>WSL: per-process GPU load for Linux rows, and Ollama's systemd journal as a log source.</li>\n<li>Live throughput deltas, LM Studio validation, and per-model context accounting.</li>\n<li>Opt-in ETW file-open tracing to name models loaded by read-and-close runtimes (any whisper or ONNX\napp), correlated with the process's VRAM jump at load time.</li>\n<li>Data-driven app adapters (settings path plus load/unload log patterns) once a second app needs one.</li>\n<li>Optional ETW / runtime instrumentation for allocation lifetime and residency detail.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\"><a href=\"https://github.com/shanselman/gputaskman/blob/main/LICENSE\">MIT</a>.</p>\n</article></div>",
+  "releases": [
+    {
+      "name": "GPU Task Manager v0.3.3",
+      "tag": "v0.3.3",
+      "url": "https://github.com/shanselman/gputaskman/releases/tag/v0.3.3",
+      "publishedAt": "2026-11-07T07:24:22Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/shanselman/gputaskman/compare/v0.3.2...v0.3.3",
+      "downloads": 1848,
+      "reactions": 11
+    },
+    {
+      "name": "GPU Task Manager v0.3.2",
+      "tag": "v0.3.2",
+      "url": "https://github.com/shanselman/gputaskman/releases/tag/v0.3.2",
+      "publishedAt": "2026-11-07T06:48:39Z",
+      "prerelease": false,
+      "body": "**Full Changelog**: https://github.com/shanselman/gputaskman/compare/v0.3.1...v0.3.2",
+      "downloads": 57,
+      "reactions": 0
+    },
+    {
+      "name": "GPU Task Manager v0.3.1",
+      "tag": "v0.3.1",
+      "url": "https://github.com/shanselman/gputaskman/releases/tag/v0.3.1",
+      "publishedAt": "2026-11-07T01:05:19Z",
+      "prerelease": false,
+      "body": "## What's Changed\n* Add gputaskman diff to compare two JSON snapshots by @shanselman in https://github.com/shanselman/gputaskman/pull/6\n* Add macOS (Apple Silicon) support by @samehkhamis in https://github.com/shanselman/gputaskman/pull/5\n* Add AMD GPU support on native Linux (amdgpu sysfs + DRM fdinfo) by @Pinta365 in https://github.com/shanselman/gputaskman/pull/8\n* Add a Nix flake for NixOS (from #9) by @shanselman in https://github.com/shanselman/gputaskman/pull/11\n* Explain unavailable GPU counters in GPU-PV guests by @shanselman in https://github.com/shanselman/gputaskman/pull/12\n\n## New Contributors\n* @Pinta365 made their first contribution in https://github.com/shanselman/gputaskman/pull/8\n\n**Full Changelog**: https://github.com/shanselman/gputaskman/compare/v0.3.0...v0.3.1",
+      "downloads": 232,
+      "reactions": 0
+    },
+    {
+      "name": "GPU Task Manager v0.3.0",
+      "tag": "v0.3.0",
+      "url": "https://github.com/shanselman/gputaskman/releases/tag/v0.3.0",
+      "publishedAt": "2026-11-03T22:01:22Z",
+      "prerelease": false,
+      "body": "## What's Changed\n* Add AGENTS.md contributor and agent guide by @shanselman in https://github.com/shanselman/gputaskman/pull/3\n* feat: adding support for AMD by @kdrapel in https://github.com/shanselman/gputaskman/pull/2\n\n## New Contributors\n* @shanselman made their first contribution in https://github.com/shanselman/gputaskman/pull/3\n* @kdrapel made their first contribution in https://github.com/shanselman/gputaskman/pull/2\n\n**Full Changelog**: https://github.com/shanselman/gputaskman/compare/v0.2.0...v0.3.0",
+      "downloads": 1542,
+      "reactions": 0
+    },
+    {
+      "name": "GPU Task Manager v0.2.0",
+      "tag": "v0.2.0",
+      "url": "https://github.com/shanselman/gputaskman/releases/tag/v0.2.0",
+      "publishedAt": "2026-11-03T21:13:18Z",
+      "prerelease": false,
+      "body": "## What's Changed\n* Add Linux and WSL support by @samehkhamis in https://github.com/shanselman/gputaskman/pull/1\n\n## New Contributors\n* @samehkhamis made their first contribution in https://github.com/shanselman/gputaskman/pull/1\n\n**Full Changelog**: https://github.com/shanselman/gputaskman/compare/v0.1.0...v0.2.0",
+      "downloads": 19,
+      "reactions": 0
+    }
+  ],
+  "contributorCount": 5,
+  "firstCommitAt": "2026-11-03T00:48:17Z",
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 2
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 9
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 2
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 1
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 3
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "recentIssues": [
+    {
+      "number": 14,
+      "title": "Windows: NVIDIA GPUs in TCC mode (compute-only) don’t appear, though NVML sees them",
+      "url": "https://github.com/shanselman/gputaskman/issues/14",
+      "createdAt": "2026-11-08T03:43:11Z",
+      "comments": 0,
+      "labels": [],
+      "author": "etaduck"
+    }
+  ],
+  "participation": {
+    "all": 46,
+    "owner": 31,
+    "community": 15
+  },
+  "recentCommits": [
+    {
+      "sha": "26c7c48",
+      "message": "Merge pull request #16 from shanselman/slim-monitoring-mode",
+      "url": "https://github.com/shanselman/gputaskman/commit/26c7c484ae1a640752cb001591ff98c76b1aea0c",
+      "date": "2026-11-08T06:11:57Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "32be75e",
+      "message": "Add optional slim monitoring view",
+      "url": "https://github.com/shanselman/gputaskman/commit/32be75e4aefba46f9f64880d69403cb23c3271f4",
+      "date": "2026-11-08T06:10:21Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "9bc6459",
+      "message": "Release v0.3.3",
+      "url": "https://github.com/shanselman/gputaskman/commit/9bc64590d15210dcb5ae97532d37c5c0916e53fa",
+      "date": "2026-11-07T07:22:38Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "5311418",
+      "message": "Highlight PyPI installation in README",
+      "url": "https://github.com/shanselman/gputaskman/commit/531141826143db70ae9077a91f539b771ae44861",
+      "date": "2026-11-07T06:53:02Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "e1c8e6d",
+      "message": "Release v0.3.2",
+      "url": "https://github.com/shanselman/gputaskman/commit/e1c8e6d6fe59bcce84f1bc030ed77a9592e3d886",
+      "date": "2026-11-07T06:47:04Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "3b7d236",
+      "message": "Publish Python releases to PyPI with Trusted Publishing",
+      "url": "https://github.com/shanselman/gputaskman/commit/3b7d236af1fd16ba3390405bb279875680bb5c68",
+      "date": "2026-11-07T06:35:51Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "2e8b447",
+      "message": "Release v0.3.1",
+      "url": "https://github.com/shanselman/gputaskman/commit/2e8b447e0d031730f2e48a259b05c0e04d33d73a",
+      "date": "2026-11-07T01:03:34Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "b11dc6c",
+      "message": "Merge pull request #12 from shanselman/shanselman-gpu-pv-vram-na-fix",
+      "url": "https://github.com/shanselman/gputaskman/commit/b11dc6c4e04c8234b691186d0117b7fdd4c525a2",
+      "date": "2026-11-07T00:36:45Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "752b5de",
+      "message": "Explain unmatched Windows GPU counters in GPU-PV guests",
+      "url": "https://github.com/shanselman/gputaskman/commit/752b5de68268031829a609f0950eb3f4ba5ce018",
+      "date": "2026-11-06T23:45:09Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    },
+    {
+      "sha": "1bc40f7",
+      "message": "Merge pull request #11 from shanselman/nix-flake",
+      "url": "https://github.com/shanselman/gputaskman/commit/1bc40f7cc442be6dc79cb26e74d8a6d25d9828bb",
+      "date": "2026-11-06T18:36:43Z",
+      "author": "shanselman",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2892?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 17,
+      "title": "Recover GPUs after Windows adapter changes",
+      "url": "https://github.com/shanselman/gputaskman/pull/17",
+      "state": "open",
+      "updatedAt": "2026-11-08T06:27:15Z",
+      "author": "shanselman",
+      "draft": false
+    },
+    {
+      "number": 16,
+      "title": "Add optional slim monitoring view",
+      "url": "https://github.com/shanselman/gputaskman/pull/16",
+      "state": "merged",
+      "updatedAt": "2026-11-08T06:11:57Z",
+      "author": "shanselman",
+      "draft": false
+    },
+    {
+      "number": 13,
+      "title": "Add Intel GPU support (i915/xe) on Linux",
+      "url": "https://github.com/shanselman/gputaskman/pull/13",
+      "state": "open",
+      "updatedAt": "2026-11-07T14:51:44Z",
+      "author": "WLTBAgent",
+      "draft": false
+    },
+    {
+      "number": 12,
+      "title": "Explain unavailable GPU counters in GPU-PV guests",
+      "url": "https://github.com/shanselman/gputaskman/pull/12",
+      "state": "merged",
+      "updatedAt": "2026-11-07T00:36:46Z",
+      "author": "shanselman",
+      "draft": false
+    },
+    {
+      "number": 8,
+      "title": "Add AMD GPU support on native Linux (amdgpu sysfs + DRM fdinfo)",
+      "url": "https://github.com/shanselman/gputaskman/pull/8",
+      "state": "merged",
+      "updatedAt": "2026-11-06T19:45:34Z",
+      "author": "Pinta365",
+      "draft": false
+    },
+    {
+      "number": 11,
+      "title": "Add a Nix flake for NixOS (from #9)",
+      "url": "https://github.com/shanselman/gputaskman/pull/11",
+      "state": "merged",
+      "updatedAt": "2026-11-06T18:36:59Z",
+      "author": "shanselman",
+      "draft": false
+    },
+    {
+      "number": 9,
+      "title": "Add NixOS packaging and AMD Linux process monitoring",
+      "url": "https://github.com/shanselman/gputaskman/pull/9",
+      "state": "closed",
+      "updatedAt": "2026-11-06T18:36:46Z",
+      "author": "jihoo12",
+      "draft": false
+    },
+    {
+      "number": 5,
+      "title": "Add macOS (Apple Silicon) support",
+      "url": "https://github.com/shanselman/gputaskman/pull/5",
+      "state": "merged",
+      "updatedAt": "2026-11-03T23:58:08Z",
+      "author": "samehkhamis",
+      "draft": false
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shanselman/gputaskman/tree/main/.github"
+    },
+    {
+      "name": "docs",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shanselman/gputaskman/tree/main/docs"
+    },
+    {
+      "name": "src",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shanselman/gputaskman/tree/main/src"
+    },
+    {
+      "name": "tests",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shanselman/gputaskman/tree/main/tests"
+    },
+    {
+      "name": "tools",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/shanselman/gputaskman/tree/main/tools"
+    },
+    {
+      "name": ".gitattributes",
+      "type": "file",
+      "size": 133,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/.gitattributes"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 305,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/.gitignore"
+    },
+    {
+      "name": ".python-version",
+      "type": "file",
+      "size": 5,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/.python-version"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 9571,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/AGENTS.md"
+    },
+    {
+      "name": "flake.lock",
+      "type": "file",
+      "size": 567,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/flake.lock"
+    },
+    {
+      "name": "flake.nix",
+      "type": "file",
+      "size": 2937,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/flake.nix"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1072,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/LICENSE"
+    },
+    {
+      "name": "pyproject.toml",
+      "type": "file",
+      "size": 1041,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/pyproject.toml"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 53160,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/README.md"
+    },
+    {
+      "name": "uv.lock",
+      "type": "file",
+      "size": 24196,
+      "url": "https://github.com/shanselman/gputaskman/blob/main/uv.lock"
+    }
+  ],
+  "branchCount": 4,
+  "tagCount": 6,
+  "manifestDependencies": {
+    "manifest": "pyproject.toml",
+    "dependencies": [
+      {
+        "name": "nvidia-ml-py",
+        "version": "13.615.71"
+      },
+      {
+        "name": "psutil",
+        "version": "7.2.2"
+      },
+      {
+        "name": "textual",
+        "version": "8.2.8"
+      }
+    ],
+    "total": 3
+  },
+  "workflowRuns": [
+    {
+      "name": "Python checks",
+      "status": "success",
+      "url": "https://github.com/shanselman/gputaskman/actions/runs/42454808943",
+      "branch": "gpu-disable-recovery",
+      "updatedAt": "2026-11-08T06:28:13Z"
+    },
+    {
+      "name": "Portable release",
+      "status": "success",
+      "url": "https://github.com/shanselman/gputaskman/actions/runs/42351050343",
+      "branch": "v0.3.3",
+      "updatedAt": "2026-11-07T07:24:34Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 71,
+    "hasCodeOfConduct": true,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 1,
+  "openPRs": 2,
+  "releaseCount": 6,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 4,
+  "mergedPRs": 9,
+  "environmentCount": 1,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": "https://github.com/shanselman/gputaskman/security/policy",
+  "codeOfConduct": {
+    "name": "Other",
+    "url": "https://github.com/shanselman/.github/blob/main/CODE_OF_CONDUCT.md"
+  },
+  "latestRelease": {
+    "tag": "v0.3.3",
+    "publishedAt": "2026-11-07T07:24:22Z"
+  },
+  "commitActivity": [
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-11-01",
+      "commits": 36
+    },
+    {
+      "week": "2026-11-08",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    },
+    {
+      "date": "2026-09-20",
+      "count": 0
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 0
+    },
+    {
+      "date": "2026-09-23",
+      "count": 0
+    },
+    {
+      "date": "2026-09-24",
+      "count": 0
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
+      "count": 0
+    },
+    {
+      "date": "2026-09-27",
+      "count": 0
+    },
+    {
+      "date": "2026-09-28",
+      "count": 0
+    },
+    {
+      "date": "2026-09-29",
+      "count": 0
+    },
+    {
+      "date": "2026-09-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-01",
+      "count": 0
+    },
+    {
+      "date": "2026-10-02",
+      "count": 0
+    },
+    {
+      "date": "2026-10-03",
+      "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 0
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 0
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 0
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
+    },
+    {
+      "date": "2026-10-11",
+      "count": 0
+    },
+    {
+      "date": "2026-10-12",
+      "count": 0
+    },
+    {
+      "date": "2026-10-13",
+      "count": 0
+    },
+    {
+      "date": "2026-10-14",
+      "count": 0
+    },
+    {
+      "date": "2026-10-15",
+      "count": 0
+    },
+    {
+      "date": "2026-10-16",
+      "count": 0
+    },
+    {
+      "date": "2026-10-17",
+      "count": 0
+    },
+    {
+      "date": "2026-10-18",
+      "count": 0
+    },
+    {
+      "date": "2026-10-19",
+      "count": 0
+    },
+    {
+      "date": "2026-10-20",
+      "count": 0
+    },
+    {
+      "date": "2026-10-21",
+      "count": 0
+    },
+    {
+      "date": "2026-10-22",
+      "count": 0
+    },
+    {
+      "date": "2026-10-23",
+      "count": 0
+    },
+    {
+      "date": "2026-10-24",
+      "count": 0
+    },
+    {
+      "date": "2026-10-25",
+      "count": 0
+    },
+    {
+      "date": "2026-10-26",
+      "count": 0
+    },
+    {
+      "date": "2026-10-27",
+      "count": 0
+    },
+    {
+      "date": "2026-10-28",
+      "count": 0
+    },
+    {
+      "date": "2026-10-29",
+      "count": 0
+    },
+    {
+      "date": "2026-10-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-31",
+      "count": 0
+    },
+    {
+      "date": "2026-11-01",
+      "count": 0
+    },
+    {
+      "date": "2026-11-02",
+      "count": 9
+    },
+    {
+      "date": "2026-11-03",
+      "count": 17
+    },
+    {
+      "date": "2026-11-04",
+      "count": 0
+    },
+    {
+      "date": "2026-11-05",
+      "count": 0
+    },
+    {
+      "date": "2026-11-06",
+      "count": 9
+    },
+    {
+      "date": "2026-11-07",
+      "count": 1
+    },
+    {
+      "date": "2026-11-08",
+      "count": 0
+    },
+    {
+      "date": "2026-11-09",
+      "count": 0
+    },
+    {
+      "date": "2026-11-10",
+      "count": 0
+    },
+    {
+      "date": "2026-11-11",
+      "count": 0
+    },
+    {
+      "date": "2026-11-12",
+      "count": 0
+    },
+    {
+      "date": "2026-11-13",
+      "count": 0
+    },
+    {
+      "date": "2026-11-14",
+      "count": 0
+    }
+  ],
+  "codeFrequency": [
+    {
+      "week": "2026-11-01",
+      "additions": 12774,
+      "deletions": 1233
+    },
+    {
+      "week": "2026-11-08",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-11-08T12:17:17.413Z",
+  "starHistory": {
+    "version": 2,
+    "unreliable": true,
+    "points": [],
+    "coverage": 0,
+    "events": 0,
+    "source": "gharchive-clickhouse",
+    "sampledAt": "2026-11-08T12:17:35.444Z"
+  }
+}

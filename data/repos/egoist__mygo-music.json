@@ -1,0 +1,3080 @@
+{
+  "id": "egoist/mygo-music",
+  "snapshots": [
+    {
+      "date": "2026-11-08",
+      "stars": 903,
+      "forks": 144
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-11-08",
+      "period": "daily",
+      "rank": 15,
+      "starsGained": null
+    }
+  ],
+  "owner": "egoist",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4",
+  "ownerType": "User",
+  "name": "mygo-music",
+  "description": "A native music player you extend with plugins",
+  "url": "https://github.com/egoist/mygo-music",
+  "homepage": "music.egoist.dev",
+  "license": "AGPL-3.0",
+  "language": "Go",
+  "topics": [],
+  "stars": 903,
+  "forks": 144,
+  "watchers": 1,
+  "openIssues": 64,
+  "createdAt": "2026-11-04T13:27:14Z",
+  "pushedAt": "2026-11-08T05:50:42Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-11-08T12:17:04.644Z",
+  "languages": {
+    "Go": 1225942,
+    "TypeScript": 70049,
+    "CSS": 31076,
+    "Shell": 1723
+  },
+  "readmeExcerpt": "# MyGo Music\n\nA native desktop music player written in Go with [MyGo](https://github.com/egoist/mygo), no WebView. It plays your local files out of the box, and everything else comes from plugins.\n\n## Features\n\n- Local files (MP3, FLAC, Ogg Vorbis, WAV, and ALAC, FLAC or AAC in .m4a and .aac) with tags, covers and `.lrc` lyrics\n- Playlists, liked songs, search, albums and artists\n- Now Playing with lyric stage styles, cover wall, queue, shuffle and repeat\n- Notch player on macOS, tray, media keys\n- Audio cache, fades on pause and seek, loudness normalization\n- Session restore\n- Podcast captions, written down on the device as episodes play\n- English and Simplified Chinese\n- Plugins can add accounts, catalogs, podcasts, stations, comments and pages of their own\n\n## Build\n\n```bash\ngo tool mygo dev     # run in development\ngo tool mygo build   # package into build/\ngo test ./internal/...\n```\n\n## Podcast captions\n\nEpisodes are written down on the device as they play, with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and Qwen3-ASR, which the app downloads when the listener asks for them. The libraries come from this repository's `sherpa-onnx-<version>` prerelease, which only changes with that version:\n\n```bash\ngo run ./scripts/sherpa -sign \"Developer ID Application: …\"\ngh release create sherpa-onnx-2.0.1 --prerelease --latest=false build/sherpa/*\n```\n\n## Plugins\n\nA plugin is a folder in the app's `plugins` directory (Settings > Plugins > + > Show Plugins Folder) with a `plugin.json` and one JavaScript or TypeScript file. Install one with the + in Settings > Plugins from GitHub, by its repository or its address, or from its folder or a zip of it on this computer, or drop the folder in by hand. Remove one from its ⋯ menu there. There's nothing to build, and the same plugin runs on every platform. [`examples/demo-plugin`](examples/demo-plugin) does everything a plugin can with made-up data: copy it to start.\n\n```json\n{\n  \"id\": \"example\",\n  \"name\": \"Example\",\n  \"version\": \"1.0.0\",\n  \"minAppVersion\": \"0.1.8\",\n  \"main\": \"index.js\",\n  \"playback\": \"stream\",\n  \"permissions\": { \"network\": [\"api.example.com\"] },\n  \"settings\": [{ \"key\": \"apiKey\", \"label\": \"API Key\", \"help\": \"From your account page\", \"link\": \"https://example.com/keys\" }],\n  \"navigation\": [\n    { \"builtin\": \"home\" },\n    { \"title\": \"Charts\", \"page\": \"charts\", \"icon\": \"chart\" },\n    { \"title\": \"Stations\", \"builtin\": \"stations\" }\n  ]\n}\n```\n\n```js\nexport async function search({ query, kind, offset }) {\n  const res = await fetch(`https://api.example.com/search?q=${encodeURIComponent(query)}&type=${kind}&offset=${offset}`, {\n    headers: { authorization: `Bearer ${host.setting(\"apiKey\")}` },\n  });\n  return { tracks: (await res.json()).items.map(toTrack), more: false };\n}\n\nexport function stream({ id, quality }) {\n  return { url: `https://api.example.com/audio/${id}.mp3`, type: \"mp3\" };\n}\n```\n\nExport a function for each thing the plugin does. Each takes one object of parameters and returns a value or a promise. What it doesn't export, the app leaves out of its pages.\n\n| Export | Parameters | Returns |\n| --- | --- | --- |\n| `signIn`, `signOut`, `account` | | `{id, name, imageUrl, page}`; `account` returns `null` when signed out. `page` is a `browse` page of the listener's own, which the account menu opens as My Page |\n| `setSetting` | `{key, value}` | |\n| `home` | | `Browse` |\n| `browse` | `{page}` | `Browse` |\n| `search` | `{query, kind, offset}`, where `kind` is `tracks`, `albums`, `artists`, `playlists` or `shows` | `{tracks or albums or ..., more}` |\n| `suggest` | `{query}` | `[string]` |\n| `recent` | | `[Track]` |\n| `played` | `{id}` | |\n| `liked` | `{offset}` | `{tracks, more}` |\n| `isLiked` | `{ids}` | `{id: bool}` |\n| `like`, `likeEpisode` | `{id, on}` | `like` likes a song, and `likeEpisode` an episode: without it, episodes show no heart |\n| `album` | `{id}` | `{album, tracks}` |\n| `artist` | `{id}` | `{artist, tracks, albums}` |\n| `saveAlbum`, `followArtist`, `savePlaylist`, `subscribeShow` | `{id, on}` | |\n| `savedAlbums` | `{offset}` | `{albums, more}` |\n| `playlists` | | `[Playlist]` |\n| `playlist` | `{id}` | `Playlist` with `tracks` |\n| `createPlaylist` | `{name}` | `Playlist` |\n| `renamePlaylist` | `{id, name}` | |\n| `deletePlaylist` | `{id}` | |\n| `addToPlaylist`, `removeFromPlaylist` | `{id, trackIds}` | |\n| `movePlaylistTrack` | `{id, from, to}` | |\n| `shows` | | `[Show]` |\n| `show` | `{id, offset}` | `{show, episodes, more}` |\n| `stations` | | `[Station]` |\n| `stationNext` | `{id}` | `[Track]` |\n| `comments` | `{trackId, offset}` | `{comments, total, more}` |\n| `likeComment` | `{trackId, commentId, on}` | |\n| `postComment` | `{trackId, text}` | `Comment` |\n| `lyrics` | `{id}` | `{lrc, translation}`, or `{lines}` with timed `words` |\n| `stream` | `{id, quality}` | `{url, type, headers, size, gain, peak}`, where `type` is `mp3`, `flac`, `ogg`, `wav`, `m4a` (ALAC, FLAC or AAC-LC, whole or in fragments as a DASH stream serves it) or `aac` (AAC-LC in ADTS) |\n| `remotePlay` | `{ids, start, position}` | |\n| `remotePause`, `remoteResume` | | |\n| `remoteSeek` | `{position}` | |\n| `remoteVolume` | `{percent}` | |\n| `remoteState` | | `{playing, trackId, position, duration, volume, device}` or `null` |\n| `remoteDevices` | | `[{id, name, active}]` |\n| `remoteUse` | `{deviceId}` | |\n\nThe shapes are in [`internal/music/music.go`](internal/music/music.go) by their JSON names. Times are in milliseconds. A `Browse` is `{title, subtitle, imageUrl, description, sections}`: with an `imageUrl`, such as a listener's avatar, it's headed round, as an artist's page is, and `description` goes under the title a line to each line. A section can hold `tracks`, `albums`, `artists`, `playlists`, `shows`, `stations`, `links` (`{title, subtitle, imageUrl, page}`), a `morePage`, and `empty`, what it says while it holds nothing. A source's first section of `tracks` leads its Home as a card of the day's songs, which opens a page of all of them, headed by the section's `pageTitle` if it has one, else its `title`, and its `subtitle` after the count of songs. A show's `publisherPage` is a `browse` page of who publishes it, which their name on the show's page opens.\n\nAn `imageUrl` can say where its size goes, with `{size}`, for an image server that makes pictures the size asked: `https://img.example.com/cover.jpg?param={size}y{size}` or `https://img.example.com/{size}/cover.jpg`. The app fills in how many pixels across it shows the picture at, 40 in a row and 600 in Now Playing, or 600 where nothing asks for a size. `%7Bsize%7D`, as JavaScript's `URL` writes it in a query, counts too. An app older than 0.1.20 fetches `{size}` as it is, so a plugin that gives it wants a `minAppVersion` of 0.1.20. Without it, give pictures at about 800 pixels if the service can, rather than as large as they were made: the app fetches and decodes the whole of each, a few megabytes for one thousands of pixels across, to show it in a row.\n\nOf the `playlists`, those with `mine` are the listener's own, listed under My Playlists, and the rest are ones they saved. One that is `mine` and also `fixed`, such as the songs they liked, is kept by the source itself: the app doesn't offer to rename it, delete it, add songs to it, take them out or move them.\n\n`navigation` is the plugin's sidebar, in its order. An entry opens a `browse` page of its own by `page`, or one of the app's by `builtin`: `home`, `liked`, `savedAlbums`, `stations` or `shows`, which can be given a `title`. Without `navigation`, the sidebar has an entry for each of the app's pages the plugin can do. Up to four stations show as a switch over one card, and more as a grid.\n\n`minAppVersion` is the oldest version of MyGo Music the plugin works with. An older one won't install it, and says to update first. Versions before 0.1.8 don't read it.\n\n### Translating a plugin\n\nPut the translations in `locales/<language>.json` next to `plugin.json`: `locales/zh-CN.json` for Simplified Chinese, the language the app speaks besides English. Each one maps the English text to the translation:\n\n```json\n{ \"Example\": \"示例\", \"API Key\": \"API 密钥\", \"From your account page\": \"在你的账号页面获取\", \"Charts\": \"排行榜\" }\n```\n\nThe app translates the plugin's `name`, its settings' `label` and `help` and its `navigation` titles with them. For what the plugin says itself, such as a page's titles or an error's message, `host.t(text)` answers the translation, or `text` when there's none, and `host.language()` the listener's language, `en` or `zh-CN`. Both follow the listener as they change it, and the page they're on loads again.\n\nWith `\"playback\": \"stream\"`, the app plays what `stream` answers. With `\"playback\": \"remote\"`, the plugin makes the sound itself, or has another program do so, and the app calls the `remote` functions and polls `remoteState`.\n\nThrow an error with a `code` to say what's wrong: `signIn` prompts the listener to sign in, `setup` sends them to the plugin's settings, `unavailable` means this can't be played, and `unsupported` means the plugin doesn't do this. Any other error shows its message.\n\n### Publishing a plugin\n\nPut it in a public GitHub repository, with `plugin.json` at the top. The app takes the latest release: a `.zip` asset named for the platform, such as `plugin-darwin-arm64.zip`, or one named for none, or else the source. Without a release it takes the latest commit of the default branch. A new tag or commit is a new version, which shows as an update in the settings. An update asking for more permissions asks the listener again.\n\nAdd the topic `mygo-music-plugin` to the repository to have it listed on the [plugins page](https://mygo-music.egoist.dev/plugins).\n\nLink to `mygo-music://install-plugin?repo=owner/repo` for an install button: it opens the app, which downloads the plugin and asks the listener before installing it. The development app (`mygo dev`) answers `mygo-music-dev://` instead.\n\n### What a plugin can reach\n\nA plugin has the JavaScript standard library, timers, `fetch` and its relatives, `URL`, `console` and `host`:\n\n| | |\n| --- | --- |\n| `host.platform`, `host.arch` | such as `darwin`, `arm64` |\n| `host.dir`, `host.dataDir` | the plugin's folder, and one for its data |\n| `host.storage.get(key)`, `.set(key, value)`, `.remove(key)` | JSON values that outlive the app |\n| `host.setting(key)` | what the listener filled in |\n| `host.t(text)`, `host.language()` | the text in the listener's language, from the plugin's `locales`, and that language: `en` or `zh-CN` |\n| `host.removeDataDir(name)` | removes a folder inside `host.dataDir` |\n| `host.crypto.md5(text)` | its hash, in hex |\n| `host.crypto.aesEcbEncrypt(key, text)` | AES-ECB with PKCS#7 padding, in hex, for services whose requests are made that way |\n| `host.openURL(url)` | opens a web page in the listener's browser |\n| `host.signInPrompt({qr, text})` | what the sign-in window shows while `signIn` goes on: a QR code to scan, and what to do |\n| `host.waitForRedirect({port, path, timeout, page})` | the end of a browser sign-in: listens on `127.0.0.1` and answers the query it's redirected back with. Needs the network permission |\n| `host.webSignIn({url, cookiesOf, until, userAgent})` | a sign-in on the service's own page, for one that has no other way in: the app shows `url` in a window of its own, apart from every other page and forgotten after, and once the cookies named in `until` are all there, closes it and answers `{cookie}`, the Cookie header a request to `cookiesOf` would send. `cookiesOf` has to be a host the network permission reaches. `userAgent` is what the page is told it's shown in |\n| `host.spawn(command, args)` | starts a program, by a path from the plugin's folder or absolute, or a name on `PATH`. Needs the process permission to name it. Returns `{pid, write(text), closeStdin(), readLine(), wait(), kill(), errorOutput()}` |\n\nEverything else takes a permission in `plugin.json`:\n\n- `\"network\": [\"api.example.com\", \"*.example.com\"]` lists the hosts `",
+  "contributors": [
+    {
+      "login": "egoist",
+      "url": "https://github.com/egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4",
+      "contributions": 110
+    },
+    {
+      "login": "claude",
+      "url": "https://github.com/claude",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/81847?v=4",
+      "contributions": 5
+    }
+  ],
+  "commitCount": 115,
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">MyGo Music</h1></div>\n<p dir=\"auto\">A native desktop music player written in Go with <a href=\"https://github.com/egoist/mygo\">MyGo</a>, no WebView. It plays your local files out of the box, and everything else comes from plugins.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Features</h2></div>\n<ul dir=\"auto\">\n<li>Local files (MP3, FLAC, Ogg Vorbis, WAV, and ALAC, FLAC or AAC in .m4a and .aac) with tags, covers and <code>.lrc</code> lyrics</li>\n<li>Playlists, liked songs, search, albums and artists</li>\n<li>Now Playing with lyric stage styles, cover wall, queue, shuffle and repeat</li>\n<li>Notch player on macOS, tray, media keys</li>\n<li>Audio cache, fades on pause and seek, loudness normalization</li>\n<li>Session restore</li>\n<li>Podcast captions, written down on the device as episodes play</li>\n<li>English and Simplified Chinese</li>\n<li>Plugins can add accounts, catalogs, podcasts, stations, comments and pages of their own</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Build</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go tool mygo dev     # run in development\ngo tool mygo build   # package into build/\ngo test ./internal/...\"><pre>go tool mygo dev     <span class=\"pl-c\"><span class=\"pl-c\">#</span> run in development</span>\ngo tool mygo build   <span class=\"pl-c\"><span class=\"pl-c\">#</span> package into build/</span>\ngo <span class=\"pl-c1\">test</span> ./internal/...</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Podcast captions</h2></div>\n<p dir=\"auto\">Episodes are written down on the device as they play, with <a href=\"https://github.com/k2-fsa/sherpa-onnx\">sherpa-onnx</a> and Qwen3-ASR, which the app downloads when the listener asks for them. The libraries come from this repository's <code>sherpa-onnx-&lt;version&gt;</code> prerelease, which only changes with that version:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"go run ./scripts/sherpa -sign &quot;Developer ID Application: …&quot;\ngh release create sherpa-onnx-2.0.1 --prerelease --latest=false build/sherpa/*\"><pre>go run ./scripts/sherpa -sign <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Developer ID Application: …<span class=\"pl-pds\">\"</span></span>\ngh release create sherpa-onnx-2.0.1 --prerelease --latest=false build/sherpa/<span class=\"pl-k\">*</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Plugins</h2></div>\n<p dir=\"auto\">A plugin is a folder in the app's <code>plugins</code> directory (Settings &gt; Plugins &gt; + &gt; Show Plugins Folder) with a <code>plugin.json</code> and one JavaScript or TypeScript file. Install one with the + in Settings &gt; Plugins from GitHub, by its repository or its address, or from its folder or a zip of it on this computer, or drop the folder in by hand. Remove one from its ⋯ menu there. There's nothing to build, and the same plugin runs on every platform. <a href=\"https://github.com/egoist/mygo-music/blob/main/examples/demo-plugin\"><code>examples/demo-plugin</code></a> does everything a plugin can with made-up data: copy it to start.</p>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{\n  &quot;id&quot;: &quot;example&quot;,\n  &quot;name&quot;: &quot;Example&quot;,\n  &quot;version&quot;: &quot;1.0.0&quot;,\n  &quot;minAppVersion&quot;: &quot;0.1.8&quot;,\n  &quot;main&quot;: &quot;index.js&quot;,\n  &quot;playback&quot;: &quot;stream&quot;,\n  &quot;permissions&quot;: { &quot;network&quot;: [&quot;api.example.com&quot;] },\n  &quot;settings&quot;: [{ &quot;key&quot;: &quot;apiKey&quot;, &quot;label&quot;: &quot;API Key&quot;, &quot;help&quot;: &quot;From your account page&quot;, &quot;link&quot;: &quot;https://example.com/keys&quot; }],\n  &quot;navigation&quot;: [\n    { &quot;builtin&quot;: &quot;home&quot; },\n    { &quot;title&quot;: &quot;Charts&quot;, &quot;page&quot;: &quot;charts&quot;, &quot;icon&quot;: &quot;chart&quot; },\n    { &quot;title&quot;: &quot;Stations&quot;, &quot;builtin&quot;: &quot;stations&quot; }\n  ]\n}\"><pre>{\n  <span class=\"pl-ent\">\"id\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>example<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"name\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Example<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"version\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>1.0.0<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"minAppVersion\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.1.8<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"main\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>index.js<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"playback\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>stream<span class=\"pl-pds\">\"</span></span>,\n  <span class=\"pl-ent\">\"permissions\"</span>: { <span class=\"pl-ent\">\"network\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>api.example.com<span class=\"pl-pds\">\"</span></span>] },\n  <span class=\"pl-ent\">\"settings\"</span>: [{ <span class=\"pl-ent\">\"key\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>apiKey<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"label\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>API Key<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"help\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>From your account page<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"link\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>https://example.com/keys<span class=\"pl-pds\">\"</span></span> }],\n  <span class=\"pl-ent\">\"navigation\"</span>: [\n    { <span class=\"pl-ent\">\"builtin\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>home<span class=\"pl-pds\">\"</span></span> },\n    { <span class=\"pl-ent\">\"title\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Charts<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"page\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>charts<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"icon\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>chart<span class=\"pl-pds\">\"</span></span> },\n    { <span class=\"pl-ent\">\"title\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>Stations<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"builtin\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>stations<span class=\"pl-pds\">\"</span></span> }\n  ]\n}</pre></div>\n<div class=\"highlight highlight-source-js notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"export async function search({ query, kind, offset }) {\n  const res = await fetch(`https://api.example.com/search?q=${encodeURIComponent(query)}&amp;type=${kind}&amp;offset=${offset}`, {\n    headers: { authorization: `Bearer ${host.setting(&quot;apiKey&quot;)}` },\n  });\n  return { tracks: (await res.json()).items.map(toTrack), more: false };\n}\n\nexport function stream({ id, quality }) {\n  return { url: `https://api.example.com/audio/${id}.mp3`, type: &quot;mp3&quot; };\n}\"><pre><span class=\"pl-k\">export</span> <span class=\"pl-k\">async</span> <span class=\"pl-k\">function</span> <span class=\"pl-en\">search</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> query<span class=\"pl-kos\">,</span> kind<span class=\"pl-kos\">,</span> offset <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">const</span> <span class=\"pl-s1\">res</span> <span class=\"pl-c1\">=</span> <span class=\"pl-k\">await</span> <span class=\"pl-en\">fetch</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`https://api.example.com/search?q=<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-en\">encodeURIComponent</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">query</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span></span>&amp;type=<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">kind</span><span class=\"pl-kos\">}</span></span>&amp;offset=<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">offset</span><span class=\"pl-kos\">}</span></span>`</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-c1\">headers</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">authorization</span>: <span class=\"pl-s\">`Bearer <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">host</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">setting</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"apiKey\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">}</span></span>`</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">,</span>\n  <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-k\">return</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">tracks</span>: <span class=\"pl-kos\">(</span><span class=\"pl-k\">await</span> <span class=\"pl-s1\">res</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">json</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">items</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">map</span><span class=\"pl-kos\">(</span><span class=\"pl-s1\">toTrack</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">more</span>: <span class=\"pl-c1\">false</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span>\n\n<span class=\"pl-k\">export</span> <span class=\"pl-k\">function</span> <span class=\"pl-en\">stream</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> id<span class=\"pl-kos\">,</span> quality <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-k\">return</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">url</span>: <span class=\"pl-s\">`https://api.example.com/audio/<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">id</span><span class=\"pl-kos\">}</span></span>.mp3`</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">type</span>: <span class=\"pl-s\">\"mp3\"</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Export a function for each thing the plugin does. Each takes one object of parameters and returns a value or a promise. What it doesn't export, the app leaves out of its pages.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Export</th>\n<th>Parameters</th>\n<th>Returns</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>signIn</code>, <code>signOut</code>, <code>account</code></td>\n<td></td>\n<td><code>{id, name, imageUrl, page}</code>; <code>account</code> returns <code>null</code> when signed out. <code>page</code> is a <code>browse</code> page of the listener's own, which the account menu opens as My Page</td>\n</tr>\n<tr>\n<td><code>setSetting</code></td>\n<td><code>{key, value}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>home</code></td>\n<td></td>\n<td><code>Browse</code></td>\n</tr>\n<tr>\n<td><code>browse</code></td>\n<td><code>{page}</code></td>\n<td><code>Browse</code></td>\n</tr>\n<tr>\n<td><code>search</code></td>\n<td><code>{query, kind, offset}</code>, where <code>kind</code> is <code>tracks</code>, <code>albums</code>, <code>artists</code>, <code>playlists</code> or <code>shows</code></td>\n<td><code>{tracks or albums or ..., more}</code></td>\n</tr>\n<tr>\n<td><code>suggest</code></td>\n<td><code>{query}</code></td>\n<td><code>[string]</code></td>\n</tr>\n<tr>\n<td><code>recent</code></td>\n<td></td>\n<td><code>[Track]</code></td>\n</tr>\n<tr>\n<td><code>played</code></td>\n<td><code>{id}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>liked</code></td>\n<td><code>{offset}</code></td>\n<td><code>{tracks, more}</code></td>\n</tr>\n<tr>\n<td><code>isLiked</code></td>\n<td><code>{ids}</code></td>\n<td><code>{id: bool}</code></td>\n</tr>\n<tr>\n<td><code>like</code>, <code>likeEpisode</code></td>\n<td><code>{id, on}</code></td>\n<td><code>like</code> likes a song, and <code>likeEpisode</code> an episode: without it, episodes show no heart</td>\n</tr>\n<tr>\n<td><code>album</code></td>\n<td><code>{id}</code></td>\n<td><code>{album, tracks}</code></td>\n</tr>\n<tr>\n<td><code>artist</code></td>\n<td><code>{id}</code></td>\n<td><code>{artist, tracks, albums}</code></td>\n</tr>\n<tr>\n<td><code>saveAlbum</code>, <code>followArtist</code>, <code>savePlaylist</code>, <code>subscribeShow</code></td>\n<td><code>{id, on}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>savedAlbums</code></td>\n<td><code>{offset}</code></td>\n<td><code>{albums, more}</code></td>\n</tr>\n<tr>\n<td><code>playlists</code></td>\n<td></td>\n<td><code>[Playlist]</code></td>\n</tr>\n<tr>\n<td><code>playlist</code></td>\n<td><code>{id}</code></td>\n<td><code>Playlist</code> with <code>tracks</code></td>\n</tr>\n<tr>\n<td><code>createPlaylist</code></td>\n<td><code>{name}</code></td>\n<td><code>Playlist</code></td>\n</tr>\n<tr>\n<td><code>renamePlaylist</code></td>\n<td><code>{id, name}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>deletePlaylist</code></td>\n<td><code>{id}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>addToPlaylist</code>, <code>removeFromPlaylist</code></td>\n<td><code>{id, trackIds}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>movePlaylistTrack</code></td>\n<td><code>{id, from, to}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>shows</code></td>\n<td></td>\n<td><code>[Show]</code></td>\n</tr>\n<tr>\n<td><code>show</code></td>\n<td><code>{id, offset}</code></td>\n<td><code>{show, episodes, more}</code></td>\n</tr>\n<tr>\n<td><code>stations</code></td>\n<td></td>\n<td><code>[Station]</code></td>\n</tr>\n<tr>\n<td><code>stationNext</code></td>\n<td><code>{id}</code></td>\n<td><code>[Track]</code></td>\n</tr>\n<tr>\n<td><code>comments</code></td>\n<td><code>{trackId, offset}</code></td>\n<td><code>{comments, total, more}</code></td>\n</tr>\n<tr>\n<td><code>likeComment</code></td>\n<td><code>{trackId, commentId, on}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>postComment</code></td>\n<td><code>{trackId, text}</code></td>\n<td><code>Comment</code></td>\n</tr>\n<tr>\n<td><code>lyrics</code></td>\n<td><code>{id}</code></td>\n<td><code>{lrc, translation}</code>, or <code>{lines}</code> with timed <code>words</code></td>\n</tr>\n<tr>\n<td><code>stream</code></td>\n<td><code>{id, quality}</code></td>\n<td><code>{url, type, headers, size, gain, peak}</code>, where <code>type</code> is <code>mp3</code>, <code>flac</code>, <code>ogg</code>, <code>wav</code>, <code>m4a</code> (ALAC, FLAC or AAC-LC, whole or in fragments as a DASH stream serves it) or <code>aac</code> (AAC-LC in ADTS)</td>\n</tr>\n<tr>\n<td><code>remotePlay</code></td>\n<td><code>{ids, start, position}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>remotePause</code>, <code>remoteResume</code></td>\n<td></td>\n<td></td>\n</tr>\n<tr>\n<td><code>remoteSeek</code></td>\n<td><code>{position}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>remoteVolume</code></td>\n<td><code>{percent}</code></td>\n<td></td>\n</tr>\n<tr>\n<td><code>remoteState</code></td>\n<td></td>\n<td><code>{playing, trackId, position, duration, volume, device}</code> or <code>null</code></td>\n</tr>\n<tr>\n<td><code>remoteDevices</code></td>\n<td></td>\n<td><code>[{id, name, active}]</code></td>\n</tr>\n<tr>\n<td><code>remoteUse</code></td>\n<td><code>{deviceId}</code></td>\n<td></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">The shapes are in <a href=\"https://github.com/egoist/mygo-music/blob/main/internal/music/music.go\"><code>internal/music/music.go</code></a> by their JSON names. Times are in milliseconds. A <code>Browse</code> is <code>{title, subtitle, imageUrl, description, sections}</code>: with an <code>imageUrl</code>, such as a listener's avatar, it's headed round, as an artist's page is, and <code>description</code> goes under the title a line to each line. A section can hold <code>tracks</code>, <code>albums</code>, <code>artists</code>, <code>playlists</code>, <code>shows</code>, <code>stations</code>, <code>links</code> (<code>{title, subtitle, imageUrl, page}</code>), a <code>morePage</code>, and <code>empty</code>, what it says while it holds nothing. A source's first section of <code>tracks</code> leads its Home as a card of the day's songs, which opens a page of all of them, headed by the section's <code>pageTitle</code> if it has one, else its <code>title</code>, and its <code>subtitle</code> after the count of songs. A show's <code>publisherPage</code> is a <code>browse</code> page of who publishes it, which their name on the show's page opens.</p>\n<p dir=\"auto\">An <code>imageUrl</code> can say where its size goes, with <code>{size}</code>, for an image server that makes pictures the size asked: <code>https://img.example.com/cover.jpg?param={size}y{size}</code> or <code>https://img.example.com/{size}/cover.jpg</code>. The app fills in how many pixels across it shows the picture at, 40 in a row and 600 in Now Playing, or 600 where nothing asks for a size. <code>%7Bsize%7D</code>, as JavaScript's <code>URL</code> writes it in a query, counts too. An app older than 0.1.20 fetches <code>{size}</code> as it is, so a plugin that gives it wants a <code>minAppVersion</code> of 0.1.20. Without it, give pictures at about 800 pixels if the service can, rather than as large as they were made: the app fetches and decodes the whole of each, a few megabytes for one thousands of pixels across, to show it in a row.</p>\n<p dir=\"auto\">Of the <code>playlists</code>, those with <code>mine</code> are the listener's own, listed under My Playlists, and the rest are ones they saved. One that is <code>mine</code> and also <code>fixed</code>, such as the songs they liked, is kept by the source itself: the app doesn't offer to rename it, delete it, add songs to it, take them out or move them.</p>\n<p dir=\"auto\"><code>navigation</code> is the plugin's sidebar, in its order. An entry opens a <code>browse</code> page of its own by <code>page</code>, or one of the app's by <code>builtin</code>: <code>home</code>, <code>liked</code>, <code>savedAlbums</code>, <code>stations</code> or <code>shows</code>, which can be given a <code>title</code>. Without <code>navigation</code>, the sidebar has an entry for each of the app's pages the plugin can do. Up to four stations show as a switch over one card, and more as a grid.</p>\n<p dir=\"auto\"><code>minAppVersion</code> is the oldest version of MyGo Music the plugin works with. An older one won't install it, and says to update first. Versions before 0.1.8 don't read it.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Translating a plugin</h3></div>\n<p dir=\"auto\">Put the translations in <code>locales/&lt;language&gt;.json</code> next to <code>plugin.json</code>: <code>locales/zh-CN.json</code> for Simplified Chinese, the language the app speaks besides English. Each one maps the English text to the translation:</p>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"{ &quot;Example&quot;: &quot;示例&quot;, &quot;API Key&quot;: &quot;API 密钥&quot;, &quot;From your account page&quot;: &quot;在你的账号页面获取&quot;, &quot;Charts&quot;: &quot;排行榜&quot; }\"><pre>{ <span class=\"pl-ent\">\"Example\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>示例<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"API Key\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>API 密钥<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"From your account page\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>在你的账号页面获取<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-ent\">\"Charts\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>排行榜<span class=\"pl-pds\">\"</span></span> }</pre></div>\n<p dir=\"auto\">The app translates the plugin's <code>name</code>, its settings' <code>label</code> and <code>help</code> and its <code>navigation</code> titles with them. For what the plugin says itself, such as a page's titles or an error's message, <code>host.t(text)</code> answers the translation, or <code>text</code> when there's none, and <code>host.language()</code> the listener's language, <code>en</code> or <code>zh-CN</code>. Both follow the listener as they change it, and the page they're on loads again.</p>\n<p dir=\"auto\">With <code>\"playback\": \"stream\"</code>, the app plays what <code>stream</code> answers. With <code>\"playback\": \"remote\"</code>, the plugin makes the sound itself, or has another program do so, and the app calls the <code>remote</code> functions and polls <code>remoteState</code>.</p>\n<p dir=\"auto\">Throw an error with a <code>code</code> to say what's wrong: <code>signIn</code> prompts the listener to sign in, <code>setup</code> sends them to the plugin's settings, <code>unavailable</code> means this can't be played, and <code>unsupported</code> means the plugin doesn't do this. Any other error shows its message.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Publishing a plugin</h3></div>\n<p dir=\"auto\">Put it in a public GitHub repository, with <code>plugin.json</code> at the top. The app takes the latest release: a <code>.zip</code> asset named for the platform, such as <code>plugin-darwin-arm64.zip</code>, or one named for none, or else the source. Without a release it takes the latest commit of the default branch. A new tag or commit is a new version, which shows as an update in the settings. An update asking for more permissions asks the listener again.</p>\n<p dir=\"auto\">Add the topic <code>mygo-music-plugin</code> to the repository to have it listed on the <a href=\"https://mygo-music.egoist.dev/plugins\" rel=\"nofollow\">plugins page</a>.</p>\n<p dir=\"auto\">Link to <code>mygo-music://install-plugin?repo=owner/repo</code> for an install button: it opens the app, which downloads the plugin and asks the listener before installing it. The development app (<code>mygo dev</code>) answers <code>mygo-music-dev://</code> instead.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">What a plugin can reach</h3></div>\n<p dir=\"auto\">A plugin has the JavaScript standard library, timers, <code>fetch</code> and its relatives, <code>URL</code>, <code>console</code> and <code>host</code>:</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th></th>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>host.platform</code>, <code>host.arch</code></td>\n<td>such as <code>darwin</code>, <code>arm64</code></td>\n</tr>\n<tr>\n<td><code>host.dir</code>, <code>host.dataDir</code></td>\n<td>the plugin's folder, and one for its data</td>\n</tr>\n<tr>\n<td><code>host.storage.get(key)</code>, <code>.set(key, value)</code>, <code>.remove(key)</code></td>\n<td>JSON values that outlive the app</td>\n</tr>\n<tr>\n<td><code>host.setting(key)</code></td>\n<td>what the listener filled in</td>\n</tr>\n<tr>\n<td><code>host.t(text)</code>, <code>host.language()</code></td>\n<td>the text in the listener's language, from the plugin's <code>locales</code>, and that language: <code>en</code> or <code>zh-CN</code></td>\n</tr>\n<tr>\n<td><code>host.removeDataDir(name)</code></td>\n<td>removes a folder inside <code>host.dataDir</code></td>\n</tr>\n<tr>\n<td><code>host.crypto.md5(text)</code></td>\n<td>its hash, in hex</td>\n</tr>\n<tr>\n<td><code>host.crypto.aesEcbEncrypt(key, text)</code></td>\n<td>AES-ECB with PKCS#7 padding, in hex, for services whose requests are made that way</td>\n</tr>\n<tr>\n<td><code>host.openURL(url)</code></td>\n<td>opens a web page in the listener's browser</td>\n</tr>\n<tr>\n<td><code>host.signInPrompt({qr, text})</code></td>\n<td>what the sign-in window shows while <code>signIn</code> goes on: a QR code to scan, and what to do</td>\n</tr>\n<tr>\n<td><code>host.waitForRedirect({port, path, timeout, page})</code></td>\n<td>the end of a browser sign-in: listens on <code>127.0.0.1</code> and answers the query it's redirected back with. Needs the network permission</td>\n</tr>\n<tr>\n<td><code>host.webSignIn({url, cookiesOf, until, userAgent})</code></td>\n<td>a sign-in on the service's own page, for one that has no other way in: the app shows <code>url</code> in a window of its own, apart from every other page and forgotten after, and once the cookies named in <code>until</code> are all there, closes it and answers <code>{cookie}</code>, the Cookie header a request to <code>cookiesOf</code> would send. <code>cookiesOf</code> has to be a host the network permission reaches. <code>userAgent</code> is what the page is told it's shown in</td>\n</tr>\n<tr>\n<td><code>host.spawn(command, args)</code></td>\n<td>starts a program, by a path from the plugin's folder or absolute, or a name on <code>PATH</code>. Needs the process permission to name it. Returns <code>{pid, write(text), closeStdin(), readLine(), wait(), kill(), errorOutput()}</code></td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Everything else takes a permission in <code>plugin.json</code>:</p>\n<ul dir=\"auto\">\n<li>\n<p dir=\"auto\"><code>\"network\": [\"api.example.com\", \"*.example.com\"]</code> lists the hosts <code>fetch</code> can reach, or <code>[\"*\"]</code> for any. Without it, <code>fetch</code> reaches nothing.</p>\n</li>\n<li>\n<p dir=\"auto\"><code>\"requestHeaders\"</code> are headers the app sends with what it fetches itself for the plugin, its pictures (<code>image</code>) and its songs' audio (<code>audio</code>), for a service that keeps those behind its session as well as its API:</p>\n<div class=\"highlight highlight-source-json notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"&quot;requestHeaders&quot;: [\n  { &quot;hosts&quot;: [&quot;{setting:server}&quot;], &quot;kinds&quot;: [&quot;image&quot;, &quot;audio&quot;], &quot;headers&quot;: { &quot;cookie&quot;: &quot;music-token={storage:token}&quot; } },\n  { &quot;hosts&quot;: [&quot;img.example.com&quot;], &quot;kinds&quot;: [&quot;image&quot;], &quot;headers&quot;: { &quot;referer&quot;: &quot;https://example.com/&quot; } }\n]\"><pre><span class=\"pl-ent\">\"requestHeaders\"</span>: [\n  { <span class=\"pl-ent\">\"hosts\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>{setting:server}<span class=\"pl-pds\">\"</span></span>], <span class=\"pl-ent\">\"kinds\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>image<span class=\"pl-pds\">\"</span></span>, <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>audio<span class=\"pl-pds\">\"</span></span>], <span class=\"pl-ent\">\"headers\"</span>: { <span class=\"pl-ent\">\"cookie\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>music-token={storage:token}<span class=\"pl-pds\">\"</span></span> } },\n  { <span class=\"pl-ent\">\"hosts\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>img.example.com<span class=\"pl-pds\">\"</span></span>], <span class=\"pl-ent\">\"kinds\"</span>: [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>image<span class=\"pl-pds\">\"</span></span>], <span class=\"pl-ent\">\"headers\"</span>: { <span class=\"pl-ent\">\"referer\"</span>: <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>https://example.com/<span class=\"pl-pds\">\"</span></span> } }\n]</pre></div>\n<p dir=\"auto\"><code>hosts</code> are hosts or <code>*.domain</code>, which the network permission has to reach, or <code>{setting:key}</code>, the host of the server a setting names, such as <code>https://nas.local:5666</code>, while the network permission reaches it. <code>*</code> isn't one. Without <code>kinds</code>, they go with both. In <code>headers</code>, <code>{setting:key}</code> is what the listener filled in and <code>{storage:key}</code> what the plugin keeps with <code>host.storage</code>, as each is when the request goes out: a token the plugin stores anew goes with the next one, and none is kept in a URL. A header whose value isn't there yet, as before signing in, is left out. The headers a <code>stream</code> answers come first. Neither goes on to another host a request is redirected to.</p>\n</li>\n<li>\n<p dir=\"auto\"><code>\"process\": [\"bin/helper-*\", \"ffmpeg\"]</code> lists the programs <code>host.spawn</code> can start, for what JavaScript can't do: a path from the plugin's folder or absolute, or a name looked up on <code>PATH</code>. A path only matches a path and a name only a name, and <code>*</code> matches within one folder, as in a glob. <code>[\"*\"]</code>, or <code>true</code>, asks for any program, which the listener is warned about. The listener has to allow it in Settings first, as a program can do anything they can. Programs end when the plugin does, and once allowed, <code>fetch</code> can reach this machine too, to talk to them. Ship one binary per platform and pick it with <code>host.platform</code> and <code>host.arch</code>.</p>\n</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Credits</h2></div>\n<ul dir=\"auto\">\n<li><a href=\"https://github.com/chthollyphile/folia-major\">folia-major</a>: the lyric stage animations</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">AGPL-3.0. See <a href=\"https://github.com/egoist/mygo-music/blob/main/LICENSE\">LICENSE</a>.</p>\n</article></div>",
+  "contributorCount": 2,
+  "releases": [
+    {
+      "name": "v0.1.22",
+      "tag": "v0.1.22",
+      "url": "https://github.com/egoist/mygo-music/releases/tag/v0.1.22",
+      "publishedAt": "2026-11-07T15:50:44Z",
+      "prerelease": false,
+      "body": "\n### Fixed\n\n- The Shuffle button in a list now lets any song come first, instead of always keeping the first one first. A song you pick to start still stays first.\n- Seeking in AAC audio in an MP4, including a fragmented file as streaming sites serve it, lands on the same frame as playing straight through, not a second or so off after the first short packet.\n- The end of a fragmented MP4 no longer plays the silence padding of its last packet.\n- Now Playing's lyrics start at the top in a tall window, instead of leaving the top of the window empty and cutting off the lines before the one sung.\n- Japanese lyrics are drawn in a Japanese font, kanji and kana alike, rather than their kanji in the font of the app's language.\n- On English Windows, Chinese text is drawn in one Chinese font, not with characters in different fonts.\n- A plugin that needs setting up says why, in its settings and in the player, instead of \"Fill these in for it to work\" whatever it said. The message goes away once the program is allowed or the setting is saved.\n- A plugin's `id` and `main` must now stay inside the plugin's folder, so a plugin dropped into the plugins folder can't read another plugin's saved setti",
+      "downloads": 7598,
+      "reactions": 2
+    },
+    {
+      "name": "v0.1.21",
+      "tag": "v0.1.21",
+      "url": "https://github.com/egoist/mygo-music/releases/tag/v0.1.21",
+      "publishedAt": "2026-11-07T08:59:50Z",
+      "prerelease": false,
+      "body": "\n### Added\n\n- Audio in MP4s cut into fragments, as streaming sites serve it, plays as it comes in, and so does FLAC in MP4. A plugin for such a site can give the app the stream's address as it is, without converting it first.\n\n### Fixed\n\n- With Grow From the Cover on, Now Playing no longer takes hundreds of megabytes more memory each time it opens out of the cover, as it did on Windows.\n\n",
+      "downloads": 5322,
+      "reactions": 0
+    },
+    {
+      "name": "v0.1.20",
+      "tag": "v0.1.20",
+      "url": "https://github.com/egoist/mygo-music/releases/tag/v0.1.20",
+      "publishedAt": "2026-11-07T05:34:55Z",
+      "prerelease": false,
+      "body": "\n### Added\n\n- A plugin's picture URLs can say where the size goes with `{size}`, such as `?param={size}y{size}`, and the app fetches each cover the size it shows, so rows of covers take much less memory and come in faster.\n- Settings > Experiments has Grow From the Cover, for Now Playing to open out of the player bar's cover as before.\n\n### Changed\n\n- Now Playing slides up from the bottom of the window as it opens, and back down as it closes.\n\n### Fixed\n\n- A plugin's page that changes as you play, such as songs played lately, shows what's new when you open it again a while later, without restarting the app.\n- Big covers that come only large are decoded within a memory budget, and the app gives memory back once they're shown and when the window hides.\n- A plugin that reads its storage or settings at its top level no longer hangs as it starts.\n- The button that saves a playlist's new name reads 保存 in Chinese, not 收藏.\n\n",
+      "downloads": 3236,
+      "reactions": 1
+    },
+    {
+      "name": "v0.1.19",
+      "tag": "v0.1.19",
+      "url": "https://github.com/egoist/mygo-music/releases/tag/v0.1.19",
+      "publishedAt": "2026-11-07T01:50:41Z",
+      "prerelease": false,
+      "body": "### [0.1.19] - 2026-11-07\n\n#### Added\n\n- Plugins can list `requestHeaders` in plugin.json: headers, such as a session's cookie, that the app sends with the plugin's pictures and audio, so covers kept behind a sign-in, as fnOS Music's are, show.\n\n#### Fixed\n\n- Headers a plugin gives for a stream no longer go on to another host the stream redirects to.\n\n### [0.1.18] - 2026-11-07\n\n#### Added\n\n- ALAC, AAC and WAV files play, from local folders and from plugins. WAV and ALAC show the Lossless badge.\n\n#### Fixed\n\n- Big covers take much less memory to show as small thumbnails, and a cover shown at several sizes at once is fetched and decoded only once.\n- Long audio, such as a ten-hour audiobook, no longer takes a lot of memory for its spectrum, and streams that don't say how long they are get levels all the way through.\n\n### [0.1.17] - 2026-11-07\n\n#### Added\n\n- Plugins can head the page of a feature card's songs, such as a daily mix, with their own title and subtitle, and the page is headed as the card is.\n- Plugins can mark a playlist of yours as fixed, such as NetEase's liked songs. It stays under My Playlists but can't be renamed, deleted or changed.\n\n#### Fixed\n\n- Playlists and Liked ",
+      "downloads": 2918,
+      "reactions": 0
+    },
+    {
+      "name": "v0.1.16",
+      "tag": "v0.1.16",
+      "url": "https://github.com/egoist/mygo-music/releases/tag/v0.1.16",
+      "publishedAt": "2026-11-06T18:35:54Z",
+      "prerelease": false,
+      "body": "\n### Fixed\n\n- On macOS, the app no longer takes more and more memory while something on screen moves, such as the lyrics in Now Playing.\n\n",
+      "downloads": 1296,
+      "reactions": 0
+    }
+  ],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 4
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 5
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 1
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 2
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 2
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 4
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 7
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 5
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 10
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 8
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 8
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 7
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 3
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 4
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 1
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 10
+    }
+  ],
+  "firstCommitAt": "2026-11-04T13:27:18Z",
+  "recentIssues": [
+    {
+      "number": 123,
+      "title": "Plugin API: background plugins and current playback state",
+      "url": "https://github.com/egoist/mygo-music/issues/123",
+      "createdAt": "2026-11-08T09:36:52Z",
+      "comments": 2,
+      "labels": [],
+      "author": "e5u"
+    },
+    {
+      "number": 122,
+      "title": "remote 播放：支持按 context（歌单、电台 URI）播放，由设备维护队列（来自 Spotify 客户端 MyGoify）",
+      "url": "https://github.com/egoist/mygo-music/issues/122",
+      "createdAt": "2026-11-08T08:36:09Z",
+      "comments": 2,
+      "labels": [],
+      "author": "aronnaxlin"
+    },
+    {
+      "number": 119,
+      "title": "返回不保留滚动位置；插件页面的「收藏」「喜欢」说法和标题跟不上插件",
+      "url": "https://github.com/egoist/mygo-music/issues/119",
+      "createdAt": "2026-11-08T05:17:20Z",
+      "comments": 1,
+      "labels": [],
+      "author": "LYJW131"
+    },
+    {
+      "number": 118,
+      "title": "feat(plugin): 向插件开放播放事件推送与播放器控制(host.player / onEvent)",
+      "url": "https://github.com/egoist/mygo-music/issues/118",
+      "createdAt": "2026-11-08T04:30:43Z",
+      "comments": 3,
+      "labels": [],
+      "author": "shiyuanzheng"
+    },
+    {
+      "number": 117,
+      "title": "Mac不支持airpods空间立体声",
+      "url": "https://github.com/egoist/mygo-music/issues/117",
+      "createdAt": "2026-11-08T01:53:17Z",
+      "comments": 1,
+      "labels": [],
+      "author": "Ouyang-Yu"
+    },
+    {
+      "number": 116,
+      "title": "feat(audio): 基于现有音频后期处理模块（Fade / 响度归一化）扩展手动均衡器 (EQ) 与音效支持",
+      "url": "https://github.com/egoist/mygo-music/issues/116",
+      "createdAt": "2026-11-08T00:50:18Z",
+      "comments": 1,
+      "labels": [],
+      "author": "oobrei"
+    }
+  ],
+  "participation": {
+    "all": 115,
+    "owner": 110,
+    "community": 5
+  },
+  "recentCommits": [
+    {
+      "sha": "1af0d8e",
+      "message": "0.1.22",
+      "url": "https://github.com/egoist/mygo-music/commit/1af0d8efd77fdf630c27cfc635f12e9cb089ce10",
+      "date": "2026-11-07T15:43:34Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "98b90c0",
+      "message": "Seek AAC in MP4 by its packets of 1024 frames (#58)",
+      "url": "https://github.com/egoist/mygo-music/commit/98b90c063abc183ba48a193405912b2b80ed197b",
+      "date": "2026-11-07T15:31:00Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "44f3cc0",
+      "message": "Keep a plugin's id and main inside its folders (#104)",
+      "url": "https://github.com/egoist/mygo-music/commit/44f3cc00fad67eb8d9f5a38e969464e258d85f9c",
+      "date": "2026-11-07T15:25:34Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "7b4703c",
+      "message": "Upgrade MyGo for one Chinese font on English Windows (#103)",
+      "url": "https://github.com/egoist/mygo-music/commit/7b4703c6e6e16a2c23c73d7943c00f193c44bbd3",
+      "date": "2026-11-07T15:25:12Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "53e4093",
+      "message": "Show the notch's shuffle and repeat in the accent (#102)",
+      "url": "https://github.com/egoist/mygo-music/commit/53e4093088d3cbcc5dbc9fbaebbfcc4596366160",
+      "date": "2026-11-07T15:24:33Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "aabab00",
+      "message": "Shuffle button starts on a random song (#96)",
+      "url": "https://github.com/egoist/mygo-music/commit/aabab0008cf60b5c31632151930931f5905c00e0",
+      "date": "2026-11-07T15:24:14Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "00c8e95",
+      "message": "Run the tests on pushes and pull requests (#82)",
+      "url": "https://github.com/egoist/mygo-music/commit/00c8e9502bd089fb08c670d128b9b20a756adac3",
+      "date": "2026-11-07T15:23:55Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "32499f0",
+      "message": "Start Now Playing's lyrics at the top in a tall window (#64)",
+      "url": "https://github.com/egoist/mygo-music/commit/32499f0acf6058c2fd3fe7b69874a5d6bf608571",
+      "date": "2026-11-07T15:23:19Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "e67d706",
+      "message": "Draw Japanese lyrics in a Japanese font, kanji and kana alike (#90)",
+      "url": "https://github.com/egoist/mygo-music/commit/e67d70666de14f12adea669e2a246c5e48d81da2",
+      "date": "2026-11-07T15:22:52Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    },
+    {
+      "sha": "ae7efd1",
+      "message": "Say why a plugin needs setting up instead of \"Fill these in\" (#106)",
+      "url": "https://github.com/egoist/mygo-music/commit/ae7efd11fc43130a89c764474a9fbdf4231b08ff",
+      "date": "2026-11-07T15:21:25Z",
+      "author": "egoist",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/8784712?v=4"
+    }
+  ],
+  "recentPulls": [
+    {
+      "number": 120,
+      "title": "Title Liked and Saved Albums as the source's sidebar names them",
+      "url": "https://github.com/egoist/mygo-music/pull/120",
+      "state": "open",
+      "updatedAt": "2026-11-08T05:51:18Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 114,
+      "title": "Turn the volume a fixed step per wheel notch",
+      "url": "https://github.com/egoist/mygo-music/pull/114",
+      "state": "open",
+      "updatedAt": "2026-11-07T17:50:50Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 109,
+      "title": "Keep Now Playing's cover clear of the tabs while a radio plays",
+      "url": "https://github.com/egoist/mygo-music/pull/109",
+      "state": "open",
+      "updatedAt": "2026-11-07T16:45:50Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 58,
+      "title": "Seek AAC in MP4 by its packets of 1024 frames",
+      "url": "https://github.com/egoist/mygo-music/pull/58",
+      "state": "merged",
+      "updatedAt": "2026-11-07T15:31:03Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 104,
+      "title": "Keep a plugin's id and main inside its folders",
+      "url": "https://github.com/egoist/mygo-music/pull/104",
+      "state": "merged",
+      "updatedAt": "2026-11-07T15:25:37Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 103,
+      "title": "Upgrade MyGo for one Chinese font on English Windows",
+      "url": "https://github.com/egoist/mygo-music/pull/103",
+      "state": "merged",
+      "updatedAt": "2026-11-07T15:25:14Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 102,
+      "title": "Show the notch's shuffle and repeat in the accent",
+      "url": "https://github.com/egoist/mygo-music/pull/102",
+      "state": "merged",
+      "updatedAt": "2026-11-07T15:24:35Z",
+      "author": "egoist",
+      "draft": false
+    },
+    {
+      "number": 96,
+      "title": "Shuffle button starts on a random song",
+      "url": "https://github.com/egoist/mygo-music/pull/96",
+      "state": "merged",
+      "updatedAt": "2026-11-07T15:24:17Z",
+      "author": "egoist",
+      "draft": false
+    }
+  ],
+  "fileTree": [
+    {
+      "name": ".agents",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/.agents"
+    },
+    {
+      "name": ".github",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/.github"
+    },
+    {
+      "name": "examples",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/examples"
+    },
+    {
+      "name": "icon",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/icon"
+    },
+    {
+      "name": "internal",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/internal"
+    },
+    {
+      "name": "resources",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/resources"
+    },
+    {
+      "name": "scripts",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/scripts"
+    },
+    {
+      "name": "website",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/egoist/mygo-music/tree/main/website"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 63,
+      "url": "https://github.com/egoist/mygo-music/blob/main/.gitignore"
+    },
+    {
+      "name": "AGENTS.md",
+      "type": "file",
+      "size": 2431,
+      "url": "https://github.com/egoist/mygo-music/blob/main/AGENTS.md"
+    },
+    {
+      "name": "bun.lock",
+      "type": "file",
+      "size": 59335,
+      "url": "https://github.com/egoist/mygo-music/blob/main/bun.lock"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "size": 11234,
+      "url": "https://github.com/egoist/mygo-music/blob/main/CHANGELOG.md"
+    },
+    {
+      "name": "go.mod",
+      "type": "file",
+      "size": 927,
+      "url": "https://github.com/egoist/mygo-music/blob/main/go.mod"
+    },
+    {
+      "name": "go.sum",
+      "type": "file",
+      "size": 4366,
+      "url": "https://github.com/egoist/mygo-music/blob/main/go.sum"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 34523,
+      "url": "https://github.com/egoist/mygo-music/blob/main/LICENSE"
+    },
+    {
+      "name": "main.go",
+      "type": "file",
+      "size": 132,
+      "url": "https://github.com/egoist/mygo-music/blob/main/main.go"
+    },
+    {
+      "name": "mygo.config.ts",
+      "type": "file",
+      "size": 936,
+      "url": "https://github.com/egoist/mygo-music/blob/main/mygo.config.ts"
+    },
+    {
+      "name": "package.json",
+      "type": "file",
+      "size": 229,
+      "url": "https://github.com/egoist/mygo-music/blob/main/package.json"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 14077,
+      "url": "https://github.com/egoist/mygo-music/blob/main/README.md"
+    },
+    {
+      "name": "RELEASING.md",
+      "type": "file",
+      "size": 2299,
+      "url": "https://github.com/egoist/mygo-music/blob/main/RELEASING.md"
+    }
+  ],
+  "manifestDependencies": {
+    "manifest": "go.mod",
+    "dependencies": [
+      {
+        "name": "github.com/MoeForge/moejs",
+        "version": "v0.1.0-alpha.11"
+      },
+      {
+        "name": "github.com/dhowden/tag",
+        "version": "v0.0.0-20240417053706-3d75831295e8"
+      },
+      {
+        "name": "github.com/ebitengine/purego",
+        "version": "v0.11.1"
+      },
+      {
+        "name": "github.com/egoist/mygo",
+        "version": "v0.8.4-0.20261107140116-94f22c384d0e"
+      },
+      {
+        "name": "github.com/hajimehoshi/go-mp3",
+        "version": "v0.3.4"
+      },
+      {
+        "name": "github.com/jfreymuth/oggvorbis",
+        "version": "v1.0.5"
+      },
+      {
+        "name": "github.com/tphakala/go-aac",
+        "version": "v0.7.1"
+      },
+      {
+        "name": "golang.org/x/image",
+        "version": "v0.46.0"
+      },
+      {
+        "name": "golang.org/x/text",
+        "version": "v0.43.0"
+      },
+      {
+        "name": "rsc.io/qr",
+        "version": "v0.2.0"
+      }
+    ],
+    "total": 10
+  },
+  "branchCount": 8,
+  "tagCount": 24,
+  "workflowRuns": [
+    {
+      "name": "Test",
+      "status": "success",
+      "url": "https://github.com/egoist/mygo-music/actions/runs/42452356191",
+      "branch": "claude/project-thread-zu5ik0-builtin-titles",
+      "updatedAt": "2026-11-08T05:53:46Z"
+    },
+    {
+      "name": "Release",
+      "status": "success",
+      "url": "https://github.com/egoist/mygo-music/actions/runs/42387771770",
+      "branch": "v0.1.22",
+      "updatedAt": "2026-11-07T15:50:32Z"
+    }
+  ],
+  "community": {
+    "healthPercentage": 42,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [
+    {
+      "platform": "GITHUB",
+      "url": "https://github.com/egoist"
+    }
+  ],
+  "openIssuesOnly": 61,
+  "openPRs": 3,
+  "releaseCount": 20,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 31,
+  "mergedPRs": 29,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": {
+    "tag": "v0.1.22",
+    "publishedAt": "2026-11-07T15:50:44Z"
+  },
+  "commitActivity": [
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-11-01",
+      "commits": 114
+    },
+    {
+      "week": "2026-11-08",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    },
+    {
+      "date": "2026-09-20",
+      "count": 0
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 0
+    },
+    {
+      "date": "2026-09-23",
+      "count": 0
+    },
+    {
+      "date": "2026-09-24",
+      "count": 0
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
+      "count": 0
+    },
+    {
+      "date": "2026-09-27",
+      "count": 0
+    },
+    {
+      "date": "2026-09-28",
+      "count": 0
+    },
+    {
+      "date": "2026-09-29",
+      "count": 0
+    },
+    {
+      "date": "2026-09-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-01",
+      "count": 0
+    },
+    {
+      "date": "2026-10-02",
+      "count": 0
+    },
+    {
+      "date": "2026-10-03",
+      "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 0
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 0
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 0
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
+    },
+    {
+      "date": "2026-10-11",
+      "count": 0
+    },
+    {
+      "date": "2026-10-12",
+      "count": 0
+    },
+    {
+      "date": "2026-10-13",
+      "count": 0
+    },
+    {
+      "date": "2026-10-14",
+      "count": 0
+    },
+    {
+      "date": "2026-10-15",
+      "count": 0
+    },
+    {
+      "date": "2026-10-16",
+      "count": 0
+    },
+    {
+      "date": "2026-10-17",
+      "count": 0
+    },
+    {
+      "date": "2026-10-18",
+      "count": 0
+    },
+    {
+      "date": "2026-10-19",
+      "count": 0
+    },
+    {
+      "date": "2026-10-20",
+      "count": 0
+    },
+    {
+      "date": "2026-10-21",
+      "count": 0
+    },
+    {
+      "date": "2026-10-22",
+      "count": 0
+    },
+    {
+      "date": "2026-10-23",
+      "count": 0
+    },
+    {
+      "date": "2026-10-24",
+      "count": 0
+    },
+    {
+      "date": "2026-10-25",
+      "count": 0
+    },
+    {
+      "date": "2026-10-26",
+      "count": 0
+    },
+    {
+      "date": "2026-10-27",
+      "count": 0
+    },
+    {
+      "date": "2026-10-28",
+      "count": 0
+    },
+    {
+      "date": "2026-10-29",
+      "count": 0
+    },
+    {
+      "date": "2026-10-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-31",
+      "count": 0
+    },
+    {
+      "date": "2026-11-01",
+      "count": 0
+    },
+    {
+      "date": "2026-11-02",
+      "count": 0
+    },
+    {
+      "date": "2026-11-03",
+      "count": 0
+    },
+    {
+      "date": "2026-11-04",
+      "count": 13
+    },
+    {
+      "date": "2026-11-05",
+      "count": 5
+    },
+    {
+      "date": "2026-11-06",
+      "count": 49
+    },
+    {
+      "date": "2026-11-07",
+      "count": 47
+    },
+    {
+      "date": "2026-11-08",
+      "count": 0
+    },
+    {
+      "date": "2026-11-09",
+      "count": 0
+    },
+    {
+      "date": "2026-11-10",
+      "count": 0
+    },
+    {
+      "date": "2026-11-11",
+      "count": 0
+    },
+    {
+      "date": "2026-11-12",
+      "count": 0
+    },
+    {
+      "date": "2026-11-13",
+      "count": 0
+    },
+    {
+      "date": "2026-11-14",
+      "count": 0
+    }
+  ],
+  "codeFrequency": [
+    {
+      "week": "2026-11-01",
+      "additions": 49182,
+      "deletions": 3620
+    },
+    {
+      "week": "2026-11-08",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-11-08T12:17:10.950Z",
+  "starHistory": {
+    "version": 2,
+    "unreliable": true,
+    "points": [],
+    "coverage": 0,
+    "events": 0,
+    "source": "gharchive-clickhouse",
+    "sampledAt": "2026-11-08T12:17:35.444Z"
+  }
+}

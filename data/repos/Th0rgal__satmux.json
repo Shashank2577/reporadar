@@ -1,0 +1,2670 @@
+{
+  "id": "Th0rgal/satmux",
+  "snapshots": [
+    {
+      "date": "2026-11-08",
+      "stars": 737,
+      "forks": 36
+    }
+  ],
+  "trendingHistory": [
+    {
+      "date": "2026-11-08",
+      "period": "daily",
+      "rank": 18,
+      "starsGained": null
+    }
+  ],
+  "owner": "Th0rgal",
+  "ownerAvatarUrl": "https://avatars.githubusercontent.com/u/41830259?v=4",
+  "ownerType": "User",
+  "name": "satmux",
+  "description": "Accelerate high-latency GEO inflight Wi-Fi via warm BBR TCP multiplexing + 1-RTT Ground-TLS + zlib (zero dependencies)",
+  "url": "https://github.com/Th0rgal/satmux",
+  "homepage": null,
+  "license": "MIT",
+  "language": "Python",
+  "topics": [],
+  "stars": 737,
+  "forks": 36,
+  "watchers": 1,
+  "openIssues": 0,
+  "createdAt": "2026-11-07T16:09:41Z",
+  "pushedAt": "2026-11-07T16:26:20Z",
+  "defaultBranch": "main",
+  "archived": false,
+  "updatedAt": "2026-11-08T12:17:07.343Z",
+  "releases": [],
+  "contributors": [
+    {
+      "login": "Th0rgal",
+      "url": "https://github.com/Th0rgal",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41830259?v=4",
+      "contributions": 2
+    }
+  ],
+  "commitCount": 2,
+  "languages": {
+    "Python": 51209,
+    "Shell": 3338
+  },
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">satmux</h1></div>\n<p dir=\"auto\">TCP multiplexer and <code>1-RTT</code> HTTP/TLS relay for geostationary (GEO) inflight Wi-Fi (Inmarsat GX, Viasat, Panasonic, SITA). Pure Python 3 stdlib, zero external dependencies.</p>\n<p dir=\"auto\">Measured inflight over Inmarsat GX Ka-band (<code>~620 ms</code> RTT, SITA <code>AS206433</code> Amsterdam ground station):</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\"><pre lang=\"text\" class=\"notranslate\"><code>  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Problem</h2></div>\n<p dir=\"auto\">Non-Starlink inflight Wi-Fi usually breaks on three things unrelated to raw bandwidth:</p>\n<ol dir=\"auto\">\n<li><strong>Onboard <code>:443</code> middleboxes and DNS interception.</strong> Cabin gateways intercept <code>:53</code> DNS and run a transparent <code>:443</code> split-TCP proxy (PEP) whose state table drops connections under load (<code>Connection reset by peer</code> / TLS timeouts on <code>github.com</code>, <code>api.github.com</code>, package registries). Non-443 TCP ports pass through untouched.</li>\n<li><strong>Handshake round-trips (<code>~620 ms</code> per GEO hop).</strong> Every new origin normally pays multiple satellite round-trips (DNS + TCP + TLS) before transferring payload bytes.</li>\n<li><strong>Cubic congestion collapse.</strong> Cabin Wi-Fi packet loss causes standard TCP to halve <code>cwnd</code> repeatedly, leaving most of your per-seat token-bucket cap unused.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Direct (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\"><pre lang=\"text\" class=\"notranslate\"><code>Direct (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\n</code></pre></div>\n<ul dir=\"auto\">\n<li><strong>Persistent non-443 carrier pool (<code>:8444</code>):</strong> Keeps 12 pre-warmed TCP connections open to a Linux VM near the satellite ground station, bypassing the cabin <code>:443</code> proxy and onboard DNS. Streams are scheduled onto the carrier with the lowest recent byte load so idle browser keepalives do not cause head-of-line queueing.</li>\n<li><strong>0-RTT stream open (<code>127.0.0.1:1080</code> SOCKS5 / <code>127.0.0.1:8080</code> HTTP CONNECT):</strong> Returns <code>OK</code> locally in <code>&lt;1 ms</code> and sends <code>FT_OPEN</code> + TLS <code>ClientHello</code> in the same TCP burst, saving one full satellite RTT while preserving end-to-end TLS from the laptop.</li>\n<li><strong>1-RTT ground fetch (<code>127.0.0.1:8081</code>):</strong> Sends an encrypted (<code>BLAKE2b-512</code> stream + <code>HMAC-SHA256</code>) request frame over a warm carrier. The ground VM performs DNS, verified TLS 1.3, and HTTP redirects on fiber (<code>~2–5 ms</code>) and compresses plaintext responses with <code>zlib</code> before crossing the satellite link.</li>\n<li><strong><code>git</code> and <code>gh</code> CLI routing:</strong> Go binaries such as <code>gh</code> ignore macOS <code>scutil</code> proxies. <code>satmux</code> exposes a <code>0600</code> local Unix socket (<code>/tmp/satmux-gh-tls.sock</code>) wired to <code>gh</code>'s <code>http_unix_socket</code> that wraps requests in verified end-to-end TLS on the laptop and tunnels them over SOCKS5, fixing already-running coding agents without restarting them.</li>\n<li><strong>BBR + <code>MSS 1280</code>:</strong> Ground-to-cabin sockets enable <code>TCP_CONGESTION=bbr</code> and <code>TCP_MAXSEG=1280</code>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Limits</h2></div>\n<ul dir=\"auto\">\n<li><strong>Latency floor (<code>~580–650 ms</code>):</strong> Speed-of-light propagation to geostationary orbit (<code>35,786 km</code>) does not change; <code>satmux</code> removes extra round-trips, not the physical RTT of one hop.</li>\n<li><strong>Per-seat shaper (<code>~4–5 Mbps</code> typical):</strong> Cabin routers police total bandwidth per client lease. Compressible traffic (HTML, JSON, code, APIs) exceeds that rate in effective throughput via <code>zlib</code>; already-compressed binaries (<code>.mp4</code>, <code>.zip</code>) stay bounded by the seat cap (though BBR + parallel <code>satmux-get</code> keep throughput near the ceiling).</li>\n<li><strong>Single paid session:</strong> Uses your authenticated cabin Wi-Fi lease; it does not bypass captive portals.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Setup</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Ground VM</h3></div>\n<p dir=\"auto\">Rent a small Linux VM (<code>$0.01–$0.03/h</code>, Python 3.9+, open TCP port <code>8444</code>) close to where the satellite downlinks to fiber. Check <code>curl ipinfo.io</code> on raw cabin Wi-Fi first to see the egress country/ASN:</p>\n<ul dir=\"auto\">\n<li><strong>Emirates / Middle East &amp; European flights (Inmarsat GX / SITA <code>AS206433</code>):</strong> Amsterdam, Frankfurt, or Hetzner EU (downlink lands in the Netherlands).</li>\n<li><strong>North America:</strong> <code>us-east</code> or <code>us-west</code>.</li>\n<li><strong>Asia-Pacific:</strong> Singapore or Tokyo.</li>\n</ul>\n<p dir=\"auto\">Pause UDP VPNs (Tailscale/WireGuard) inflight—blocked UDP retry traffic competes for cabin airtime.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Run</h3></div>\n<p dir=\"auto\">With a coding agent:</p>\n<blockquote>\n<p dir=\"auto\">Spin up a temporary Ubuntu VM near my current satellite egress IP, start <code>https://github.com/Th0rgal/satmux</code> on port <code>8444</code>, connect the local 12-carrier client, enable <code>bin/satmux-macos on</code>, and run <code>bin/satmux-bench</code>.</p>\n</blockquote>\n<p dir=\"auto\">Or manually:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Laptop: generate PSK\ngit clone https://github.com/Th0rgal/satmux.git &amp;&amp; cd satmux\nopenssl rand -hex 32 &gt; mux.psk &amp;&amp; chmod 600 mux.psk\n\n# 2. Ground VM: start server\nscp satmux.py mux.psk root@&lt;SERVER_IP&gt;:/root/\nssh root@&lt;SERVER_IP&gt; 'nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 &gt;/var/log/satmux.log 2&gt;&amp;1 &amp;'\n\n# 3. Laptop: start client + enable macOS / git / gh routing\nSATMUX_PSK=$(cat mux.psk) python3 satmux.py client --host &lt;SERVER_IP&gt; --port 8444 --carriers 12 &amp;\n./bin/satmux-macos on &lt;SERVER_IP&gt;\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Laptop: generate PSK</span>\ngit clone https://github.com/Th0rgal/satmux.git <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> satmux\nopenssl rand -hex 32 <span class=\"pl-k\">&gt;</span> mux.psk <span class=\"pl-k\">&amp;&amp;</span> chmod 600 mux.psk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Ground VM: start server</span>\nscp satmux.py mux.psk root@<span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span>:/root/\nssh root@<span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span> <span class=\"pl-s\"><span class=\"pl-pds\">'</span>nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 &gt;/var/log/satmux.log 2&gt;&amp;1 &amp;<span class=\"pl-pds\">'</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Laptop: start client + enable macOS / git / gh routing</span>\nSATMUX_PSK=<span class=\"pl-s\"><span class=\"pl-pds\">$(</span>cat mux.psk<span class=\"pl-pds\">)</span></span> python3 satmux.py client --host <span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span> --port 8444 --carriers 12 <span class=\"pl-k\">&amp;</span>\n./bin/satmux-macos on <span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span></pre></div>\n<p dir=\"auto\">Benchmark or run parallel range downloads:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz\"><pre>./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3. Teardown after landing</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./bin/satmux-macos off\"><pre>./bin/satmux-macos off</pre></div>\n<p dir=\"auto\">Restores macOS Wi-Fi proxy settings, <code>~/.gitconfig</code>, <code>gh</code> <code>http_unix_socket</code>, and <code>launchctl</code> env vars, then destroy the temporary VM.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT</p>\n</article></div>",
+  "readmeExcerpt": "# satmux\n\nTCP multiplexer and `1-RTT` HTTP/TLS relay for geostationary (GEO) inflight Wi-Fi (Inmarsat GX, Viasat, Panasonic, SITA). Pure Python 3 stdlib, zero external dependencies.\n\nMeasured inflight over Inmarsat GX Ka-band (`~620 ms` RTT, SITA `AS206433` Amsterdam ground station):\n\n```text\n  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\n```\n\n## Problem\n\nNon-Starlink inflight Wi-Fi usually breaks on three things unrelated to raw bandwidth:\n\n1. **Onboard `:443` middleboxes and DNS interception.** Cabin gateways intercept `:53` DNS and run a transparent `:443` split-TCP proxy (PEP) whose state table drops connections under load (`Connection reset by peer` / TLS timeouts on `github.com`, `api.github.com`, package registries). Non-443 TCP ports pass through untouched.\n2. **Handshake round-trips (`~620 ms` per GEO hop).** Every new origin normally pays multiple satellite round-trips (DNS + TCP + TLS) before transferring payload bytes.\n3. **Cubic congestion collapse.** Cabin Wi-Fi packet loss causes standard TCP to halve `cwnd` repeatedly, leaving most of your per-seat token-bucket cap unused.\n\n## How it works\n\n```text\nDirect (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\n```\n\n- **Persistent non-443 carrier pool (`:8444`):** Keeps 12 pre-warmed TCP connections open to a Linux VM near the satellite ground station, bypassing the cabin `:443` proxy and onboard DNS. Streams are scheduled onto the carrier with the lowest recent byte load so idle browser keepalives do not cause head-of-line queueing.\n- **0-RTT stream open (`127.0.0.1:1080` SOCKS5 / `127.0.0.1:8080` HTTP CONNECT):** Returns `OK` locally in `<1 ms` and sends `FT_OPEN` + TLS `ClientHello` in the same TCP burst, saving one full satellite RTT while preserving end-to-end TLS from the laptop.\n- **1-RTT ground fetch (`127.0.0.1:8081`):** Sends an encrypted (`BLAKE2b-512` stream + `HMAC-SHA256`) request frame over a warm carrier. The ground VM performs DNS, verified TLS 1.3, and HTTP redirects on fiber (`~2–5 ms`) and compresses plaintext responses with `zlib` before crossing the satellite link.\n- **`git` and `gh` CLI routing:** Go binaries such as `gh` ignore macOS `scutil` proxies. `satmux` exposes a `0600` local Unix socket (`/tmp/satmux-gh-tls.sock`) wired to `gh`'s `http_unix_socket` that wraps requests in verified end-to-end TLS on the laptop and tunnels them over SOCKS5, fixing already-running coding agents without restarting them.\n- **BBR + `MSS 1280`:** Ground-to-cabin sockets enable `TCP_CONGESTION=bbr` and `TCP_MAXSEG=1280`.\n\n## Limits\n\n- **Latency floor (`~580–650 ms`):** Speed-of-light propagation to geostationary orbit (`35,786 km`) does not change; `satmux` removes extra round-trips, not the physical RTT of one hop.\n- **Per-seat shaper (`~4–5 Mbps` typical):** Cabin routers police total bandwidth per client lease. Compressible traffic (HTML, JSON, code, APIs) exceeds that rate in effective throughput via `zlib`; already-compressed binaries (`.mp4`, `.zip`) stay bounded by the seat cap (though BBR + parallel `satmux-get` keep throughput near the ceiling).\n- **Single paid session:** Uses your authenticated cabin Wi-Fi lease; it does not bypass captive portals.\n\n## Setup\n\n### 1. Ground VM\n\nRent a small Linux VM (`$0.01–$0.03/h`, Python 3.9+, open TCP port `8444`) close to where the satellite downlinks to fiber. Check `curl ipinfo.io` on raw cabin Wi-Fi first to see the egress country/ASN:\n\n- **Emirates / Middle East & European flights (Inmarsat GX / SITA `AS206433`):** Amsterdam, Frankfurt, or Hetzner EU (downlink lands in the Netherlands).\n- **North America:** `us-east` or `us-west`.\n- **Asia-Pacific:** Singapore or Tokyo.\n\nPause UDP VPNs (Tailscale/WireGuard) inflight—blocked UDP retry traffic competes for cabin airtime.\n\n### 2. Run\n\nWith a coding agent:\n\n> Spin up a temporary Ubuntu VM near my current satellite egress IP, start `https://github.com/Th0rgal/satmux` on port `8444`, connect the local 12-carrier client, enable `bin/satmux-macos on`, and run `bin/satmux-bench`.\n\nOr manually:\n\n```bash\n# 1. Laptop: generate PSK\ngit clone https://github.com/Th0rgal/satmux.git && cd satmux\nopenssl rand -hex 32 > mux.psk && chmod 600 mux.psk\n\n# 2. Ground VM: start server\nscp satmux.py mux.psk root@<SERVER_IP>:/root/\nssh root@<SERVER_IP> 'nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 >/var/log/satmux.log 2>&1 &'\n\n# 3. Laptop: start client + enable macOS / git / gh routing\nSATMUX_PSK=$(cat mux.psk) python3 satmux.py client --host <SERVER_IP> --port 8444 --carriers 12 &\n./bin/satmux-macos on <SERVER_IP>\n```\n\nBenchmark or run parallel range downloads:\n\n```bash\n./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz\n```\n\n### 3. Teardown after landing\n\n```bash\n./bin/satmux-macos off\n```\n\nRestores macOS Wi-Fi proxy settings, `~/.gitconfig`, `gh` `http_unix_socket`, and `launchctl` env vars, then destroy the temporary VM.\n\n## License\n\nMIT\n",
+  "recentIssues": [],
+  "punchCard": [
+    {
+      "day": 0,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 0,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 1,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 2,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 3,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 4,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 21,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 5,
+      "hour": 23,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 0,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 1,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 2,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 3,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 4,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 5,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 6,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 7,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 8,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 9,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 10,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 11,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 12,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 13,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 14,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 15,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 16,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 17,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 18,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 19,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 20,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 21,
+      "commits": 2
+    },
+    {
+      "day": 6,
+      "hour": 22,
+      "commits": 0
+    },
+    {
+      "day": 6,
+      "hour": 23,
+      "commits": 0
+    }
+  ],
+  "contributorCount": 1,
+  "firstCommitAt": "2026-11-07T16:08:51Z",
+  "commitActivity": [
+    {
+      "week": "2025-11-16",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-23",
+      "commits": 0
+    },
+    {
+      "week": "2025-11-30",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-07",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-14",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-21",
+      "commits": 0
+    },
+    {
+      "week": "2025-12-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-01-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-02-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-01",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-08",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-22",
+      "commits": 0
+    },
+    {
+      "week": "2026-03-29",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-04-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-03",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-10",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-17",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-24",
+      "commits": 0
+    },
+    {
+      "week": "2026-05-31",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-07",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-14",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-21",
+      "commits": 0
+    },
+    {
+      "week": "2026-06-28",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-05",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-12",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-19",
+      "commits": 0
+    },
+    {
+      "week": "2026-07-26",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-02",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-09",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-16",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-23",
+      "commits": 0
+    },
+    {
+      "week": "2026-08-30",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-06",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-13",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-20",
+      "commits": 0
+    },
+    {
+      "week": "2026-09-27",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-04",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-11",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-18",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-25",
+      "commits": 0
+    },
+    {
+      "week": "2026-11-01",
+      "commits": 2
+    },
+    {
+      "week": "2026-11-08",
+      "commits": 0
+    }
+  ],
+  "contributionDays": [
+    {
+      "date": "2025-11-16",
+      "count": 0
+    },
+    {
+      "date": "2025-11-17",
+      "count": 0
+    },
+    {
+      "date": "2025-11-18",
+      "count": 0
+    },
+    {
+      "date": "2025-11-19",
+      "count": 0
+    },
+    {
+      "date": "2025-11-20",
+      "count": 0
+    },
+    {
+      "date": "2025-11-21",
+      "count": 0
+    },
+    {
+      "date": "2025-11-22",
+      "count": 0
+    },
+    {
+      "date": "2025-11-23",
+      "count": 0
+    },
+    {
+      "date": "2025-11-24",
+      "count": 0
+    },
+    {
+      "date": "2025-11-25",
+      "count": 0
+    },
+    {
+      "date": "2025-11-26",
+      "count": 0
+    },
+    {
+      "date": "2025-11-27",
+      "count": 0
+    },
+    {
+      "date": "2025-11-28",
+      "count": 0
+    },
+    {
+      "date": "2025-11-29",
+      "count": 0
+    },
+    {
+      "date": "2025-11-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-01",
+      "count": 0
+    },
+    {
+      "date": "2025-12-02",
+      "count": 0
+    },
+    {
+      "date": "2025-12-03",
+      "count": 0
+    },
+    {
+      "date": "2025-12-04",
+      "count": 0
+    },
+    {
+      "date": "2025-12-05",
+      "count": 0
+    },
+    {
+      "date": "2025-12-06",
+      "count": 0
+    },
+    {
+      "date": "2025-12-07",
+      "count": 0
+    },
+    {
+      "date": "2025-12-08",
+      "count": 0
+    },
+    {
+      "date": "2025-12-09",
+      "count": 0
+    },
+    {
+      "date": "2025-12-10",
+      "count": 0
+    },
+    {
+      "date": "2025-12-11",
+      "count": 0
+    },
+    {
+      "date": "2025-12-12",
+      "count": 0
+    },
+    {
+      "date": "2025-12-13",
+      "count": 0
+    },
+    {
+      "date": "2025-12-14",
+      "count": 0
+    },
+    {
+      "date": "2025-12-15",
+      "count": 0
+    },
+    {
+      "date": "2025-12-16",
+      "count": 0
+    },
+    {
+      "date": "2025-12-17",
+      "count": 0
+    },
+    {
+      "date": "2025-12-18",
+      "count": 0
+    },
+    {
+      "date": "2025-12-19",
+      "count": 0
+    },
+    {
+      "date": "2025-12-20",
+      "count": 0
+    },
+    {
+      "date": "2025-12-21",
+      "count": 0
+    },
+    {
+      "date": "2025-12-22",
+      "count": 0
+    },
+    {
+      "date": "2025-12-23",
+      "count": 0
+    },
+    {
+      "date": "2025-12-24",
+      "count": 0
+    },
+    {
+      "date": "2025-12-25",
+      "count": 0
+    },
+    {
+      "date": "2025-12-26",
+      "count": 0
+    },
+    {
+      "date": "2025-12-27",
+      "count": 0
+    },
+    {
+      "date": "2025-12-28",
+      "count": 0
+    },
+    {
+      "date": "2025-12-29",
+      "count": 0
+    },
+    {
+      "date": "2025-12-30",
+      "count": 0
+    },
+    {
+      "date": "2025-12-31",
+      "count": 0
+    },
+    {
+      "date": "2026-01-01",
+      "count": 0
+    },
+    {
+      "date": "2026-01-02",
+      "count": 0
+    },
+    {
+      "date": "2026-01-03",
+      "count": 0
+    },
+    {
+      "date": "2026-01-04",
+      "count": 0
+    },
+    {
+      "date": "2026-01-05",
+      "count": 0
+    },
+    {
+      "date": "2026-01-06",
+      "count": 0
+    },
+    {
+      "date": "2026-01-07",
+      "count": 0
+    },
+    {
+      "date": "2026-01-08",
+      "count": 0
+    },
+    {
+      "date": "2026-01-09",
+      "count": 0
+    },
+    {
+      "date": "2026-01-10",
+      "count": 0
+    },
+    {
+      "date": "2026-01-11",
+      "count": 0
+    },
+    {
+      "date": "2026-01-12",
+      "count": 0
+    },
+    {
+      "date": "2026-01-13",
+      "count": 0
+    },
+    {
+      "date": "2026-01-14",
+      "count": 0
+    },
+    {
+      "date": "2026-01-15",
+      "count": 0
+    },
+    {
+      "date": "2026-01-16",
+      "count": 0
+    },
+    {
+      "date": "2026-01-17",
+      "count": 0
+    },
+    {
+      "date": "2026-01-18",
+      "count": 0
+    },
+    {
+      "date": "2026-01-19",
+      "count": 0
+    },
+    {
+      "date": "2026-01-20",
+      "count": 0
+    },
+    {
+      "date": "2026-01-21",
+      "count": 0
+    },
+    {
+      "date": "2026-01-22",
+      "count": 0
+    },
+    {
+      "date": "2026-01-23",
+      "count": 0
+    },
+    {
+      "date": "2026-01-24",
+      "count": 0
+    },
+    {
+      "date": "2026-01-25",
+      "count": 0
+    },
+    {
+      "date": "2026-01-26",
+      "count": 0
+    },
+    {
+      "date": "2026-01-27",
+      "count": 0
+    },
+    {
+      "date": "2026-01-28",
+      "count": 0
+    },
+    {
+      "date": "2026-01-29",
+      "count": 0
+    },
+    {
+      "date": "2026-01-30",
+      "count": 0
+    },
+    {
+      "date": "2026-01-31",
+      "count": 0
+    },
+    {
+      "date": "2026-02-01",
+      "count": 0
+    },
+    {
+      "date": "2026-02-02",
+      "count": 0
+    },
+    {
+      "date": "2026-02-03",
+      "count": 0
+    },
+    {
+      "date": "2026-02-04",
+      "count": 0
+    },
+    {
+      "date": "2026-02-05",
+      "count": 0
+    },
+    {
+      "date": "2026-02-06",
+      "count": 0
+    },
+    {
+      "date": "2026-02-07",
+      "count": 0
+    },
+    {
+      "date": "2026-02-08",
+      "count": 0
+    },
+    {
+      "date": "2026-02-09",
+      "count": 0
+    },
+    {
+      "date": "2026-02-10",
+      "count": 0
+    },
+    {
+      "date": "2026-02-11",
+      "count": 0
+    },
+    {
+      "date": "2026-02-12",
+      "count": 0
+    },
+    {
+      "date": "2026-02-13",
+      "count": 0
+    },
+    {
+      "date": "2026-02-14",
+      "count": 0
+    },
+    {
+      "date": "2026-02-15",
+      "count": 0
+    },
+    {
+      "date": "2026-02-16",
+      "count": 0
+    },
+    {
+      "date": "2026-02-17",
+      "count": 0
+    },
+    {
+      "date": "2026-02-18",
+      "count": 0
+    },
+    {
+      "date": "2026-02-19",
+      "count": 0
+    },
+    {
+      "date": "2026-02-20",
+      "count": 0
+    },
+    {
+      "date": "2026-02-21",
+      "count": 0
+    },
+    {
+      "date": "2026-02-22",
+      "count": 0
+    },
+    {
+      "date": "2026-02-23",
+      "count": 0
+    },
+    {
+      "date": "2026-02-24",
+      "count": 0
+    },
+    {
+      "date": "2026-02-25",
+      "count": 0
+    },
+    {
+      "date": "2026-02-26",
+      "count": 0
+    },
+    {
+      "date": "2026-02-27",
+      "count": 0
+    },
+    {
+      "date": "2026-02-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-01",
+      "count": 0
+    },
+    {
+      "date": "2026-03-02",
+      "count": 0
+    },
+    {
+      "date": "2026-03-03",
+      "count": 0
+    },
+    {
+      "date": "2026-03-04",
+      "count": 0
+    },
+    {
+      "date": "2026-03-05",
+      "count": 0
+    },
+    {
+      "date": "2026-03-06",
+      "count": 0
+    },
+    {
+      "date": "2026-03-07",
+      "count": 0
+    },
+    {
+      "date": "2026-03-08",
+      "count": 0
+    },
+    {
+      "date": "2026-03-09",
+      "count": 0
+    },
+    {
+      "date": "2026-03-10",
+      "count": 0
+    },
+    {
+      "date": "2026-03-11",
+      "count": 0
+    },
+    {
+      "date": "2026-03-12",
+      "count": 0
+    },
+    {
+      "date": "2026-03-13",
+      "count": 0
+    },
+    {
+      "date": "2026-03-14",
+      "count": 0
+    },
+    {
+      "date": "2026-03-15",
+      "count": 0
+    },
+    {
+      "date": "2026-03-16",
+      "count": 0
+    },
+    {
+      "date": "2026-03-17",
+      "count": 0
+    },
+    {
+      "date": "2026-03-18",
+      "count": 0
+    },
+    {
+      "date": "2026-03-19",
+      "count": 0
+    },
+    {
+      "date": "2026-03-20",
+      "count": 0
+    },
+    {
+      "date": "2026-03-21",
+      "count": 0
+    },
+    {
+      "date": "2026-03-22",
+      "count": 0
+    },
+    {
+      "date": "2026-03-23",
+      "count": 0
+    },
+    {
+      "date": "2026-03-24",
+      "count": 0
+    },
+    {
+      "date": "2026-03-25",
+      "count": 0
+    },
+    {
+      "date": "2026-03-26",
+      "count": 0
+    },
+    {
+      "date": "2026-03-27",
+      "count": 0
+    },
+    {
+      "date": "2026-03-28",
+      "count": 0
+    },
+    {
+      "date": "2026-03-29",
+      "count": 0
+    },
+    {
+      "date": "2026-03-30",
+      "count": 0
+    },
+    {
+      "date": "2026-03-31",
+      "count": 0
+    },
+    {
+      "date": "2026-04-01",
+      "count": 0
+    },
+    {
+      "date": "2026-04-02",
+      "count": 0
+    },
+    {
+      "date": "2026-04-03",
+      "count": 0
+    },
+    {
+      "date": "2026-04-04",
+      "count": 0
+    },
+    {
+      "date": "2026-04-05",
+      "count": 0
+    },
+    {
+      "date": "2026-04-06",
+      "count": 0
+    },
+    {
+      "date": "2026-04-07",
+      "count": 0
+    },
+    {
+      "date": "2026-04-08",
+      "count": 0
+    },
+    {
+      "date": "2026-04-09",
+      "count": 0
+    },
+    {
+      "date": "2026-04-10",
+      "count": 0
+    },
+    {
+      "date": "2026-04-11",
+      "count": 0
+    },
+    {
+      "date": "2026-04-12",
+      "count": 0
+    },
+    {
+      "date": "2026-04-13",
+      "count": 0
+    },
+    {
+      "date": "2026-04-14",
+      "count": 0
+    },
+    {
+      "date": "2026-04-15",
+      "count": 0
+    },
+    {
+      "date": "2026-04-16",
+      "count": 0
+    },
+    {
+      "date": "2026-04-17",
+      "count": 0
+    },
+    {
+      "date": "2026-04-18",
+      "count": 0
+    },
+    {
+      "date": "2026-04-19",
+      "count": 0
+    },
+    {
+      "date": "2026-04-20",
+      "count": 0
+    },
+    {
+      "date": "2026-04-21",
+      "count": 0
+    },
+    {
+      "date": "2026-04-22",
+      "count": 0
+    },
+    {
+      "date": "2026-04-23",
+      "count": 0
+    },
+    {
+      "date": "2026-04-24",
+      "count": 0
+    },
+    {
+      "date": "2026-04-25",
+      "count": 0
+    },
+    {
+      "date": "2026-04-26",
+      "count": 0
+    },
+    {
+      "date": "2026-04-27",
+      "count": 0
+    },
+    {
+      "date": "2026-04-28",
+      "count": 0
+    },
+    {
+      "date": "2026-04-29",
+      "count": 0
+    },
+    {
+      "date": "2026-04-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-01",
+      "count": 0
+    },
+    {
+      "date": "2026-05-02",
+      "count": 0
+    },
+    {
+      "date": "2026-05-03",
+      "count": 0
+    },
+    {
+      "date": "2026-05-04",
+      "count": 0
+    },
+    {
+      "date": "2026-05-05",
+      "count": 0
+    },
+    {
+      "date": "2026-05-06",
+      "count": 0
+    },
+    {
+      "date": "2026-05-07",
+      "count": 0
+    },
+    {
+      "date": "2026-05-08",
+      "count": 0
+    },
+    {
+      "date": "2026-05-09",
+      "count": 0
+    },
+    {
+      "date": "2026-05-10",
+      "count": 0
+    },
+    {
+      "date": "2026-05-11",
+      "count": 0
+    },
+    {
+      "date": "2026-05-12",
+      "count": 0
+    },
+    {
+      "date": "2026-05-13",
+      "count": 0
+    },
+    {
+      "date": "2026-05-14",
+      "count": 0
+    },
+    {
+      "date": "2026-05-15",
+      "count": 0
+    },
+    {
+      "date": "2026-05-16",
+      "count": 0
+    },
+    {
+      "date": "2026-05-17",
+      "count": 0
+    },
+    {
+      "date": "2026-05-18",
+      "count": 0
+    },
+    {
+      "date": "2026-05-19",
+      "count": 0
+    },
+    {
+      "date": "2026-05-20",
+      "count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "count": 0
+    },
+    {
+      "date": "2026-05-22",
+      "count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "count": 0
+    },
+    {
+      "date": "2026-05-27",
+      "count": 0
+    },
+    {
+      "date": "2026-05-28",
+      "count": 0
+    },
+    {
+      "date": "2026-05-29",
+      "count": 0
+    },
+    {
+      "date": "2026-05-30",
+      "count": 0
+    },
+    {
+      "date": "2026-05-31",
+      "count": 0
+    },
+    {
+      "date": "2026-06-01",
+      "count": 0
+    },
+    {
+      "date": "2026-06-02",
+      "count": 0
+    },
+    {
+      "date": "2026-06-03",
+      "count": 0
+    },
+    {
+      "date": "2026-06-04",
+      "count": 0
+    },
+    {
+      "date": "2026-06-05",
+      "count": 0
+    },
+    {
+      "date": "2026-06-06",
+      "count": 0
+    },
+    {
+      "date": "2026-06-07",
+      "count": 0
+    },
+    {
+      "date": "2026-06-08",
+      "count": 0
+    },
+    {
+      "date": "2026-06-09",
+      "count": 0
+    },
+    {
+      "date": "2026-06-10",
+      "count": 0
+    },
+    {
+      "date": "2026-06-11",
+      "count": 0
+    },
+    {
+      "date": "2026-06-12",
+      "count": 0
+    },
+    {
+      "date": "2026-06-13",
+      "count": 0
+    },
+    {
+      "date": "2026-06-14",
+      "count": 0
+    },
+    {
+      "date": "2026-06-15",
+      "count": 0
+    },
+    {
+      "date": "2026-06-16",
+      "count": 0
+    },
+    {
+      "date": "2026-06-17",
+      "count": 0
+    },
+    {
+      "date": "2026-06-18",
+      "count": 0
+    },
+    {
+      "date": "2026-06-19",
+      "count": 0
+    },
+    {
+      "date": "2026-06-20",
+      "count": 0
+    },
+    {
+      "date": "2026-06-21",
+      "count": 0
+    },
+    {
+      "date": "2026-06-22",
+      "count": 0
+    },
+    {
+      "date": "2026-06-23",
+      "count": 0
+    },
+    {
+      "date": "2026-06-24",
+      "count": 0
+    },
+    {
+      "date": "2026-06-25",
+      "count": 0
+    },
+    {
+      "date": "2026-06-26",
+      "count": 0
+    },
+    {
+      "date": "2026-06-27",
+      "count": 0
+    },
+    {
+      "date": "2026-06-28",
+      "count": 0
+    },
+    {
+      "date": "2026-06-29",
+      "count": 0
+    },
+    {
+      "date": "2026-06-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-01",
+      "count": 0
+    },
+    {
+      "date": "2026-07-02",
+      "count": 0
+    },
+    {
+      "date": "2026-07-03",
+      "count": 0
+    },
+    {
+      "date": "2026-07-04",
+      "count": 0
+    },
+    {
+      "date": "2026-07-05",
+      "count": 0
+    },
+    {
+      "date": "2026-07-06",
+      "count": 0
+    },
+    {
+      "date": "2026-07-07",
+      "count": 0
+    },
+    {
+      "date": "2026-07-08",
+      "count": 0
+    },
+    {
+      "date": "2026-07-09",
+      "count": 0
+    },
+    {
+      "date": "2026-07-10",
+      "count": 0
+    },
+    {
+      "date": "2026-07-11",
+      "count": 0
+    },
+    {
+      "date": "2026-07-12",
+      "count": 0
+    },
+    {
+      "date": "2026-07-13",
+      "count": 0
+    },
+    {
+      "date": "2026-07-14",
+      "count": 0
+    },
+    {
+      "date": "2026-07-15",
+      "count": 0
+    },
+    {
+      "date": "2026-07-16",
+      "count": 0
+    },
+    {
+      "date": "2026-07-17",
+      "count": 0
+    },
+    {
+      "date": "2026-07-18",
+      "count": 0
+    },
+    {
+      "date": "2026-07-19",
+      "count": 0
+    },
+    {
+      "date": "2026-07-20",
+      "count": 0
+    },
+    {
+      "date": "2026-07-21",
+      "count": 0
+    },
+    {
+      "date": "2026-07-22",
+      "count": 0
+    },
+    {
+      "date": "2026-07-23",
+      "count": 0
+    },
+    {
+      "date": "2026-07-24",
+      "count": 0
+    },
+    {
+      "date": "2026-07-25",
+      "count": 0
+    },
+    {
+      "date": "2026-07-26",
+      "count": 0
+    },
+    {
+      "date": "2026-07-27",
+      "count": 0
+    },
+    {
+      "date": "2026-07-28",
+      "count": 0
+    },
+    {
+      "date": "2026-07-29",
+      "count": 0
+    },
+    {
+      "date": "2026-07-30",
+      "count": 0
+    },
+    {
+      "date": "2026-07-31",
+      "count": 0
+    },
+    {
+      "date": "2026-08-01",
+      "count": 0
+    },
+    {
+      "date": "2026-08-02",
+      "count": 0
+    },
+    {
+      "date": "2026-08-03",
+      "count": 0
+    },
+    {
+      "date": "2026-08-04",
+      "count": 0
+    },
+    {
+      "date": "2026-08-05",
+      "count": 0
+    },
+    {
+      "date": "2026-08-06",
+      "count": 0
+    },
+    {
+      "date": "2026-08-07",
+      "count": 0
+    },
+    {
+      "date": "2026-08-08",
+      "count": 0
+    },
+    {
+      "date": "2026-08-09",
+      "count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "count": 0
+    },
+    {
+      "date": "2026-08-11",
+      "count": 0
+    },
+    {
+      "date": "2026-08-12",
+      "count": 0
+    },
+    {
+      "date": "2026-08-13",
+      "count": 0
+    },
+    {
+      "date": "2026-08-14",
+      "count": 0
+    },
+    {
+      "date": "2026-08-15",
+      "count": 0
+    },
+    {
+      "date": "2026-08-16",
+      "count": 0
+    },
+    {
+      "date": "2026-08-17",
+      "count": 0
+    },
+    {
+      "date": "2026-08-18",
+      "count": 0
+    },
+    {
+      "date": "2026-08-19",
+      "count": 0
+    },
+    {
+      "date": "2026-08-20",
+      "count": 0
+    },
+    {
+      "date": "2026-08-21",
+      "count": 0
+    },
+    {
+      "date": "2026-08-22",
+      "count": 0
+    },
+    {
+      "date": "2026-08-23",
+      "count": 0
+    },
+    {
+      "date": "2026-08-24",
+      "count": 0
+    },
+    {
+      "date": "2026-08-25",
+      "count": 0
+    },
+    {
+      "date": "2026-08-26",
+      "count": 0
+    },
+    {
+      "date": "2026-08-27",
+      "count": 0
+    },
+    {
+      "date": "2026-08-28",
+      "count": 0
+    },
+    {
+      "date": "2026-08-29",
+      "count": 0
+    },
+    {
+      "date": "2026-08-30",
+      "count": 0
+    },
+    {
+      "date": "2026-08-31",
+      "count": 0
+    },
+    {
+      "date": "2026-09-01",
+      "count": 0
+    },
+    {
+      "date": "2026-09-02",
+      "count": 0
+    },
+    {
+      "date": "2026-09-03",
+      "count": 0
+    },
+    {
+      "date": "2026-09-04",
+      "count": 0
+    },
+    {
+      "date": "2026-09-05",
+      "count": 0
+    },
+    {
+      "date": "2026-09-06",
+      "count": 0
+    },
+    {
+      "date": "2026-09-07",
+      "count": 0
+    },
+    {
+      "date": "2026-09-08",
+      "count": 0
+    },
+    {
+      "date": "2026-09-09",
+      "count": 0
+    },
+    {
+      "date": "2026-09-10",
+      "count": 0
+    },
+    {
+      "date": "2026-09-11",
+      "count": 0
+    },
+    {
+      "date": "2026-09-12",
+      "count": 0
+    },
+    {
+      "date": "2026-09-13",
+      "count": 0
+    },
+    {
+      "date": "2026-09-14",
+      "count": 0
+    },
+    {
+      "date": "2026-09-15",
+      "count": 0
+    },
+    {
+      "date": "2026-09-16",
+      "count": 0
+    },
+    {
+      "date": "2026-09-17",
+      "count": 0
+    },
+    {
+      "date": "2026-09-18",
+      "count": 0
+    },
+    {
+      "date": "2026-09-19",
+      "count": 0
+    },
+    {
+      "date": "2026-09-20",
+      "count": 0
+    },
+    {
+      "date": "2026-09-21",
+      "count": 0
+    },
+    {
+      "date": "2026-09-22",
+      "count": 0
+    },
+    {
+      "date": "2026-09-23",
+      "count": 0
+    },
+    {
+      "date": "2026-09-24",
+      "count": 0
+    },
+    {
+      "date": "2026-09-25",
+      "count": 0
+    },
+    {
+      "date": "2026-09-26",
+      "count": 0
+    },
+    {
+      "date": "2026-09-27",
+      "count": 0
+    },
+    {
+      "date": "2026-09-28",
+      "count": 0
+    },
+    {
+      "date": "2026-09-29",
+      "count": 0
+    },
+    {
+      "date": "2026-09-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-01",
+      "count": 0
+    },
+    {
+      "date": "2026-10-02",
+      "count": 0
+    },
+    {
+      "date": "2026-10-03",
+      "count": 0
+    },
+    {
+      "date": "2026-10-04",
+      "count": 0
+    },
+    {
+      "date": "2026-10-05",
+      "count": 0
+    },
+    {
+      "date": "2026-10-06",
+      "count": 0
+    },
+    {
+      "date": "2026-10-07",
+      "count": 0
+    },
+    {
+      "date": "2026-10-08",
+      "count": 0
+    },
+    {
+      "date": "2026-10-09",
+      "count": 0
+    },
+    {
+      "date": "2026-10-10",
+      "count": 0
+    },
+    {
+      "date": "2026-10-11",
+      "count": 0
+    },
+    {
+      "date": "2026-10-12",
+      "count": 0
+    },
+    {
+      "date": "2026-10-13",
+      "count": 0
+    },
+    {
+      "date": "2026-10-14",
+      "count": 0
+    },
+    {
+      "date": "2026-10-15",
+      "count": 0
+    },
+    {
+      "date": "2026-10-16",
+      "count": 0
+    },
+    {
+      "date": "2026-10-17",
+      "count": 0
+    },
+    {
+      "date": "2026-10-18",
+      "count": 0
+    },
+    {
+      "date": "2026-10-19",
+      "count": 0
+    },
+    {
+      "date": "2026-10-20",
+      "count": 0
+    },
+    {
+      "date": "2026-10-21",
+      "count": 0
+    },
+    {
+      "date": "2026-10-22",
+      "count": 0
+    },
+    {
+      "date": "2026-10-23",
+      "count": 0
+    },
+    {
+      "date": "2026-10-24",
+      "count": 0
+    },
+    {
+      "date": "2026-10-25",
+      "count": 0
+    },
+    {
+      "date": "2026-10-26",
+      "count": 0
+    },
+    {
+      "date": "2026-10-27",
+      "count": 0
+    },
+    {
+      "date": "2026-10-28",
+      "count": 0
+    },
+    {
+      "date": "2026-10-29",
+      "count": 0
+    },
+    {
+      "date": "2026-10-30",
+      "count": 0
+    },
+    {
+      "date": "2026-10-31",
+      "count": 0
+    },
+    {
+      "date": "2026-11-01",
+      "count": 0
+    },
+    {
+      "date": "2026-11-02",
+      "count": 0
+    },
+    {
+      "date": "2026-11-03",
+      "count": 0
+    },
+    {
+      "date": "2026-11-04",
+      "count": 0
+    },
+    {
+      "date": "2026-11-05",
+      "count": 0
+    },
+    {
+      "date": "2026-11-06",
+      "count": 0
+    },
+    {
+      "date": "2026-11-07",
+      "count": 2
+    },
+    {
+      "date": "2026-11-08",
+      "count": 0
+    },
+    {
+      "date": "2026-11-09",
+      "count": 0
+    },
+    {
+      "date": "2026-11-10",
+      "count": 0
+    },
+    {
+      "date": "2026-11-11",
+      "count": 0
+    },
+    {
+      "date": "2026-11-12",
+      "count": 0
+    },
+    {
+      "date": "2026-11-13",
+      "count": 0
+    },
+    {
+      "date": "2026-11-14",
+      "count": 0
+    }
+  ],
+  "participation": {
+    "all": 2,
+    "owner": 2,
+    "community": 0
+  },
+  "workflowRuns": [],
+  "recentPulls": [],
+  "recentCommits": [
+    {
+      "sha": "2922ebb",
+      "message": "Tighten README prose and remove fluff",
+      "url": "https://github.com/Th0rgal/satmux/commit/2922ebb835d0eb939ddbdfa3b5e7e0f247a0dc0c",
+      "date": "2026-11-07T16:24:29Z",
+      "author": "Th0rgal",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41830259?v=4"
+    },
+    {
+      "sha": "ee32eb3",
+      "message": "Initial release of satmux: inflight GEO satellite TCP multiplexer & 1-RTT accelerator",
+      "url": "https://github.com/Th0rgal/satmux/commit/ee32eb3224f1a740b35e5c12a0b6ed19c5d181f6",
+      "date": "2026-11-07T16:08:51Z",
+      "author": "Th0rgal",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/41830259?v=4"
+    }
+  ],
+  "fileTree": [
+    {
+      "name": "bin",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/Th0rgal/satmux/tree/main/bin"
+    },
+    {
+      "name": ".gitignore",
+      "type": "file",
+      "size": 55,
+      "url": "https://github.com/Th0rgal/satmux/blob/main/.gitignore"
+    },
+    {
+      "name": "LICENSE",
+      "type": "file",
+      "size": 1072,
+      "url": "https://github.com/Th0rgal/satmux/blob/main/LICENSE"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "size": 6532,
+      "url": "https://github.com/Th0rgal/satmux/blob/main/README.md"
+    },
+    {
+      "name": "satmux.py",
+      "type": "file",
+      "size": 41303,
+      "url": "https://github.com/Th0rgal/satmux/blob/main/satmux.py"
+    }
+  ],
+  "branchCount": 1,
+  "tagCount": 1,
+  "community": {
+    "healthPercentage": 42,
+    "hasCodeOfConduct": false,
+    "hasContributing": false,
+    "hasIssueTemplate": false,
+    "hasPullRequestTemplate": false
+  },
+  "fundingLinks": [],
+  "openIssuesOnly": 0,
+  "openPRs": 0,
+  "releaseCount": 0,
+  "discussionsEnabled": false,
+  "discussionCount": 0,
+  "discussions": [],
+  "closedIssues": 0,
+  "mergedPRs": 0,
+  "environmentCount": 0,
+  "isFork": false,
+  "isInOrganization": false,
+  "securityPolicyUrl": null,
+  "codeOfConduct": null,
+  "latestRelease": null,
+  "codeFrequency": [
+    {
+      "week": "2026-11-01",
+      "additions": 1527,
+      "deletions": 63
+    },
+    {
+      "week": "2026-11-08",
+      "additions": 0,
+      "deletions": 0
+    }
+  ],
+  "factsVersion": 3,
+  "factsUpdatedAt": "2026-11-08T12:17:13.451Z",
+  "starHistory": {
+    "version": 2,
+    "unreliable": true,
+    "points": [],
+    "coverage": 0,
+    "events": 0,
+    "source": "gharchive-clickhouse",
+    "sampledAt": "2026-11-08T12:17:35.444Z"
+  }
+}
