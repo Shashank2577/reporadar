@@ -27,10 +27,10 @@ const LIMIT = Number(opt("limit", 15));
 const DRY = args.includes("--dry");
 const PROVIDER = opt("provider", "gemini"); // gemini | groq
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const MODEL = PROVIDER === "groq" ? GROQ_MODEL : GEMINI_MODEL;
-// Free-tier requests-per-minute caps; Gemini one call per 7s (<10 RPM), Groq per 3s.
-const GAP_MS = Number(process.env.ENRICH_GAP_MS || (PROVIDER === "groq" ? 3000 : 7000));
+// Free-tier requests-per-minute caps; Gemini one call per 7s (<10 RPM), Groq per 15s.
+const GAP_MS = Number(process.env.ENRICH_GAP_MS || (PROVIDER === "groq" ? 15000 : 7000));
 
 const SYSTEM_PROMPT = `You are a senior engineer writing repository briefings for a developer intelligence site. Readers decide in 60 seconds whether a project is worth adopting. Be specific and technical, grounded in the README; never paraphrase boilerplate. Plain text only, no markdown, no emojis, no hype words.
 
