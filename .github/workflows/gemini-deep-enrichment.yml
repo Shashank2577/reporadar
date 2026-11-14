@@ -1,0 +1,70 @@
+name: Gemini deep enrichment
+
+# Replaces the Jules enrichment sessions (Jules is read-only after 2026-11-11).
+# Runs scripts/deep-enrich.mjs, which picks repos that meet the AGENTS.md task 2
+# criteria and rewrites only their aiSummary. Uses the Gemini API free tier:
+# GEMINI_API_KEY must come from an AI Studio project with NO billing account
+# attached, so exceeding the quota returns 429 instead of charging.
+#
+# Skips with a notice (not a failure) until the secret exists.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max repos to enrich this run"
+        default: "15"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check for API key
+        id: key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::notice::GEMINI_API_KEY secret is not set; skipping"
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.have_key == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.have_key == 'true'
+        with:
+          node-version: 22
+
+      - name: Enrich
+        if: steps.key.outputs.have_key == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+        run: node scripts/deep-enrich.mjs --provider gemini --limit "${{ github.event.inputs.limit || 15 }}"
+
+      - name: Commit and push
+        if: steps.key.outputs.have_key == 'true'
+        run: |
+          git config user.name "reporadar-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "data: Gemini deep enrichment $(date -u +%Y-%m-%dT%H:%M)"
+            git pull --rebase origin ${GITHUB_REF_NAME}
+            git push
+          fi
