@@ -184,7 +184,7 @@ async function main() {
       }
     }
     // Never downgrade an existing LLM/Jules summary to a template one.
-    if (!summary && (s?.source === "llm" || s?.source === "jules" || s?.source === "gemini")) continue;
+    if (!summary && (s?.source === "llm" || s?.source === "jules" || s?.source === "gemini" || s?.source === "groq")) continue;
     profile.aiSummary = summary || templateSummarize(profile);
     fs.writeFileSync(file, JSON.stringify(profile, null, 2));
     enriched++;

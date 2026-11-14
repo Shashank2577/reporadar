@@ -1,4 +1,4 @@
-name: Gemini deep enrichment
+name: Deep enrichment (Gemini, Groq)
 
 # Replaces the Jules enrichment sessions (Jules is read-only after 2026-11-11).
 # Runs scripts/deep-enrich.mjs, which picks repos that meet the AGENTS.md task 2
@@ -28,35 +28,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check for API key
+      - name: Check for API keys
         id: key
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "::notice::GEMINI_API_KEY secret is not set; skipping"
-            echo "have_key=false" >> "$GITHUB_OUTPUT"
+          [ -n "$GEMINI_API_KEY" ] && echo "have_gemini=true" >> "$GITHUB_OUTPUT" || echo "have_gemini=false" >> "$GITHUB_OUTPUT"
+          [ -n "$GROQ_API_KEY" ] && echo "have_groq=true" >> "$GITHUB_OUTPUT" || echo "have_groq=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
+            echo "::notice::Neither GEMINI_API_KEY nor GROQ_API_KEY is set; skipping"
+            echo "any=false" >> "$GITHUB_OUTPUT"
           else
-            echo "have_key=true" >> "$GITHUB_OUTPUT"
+            echo "any=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
-        if: steps.key.outputs.have_key == 'true'
+        if: steps.key.outputs.any == 'true'
 
       - uses: actions/setup-node@v4
-        if: steps.key.outputs.have_key == 'true'
+        if: steps.key.outputs.any == 'true'
         with:
           node-version: 22
 
-      - name: Enrich
-        if: steps.key.outputs.have_key == 'true'
+      # Each provider only sees repos still needing a summary, so when both keys
+      # exist Groq picks up whatever Gemini left (rate limit or rejected output).
+      - name: Enrich with Gemini
+        if: steps.key.outputs.have_gemini == 'true'
+        continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
-        run: node scripts/deep-enrich.mjs --limit "${{ github.event.inputs.limit || 15 }}"
+        run: node scripts/deep-enrich.mjs --provider gemini --limit "${{ github.event.inputs.limit || 15 }}"
+
+      - name: Enrich with Groq
+        if: steps.key.outputs.have_groq == 'true'
+        continue-on-error: true
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'llama-3.3-70b-versatile' }}
+        run: node scripts/deep-enrich.mjs --provider groq --limit "${{ github.event.inputs.limit || 15 }}"
 
       - name: Commit and push
-        if: steps.key.outputs.have_key == 'true'
+        if: steps.key.outputs.any == 'true'
         run: |
           git config user.name "reporadar-bot"
           git config user.email "actions@github.com"

@@ -1,10 +1,11 @@
 // Deep aiSummary enrichment (AGENTS.md task 2), replacing the Jules sessions.
 //
-//   node scripts/deep-enrich.mjs [--limit 15] [--dry]
+//   node scripts/deep-enrich.mjs [--provider gemini|groq] [--limit 15] [--dry]
 //
-// Calls the Gemini API over REST (GEMINI_API_KEY from an AI Studio project with
-// no billing attached = free tier). Runs in GitHub Actions. Only the aiSummary
-// object of each profile is ever written.
+// gemini: Gemini API over REST (GEMINI_API_KEY from an AI Studio project with no
+//         billing attached = free tier).
+// groq:   Groq OpenAI-compatible API (GROQ_API_KEY, free tier).
+// Runs in GitHub Actions. Only the aiSummary object of each profile is written.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -24,9 +25,12 @@ const opt = (name, fallback) => {
 };
 const LIMIT = Number(opt("limit", 15));
 const DRY = args.includes("--dry");
+const PROVIDER = opt("provider", "gemini"); // gemini | groq
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-// Free-tier requests-per-minute cap; one call every 7s stays under 10 RPM.
-const GEMINI_GAP_MS = Number(process.env.GEMINI_GAP_MS || 7000);
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const MODEL = PROVIDER === "groq" ? GROQ_MODEL : GEMINI_MODEL;
+// Free-tier requests-per-minute caps; Gemini one call per 7s (<10 RPM), Groq per 3s.
+const GAP_MS = Number(process.env.ENRICH_GAP_MS || (PROVIDER === "groq" ? 3000 : 7000));
 
 const SYSTEM_PROMPT = `You are a senior engineer writing repository briefings for a developer intelligence site. Readers decide in 60 seconds whether a project is worth adopting. Be specific and technical, grounded in the README; never paraphrase boilerplate. Plain text only, no markdown, no emojis, no hype words.
 
@@ -112,6 +116,31 @@ async function generateGemini(p) {
   return JSON.parse(text);
 }
 
+// Groq: OpenAI-compatible chat completions. GROQ_API_KEY from console.groq.com.
+async function generateGroq(p) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error("GROQ_API_KEY is not set");
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: buildPrompt(p) },
+      ],
+    }),
+  });
+  if (res.status === 429) throw new RateLimited(await res.text());
+  if (!res.ok) throw new Error(`Groq API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return JSON.parse(data.choices?.[0]?.message?.content || "");
+}
+
+const generate = (p) => (PROVIDER === "groq" ? generateGroq(p) : generateGemini(p));
+
 async function main() {
   const files = fs.readdirSync(REPO_DIR).filter((f) => f.endsWith(".json"));
   const candidates = files
@@ -120,12 +149,12 @@ async function main() {
     .sort((a, b) => (b.profile.stars || 0) - (a.profile.stars || 0))
     .slice(0, LIMIT);
 
-  console.log(`${candidates.length} candidate(s), gemini${DRY ? " (dry run, nothing written)" : ""}`);
+  console.log(`${candidates.length} candidate(s), ${PROVIDER}${DRY ? " (dry run, nothing written)" : ""}`);
   let written = 0;
   for (const { file, profile } of candidates) {
     process.stdout.write(`Enriching ${profile.id} ... `);
     try {
-      const raw = await generateGemini(profile);
+      const raw = await generate(profile);
       const errs = validate(raw);
       if (errs.length) {
         console.log(`rejected: ${errs.join("; ")}`);
@@ -133,8 +162,8 @@ async function main() {
         const prev = profile.aiSummary;
         profile.aiSummary = {
           ...raw,
-          source: "gemini",
-          model: GEMINI_MODEL,
+          source: PROVIDER,
+          model: MODEL,
           version: Math.max(3, (prev?.version || 0) + 1),
           generatedAt: new Date().toISOString(),
         };
@@ -150,7 +179,7 @@ async function main() {
       }
       console.log(`failed: ${err.message.slice(0, 200)}`);
     }
-    await new Promise((r) => setTimeout(r, GEMINI_GAP_MS));
+    await new Promise((r) => setTimeout(r, GAP_MS));
   }
   console.log(`Done: ${written}/${candidates.length}`);
 }
