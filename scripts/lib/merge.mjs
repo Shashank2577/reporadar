@@ -13,7 +13,7 @@ import { repoSlug } from "./gh.mjs";
 import { isValidStarHistory } from "./details.mjs";
 
 const MAX_CHANGELOG = 25;
-const SOURCE_RANK = { jules: 3, llm: 2, template: 1 };
+const SOURCE_RANK = { jules: 3, gemini: 3, groq: 3, llm: 2, template: 1 };
 
 function readJson(file) {
   try {
