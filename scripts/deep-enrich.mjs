@@ -1,19 +1,13 @@
 // Deep aiSummary enrichment (AGENTS.md task 2), replacing the Jules sessions.
 //
-//   node scripts/deep-enrich.mjs --provider gemini [--limit 15] [--dry]
-//   node scripts/deep-enrich.mjs --provider agy    [--limit 5]  [--dry]
+//   node scripts/deep-enrich.mjs [--limit 15] [--dry]
 //
-// Selection, prompt, validation and writing are shared. Only generate() differs:
-//   gemini  Gemini API over REST (GEMINI_API_KEY from a project with no billing
-//           attached = free tier). Runs in GitHub Actions.
-//   agy     Antigravity CLI in headless print mode (uses the local Google login,
-//           so it runs on a developer machine, not in CI).
-// Only the aiSummary object of each profile is ever written.
+// Calls the Gemini API over REST (GEMINI_API_KEY from an AI Studio project with
+// no billing attached = free tier). Runs in GitHub Actions. Only the aiSummary
+// object of each profile is ever written.
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -28,11 +22,9 @@ const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i === -1 ? fallback : args[i + 1];
 };
-const PROVIDER = opt("provider", "gemini");
 const LIMIT = Number(opt("limit", 15));
 const DRY = args.includes("--dry");
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const AGY_MODEL = process.env.AGY_MODEL || "gemini-3.8-flash-medium";
 // Free-tier requests-per-minute cap; one call every 7s stays under 10 RPM.
 const GEMINI_GAP_MS = Number(process.env.GEMINI_GAP_MS || 7000);
 
@@ -49,28 +41,6 @@ Return ONLY a JSON object with exactly these fields:
   "tags": string[],          // 5-10 lowercase kebab-case
   "category": string         // one of: ${[...CATEGORIES].join(", ")}
 }`;
-
-const SCHEMA = {
-  type: "object",
-  required: ["oneLiner", "whatItDoes", "keyFeatures", "useCases", "whoIsItFor", "gettingStarted", "tags", "category"],
-  properties: {
-    oneLiner: { type: "string" },
-    whatItDoes: { type: "string" },
-    keyFeatures: { type: "array", items: { type: "string" } },
-    useCases: {
-      type: "array",
-      items: {
-        type: "object",
-        required: ["title", "description"],
-        properties: { title: { type: "string" }, description: { type: "string" } },
-      },
-    },
-    whoIsItFor: { type: "string" },
-    gettingStarted: { type: "string" },
-    tags: { type: "array", items: { type: "string" } },
-    category: { type: "string" },
-  },
-};
 
 const sentences = (t) => (String(t).match(/[^.!?]+[.!?]+(\s|$)/g) || []).length;
 
@@ -142,28 +112,6 @@ async function generateGemini(p) {
   return JSON.parse(text);
 }
 
-function generateAgy(p) {
-  // Run from a scratch dir in plan mode so the agent cannot touch the repo.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-enrich-"));
-  const schemaFile = path.join(dir, "schema.json");
-  fs.writeFileSync(schemaFile, JSON.stringify(SCHEMA));
-  const out = execFileSync(
-    "agy",
-    [
-      "-p", `${SYSTEM_PROMPT}\n\n${buildPrompt(p)}`,
-      "--output-format", "json",
-      "--json-schema", schemaFile,
-      "--mode", "plan",
-      "--model", AGY_MODEL,
-      "--print-timeout", "240s",
-    ],
-    { cwd: dir, encoding: "utf8", timeout: 300000, maxBuffer: 16 * 1024 * 1024 },
-  );
-  const env = JSON.parse(out);
-  if (env.status !== "SUCCESS") throw new Error(`agy status ${env.status}`);
-  return JSON.parse(env.response);
-}
-
 async function main() {
   const files = fs.readdirSync(REPO_DIR).filter((f) => f.endsWith(".json"));
   const candidates = files
@@ -172,12 +120,12 @@ async function main() {
     .sort((a, b) => (b.profile.stars || 0) - (a.profile.stars || 0))
     .slice(0, LIMIT);
 
-  console.log(`${candidates.length} candidate(s), provider=${PROVIDER}${DRY ? " (dry run, nothing written)" : ""}`);
+  console.log(`${candidates.length} candidate(s), gemini${DRY ? " (dry run, nothing written)" : ""}`);
   let written = 0;
   for (const { file, profile } of candidates) {
     process.stdout.write(`Enriching ${profile.id} ... `);
     try {
-      const raw = PROVIDER === "agy" ? generateAgy(profile) : await generateGemini(profile);
+      const raw = await generateGemini(profile);
       const errs = validate(raw);
       if (errs.length) {
         console.log(`rejected: ${errs.join("; ")}`);
@@ -186,7 +134,7 @@ async function main() {
         profile.aiSummary = {
           ...raw,
           source: "gemini",
-          model: PROVIDER === "agy" ? `agy:${AGY_MODEL}` : GEMINI_MODEL,
+          model: GEMINI_MODEL,
           version: Math.max(3, (prev?.version || 0) + 1),
           generatedAt: new Date().toISOString(),
         };
@@ -202,7 +150,7 @@ async function main() {
       }
       console.log(`failed: ${err.message.slice(0, 200)}`);
     }
-    if (PROVIDER === "gemini") await new Promise((r) => setTimeout(r, GEMINI_GAP_MS));
+    await new Promise((r) => setTimeout(r, GEMINI_GAP_MS));
   }
   console.log(`Done: ${written}/${candidates.length}`);
 }
