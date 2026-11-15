@@ -11,6 +11,11 @@ command. It follows 1,200+ repositories, refreshes them every hour, and the
 whole thing runs on GitHub Actions and Cloudflare Pages. The git repository
 is the database.
 
+Traffic, last 30 days to 2026-11-15 (Cloudflare analytics): about 5 million
+requests served and about 275,000 visits, 45.6 GB transferred. A large share of
+the requests is search and AI crawlers, so treat visits as the closer measure of
+people.
+
 If RepoRadar saved you time, a star on this repository helps other developers
 find it.
 
@@ -274,3 +279,7 @@ Everything runs on free tiers: Cloudflare Pages, GitHub Actions (public
 repo: unlimited minutes), GitHub Models API (free tier via `GITHUB_TOKEN`),
 Buttondown free plan, Pagefind (static, no service). There is nothing to pay
 for at any scale this design supports.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
