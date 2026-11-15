@@ -1,59 +1,70 @@
 # RepoRadar
 
-Open-source intelligence on trending GitHub repositories, updated twice a day.
-The git repository itself is the database; content pages are still fully
-static, with a couple of small serverless routes for GitHub login.
+[![GitHub stars](https://img.shields.io/github/stars/Shashank2577/reporadar?style=flat)](https://github.com/Shashank2577/reporadar/stargazers)
 
-- Daily, weekly, and monthly trending reports with a featured repository each period
-- Per-repo profiles: star history charts, star-jump detection, what it does, use
-  cases, tech stack, contributors, license, first commit, commit counts
-- List views with multi-select topic filtering on trending/topic/language pages
-- Browse by topic and language; in-browser search (Pagefind); localStorage watchlist
-- Request a repository: sign in with GitHub, describe what you're looking for, and
-  the site opens a GitHub Issue (as you) that a workflow resolves automatically —
-  it searches GitHub by stars/relevance, adds the best match to tracking, comments
-  the result, and closes the issue
-- SEO/AEO: JSON-LD structured data, sitemap, RSS feed, `llms.txt`
-- Cloudflare Web Analytics (cookieless, includes Core Web Vitals) for real traffic and performance data
-- Near-zero infrastructure cost: static Next.js export on Cloudflare Pages, data via GitHub Actions
+**Live site: [reporadar.spreix.com](https://reporadar.spreix.com)**
 
-## Architecture
+RepoRadar tracks trending GitHub repositories and publishes what it finds:
+daily, weekly and monthly reports, plus a profile page for every repository
+with star history, an AI-written summary, use cases and a getting-started
+command. It follows 1,200+ repositories, refreshes them every hour, and the
+whole thing runs on GitHub Actions and Cloudflare Pages. The git repository
+is the database.
+
+If RepoRadar saved you time, a star on this repository helps other developers
+find it.
+
+## What you get
+
+- Daily, weekly and monthly trending reports, each with a featured repository
+- Per-repo profiles: star history charts, star-jump detection, what it does, key
+  features, use cases, license, contributors, first commit, commit activity
+- Star history reconstructed from GH Archive, so charts do not start the day we
+  began tracking
+- Browse by topic, language and category; in-browser search (Pagefind); a
+  localStorage watchlist
+- An [MCP server](https://reporadar.spreix.com/mcp) at `/api/mcp` so Claude Code,
+  Cursor, Codex and other agents can query the same data (5 read-only tools:
+  `search_repos`, `get_repo`, `get_trending`, `browse_category`, `get_report`)
+- Request a repository: sign in with GitHub, describe what you want, and a
+  workflow finds the best match, starts tracking it and replies on the issue
+- RSS feed, `llms.txt`, sitemap and JSON-LD structured data
+
+Add the MCP server to a client that supports remote servers:
+
+```json
+{
+  "mcpServers": {
+    "reporadar": { "url": "https://reporadar.spreix.com/api/mcp" }
+  }
+}
+```
+
+## How it works
 
 ```
-GitHub Actions (cron 06:15 + 18:15 UTC, plus hourly-refresh.yml every hour)
-  scripts/fetch-trending.mjs      -> data/trending/<date>.json   (scrapes github.com/trending)
-  scripts/update-repos.mjs        -> data/repos/<owner>__<name>.json  (GitHub REST/GraphQL + daily star snapshot)
-  scripts/enrich.mjs              -> aiSummary via GitHub Models API (free, falls back to template)
-  scripts/generate-reports.mjs    -> content/reports/{daily,weekly,monthly}/<slug>.md
-  scripts/process-repo-requests.mjs -> resolves open `repo-request` issues, adds matches to data/repos/
-  git commit + push               -> deploy-cloudflare.yml builds on a runner and uploads out/ (every 2h + on code changes)
+GitHub Actions (hourly refresh, plus morning and evening report runs)
+  scripts/fetch-trending.mjs        -> data/trending/<date>.json
+  scripts/update-repos.mjs          -> data/repos/<owner>__<name>.json
+  scripts/enrich.mjs                -> aiSummary via GitHub Models (free)
+  scripts/deep-enrich.mjs           -> deeper aiSummary via Gemini / Groq free tiers
+  scripts/generate-reports.mjs      -> content/reports/{daily,weekly,monthly}/<slug>.md
+  scripts/process-repo-requests.mjs -> resolves `repo-request` issues
+  git commit + push                 -> deploy-cloudflare.yml builds and publishes
 
-Runtime (Cloudflare Pages Functions, functions/)
-  /api/auth/*              -> GitHub OAuth login (encrypted HttpOnly session cookie; no accounts, no user table)
-  /api/request-repo        -> creates a GitHub Issue as the signed-in user
-  /api/mcp                 -> MCP server over the static JSON in out/mcp-data
-  everything else          -> static HTML from `next build` (output: "export")
+Cloudflare Pages
+  static export of every page (Next.js)
+  functions/api/auth/*     -> GitHub OAuth login (Auth.js)
+  functions/api/request-repo, feature-request -> open GitHub issues as the user
+  functions/api/mcp        -> MCP server
 ```
 
-The site is a static export, built in GitHub Actions rather than on the host.
-The only server-side code is the Functions above, existing because GitHub's
-OAuth token exchange needs a secret that can never live in browser JavaScript.
-The build prunes client-navigation payloads for repo pages (`scripts/prune-export.mjs`)
-to stay under Cloudflare Pages' 20,000-file limit. Star history accumulates one snapshot per day per
-tracked repo, so charts and "biggest gainers" get richer every day the
-pipeline runs.
-
-### Why the search index build changed
-
-Pagefind needs a folder of rendered HTML to crawl. The site used to produce
-that for free via `output: "export"`, but static export disables API routes
-entirely, so login required dropping it. `scripts/build-search-index.mjs`
-replaces that: it starts the built app with `next start`, fetches every known
-content URL (enumerated straight from `data/` and `content/`, no guessing),
-saves the HTML into `.crawl/`, and runs Pagefind against that folder into
-`public/pagefind/` — which Next serves as static files at `/pagefind/*`,
-exactly where the existing search component already looked. No frontend
-changes were needed; `npm run build` still does everything in one command.
+Pages are prerendered at build time. The only server-side code is the Pages
+Functions above, which exist because GitHub's OAuth token exchange needs a
+secret that cannot live in browser JavaScript. Star history accumulates one
+snapshot per day per tracked repo, so charts get richer every day the
+pipeline runs. Search is built by `scripts/build-search-index.mjs`, which
+crawls the built site and runs Pagefind over it.
 
 ## Local development
 
@@ -87,13 +98,14 @@ stops starting new work below a rate-limit floor (deferring repos to the next
 run rather than failing), staggers deep refreshes across days so they never
 all come due at once, and stops enrichment cleanly when the model quota is hit.
 
-### Do you need Jules?
+### Editorial and deep enrichment
 
-No. The site is fully autonomous on GitHub Actions alone: the workflows collect
-data, generate reports, commit, and the deploy workflow publishes them. Jules is an optional
-editorial layer that rewrites the human-voice paragraph between the
-`<!-- jules:editorial -->` markers and improves any summary still marked
-`"source": "template"`. Without Jules, those sections keep their generated text.
+The site is autonomous on GitHub Actions alone. `scripts/deep-enrich.mjs`
+(`gemini-deep-enrichment.yml`, every 6 hours) rewrites thin or template
+`aiSummary` objects using the Gemini or Groq free tiers; set `GEMINI_API_KEY`
+and/or `GROQ_API_KEY` as repository secrets to enable it. It only ever writes
+the `aiSummary` object. Jules, which `AGENTS.md` was written for, is being
+retired by Google, so these workflows replace it.
 
 ### How coverage scales as the tracked repo count grows
 
@@ -184,11 +196,9 @@ uses what's actually there, up to the target.
      `content/` after CI passes
    In the repo settings, under Actions > General, set Workflow permissions to
    "Read and write permissions".
-5. **Jules (scheduled editorial).** In [jules.google.com](https://jules.google.com)
-   connect the repo. `AGENTS.md` tells Jules exactly what to do. Create scheduled
-   tasks, e.g. daily: "Do the editorial pass on the latest daily report as
-   described in AGENTS.md" and weekly (Sunday): "Do the weekly digest polish as
-   described in AGENTS.md". Jules opens PRs; content-only PRs auto-merge after CI.
+5. **Deep enrichment (optional).** Add `GEMINI_API_KEY` (from an AI Studio project
+   with no billing attached, so the free tier cannot charge) and/or `GROQ_API_KEY`
+   as repository secrets. `gemini-deep-enrichment.yml` skips cleanly until one exists.
 6. **Newsletter (free).** Create a [Buttondown](https://buttondown.com) account
    (free tier: 100 subscribers). In Buttondown settings, add the RSS-to-email
    automation pointing at `https://<your-domain>/feed.xml`, filtered to items

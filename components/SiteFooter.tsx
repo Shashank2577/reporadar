@@ -13,6 +13,20 @@ export default function SiteFooter() {
           {site.name} — {site.tagline}. Data refreshed twice daily from the GitHub API.
           {" "}Built by <Link href="/about" className="hover:text-foreground">{site.creator.name}</Link>.
           {showVisits ? ` ${compactNumber(stats.visits30d)} visits in the last 30 days.` : ""}
+          {site.githubRepo ? (
+            <>
+              {" "}Free and open source.{" "}
+              <a
+                href={`https://github.com/${site.githubRepo}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-foreground hover:underline"
+              >
+                Star it on GitHub
+              </a>{" "}
+              if it helps you.
+            </>
+          ) : null}
         </p>
         <nav className="flex flex-wrap gap-4">
           <Link href="/about" className="hover:text-foreground">About</Link>
