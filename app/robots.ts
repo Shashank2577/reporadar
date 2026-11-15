@@ -5,7 +5,9 @@ export const dynamic = "force-static";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/" }],
+    // The __next.*.txt files are Next.js client-navigation (RSC) payloads, about
+    // nine per page. Crawlers read the HTML, so keep them out of the crawl.
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/*__next."] }],
     sitemap: absoluteUrl("/sitemap.xml"),
   };
 }
