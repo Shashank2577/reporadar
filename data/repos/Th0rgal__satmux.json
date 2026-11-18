@@ -20,6 +20,11 @@
       "date": "2026-11-14",
       "stars": 1083,
       "forks": 51
+    },
+    {
+      "date": "2026-11-18",
+      "stars": 1100,
+      "forks": 52
     }
   ],
   "trendingHistory": [
@@ -46,15 +51,15 @@
   "license": "MIT",
   "language": "Python",
   "topics": [],
-  "stars": 1083,
-  "forks": 51,
+  "stars": 1100,
+  "forks": 52,
   "watchers": 1,
   "openIssues": 2,
   "createdAt": "2026-11-07T16:09:41Z",
   "pushedAt": "2026-11-07T16:26:20Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-11-14T12:32:37.328Z",
+  "updatedAt": "2026-11-18T00:01:05.523Z",
   "releases": [],
   "contributors": [
     {
@@ -71,7 +76,17 @@
   },
   "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">satmux</h1></div>\n<p dir=\"auto\">TCP multiplexer and <code>1-RTT</code> HTTP/TLS relay for geostationary (GEO) inflight Wi-Fi (Inmarsat GX, Viasat, Panasonic, SITA). Pure Python 3 stdlib, zero external dependencies.</p>\n<p dir=\"auto\">Measured inflight over Inmarsat GX Ka-band (<code>~620 ms</code> RTT, SITA <code>AS206433</code> Amsterdam ground station):</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\"><pre lang=\"text\" class=\"notranslate\"><code>  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Problem</h2></div>\n<p dir=\"auto\">Non-Starlink inflight Wi-Fi usually breaks on three things unrelated to raw bandwidth:</p>\n<ol dir=\"auto\">\n<li><strong>Onboard <code>:443</code> middleboxes and DNS interception.</strong> Cabin gateways intercept <code>:53</code> DNS and run a transparent <code>:443</code> split-TCP proxy (PEP) whose state table drops connections under load (<code>Connection reset by peer</code> / TLS timeouts on <code>github.com</code>, <code>api.github.com</code>, package registries). Non-443 TCP ports pass through untouched.</li>\n<li><strong>Handshake round-trips (<code>~620 ms</code> per GEO hop).</strong> Every new origin normally pays multiple satellite round-trips (DNS + TCP + TLS) before transferring payload bytes.</li>\n<li><strong>Cubic congestion collapse.</strong> Cabin Wi-Fi packet loss causes standard TCP to halve <code>cwnd</code> repeatedly, leaving most of your per-seat token-bucket cap unused.</li>\n</ol>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">How it works</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"Direct (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\"><pre lang=\"text\" class=\"notranslate\"><code>Direct (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\n</code></pre></div>\n<ul dir=\"auto\">\n<li><strong>Persistent non-443 carrier pool (<code>:8444</code>):</strong> Keeps 12 pre-warmed TCP connections open to a Linux VM near the satellite ground station, bypassing the cabin <code>:443</code> proxy and onboard DNS. Streams are scheduled onto the carrier with the lowest recent byte load so idle browser keepalives do not cause head-of-line queueing.</li>\n<li><strong>0-RTT stream open (<code>127.0.0.1:1080</code> SOCKS5 / <code>127.0.0.1:8080</code> HTTP CONNECT):</strong> Returns <code>OK</code> locally in <code>&lt;1 ms</code> and sends <code>FT_OPEN</code> + TLS <code>ClientHello</code> in the same TCP burst, saving one full satellite RTT while preserving end-to-end TLS from the laptop.</li>\n<li><strong>1-RTT ground fetch (<code>127.0.0.1:8081</code>):</strong> Sends an encrypted (<code>BLAKE2b-512</code> stream + <code>HMAC-SHA256</code>) request frame over a warm carrier. The ground VM performs DNS, verified TLS 1.3, and HTTP redirects on fiber (<code>~2–5 ms</code>) and compresses plaintext responses with <code>zlib</code> before crossing the satellite link.</li>\n<li><strong><code>git</code> and <code>gh</code> CLI routing:</strong> Go binaries such as <code>gh</code> ignore macOS <code>scutil</code> proxies. <code>satmux</code> exposes a <code>0600</code> local Unix socket (<code>/tmp/satmux-gh-tls.sock</code>) wired to <code>gh</code>'s <code>http_unix_socket</code> that wraps requests in verified end-to-end TLS on the laptop and tunnels them over SOCKS5, fixing already-running coding agents without restarting them.</li>\n<li><strong>BBR + <code>MSS 1280</code>:</strong> Ground-to-cabin sockets enable <code>TCP_CONGESTION=bbr</code> and <code>TCP_MAXSEG=1280</code>.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Limits</h2></div>\n<ul dir=\"auto\">\n<li><strong>Latency floor (<code>~580–650 ms</code>):</strong> Speed-of-light propagation to geostationary orbit (<code>35,786 km</code>) does not change; <code>satmux</code> removes extra round-trips, not the physical RTT of one hop.</li>\n<li><strong>Per-seat shaper (<code>~4–5 Mbps</code> typical):</strong> Cabin routers police total bandwidth per client lease. Compressible traffic (HTML, JSON, code, APIs) exceeds that rate in effective throughput via <code>zlib</code>; already-compressed binaries (<code>.mp4</code>, <code>.zip</code>) stay bounded by the seat cap (though BBR + parallel <code>satmux-get</code> keep throughput near the ceiling).</li>\n<li><strong>Single paid session:</strong> Uses your authenticated cabin Wi-Fi lease; it does not bypass captive portals.</li>\n</ul>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Setup</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">1. Ground VM</h3></div>\n<p dir=\"auto\">Rent a small Linux VM (<code>$0.01–$0.03/h</code>, Python 3.9+, open TCP port <code>8444</code>) close to where the satellite downlinks to fiber. Check <code>curl ipinfo.io</code> on raw cabin Wi-Fi first to see the egress country/ASN:</p>\n<ul dir=\"auto\">\n<li><strong>Emirates / Middle East &amp; European flights (Inmarsat GX / SITA <code>AS206433</code>):</strong> Amsterdam, Frankfurt, or Hetzner EU (downlink lands in the Netherlands).</li>\n<li><strong>North America:</strong> <code>us-east</code> or <code>us-west</code>.</li>\n<li><strong>Asia-Pacific:</strong> Singapore or Tokyo.</li>\n</ul>\n<p dir=\"auto\">Pause UDP VPNs (Tailscale/WireGuard) inflight—blocked UDP retry traffic competes for cabin airtime.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">2. Run</h3></div>\n<p dir=\"auto\">With a coding agent:</p>\n<blockquote>\n<p dir=\"auto\">Spin up a temporary Ubuntu VM near my current satellite egress IP, start <code>https://github.com/Th0rgal/satmux</code> on port <code>8444</code>, connect the local 12-carrier client, enable <code>bin/satmux-macos on</code>, and run <code>bin/satmux-bench</code>.</p>\n</blockquote>\n<p dir=\"auto\">Or manually:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# 1. Laptop: generate PSK\ngit clone https://github.com/Th0rgal/satmux.git &amp;&amp; cd satmux\nopenssl rand -hex 32 &gt; mux.psk &amp;&amp; chmod 600 mux.psk\n\n# 2. Ground VM: start server\nscp satmux.py mux.psk root@&lt;SERVER_IP&gt;:/root/\nssh root@&lt;SERVER_IP&gt; 'nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 &gt;/var/log/satmux.log 2&gt;&amp;1 &amp;'\n\n# 3. Laptop: start client + enable macOS / git / gh routing\nSATMUX_PSK=$(cat mux.psk) python3 satmux.py client --host &lt;SERVER_IP&gt; --port 8444 --carriers 12 &amp;\n./bin/satmux-macos on &lt;SERVER_IP&gt;\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> 1. Laptop: generate PSK</span>\ngit clone https://github.com/Th0rgal/satmux.git <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> satmux\nopenssl rand -hex 32 <span class=\"pl-k\">&gt;</span> mux.psk <span class=\"pl-k\">&amp;&amp;</span> chmod 600 mux.psk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 2. Ground VM: start server</span>\nscp satmux.py mux.psk root@<span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span>:/root/\nssh root@<span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span> <span class=\"pl-s\"><span class=\"pl-pds\">'</span>nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 &gt;/var/log/satmux.log 2&gt;&amp;1 &amp;<span class=\"pl-pds\">'</span></span>\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> 3. Laptop: start client + enable macOS / git / gh routing</span>\nSATMUX_PSK=<span class=\"pl-s\"><span class=\"pl-pds\">$(</span>cat mux.psk<span class=\"pl-pds\">)</span></span> python3 satmux.py client --host <span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span> --port 8444 --carriers 12 <span class=\"pl-k\">&amp;</span>\n./bin/satmux-macos on <span class=\"pl-k\">&lt;</span>SERVER_IP<span class=\"pl-k\">&gt;</span></pre></div>\n<p dir=\"auto\">Benchmark or run parallel range downloads:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz\"><pre>./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">3. Teardown after landing</h3></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"./bin/satmux-macos off\"><pre>./bin/satmux-macos off</pre></div>\n<p dir=\"auto\">Restores macOS Wi-Fi proxy settings, <code>~/.gitconfig</code>, <code>gh</code> <code>http_unix_socket</code>, and <code>launchctl</code> env vars, then destroy the temporary VM.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">MIT</p>\n</article></div>",
   "readmeExcerpt": "# satmux\n\nTCP multiplexer and `1-RTT` HTTP/TLS relay for geostationary (GEO) inflight Wi-Fi (Inmarsat GX, Viasat, Panasonic, SITA). Pure Python 3 stdlib, zero external dependencies.\n\nMeasured inflight over Inmarsat GX Ka-band (`~620 ms` RTT, SITA `AS206433` Amsterdam ground station):\n\n```text\n  ORIGIN (6× PARALLEL)  RAW CABIN WI-FI (:443)    1-RTT BBR + ZLIB MUX    SPEEDUP\n  ────────────────────  ────────────────────────  ──────────────────────  ─────────\n  GitHub Repo           ████████████    TIMEOUT  ███░░░░░░░░░    4.66s  FIXED ✓\n  GitHub API            ████████████  TCP RESET  ██░░░░░░░░░░    2.66s  FIXED ✓\n  Hacker News           ████████████    TIMEOUT  ██░░░░░░░░░░    2.28s  FIXED ✓\n  MDN Docs              ████████░░░░     12.01s  ██░░░░░░░░░░    2.30s     5.2×\n  Cloudflare            ██░░░░░░░░░░      2.97s  █░░░░░░░░░░░    1.40s     2.1×\n  PyPI JSON API         █████░░░░░░░      7.09s  ██░░░░░░░░░░    2.64s     2.7×\n  ──────────────────────────────────────────────────────────────────────────────────\n  6-Origin Burst:    19.13s (3/6 failed)  →  5.35s (0/6 failed)   [3.6× faster · -76% TTFB]\n```\n\n## Problem\n\nNon-Starlink inflight Wi-Fi usually breaks on three things unrelated to raw bandwidth:\n\n1. **Onboard `:443` middleboxes and DNS interception.** Cabin gateways intercept `:53` DNS and run a transparent `:443` split-TCP proxy (PEP) whose state table drops connections under load (`Connection reset by peer` / TLS timeouts on `github.com`, `api.github.com`, package registries). Non-443 TCP ports pass through untouched.\n2. **Handshake round-trips (`~620 ms` per GEO hop).** Every new origin normally pays multiple satellite round-trips (DNS + TCP + TLS) before transferring payload bytes.\n3. **Cubic congestion collapse.** Cabin Wi-Fi packet loss causes standard TCP to halve `cwnd` repeatedly, leaving most of your per-seat token-bucket cap unused.\n\n## How it works\n\n```text\nDirect (:443):\n  laptop ──▶ cabin DNS + :443 PEP ══(3–4 GEO RTTs)══▶ ground ──▶ origin  (frequent TCP resets)\n\nsatmux (:8444):\n  laptop ══(12 persistent TCP :8444 BBR + zlib pipes)══▶ ground VM ──(2 ms)──▶ origin\n```\n\n- **Persistent non-443 carrier pool (`:8444`):** Keeps 12 pre-warmed TCP connections open to a Linux VM near the satellite ground station, bypassing the cabin `:443` proxy and onboard DNS. Streams are scheduled onto the carrier with the lowest recent byte load so idle browser keepalives do not cause head-of-line queueing.\n- **0-RTT stream open (`127.0.0.1:1080` SOCKS5 / `127.0.0.1:8080` HTTP CONNECT):** Returns `OK` locally in `<1 ms` and sends `FT_OPEN` + TLS `ClientHello` in the same TCP burst, saving one full satellite RTT while preserving end-to-end TLS from the laptop.\n- **1-RTT ground fetch (`127.0.0.1:8081`):** Sends an encrypted (`BLAKE2b-512` stream + `HMAC-SHA256`) request frame over a warm carrier. The ground VM performs DNS, verified TLS 1.3, and HTTP redirects on fiber (`~2–5 ms`) and compresses plaintext responses with `zlib` before crossing the satellite link.\n- **`git` and `gh` CLI routing:** Go binaries such as `gh` ignore macOS `scutil` proxies. `satmux` exposes a `0600` local Unix socket (`/tmp/satmux-gh-tls.sock`) wired to `gh`'s `http_unix_socket` that wraps requests in verified end-to-end TLS on the laptop and tunnels them over SOCKS5, fixing already-running coding agents without restarting them.\n- **BBR + `MSS 1280`:** Ground-to-cabin sockets enable `TCP_CONGESTION=bbr` and `TCP_MAXSEG=1280`.\n\n## Limits\n\n- **Latency floor (`~580–650 ms`):** Speed-of-light propagation to geostationary orbit (`35,786 km`) does not change; `satmux` removes extra round-trips, not the physical RTT of one hop.\n- **Per-seat shaper (`~4–5 Mbps` typical):** Cabin routers police total bandwidth per client lease. Compressible traffic (HTML, JSON, code, APIs) exceeds that rate in effective throughput via `zlib`; already-compressed binaries (`.mp4`, `.zip`) stay bounded by the seat cap (though BBR + parallel `satmux-get` keep throughput near the ceiling).\n- **Single paid session:** Uses your authenticated cabin Wi-Fi lease; it does not bypass captive portals.\n\n## Setup\n\n### 1. Ground VM\n\nRent a small Linux VM (`$0.01–$0.03/h`, Python 3.9+, open TCP port `8444`) close to where the satellite downlinks to fiber. Check `curl ipinfo.io` on raw cabin Wi-Fi first to see the egress country/ASN:\n\n- **Emirates / Middle East & European flights (Inmarsat GX / SITA `AS206433`):** Amsterdam, Frankfurt, or Hetzner EU (downlink lands in the Netherlands).\n- **North America:** `us-east` or `us-west`.\n- **Asia-Pacific:** Singapore or Tokyo.\n\nPause UDP VPNs (Tailscale/WireGuard) inflight—blocked UDP retry traffic competes for cabin airtime.\n\n### 2. Run\n\nWith a coding agent:\n\n> Spin up a temporary Ubuntu VM near my current satellite egress IP, start `https://github.com/Th0rgal/satmux` on port `8444`, connect the local 12-carrier client, enable `bin/satmux-macos on`, and run `bin/satmux-bench`.\n\nOr manually:\n\n```bash\n# 1. Laptop: generate PSK\ngit clone https://github.com/Th0rgal/satmux.git && cd satmux\nopenssl rand -hex 32 > mux.psk && chmod 600 mux.psk\n\n# 2. Ground VM: start server\nscp satmux.py mux.psk root@<SERVER_IP>:/root/\nssh root@<SERVER_IP> 'nohup env SATMUX_PSK=$(cat /root/mux.psk) python3 /root/satmux.py server --port 8444 >/var/log/satmux.log 2>&1 &'\n\n# 3. Laptop: start client + enable macOS / git / gh routing\nSATMUX_PSK=$(cat mux.psk) python3 satmux.py client --host <SERVER_IP> --port 8444 --carriers 12 &\n./bin/satmux-macos on <SERVER_IP>\n```\n\nBenchmark or run parallel range downloads:\n\n```bash\n./bin/satmux-bench\n./bin/satmux-get https://example.com/archive.tar.gz\n```\n\n### 3. Teardown after landing\n\n```bash\n./bin/satmux-macos off\n```\n\nRestores macOS Wi-Fi proxy settings, `~/.gitconfig`, `gh` `http_unix_socket`, and `launchctl` env vars, then destroy the temporary VM.\n\n## License\n\nMIT\n",
-  "recentIssues": [],
+  "recentIssues": [
+    {
+      "number": 1,
+      "title": "rust + docker",
+      "url": "https://github.com/Th0rgal/satmux/issues/1",
+      "createdAt": "2026-11-09T14:21:17Z",
+      "comments": 0,
+      "labels": [],
+      "author": "RandyMcMillan"
+    }
+  ],
   "punchCard": [
     {
       "day": 0,
@@ -918,10 +933,6 @@
   "firstCommitAt": "2026-11-07T16:08:51Z",
   "commitActivity": [
     {
-      "week": "2025-11-16",
-      "commits": 0
-    },
-    {
       "week": "2025-11-23",
       "commits": 0
     },
@@ -1124,37 +1135,13 @@
     {
       "week": "2026-11-08",
       "commits": 0
+    },
+    {
+      "week": "2026-11-15",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-11-16",
-      "count": 0
-    },
-    {
-      "date": "2025-11-17",
-      "count": 0
-    },
-    {
-      "date": "2025-11-18",
-      "count": 0
-    },
-    {
-      "date": "2025-11-19",
-      "count": 0
-    },
-    {
-      "date": "2025-11-20",
-      "count": 0
-    },
-    {
-      "date": "2025-11-21",
-      "count": 0
-    },
-    {
-      "date": "2025-11-22",
-      "count": 0
-    },
     {
       "date": "2025-11-23",
       "count": 0
@@ -2582,6 +2569,34 @@
     {
       "date": "2026-11-14",
       "count": 0
+    },
+    {
+      "date": "2026-11-15",
+      "count": 0
+    },
+    {
+      "date": "2026-11-16",
+      "count": 0
+    },
+    {
+      "date": "2026-11-17",
+      "count": 0
+    },
+    {
+      "date": "2026-11-18",
+      "count": 0
+    },
+    {
+      "date": "2026-11-19",
+      "count": 0
+    },
+    {
+      "date": "2026-11-20",
+      "count": 0
+    },
+    {
+      "date": "2026-11-21",
+      "count": 0
     }
   ],
   "participation": {
@@ -2590,7 +2605,17 @@
     "community": 0
   },
   "workflowRuns": [],
-  "recentPulls": [],
+  "recentPulls": [
+    {
+      "number": 2,
+      "title": "rust + docker",
+      "url": "https://github.com/Th0rgal/satmux/pull/2",
+      "state": "open",
+      "updatedAt": "2026-11-09T14:25:31Z",
+      "author": "RandyMcMillan",
+      "draft": false
+    }
+  ],
   "recentCommits": [
     {
       "sha": "2922ebb",
@@ -2651,8 +2676,8 @@
     "hasPullRequestTemplate": false
   },
   "fundingLinks": [],
-  "openIssuesOnly": 0,
-  "openPRs": 0,
+  "openIssuesOnly": 1,
+  "openPRs": 1,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
@@ -2675,10 +2700,15 @@
       "week": "2026-11-08",
       "additions": 0,
       "deletions": 0
+    },
+    {
+      "week": "2026-11-15",
+      "additions": 0,
+      "deletions": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-11-08T12:17:13.451Z",
+  "factsUpdatedAt": "2026-11-18T00:01:09.016Z",
   "starHistory": {
     "version": 2,
     "unreliable": true,
