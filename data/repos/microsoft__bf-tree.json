@@ -275,6 +275,11 @@
       "date": "2026-11-15",
       "stars": 1089,
       "forks": 52
+    },
+    {
+      "date": "2026-11-19",
+      "stars": 1091,
+      "forks": 52
     }
   ],
   "trendingHistory": [
@@ -304,24 +309,27 @@
   "license": "MIT",
   "language": "Rust",
   "topics": [],
-  "stars": 1089,
+  "stars": 1091,
   "forks": 52,
   "watchers": 5,
-  "openIssues": 10,
+  "openIssues": 7,
   "createdAt": "2025-12-19T22:43:40Z",
-  "pushedAt": "2026-11-06T07:23:59Z",
+  "pushedAt": "2026-11-19T01:42:21Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-11-15T17:54:46.568Z",
+  "updatedAt": "2026-11-19T14:44:41.880Z",
   "languages": {
-    "Rust": 817839,
+    "Rust": 876458,
     "Nix": 31382,
+    "C": 10898,
     "Python": 6115,
+    "C++": 4946,
+    "CMake": 3724,
     "Shell": 1594,
     "Dockerfile": 388
   },
-  "readmeExcerpt": "# Bf-Tree\n\nBf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.\n\n## Design Details\n\nYou can find the Bf-Tree research paper [here](https://badrish.net/papers/bftree-vldb2024.pdf). You can find more design docs [here](/doc).\n## User Guide\n\n### Rust\n\nBf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your `Cargo.toml` like this:\n```bash\n$ cargo add bf_tree\n```\nWhich will add bf_tree as a dependency to your Cargo.toml\n```toml\n[dependencies]\nbf-tree = \"0.5.7\"\n```\n\nAn example use of Bf-Tree:\n\n```rust\nuse bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b\"key\", b\"value\");\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b\"key\", &mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&buffer[..5], b\"value\");\n```\n\n### Snapshots and Recovery\n\nBf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.\n\nTo enable snapshots, set `use_snapshot(true)` on the `Config` before creating\nthe tree. Once enabled, call [`BfTree::cpr_snapshot`] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.\n\nTo recover a tree from a snapshot file, use\n[`BfTree::new_from_cpr_snapshot`]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:\n\n- `recovery_snapshot_file_path`: path of the snapshot file to recover from.\n- `use_snapshot`: whether the recovered tree should itself support taking new\n  snapshots.\n- `buffer_ptr`: optional pointer to a pre-allocated cache buffer; pass `None`\n  to let Bf-Tree allocate one.\n- `buffer_size`: optional override of the cache size stored in the snapshot.\n  If smaller than the original, recovery may fail because cached pages from\n  the snapshot must fit in memory.\n- `wal`: optional write-ahead log configuration for the recovered tree.\n\n```rust\nuse bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b\"key\", b\"value\");\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(\"snapshot.bftree\");\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    \"snapshot.bftree\",\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(\"snapshot.bftree\");\n```\n\nYou can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:\n\n```rust,ignore\nlet ready = tree.are_all_threads_in_next_snapshot_version();\n```\n\nThis is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.\n\nNotes:\n- The snapshot file path passed to `cpr_snapshot` must be different from the\n  path used by any concurrent recovery.\n- For more on the snapshot/recovery design, see\n  [doc/snapshot-recovery.md](doc/snapshot-recovery.md).\n\nPRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.\n\n## Developer Guide\n\n### Building\n\n#### Prerequisite\n\nBf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install [here](https://rustup.rs).\n\nPlease install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.\n\n```bash\n# If on Ubuntu\nsudo apt update && sudo apt install pre-commit\npre-commit install\n```\n\n#### Build\n\n```bash\ncargo build --release\n```\n\n### Testing\n\n#### Unit Tests\n\n```bash\ncargo test\n```\n\nCircular-buffer free-list reuse has a deterministic spurious-CAS regression.\nIt exercises the production allocator with a test-only atomic wrapper and\nchecks reuse and eviction without relying on hardware producing a spurious\nfailure. Separate integration tests use native atomics for repeated reuse and\ncapacity-pressure/wraparound coverage:\n\n```bash\ncargo test --lib circular_buffer\ncargo test --test circular_buffer_reuse\n```\n\nThe injector is disabled with `shuttle`; Shuttle tests continue to use Shuttle's\natomics. Free-list allocation must not abandon an unlinked entry on a spurious\nCAS failure, since eviction cannot remove that orphan from the list.\n\n#### Reliability Tests\n\nThe native suite also covers stateful operations against an ordered-map model,\nbounded linearizability checking, scans overlapping mutations and splits,\nresource lifecycle accounting, process-crash snapshot recovery, malformed\nsnapshots, and WAL write failures. These complement the allocator and traversal\nregressions rather than replacing them.\n\n```bash\ncargo test --release --lib -- stateful_tree linearizability concurrent_scans\n# Linux: run exact file-descriptor/thread accounting without parallel tests.\nenv BFTREE_RESOURCE_CHECK=1 cargo test --release --lib resource_lifecycle -- --test-threads=1\n```\n\nCI additionally runs deterministic fuzz regressions, AddressSanitizer with leak\ndetection, selected Shuttle schedules, and focused Miri checks.\n\n#### Shuttle Tests\n\nConcurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use [shuttle](https://github.com/awslabs/shuttle)\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.\n\n```bash\n# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features \"shuttle\" --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, < 1s)\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_cache_only\n```\n\nTo replay a specific failing schedule (generated automatically on failure into `target/schedule000.txt`):\n\n```bash\ncargo test --features \"shuttle\" --release shuttle_replay -- --nocapture\n```\n\n#### Fuzz Tests\n\nFuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the \n[fuzz](fuzz/README.md) folder for more details.\n\n#### Production Stress Matrix\n\nOn November 1, 2026, a production-stress campaign completed **2,744 cases with\nzero failures**. It included 56 warmup cases and four rounds of 672 cases, using both\nrelease builds and release builds with debug assertions and overflow checks.\n\nEach full round covered three value-size profiles, four memory-budget labels\n(minimum, double-minimum, quarter-data, and data), seven read/write/scan mixes,\nand eight worker counts: 1, 2, 4, 8, 16, 36, 72, and 144. Full cases used 262,144 records and a\n30-second workload; warmups used 65,536 records and 15 seconds. Preload,\nverification, drain, and teardown time were additional.\n\nSeeds, scan lengths, contention, full-page caching, build profiles, and storage\nbackends (io_uring polling/blocking, direct I/O, and standard file I/O) rotated\nacross groups and rounds. This was production-stress coverage, not an exhaustive\nCartesian product of every setting or a platform/feature compatibility matrix.\nEach passing case checked final point reads, a full scan, draining, and a second\nfull scan, and completed tree teardown.\n\nThe regular suite retains fast parameterized stress cases. A separate ignored\ntest accepts a JSON configuration for longer runs:\n\n```bash\ncargo test --release --lib production_mixed_record_stress\n# Bash: run one standalone timed case, not the full supervised campaign.\nenv BF_PRODUCTION_CASE='{\"seed\":42,\"records\":262144,\"threads\":8,\"seconds\":30,\"backend\":\"std\",\"memory_bytes\":1048576}' \\\n    cargo test --release --lib tests::production_stress::production_matrix_case -- --exact --ignored --nocapture\n```\n\nOmitted JSON fields use the defaults in `src/tests/production_stress.rs`.\nThe campaign's external supervisor was configured to capture three GDB\nfull-thread backtraces, process snapshots, and a core dump\non stalls, then hold the original process for diagnosis. It used a 60-second workload\nno-progress trigger and 660-720-second whole-case diagnostic deadlines, with no\noverall campaign timeout. Timeouts, missing results, and zero-test runs were not\ncounted as passes. The standalone command above does not provide that supervision.\n\n### Benchmarking\n\nCheck the [benchmark](benchmark/README.md) folder for more details.\n\n```bash\ncd benchmark\nenv SHUMAI_FILTER=\"inmemory\" MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release\n```\n\nMore advanced benchmarking, with metrics collecting, numa-node binding, huge page, etc:\n```bash\nenv MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features \"metrics-rt\" micro\n```\n\n### Code of Conduct\n\nThis project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).\nFor more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)\nor contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.\n\n### Contributing\n\nPlease see [CONTRIBUTING.md](CONTRIBUTING.md).\n\n### Security\n\nSee [SECURITY.md](SECURITY.md) for security reporting details.\n\n\n### Trademarks\n\nThis project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks\nor logos is subject to and must follow [Microsoft’s Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in\nmodified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party \ntrademarks or logos are subject to those third-party’s policies.\n\n### Contact\n\n- bftree@microsoft.com\n",
-  "commitCount": 33,
+  "readmeExcerpt": "# Bf-Tree\n\nBf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.\n\n## Design Details\n\nYou can find the Bf-Tree research paper [here](https://badrish.net/papers/bftree-vldb2024.pdf). You can find more design docs [here](/doc).\n## User Guide\n\n### Rust\n\nBf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your `Cargo.toml` like this:\n```bash\n$ cargo add bf_tree\n```\nWhich will add bf_tree as a dependency to your Cargo.toml\n```toml\n[dependencies]\nbf-tree = \"0.5.7\"\n```\n\nAn example use of Bf-Tree:\n\n```rust\nuse bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b\"key\", b\"value\");\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b\"key\", &mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&buffer[..5], b\"value\");\n```\n\n### Configuration\n\nStart with `Config::default()`, customize it with builder-style setters such as\n`config.cb_size_byte(64 * 1024 * 1024)`. Validate the configuration with\n`config.validate()?` before passing it to `BfTree::with_config(config, None)`.\n`BfTree::with_config` also validates it internally and returns a `ConfigError`\nif it is invalid. Defaults below refer to `Config::default()`.\nRecord sizes are the combined key and value lengths in bytes, excluding metadata.\n\n#### Buffer Pool\n\nThe circular buffer holds cached mini pages and full pages. Its size is not a\nlimit on total process memory: inner nodes, page mappings, and any in-memory\nbacking storage require additional memory.\n\n| Parameter | Default | Description |\n| --- | --- | --- |\n| `cb_size_byte` | 32 MiB | Circular-buffer capacity in bytes; must be a power of two. |\n| `cb_min_record_size` | 4 | Minimum record size in bytes; must be at least 2. Inserts with smaller records are rejected. |\n| `cb_max_record_size` | 1952 | Maximum record size in bytes. Inserts with larger records are rejected; increasing this limit must also satisfy page-layout constraints. |\n| `cb_max_key_len` | 16 | Maximum key length in bytes. Set this to accommodate the longest key in your workload. |\n| `read_promotion_rate` | 30% (50% in debug builds) | Probability of promoting a record into the buffer during a point read. |\n| `scan_promotion_rate` | 30% (50% in debug builds) | Probability of promoting a page into the buffer during a range scan. Lower values help avoid displacing hot data with scan results. |\n\nPromotion rates are percentages from 0 to 100: 0 disables the corresponding\npromotion, while 100 always attempts it when eligible.\n\n#### Persistent Storage\n\nThese settings control the backing store and how reads populate its cache.\nThe promotion rates are listed again here because they also affect storage I/O.\n\n| Parameter | Default | Description |\n| --- | --- | --- |\n| `read_promotion_rate` | 30% (50% in debug builds) | Controls caching on point reads; higher rates can reduce repeated backing-store reads at the cost of more cache churn. |\n| `scan_promotion_rate` | 30% (50% in debug builds) | Controls page caching during scans; lower rates reduce cache pollution from one-pass scans. |\n| `storage_backend` | `StorageBackend::Memory` | Backing-store implementation. `Memory` keeps backing pages in RAM; `Std` uses standard file I/O. Linux additionally supports `StdDirect`, `IoUringPolling`, and `IoUringBlocking`; `Spdk` requires Linux and the `spdk` feature. |\n| `file_path` | Empty path | Index-file path for file-backed storage. Set this together with a file-backed `storage_backend`; changing the path alone does not change the backend. |\n| `cache_only` | `false` | Keeps all leaf data in the circular buffer, without a backing storage layer. The entire dataset must fit in the buffer. This differs from `StorageBackend::Memory`, which normally keeps backing pages in separately allocated RAM. |\n\nAs a convenience, `Config::new(path, buffer_size)` selects `Std` for a normal\nfile path, `Memory` for a path starting with `:memory:`, or cache-only mode for\na path starting with `:cache:`. File-backed storage alone does not provide\nsnapshot recovery; see the snapshot options below.\n\n#### Snapshot & Recovery\n\n| Parameter | Default | Description |\n| --- | --- | --- |\n| `snapshot_backend` | `StorageBackend::Std` | I/O backend used to write snapshots, separate from the index's `storage_backend`. This is currently crate-internal and has no public setter. |\n| `use_snapshot` | `false` | Enables concurrent consistent snapshots. Call `BfTree::cpr_snapshot` explicitly to take one; enabling this does not schedule automatic snapshots. |\n| `snapshot_version` | 0 | Initial snapshot version for a new tree. Normally leave this unchanged; recovery automatically starts at the saved version plus one. |\n### C and C++ interface\n\nThe [unreleased C ABI package](bf-tree-ffi/README.md) wraps the existing Rust\noperations with caller-owned buffers, explicit statuses, bounded scans, and\npanic fencing. It preserves ABI-v1 layouts and signatures.\nThe native read, scan, mutation, and snapshot implementations remain unchanged.\nRecovery validation uses two additional read-only `Config` getters.\n\n### Snapshots and Recovery\n\nBf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.\n\nTo enable snapshots, set `use_snapshot(true)` on the `Config` before creating\nthe tree. Once enabled, call [`BfTree::cpr_snapshot`] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.\n\nTo recover a tree from a snapshot file, use\n[`BfTree::new_from_cpr_snapshot`]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:\n\n- `recovery_snapshot_file_path`: path of the snapshot file to recover from.\n- `use_snapshot`: whether the recovered tree should itself support taking new\n  snapshots.\n- `buffer_ptr`: optional pointer to a pre-allocated cache buffer; pass `None`\n  to let Bf-Tree allocate one.\n- `buffer_size`: optional override of the cache size stored in the snapshot.\n  If smaller than the original, recovery may fail because cached pages from\n  the snapshot must fit in memory.\n- `wal`: optional write-ahead log configuration for the recovered tree.\n\n```rust\nuse bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b\"key\", b\"value\");\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(\"snapshot.bftree\");\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    \"snapshot.bftree\",\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(\"snapshot.bftree\");\n```\n\nYou can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:\n\n```rust,ignore\nlet ready = tree.are_all_threads_in_next_snapshot_version();\n```\n\nThis is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.\n\nNotes:\n- The snapshot file path passed to `cpr_snapshot` must be different from the\n  path used by any concurrent recovery.\n- For more on the snapshot/recovery design, see\n  [doc/snapshot-recovery.md](doc/snapshot-recovery.md).\n\nPRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.\n\n## Developer Guide\n\n### Building\n\n#### Prerequisite\n\nBf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install [here](https://rustup.rs).\n\nPlease install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.\n\n```bash\n# If on Ubuntu\nsudo apt update && sudo apt install pre-commit\npre-commit install\n```\n\n#### Build\n\n```bash\ncargo build --release\n```\n\n### Testing\n\n#### Unit Tests\n\n```bash\ncargo test\n```\n\nCircular-buffer free-list reuse has a deterministic spurious-CAS regression.\nIt exercises the production allocator with a test-only atomic wrapper and\nchecks reuse and eviction without relying on hardware producing a spurious\nfailure. Separate integration tests use native atomics for repeated reuse and\ncapacity-pressure/wraparound coverage:\n\n```bash\ncargo test --lib circular_buffer\ncargo test --test circular_buffer_reuse\n```\n\nThe injector is disabled with `shuttle`; Shuttle tests continue to use Shuttle's\natomics. Free-list allocation must not abandon an unlinked entry on a spurious\nCAS failure, since eviction cannot remove that orphan from the list.\n\n#### Reliability Tests\n\nThe native suite also covers stateful operations against an ordered-map model,\nbounded linearizability checking, scans overlapping mutations and splits,\nresource lifecycle accounting, process-crash snapshot recovery, malformed\nsnapshots, and WAL write failures. These complement the allocator and traversal\nregressions rather than replacing them.\n\n```bash\ncargo test --release --lib -- stateful_tree linearizability concurrent_scans\n# Linux: run exact file-descriptor/thread accounting without parallel tests.\nenv BFTREE_RESOURCE_CHECK=1 cargo test --release --lib resource_lifecycle -- --test-threads=1\n```\n\nCI additionally runs deterministic fuzz regressions, AddressSanitizer with leak\ndetection, selected Shuttle schedules, and focused Miri checks.\n\n#### Shuttle Tests\n\nConcurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use [shuttle](https://github.com/awslabs/shuttle)\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.\n\n```bash\n# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features \"shuttle\" --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, < 1s)\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features \"shuttle\" --release shuttle_cpr_snapshot_cache_only\n```\n\nTo replay a specific failing schedule (generated automatically on failure into `target/schedule000.txt`):\n\n```bash\ncargo test --features \"shuttle\" --release shuttle_replay -- --nocapture\n```\n\n#### Fuzz Tests\n\nFuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the \n[fuzz](fuzz/README.md) folder for more details.\n\n#### Production Stress Matrix\n\nOn November 1, 2026, a production-stress campaign completed **2,744 cases with\nzero failures**. It included 56 warmup cases and four rounds of 672 cases, using both\nrelease builds and release builds with debug assertions and overflow checks.\n\nEach full round covered three value-size profiles, four memory-budget labels\n(minimum, double-minimum, quarter-data, and data), seven read/write/scan mixes,\nand eight worker counts: 1, 2, 4, 8, 16, 36, 72, and 144. Full cases used 262,144 records and a\n30-second workload; warmups used 65,536 records and 15 seconds. Preload,\nverification, drain, and teardown time were additional.\n\nSeeds, scan lengths, contention, full-page caching, build ",
+  "commitCount": 37,
   "contributors": [
     {
       "login": "acmshanyi",
@@ -342,9 +350,21 @@
       "contributions": 2
     },
     {
+      "login": "dtolnay",
+      "url": "https://github.com/dtolnay",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1940490?v=4",
+      "contributions": 2
+    },
+    {
       "login": "shvachko",
       "url": "https://github.com/shvachko",
       "avatarUrl": "https://avatars.githubusercontent.com/u/11998604?v=4",
+      "contributions": 2
+    },
+    {
+      "login": "dependabot[bot]",
+      "url": "https://github.com/apps/dependabot",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
       "contributions": 2
     },
     {
@@ -360,22 +380,16 @@
       "contributions": 1
     },
     {
-      "login": "dtolnay",
-      "url": "https://github.com/dtolnay",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/1940490?v=4",
-      "contributions": 1
-    },
-    {
-      "login": "dependabot[bot]",
-      "url": "https://github.com/apps/dependabot",
-      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4",
+      "login": "xufyan",
+      "url": "https://github.com/xufyan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9946981?v=4",
       "contributions": 1
     }
   ],
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Bf-Tree</h1></div>\n<p dir=\"auto\">Bf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design Details</h2></div>\n<p dir=\"auto\">You can find the Bf-Tree research paper <a href=\"https://badrish.net/papers/bftree-vldb2024.pdf\" rel=\"nofollow\">here</a>. You can find more design docs <a href=\"https://github.com/microsoft/bf-tree/blob/main/doc\">here</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">User Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<p dir=\"auto\">Bf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your <code>Cargo.toml</code> like this:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ cargo add bf_tree\"><pre>$ cargo add bf_tree</pre></div>\n<p dir=\"auto\">Which will add bf_tree as a dependency to your Cargo.toml</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"[dependencies]\nbf-tree = &quot;0.5.7&quot;\"><pre>[<span class=\"pl-en\">dependencies</span>]\n<span class=\"pl-smi\">bf-tree</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.5.7<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">An example use of Bf-Tree:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b&quot;key&quot;, &amp;mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&amp;buffer[..5], b&quot;value&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">cb_min_record_size</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> buffer = <span class=\"pl-kos\">[</span><span class=\"pl-c1\">0u8</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">1024</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> read_size = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">read</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buffer<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span>read_size<span class=\"pl-kos\">,</span> <span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Found</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">5</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>buffer<span class=\"pl-kos\">[</span>..<span class=\"pl-c1\">5</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Snapshots and Recovery</h3></div>\n<p dir=\"auto\">Bf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.</p>\n<p dir=\"auto\">To enable snapshots, set <code>use_snapshot(true)</code> on the <code>Config</code> before creating\nthe tree. Once enabled, call [<code>BfTree::cpr_snapshot</code>] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.</p>\n<p dir=\"auto\">To recover a tree from a snapshot file, use\n[<code>BfTree::new_from_cpr_snapshot</code>]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:</p>\n<ul dir=\"auto\">\n<li><code>recovery_snapshot_file_path</code>: path of the snapshot file to recover from.</li>\n<li><code>use_snapshot</code>: whether the recovered tree should itself support taking new\nsnapshots.</li>\n<li><code>buffer_ptr</code>: optional pointer to a pre-allocated cache buffer; pass <code>None</code>\nto let Bf-Tree allocate one.</li>\n<li><code>buffer_size</code>: optional override of the cache size stored in the snapshot.\nIf smaller than the original, recovery may fail because cached pages from\nthe snapshot must fit in memory.</li>\n<li><code>wal</code>: optional write-ahead log configuration for the recovered tree.</li>\n</ul>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(&quot;snapshot.bftree&quot;);\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    &quot;snapshot.bftree&quot;,\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(&quot;snapshot.bftree&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-kos\">{</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">Config</span><span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> std<span class=\"pl-kos\">::</span>path<span class=\"pl-kos\">::</span><span class=\"pl-v\">PathBuf</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = <span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">use_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Take a CPR snapshot of the current tree state.</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">cpr_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Recover a bf-tree from a CPR snapshot</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new_from_cpr_snapshot</span><span class=\"pl-kos\">(</span>\n    <span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* use_snapshot */</span> <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_ptr */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_size */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* wal */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nstd<span class=\"pl-kos\">::</span>fs<span class=\"pl-kos\">::</span><span class=\"pl-en\">remove_file</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">You can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let ready = tree.are_all_threads_in_next_snapshot_version();\"><pre><span class=\"pl-k\">let</span> ready = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">are_all_threads_in_next_snapshot_version</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">This is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.</p>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li>The snapshot file path passed to <code>cpr_snapshot</code> must be different from the\npath used by any concurrent recovery.</li>\n<li>For more on the snapshot/recovery design, see\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/doc/snapshot-recovery.md\">doc/snapshot-recovery.md</a>.</li>\n</ul>\n<p dir=\"auto\">PRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Developer Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Prerequisite</h4></div>\n<p dir=\"auto\">Bf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install <a href=\"https://rustup.rs\" rel=\"nofollow\">here</a>.</p>\n<p dir=\"auto\">Please install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If on Ubuntu\nsudo apt update &amp;&amp; sudo apt install pre-commit\npre-commit install\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If on Ubuntu</span>\nsudo apt update <span class=\"pl-k\">&amp;&amp;</span> sudo apt install pre-commit\npre-commit install</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Build</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Testing</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Unit Tests</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test\"><pre>cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">Circular-buffer free-list reuse has a deterministic spurious-CAS regression.\nIt exercises the production allocator with a test-only atomic wrapper and\nchecks reuse and eviction without relying on hardware producing a spurious\nfailure. Separate integration tests use native atomics for repeated reuse and\ncapacity-pressure/wraparound coverage:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --lib circular_buffer\ncargo test --test circular_buffer_reuse\"><pre>cargo <span class=\"pl-c1\">test</span> --lib circular_buffer\ncargo <span class=\"pl-c1\">test</span> --test circular_buffer_reuse</pre></div>\n<p dir=\"auto\">The injector is disabled with <code>shuttle</code>; Shuttle tests continue to use Shuttle's\natomics. Free-list allocation must not abandon an unlinked entry on a spurious\nCAS failure, since eviction cannot remove that orphan from the list.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Reliability Tests</h4></div>\n<p dir=\"auto\">The native suite also covers stateful operations against an ordered-map model,\nbounded linearizability checking, scans overlapping mutations and splits,\nresource lifecycle accounting, process-crash snapshot recovery, malformed\nsnapshots, and WAL write failures. These complement the allocator and traversal\nregressions rather than replacing them.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --release --lib -- stateful_tree linearizability concurrent_scans\n# Linux: run exact file-descriptor/thread accounting without parallel tests.\nenv BFTREE_RESOURCE_CHECK=1 cargo test --release --lib resource_lifecycle -- --test-threads=1\"><pre>cargo <span class=\"pl-c1\">test</span> --release --lib -- stateful_tree linearizability concurrent_scans\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Linux: run exact file-descriptor/thread accounting without parallel tests.</span>\nenv BFTREE_RESOURCE_CHECK=1 cargo <span class=\"pl-c1\">test</span> --release --lib resource_lifecycle -- --test-threads=1</pre></div>\n<p dir=\"auto\">CI additionally runs deterministic fuzz regressions, AddressSanitizer with leak\ndetection, selected Shuttle schedules, and focused Miri checks.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Shuttle Tests</h4></div>\n<p dir=\"auto\">Concurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use <a href=\"https://github.com/awslabs/shuttle\">shuttle</a>\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features &quot;shuttle&quot; --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, &lt; 1s)\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_cache_only\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Core Bf-tree concurrent operations (~5 minutes)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_bf_tree_concurrent_operations\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with disk-backed storage (fast, &lt; 1s)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_disk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with cache-only (in-memory) storage</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_cache_only</pre></div>\n<p dir=\"auto\">To replay a specific failing schedule (generated automatically on failure into <code>target/schedule000.txt</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --features &quot;shuttle&quot; --release shuttle_replay -- --nocapture\"><pre>cargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_replay -- --nocapture</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Fuzz Tests</h4></div>\n<p dir=\"auto\">Fuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/fuzz/README.md\">fuzz</a> folder for more details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Production Stress Matrix</h4></div>\n<p dir=\"auto\">On November 1, 2026, a production-stress campaign completed <strong>2,744 cases with\nzero failures</strong>. It included 56 warmup cases and four rounds of 672 cases, using both\nrelease builds and release builds with debug assertions and overflow checks.</p>\n<p dir=\"auto\">Each full round covered three value-size profiles, four memory-budget labels\n(minimum, double-minimum, quarter-data, and data), seven read/write/scan mixes,\nand eight worker counts: 1, 2, 4, 8, 16, 36, 72, and 144. Full cases used 262,144 records and a\n30-second workload; warmups used 65,536 records and 15 seconds. Preload,\nverification, drain, and teardown time were additional.</p>\n<p dir=\"auto\">Seeds, scan lengths, contention, full-page caching, build profiles, and storage\nbackends (io_uring polling/blocking, direct I/O, and standard file I/O) rotated\nacross groups and rounds. This was production-stress coverage, not an exhaustive\nCartesian product of every setting or a platform/feature compatibility matrix.\nEach passing case checked final point reads, a full scan, draining, and a second\nfull scan, and completed tree teardown.</p>\n<p dir=\"auto\">The regular suite retains fast parameterized stress cases. A separate ignored\ntest accepts a JSON configuration for longer runs:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --release --lib production_mixed_record_stress\n# Bash: run one standalone timed case, not the full supervised campaign.\nenv BF_PRODUCTION_CASE='{&quot;seed&quot;:42,&quot;records&quot;:262144,&quot;threads&quot;:8,&quot;seconds&quot;:30,&quot;backend&quot;:&quot;std&quot;,&quot;memory_bytes&quot;:1048576}' \\\n    cargo test --release --lib tests::production_stress::production_matrix_case -- --exact --ignored --nocapture\"><pre>cargo <span class=\"pl-c1\">test</span> --release --lib production_mixed_record_stress\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Bash: run one standalone timed case, not the full supervised campaign.</span>\nenv BF_PRODUCTION_CASE=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"seed\":42,\"records\":262144,\"threads\":8,\"seconds\":30,\"backend\":\"std\",\"memory_bytes\":1048576}<span class=\"pl-pds\">'</span></span> \\\n    cargo <span class=\"pl-c1\">test</span> --release --lib tests::production_stress::production_matrix_case -- --exact --ignored --nocapture</pre></div>\n<p dir=\"auto\">Omitted JSON fields use the defaults in <code>src/tests/production_stress.rs</code>.\nThe campaign's external supervisor was configured to capture three GDB\nfull-thread backtraces, process snapshots, and a core dump\non stalls, then hold the original process for diagnosis. It used a 60-second workload\nno-progress trigger and 660-720-second whole-case diagnostic deadlines, with no\noverall campaign timeout. Timeouts, missing results, and zero-test runs were not\ncounted as passes. The standalone command above does not provide that supervision.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Benchmarking</h3></div>\n<p dir=\"auto\">Check the <a href=\"https://github.com/microsoft/bf-tree/blob/main/benchmark/README.md\">benchmark</a> folder for more details.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd benchmark\nenv SHUMAI_FILTER=&quot;inmemory&quot; MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release\"><pre><span class=\"pl-c1\">cd</span> benchmark\nenv SHUMAI_FILTER=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>inmemory<span class=\"pl-pds\">\"</span></span> MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release</pre></div>\n<p dir=\"auto\">More advanced benchmarking, with metrics collecting, numa-node binding, huge page, etc:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features &quot;metrics-rt&quot; micro\"><pre>env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>metrics-rt<span class=\"pl-pds\">\"</span></span> micro</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Code of Conduct</h3></div>\n<p dir=\"auto\">This project has adopted the <a href=\"https://opensource.microsoft.com/codeofconduct/\" rel=\"nofollow\">Microsoft Open Source Code of Conduct</a>.\nFor more information see the <a href=\"https://opensource.microsoft.com/codeofconduct/faq/\" rel=\"nofollow\">Code of Conduct FAQ</a>\nor contact <a href=\"mailto:opencode@microsoft.com\">opencode@microsoft.com</a> with any additional questions or comments.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contributing</h3></div>\n<p dir=\"auto\">Please see <a href=\"https://github.com/microsoft/bf-tree/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Security</h3></div>\n<p dir=\"auto\">See <a href=\"https://github.com/microsoft/bf-tree/blob/main/SECURITY.md\">SECURITY.md</a> for security reporting details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Trademarks</h3></div>\n<p dir=\"auto\">This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks\nor logos is subject to and must follow <a href=\"https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general\" rel=\"nofollow\">Microsoft’s Trademark &amp; Brand Guidelines</a>. Use of Microsoft trademarks or logos in\nmodified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party\ntrademarks or logos are subject to those third-party’s policies.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contact</h3></div>\n<ul dir=\"auto\">\n<li><a href=\"mailto:bftree@microsoft.com\">bftree@microsoft.com</a></li>\n</ul>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">Bf-Tree</h1></div>\n<p dir=\"auto\">Bf-Tree is a modern read-write-optimized concurrent larger-than-memory range index in Rust from MSR.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Design Details</h2></div>\n<p dir=\"auto\">You can find the Bf-Tree research paper <a href=\"https://badrish.net/papers/bftree-vldb2024.pdf\" rel=\"nofollow\">here</a>. You can find more design docs <a href=\"https://github.com/microsoft/bf-tree/blob/main/doc\">here</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">User Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Rust</h3></div>\n<p dir=\"auto\">Bf-Tree is written in Rust, and is available as a Rust crate. You can add Bf-Tree to your <code>Cargo.toml</code> like this:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"$ cargo add bf_tree\"><pre>$ cargo add bf_tree</pre></div>\n<p dir=\"auto\">Which will add bf_tree as a dependency to your Cargo.toml</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"[dependencies]\nbf-tree = &quot;0.5.7&quot;\"><pre>[<span class=\"pl-en\">dependencies</span>]\n<span class=\"pl-smi\">bf-tree</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.5.7<span class=\"pl-pds\">\"</span></span></pre></div>\n<p dir=\"auto\">An example use of Bf-Tree:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::BfTree;\nuse bf_tree::LeafReadResult;\n\nlet mut config = bf_tree::Config::default();\nconfig.cb_min_record_size(4);\nlet tree = BfTree::with_config(config, None).unwrap();\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\nlet mut buffer = [0u8; 1024];\nlet read_size = tree.read(b&quot;key&quot;, &amp;mut buffer);\n\nassert_eq!(read_size, LeafReadResult::Found(5));\nassert_eq!(&amp;buffer[..5], b&quot;value&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">cb_min_record_size</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">4</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> buffer = <span class=\"pl-kos\">[</span><span class=\"pl-c1\">0u8</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">1024</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> read_size = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">read</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">&amp;</span><span class=\"pl-k\">mut</span> buffer<span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span>read_size<span class=\"pl-kos\">,</span> <span class=\"pl-v\">LeafReadResult</span><span class=\"pl-kos\">::</span><span class=\"pl-v\">Found</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">5</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-en\">assert_eq</span><span class=\"pl-en\">!</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">&amp;</span>buffer<span class=\"pl-kos\">[</span>..<span class=\"pl-c1\">5</span><span class=\"pl-kos\">]</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Configuration</h3></div>\n<p dir=\"auto\">Start with <code>Config::default()</code>, customize it with builder-style setters such as\n<code>config.cb_size_byte(64 * 1024 * 1024)</code>. Validate the configuration with\n<code>config.validate()?</code> before passing it to <code>BfTree::with_config(config, None)</code>.\n<code>BfTree::with_config</code> also validates it internally and returns a <code>ConfigError</code>\nif it is invalid. Defaults below refer to <code>Config::default()</code>.\nRecord sizes are the combined key and value lengths in bytes, excluding metadata.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Buffer Pool</h4></div>\n<p dir=\"auto\">The circular buffer holds cached mini pages and full pages. Its size is not a\nlimit on total process memory: inner nodes, page mappings, and any in-memory\nbacking storage require additional memory.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Parameter</th>\n<th>Default</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>cb_size_byte</code></td>\n<td>32 MiB</td>\n<td>Circular-buffer capacity in bytes; must be a power of two.</td>\n</tr>\n<tr>\n<td><code>cb_min_record_size</code></td>\n<td>4</td>\n<td>Minimum record size in bytes; must be at least 2. Inserts with smaller records are rejected.</td>\n</tr>\n<tr>\n<td><code>cb_max_record_size</code></td>\n<td>1952</td>\n<td>Maximum record size in bytes. Inserts with larger records are rejected; increasing this limit must also satisfy page-layout constraints.</td>\n</tr>\n<tr>\n<td><code>cb_max_key_len</code></td>\n<td>16</td>\n<td>Maximum key length in bytes. Set this to accommodate the longest key in your workload.</td>\n</tr>\n<tr>\n<td><code>read_promotion_rate</code></td>\n<td>30% (50% in debug builds)</td>\n<td>Probability of promoting a record into the buffer during a point read.</td>\n</tr>\n<tr>\n<td><code>scan_promotion_rate</code></td>\n<td>30% (50% in debug builds)</td>\n<td>Probability of promoting a page into the buffer during a range scan. Lower values help avoid displacing hot data with scan results.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">Promotion rates are percentages from 0 to 100: 0 disables the corresponding\npromotion, while 100 always attempts it when eligible.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Persistent Storage</h4></div>\n<p dir=\"auto\">These settings control the backing store and how reads populate its cache.\nThe promotion rates are listed again here because they also affect storage I/O.</p>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Parameter</th>\n<th>Default</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>read_promotion_rate</code></td>\n<td>30% (50% in debug builds)</td>\n<td>Controls caching on point reads; higher rates can reduce repeated backing-store reads at the cost of more cache churn.</td>\n</tr>\n<tr>\n<td><code>scan_promotion_rate</code></td>\n<td>30% (50% in debug builds)</td>\n<td>Controls page caching during scans; lower rates reduce cache pollution from one-pass scans.</td>\n</tr>\n<tr>\n<td><code>storage_backend</code></td>\n<td><code>StorageBackend::Memory</code></td>\n<td>Backing-store implementation. <code>Memory</code> keeps backing pages in RAM; <code>Std</code> uses standard file I/O. Linux additionally supports <code>StdDirect</code>, <code>IoUringPolling</code>, and <code>IoUringBlocking</code>; <code>Spdk</code> requires Linux and the <code>spdk</code> feature.</td>\n</tr>\n<tr>\n<td><code>file_path</code></td>\n<td>Empty path</td>\n<td>Index-file path for file-backed storage. Set this together with a file-backed <code>storage_backend</code>; changing the path alone does not change the backend.</td>\n</tr>\n<tr>\n<td><code>cache_only</code></td>\n<td><code>false</code></td>\n<td>Keeps all leaf data in the circular buffer, without a backing storage layer. The entire dataset must fit in the buffer. This differs from <code>StorageBackend::Memory</code>, which normally keeps backing pages in separately allocated RAM.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<p dir=\"auto\">As a convenience, <code>Config::new(path, buffer_size)</code> selects <code>Std</code> for a normal\nfile path, <code>Memory</code> for a path starting with <code>:memory:</code>, or cache-only mode for\na path starting with <code>:cache:</code>. File-backed storage alone does not provide\nsnapshot recovery; see the snapshot options below.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Snapshot &amp; Recovery</h4></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Parameter</th>\n<th>Default</th>\n<th>Description</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>snapshot_backend</code></td>\n<td><code>StorageBackend::Std</code></td>\n<td>I/O backend used to write snapshots, separate from the index's <code>storage_backend</code>. This is currently crate-internal and has no public setter.</td>\n</tr>\n<tr>\n<td><code>use_snapshot</code></td>\n<td><code>false</code></td>\n<td>Enables concurrent consistent snapshots. Call <code>BfTree::cpr_snapshot</code> explicitly to take one; enabling this does not schedule automatic snapshots.</td>\n</tr>\n<tr>\n<td><code>snapshot_version</code></td>\n<td>0</td>\n<td>Initial snapshot version for a new tree. Normally leave this unchanged; recovery automatically starts at the saved version plus one.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">C and C++ interface</h3></div>\n<p dir=\"auto\">The <a href=\"https://github.com/microsoft/bf-tree/blob/main/bf-tree-ffi/README.md\">unreleased C ABI package</a> wraps the existing Rust\noperations with caller-owned buffers, explicit statuses, bounded scans, and\npanic fencing. It preserves ABI-v1 layouts and signatures.\nThe native read, scan, mutation, and snapshot implementations remain unchanged.\nRecovery validation uses two additional read-only <code>Config</code> getters.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Snapshots and Recovery</h3></div>\n<p dir=\"auto\">Bf-Tree supports CPR-style consistent snapshots. A snapshot captures a\nconsistent prefix of all in-flight transactions to a file, and a tree can later\nbe reconstructed from such a snapshot file.</p>\n<p dir=\"auto\">To enable snapshots, set <code>use_snapshot(true)</code> on the <code>Config</code> before creating\nthe tree. Once enabled, call [<code>BfTree::cpr_snapshot</code>] with the destination path\nto take a snapshot at any point. Snapshots can be taken concurrently with\nongoing reads and writes; only one snapshot may be in progress at a time.</p>\n<p dir=\"auto\">To recover a tree from a snapshot file, use\n[<code>BfTree::new_from_cpr_snapshot</code>]. The snapshot file embeds most configuration\nfields (record sizes, leaf page size, cache-only flag, etc.), so the caller\nonly needs to specify the recovery-time options:</p>\n<ul dir=\"auto\">\n<li><code>recovery_snapshot_file_path</code>: path of the snapshot file to recover from.</li>\n<li><code>use_snapshot</code>: whether the recovered tree should itself support taking new\nsnapshots.</li>\n<li><code>buffer_ptr</code>: optional pointer to a pre-allocated cache buffer; pass <code>None</code>\nto let Bf-Tree allocate one.</li>\n<li><code>buffer_size</code>: optional override of the cache size stored in the snapshot.\nIf smaller than the original, recovery may fail because cached pages from\nthe snapshot must fit in memory.</li>\n<li><code>wal</code>: optional write-ahead log configuration for the recovered tree.</li>\n</ul>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"use bf_tree::{BfTree, Config};\nuse std::path::PathBuf;\n\nlet mut config = Config::default();\nconfig.use_snapshot(true);\nlet tree = BfTree::with_config(config, None).unwrap();\n\ntree.insert(b&quot;key&quot;, b&quot;value&quot;);\n\n// Take a CPR snapshot of the current tree state.\ntree.cpr_snapshot(&quot;snapshot.bftree&quot;);\n\n// Recover a bf-tree from a CPR snapshot\nlet tree = BfTree::new_from_cpr_snapshot(\n    &quot;snapshot.bftree&quot;,\n    /* use_snapshot */ true,\n    /* buffer_ptr */ None,\n    /* buffer_size */ None,\n    /* wal */ None,\n).unwrap();\nstd::fs::remove_file(&quot;snapshot.bftree&quot;);\"><pre><span class=\"pl-k\">use</span> bf_tree<span class=\"pl-kos\">::</span><span class=\"pl-kos\">{</span><span class=\"pl-v\">BfTree</span><span class=\"pl-kos\">,</span> <span class=\"pl-v\">Config</span><span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">use</span> std<span class=\"pl-kos\">::</span>path<span class=\"pl-kos\">::</span><span class=\"pl-v\">PathBuf</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-k\">let</span> <span class=\"pl-k\">mut</span> config = <span class=\"pl-smi\">Config</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">default</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nconfig<span class=\"pl-kos\">.</span><span class=\"pl-en\">use_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-c1\">true</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">with_config</span><span class=\"pl-kos\">(</span>config<span class=\"pl-kos\">,</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">insert</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">b\"key\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-s\">b\"value\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Take a CPR snapshot of the current tree state.</span>\ntree<span class=\"pl-kos\">.</span><span class=\"pl-en\">cpr_snapshot</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n\n<span class=\"pl-c\">// Recover a bf-tree from a CPR snapshot</span>\n<span class=\"pl-k\">let</span> tree = <span class=\"pl-smi\">BfTree</span><span class=\"pl-kos\">::</span><span class=\"pl-en\">new_from_cpr_snapshot</span><span class=\"pl-kos\">(</span>\n    <span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* use_snapshot */</span> <span class=\"pl-c1\">true</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_ptr */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* buffer_size */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n    <span class=\"pl-c\">/* wal */</span> <span class=\"pl-v\">None</span><span class=\"pl-kos\">,</span>\n<span class=\"pl-kos\">)</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">unwrap</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\nstd<span class=\"pl-kos\">::</span>fs<span class=\"pl-kos\">::</span><span class=\"pl-en\">remove_file</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"snapshot.bftree\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">You can check whether all active threads have transitioned to the next\nsnapshot version during a snapshot (i.e., all threads are operating in v + 1) with:</p>\n<div class=\"highlight highlight-source-rust notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"let ready = tree.are_all_threads_in_next_snapshot_version();\"><pre><span class=\"pl-k\">let</span> ready = tree<span class=\"pl-kos\">.</span><span class=\"pl-en\">are_all_threads_in_next_snapshot_version</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span></pre></div>\n<p dir=\"auto\">This is useful for coordinating external systems that need to wait until a\nsnapshot's data is fully consistent but not the whole snapshot to finish\nbefore proceeding. Note that, this function returns false if no ongoing snapshot.</p>\n<p dir=\"auto\">Notes:</p>\n<ul dir=\"auto\">\n<li>The snapshot file path passed to <code>cpr_snapshot</code> must be different from the\npath used by any concurrent recovery.</li>\n<li>For more on the snapshot/recovery design, see\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/doc/snapshot-recovery.md\">doc/snapshot-recovery.md</a>.</li>\n</ul>\n<p dir=\"auto\">PRs are accepted and preferred over feature requests. Feel free to reach out if you have any design questions.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Developer Guide</h2></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Building</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Prerequisite</h4></div>\n<p dir=\"auto\">Bf-Tree supports Linux, Windows, and macOS, although only a recently version of Linux is rigorously tested. Bf-Tree is written in Rust, which you can install <a href=\"https://rustup.rs\" rel=\"nofollow\">here</a>.</p>\n<p dir=\"auto\">Please install pre-commit hooks to ensure that your code is formatted and linted in the same way as the rest of the project; the coding style will be enforced in CI, these hooks act as a pre-filter.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# If on Ubuntu\nsudo apt update &amp;&amp; sudo apt install pre-commit\npre-commit install\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> If on Ubuntu</span>\nsudo apt update <span class=\"pl-k\">&amp;&amp;</span> sudo apt install pre-commit\npre-commit install</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Build</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo build --release\"><pre>cargo build --release</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Testing</h3></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Unit Tests</h4></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test\"><pre>cargo <span class=\"pl-c1\">test</span></pre></div>\n<p dir=\"auto\">Circular-buffer free-list reuse has a deterministic spurious-CAS regression.\nIt exercises the production allocator with a test-only atomic wrapper and\nchecks reuse and eviction without relying on hardware producing a spurious\nfailure. Separate integration tests use native atomics for repeated reuse and\ncapacity-pressure/wraparound coverage:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --lib circular_buffer\ncargo test --test circular_buffer_reuse\"><pre>cargo <span class=\"pl-c1\">test</span> --lib circular_buffer\ncargo <span class=\"pl-c1\">test</span> --test circular_buffer_reuse</pre></div>\n<p dir=\"auto\">The injector is disabled with <code>shuttle</code>; Shuttle tests continue to use Shuttle's\natomics. Free-list allocation must not abandon an unlinked entry on a spurious\nCAS failure, since eviction cannot remove that orphan from the list.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Reliability Tests</h4></div>\n<p dir=\"auto\">The native suite also covers stateful operations against an ordered-map model,\nbounded linearizability checking, scans overlapping mutations and splits,\nresource lifecycle accounting, process-crash snapshot recovery, malformed\nsnapshots, and WAL write failures. These complement the allocator and traversal\nregressions rather than replacing them.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --release --lib -- stateful_tree linearizability concurrent_scans\n# Linux: run exact file-descriptor/thread accounting without parallel tests.\nenv BFTREE_RESOURCE_CHECK=1 cargo test --release --lib resource_lifecycle -- --test-threads=1\"><pre>cargo <span class=\"pl-c1\">test</span> --release --lib -- stateful_tree linearizability concurrent_scans\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Linux: run exact file-descriptor/thread accounting without parallel tests.</span>\nenv BFTREE_RESOURCE_CHECK=1 cargo <span class=\"pl-c1\">test</span> --release --lib resource_lifecycle -- --test-threads=1</pre></div>\n<p dir=\"auto\">CI additionally runs deterministic fuzz regressions, AddressSanitizer with leak\ndetection, selected Shuttle schedules, and focused Miri checks.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Shuttle Tests</h4></div>\n<p dir=\"auto\">Concurrent systems are nondeterministic, and subject to exponential amount of different thread interleaving. We use <a href=\"https://github.com/awslabs/shuttle\">shuttle</a>\nto deterministically and systematically explore different thread interleaving to uncover the bugs caused by subtle multithread interactions.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"# Core Bf-tree concurrent operations (~5 minutes)\ncargo test --features &quot;shuttle&quot; --release shuttle_bf_tree_concurrent_operations\n\n# CPR snapshot with disk-backed storage (fast, &lt; 1s)\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_disk\n\n# CPR snapshot with cache-only (in-memory) storage\ncargo test --features &quot;shuttle&quot; --release shuttle_cpr_snapshot_cache_only\"><pre><span class=\"pl-c\"><span class=\"pl-c\">#</span> Core Bf-tree concurrent operations (~5 minutes)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_bf_tree_concurrent_operations\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with disk-backed storage (fast, &lt; 1s)</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_disk\n\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> CPR snapshot with cache-only (in-memory) storage</span>\ncargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_cpr_snapshot_cache_only</pre></div>\n<p dir=\"auto\">To replay a specific failing schedule (generated automatically on failure into <code>target/schedule000.txt</code>):</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --features &quot;shuttle&quot; --release shuttle_replay -- --nocapture\"><pre>cargo <span class=\"pl-c1\">test</span> --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>shuttle<span class=\"pl-pds\">\"</span></span> --release shuttle_replay -- --nocapture</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Fuzz Tests</h4></div>\n<p dir=\"auto\">Fuzz testing is a bug finding technique that generates random inputs to the system and test for crash. Bf-Tree employs fuzzing to generate random operation sequences\n(e.g., insert, read, scan) to the system and check that none of the operation sequence will crash the system or lead to inconsistent state. Check the\n<a href=\"https://github.com/microsoft/bf-tree/blob/main/fuzz/README.md\">fuzz</a> folder for more details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h4 class=\"heading-element\" dir=\"auto\">Production Stress Matrix</h4></div>\n<p dir=\"auto\">On November 1, 2026, a production-stress campaign completed <strong>2,744 cases with\nzero failures</strong>. It included 56 warmup cases and four rounds of 672 cases, using both\nrelease builds and release builds with debug assertions and overflow checks.</p>\n<p dir=\"auto\">Each full round covered three value-size profiles, four memory-budget labels\n(minimum, double-minimum, quarter-data, and data), seven read/write/scan mixes,\nand eight worker counts: 1, 2, 4, 8, 16, 36, 72, and 144. Full cases used 262,144 records and a\n30-second workload; warmups used 65,536 records and 15 seconds. Preload,\nverification, drain, and teardown time were additional.</p>\n<p dir=\"auto\">Seeds, scan lengths, contention, full-page caching, build profiles, and storage\nbackends (io_uring polling/blocking, direct I/O, and standard file I/O) rotated\nacross groups and rounds. This was production-stress coverage, not an exhaustive\nCartesian product of every setting or a platform/feature compatibility matrix.\nEach passing case checked final point reads, a full scan, draining, and a second\nfull scan, and completed tree teardown.</p>\n<p dir=\"auto\">The regular suite retains fast parameterized stress cases. A separate ignored\ntest accepts a JSON configuration for longer runs:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cargo test --release --lib production_mixed_record_stress\n# Bash: run one standalone timed case, not the full supervised campaign.\nenv BF_PRODUCTION_CASE='{&quot;seed&quot;:42,&quot;records&quot;:262144,&quot;threads&quot;:8,&quot;seconds&quot;:30,&quot;backend&quot;:&quot;std&quot;,&quot;memory_bytes&quot;:1048576}' \\\n    cargo test --release --lib tests::production_stress::production_matrix_case -- --exact --ignored --nocapture\"><pre>cargo <span class=\"pl-c1\">test</span> --release --lib production_mixed_record_stress\n<span class=\"pl-c\"><span class=\"pl-c\">#</span> Bash: run one standalone timed case, not the full supervised campaign.</span>\nenv BF_PRODUCTION_CASE=<span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"seed\":42,\"records\":262144,\"threads\":8,\"seconds\":30,\"backend\":\"std\",\"memory_bytes\":1048576}<span class=\"pl-pds\">'</span></span> \\\n    cargo <span class=\"pl-c1\">test</span> --release --lib tests::production_stress::production_matrix_case -- --exact --ignored --nocapture</pre></div>\n<p dir=\"auto\">Omitted JSON fields use the defaults in <code>src/tests/production_stress.rs</code>.\nThe campaign's external supervisor was configured to capture three GDB\nfull-thread backtraces, process snapshots, and a core dump\non stalls, then hold the original process for diagnosis. It used a 60-second workload\nno-progress trigger and 660-720-second whole-case diagnostic deadlines, with no\noverall campaign timeout. Timeouts, missing results, and zero-test runs were not\ncounted as passes. The standalone command above does not provide that supervision.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Benchmarking</h3></div>\n<p dir=\"auto\">Check the <a href=\"https://github.com/microsoft/bf-tree/blob/main/benchmark/README.md\">benchmark</a> folder for more details.</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd benchmark\nenv SHUMAI_FILTER=&quot;inmemory&quot; MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release\"><pre><span class=\"pl-c1\">cd</span> benchmark\nenv SHUMAI_FILTER=<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>inmemory<span class=\"pl-pds\">\"</span></span> MIMALLOC_LARGE_OS_PAGES=1 cargo run --bin bftree --release</pre></div>\n<p dir=\"auto\">More advanced benchmarking, with metrics collecting, numa-node binding, huge page, etc:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features &quot;metrics-rt&quot; micro\"><pre>env MIMALLOC_SHOW_STATS=1 MIMALLOC_LARGE_OS_PAGES=1 MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=0 numactl --membind=0 --cpunodebind=0 cargo bench --features <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>metrics-rt<span class=\"pl-pds\">\"</span></span> micro</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Code of Conduct</h3></div>\n<p dir=\"auto\">This project has adopted the <a href=\"https://opensource.microsoft.com/codeofconduct/\" rel=\"nofollow\">Microsoft Open Source Code of Conduct</a>.\nFor more information see the <a href=\"https://opensource.microsoft.com/codeofconduct/faq/\" rel=\"nofollow\">Code of Conduct FAQ</a>\nor contact <a href=\"mailto:opencode@microsoft.com\">opencode@microsoft.com</a> with any additional questions or comments.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contributing</h3></div>\n<p dir=\"auto\">Please see <a href=\"https://github.com/microsoft/bf-tree/blob/main/CONTRIBUTING.md\">CONTRIBUTING.md</a>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Security</h3></div>\n<p dir=\"auto\">See <a href=\"https://github.com/microsoft/bf-tree/blob/main/SECURITY.md\">SECURITY.md</a> for security reporting details.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Trademarks</h3></div>\n<p dir=\"auto\">This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks\nor logos is subject to and must follow <a href=\"https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general\" rel=\"nofollow\">Microsoft’s Trademark &amp; Brand Guidelines</a>. Use of Microsoft trademarks or logos in\nmodified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party\ntrademarks or logos are subject to those third-party’s policies.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h3 class=\"heading-element\" dir=\"auto\">Contact</h3></div>\n<ul dir=\"auto\">\n<li><a href=\"mailto:bftree@microsoft.com\">bftree@microsoft.com</a></li>\n</ul>\n</article></div>",
   "releases": [],
   "firstCommitAt": "2025-12-19T22:54:56Z",
-  "contributorCount": 11,
+  "contributorCount": 12,
   "punchCard": [
     {
       "day": 0,
@@ -550,7 +564,7 @@
     {
       "day": 1,
       "hour": 10,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 1,
@@ -815,7 +829,7 @@
     {
       "day": 3,
       "hour": 15,
-      "commits": 2
+      "commits": 4
     },
     {
       "day": 3,
@@ -1266,11 +1280,43 @@
     }
   ],
   "participation": {
-    "all": 33,
+    "all": 36,
     "owner": 0,
-    "community": 33
+    "community": 36
   },
   "recentCommits": [
+    {
+      "sha": "6c67d40",
+      "message": "Explain key parameters in README.md",
+      "url": "https://github.com/microsoft/bf-tree/commit/6c67d403ee86e3528a92d64b63901e99daa471f2",
+      "date": "2026-11-18T23:39:36Z",
+      "author": "Yi Shan",
+      "avatarUrl": null
+    },
+    {
+      "sha": "aa298d9",
+      "message": "Add an ABI-v1 C interface",
+      "url": "https://github.com/microsoft/bf-tree/commit/aa298d96fa30daeaaeaaabf75c0435acd499b751",
+      "date": "2026-11-18T23:54:52Z",
+      "author": "xufyan",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/9946981?v=4"
+    },
+    {
+      "sha": "b67d623",
+      "message": "Add link to GitHub repository (#28)",
+      "url": "https://github.com/microsoft/bf-tree/commit/b67d623f95cb90b7d6d8cb025861645ca70e4969",
+      "date": "2026-11-16T18:51:34Z",
+      "author": "dtolnay",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/1940490?v=4"
+    },
+    {
+      "sha": "894c0a6",
+      "message": "Bump the github-actions group across 1 directory with 2 updates (#48)",
+      "url": "https://github.com/microsoft/bf-tree/commit/894c0a6cc3d0f41b2a6400b518f223b2f601c217",
+      "date": "2026-11-16T18:51:10Z",
+      "author": "dependabot[bot]",
+      "avatarUrl": "https://avatars.githubusercontent.com/in/29110?v=4"
+    },
     {
       "sha": "2728334",
       "message": "More reliability test coverage",
@@ -1318,38 +1364,6 @@
       "date": "2026-10-28T17:08:16Z",
       "author": "Yi Shan",
       "avatarUrl": null
-    },
-    {
-      "sha": "b69a17c",
-      "message": "Fix circular-buffer free-list orphaning on spurious CAS failure",
-      "url": "https://github.com/microsoft/bf-tree/commit/b69a17c04c3d3808ec0475dfed2586698fb45990",
-      "date": "2026-10-12T17:21:10Z",
-      "author": "Konstantin V. Shvachko",
-      "avatarUrl": null
-    },
-    {
-      "sha": "257bddc",
-      "message": "Fix spurious failures when upgrading private inner nodes (#43)",
-      "url": "https://github.com/microsoft/bf-tree/commit/257bddc590ee11e73efd114f05d1b5519a02e516",
-      "date": "2026-10-29T18:48:31Z",
-      "author": "shvachko",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/11998604?v=4"
-    },
-    {
-      "sha": "a4322cb",
-      "message": "fix: lock newly allocated pages before publishing mappings",
-      "url": "https://github.com/microsoft/bf-tree/commit/a4322cb17fd6a27f8d89e52da112cd29f68046ba",
-      "date": "2026-10-07T22:37:52Z",
-      "author": "Konstantin V. Shvachko",
-      "avatarUrl": null
-    },
-    {
-      "sha": "5bdb36d",
-      "message": "fix: use C-compatible futex argument types (#45)",
-      "url": "https://github.com/microsoft/bf-tree/commit/5bdb36d78a23465311389c2510c85ecf8d697510",
-      "date": "2026-10-27T18:53:28Z",
-      "author": "acmshanyi",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/7917154?v=4"
     }
   ],
   "fileTree": [
@@ -1364,6 +1378,12 @@
       "type": "dir",
       "size": 0,
       "url": "https://github.com/microsoft/bf-tree/tree/main/benchmark"
+    },
+    {
+      "name": "bf-tree-ffi",
+      "type": "dir",
+      "size": 0,
+      "url": "https://github.com/microsoft/bf-tree/tree/main/bf-tree-ffi"
     },
     {
       "name": "dev",
@@ -1410,7 +1430,7 @@
     {
       "name": "Cargo.toml",
       "type": "file",
-      "size": 2535,
+      "size": 2587,
       "url": "https://github.com/microsoft/bf-tree/blob/main/Cargo.toml"
     },
     {
@@ -1434,7 +1454,7 @@
     {
       "name": "README.md",
       "type": "file",
-      "size": 10700,
+      "size": 14960,
       "url": "https://github.com/microsoft/bf-tree/blob/main/README.md"
     },
     {
@@ -1458,11 +1478,47 @@
   ],
   "recentPulls": [
     {
+      "number": 49,
+      "title": "Explain key parameters in README.md",
+      "url": "https://github.com/microsoft/bf-tree/pull/49",
+      "state": "merged",
+      "updatedAt": "2026-11-19T01:42:21Z",
+      "author": "acmshanyi",
+      "draft": false
+    },
+    {
+      "number": 47,
+      "title": "Add an ABI-v1 C interface",
+      "url": "https://github.com/microsoft/bf-tree/pull/47",
+      "state": "merged",
+      "updatedAt": "2026-11-18T23:54:53Z",
+      "author": "xufyan",
+      "draft": false
+    },
+    {
+      "number": 30,
+      "title": "Use cqe result to derive error instead of errno",
+      "url": "https://github.com/microsoft/bf-tree/pull/30",
+      "state": "open",
+      "updatedAt": "2026-11-16T22:18:58Z",
+      "author": "Dantsz",
+      "draft": false
+    },
+    {
+      "number": 28,
+      "title": "Add link to GitHub repository",
+      "url": "https://github.com/microsoft/bf-tree/pull/28",
+      "state": "merged",
+      "updatedAt": "2026-11-16T18:51:35Z",
+      "author": "dtolnay",
+      "draft": false
+    },
+    {
       "number": 48,
       "title": "Bump the github-actions group across 1 directory with 2 updates",
       "url": "https://github.com/microsoft/bf-tree/pull/48",
-      "state": "open",
-      "updatedAt": "2026-11-06T07:24:02Z",
+      "state": "merged",
+      "updatedAt": "2026-11-16T18:51:13Z",
       "author": "dependabot[bot]",
       "draft": false
     },
@@ -1473,15 +1529,6 @@
       "state": "closed",
       "updatedAt": "2026-11-06T07:24:00Z",
       "author": "dependabot[bot]",
-      "draft": false
-    },
-    {
-      "number": 47,
-      "title": "Add an ABI-v1 C interface",
-      "url": "https://github.com/microsoft/bf-tree/pull/47",
-      "state": "open",
-      "updatedAt": "2026-11-05T06:29:07Z",
-      "author": "xufyan",
       "draft": false
     },
     {
@@ -1501,36 +1548,9 @@
       "updatedAt": "2026-10-29T19:20:00Z",
       "author": "shvachko",
       "draft": false
-    },
-    {
-      "number": 43,
-      "title": "Fix spurious failures when upgrading private inner nodes",
-      "url": "https://github.com/microsoft/bf-tree/pull/43",
-      "state": "merged",
-      "updatedAt": "2026-10-29T18:49:11Z",
-      "author": "shvachko",
-      "draft": false
-    },
-    {
-      "number": 42,
-      "title": "fix: lock newly allocated pages before publishing mappings",
-      "url": "https://github.com/microsoft/bf-tree/pull/42",
-      "state": "merged",
-      "updatedAt": "2026-10-27T20:15:00Z",
-      "author": "shvachko",
-      "draft": false
-    },
-    {
-      "number": 45,
-      "title": "miri compatibility fix: use C-compatible futex argument types",
-      "url": "https://github.com/microsoft/bf-tree/pull/45",
-      "state": "merged",
-      "updatedAt": "2026-10-27T18:53:31Z",
-      "author": "acmshanyi",
-      "draft": false
     }
   ],
-  "branchCount": 8,
+  "branchCount": 7,
   "tagCount": 8,
   "manifestDependencies": {
     "manifest": "Cargo.toml",
@@ -1586,30 +1606,23 @@
     {
       "name": "bftree",
       "status": "success",
-      "url": "https://github.com/microsoft/bf-tree/actions/runs/42180623181",
-      "branch": "dependabot/github_actions/github-actions-5a580c1943",
-      "updatedAt": "2026-11-06T07:38:15Z"
-    },
-    {
-      "name": "github_actions in / for actions/checkout - Update #1684798407",
-      "status": "success",
-      "url": "https://github.com/microsoft/bf-tree/actions/runs/42180552962",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/44438905561",
       "branch": "main",
-      "updatedAt": "2026-11-06T07:23:57Z"
+      "updatedAt": "2026-11-19T01:55:59Z"
     },
     {
-      "name": "github_actions in /. - Update #1684798306",
+      "name": "Running Copilot Code Review",
       "status": "success",
-      "url": "https://github.com/microsoft/bf-tree/actions/runs/42180551030",
-      "branch": "main",
-      "updatedAt": "2026-11-06T07:23:52Z"
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/44423092381",
+      "branch": "shayi/configs",
+      "updatedAt": "2026-11-18T23:44:22Z"
     },
     {
-      "name": "cargo in /benchmark for rand - Update #1675156472",
+      "name": "cargo in /benchmark for rand - Update #1709794556",
       "status": "failure",
-      "url": "https://github.com/microsoft/bf-tree/actions/runs/41504955879",
+      "url": "https://github.com/microsoft/bf-tree/actions/runs/43933548378",
       "branch": "main",
-      "updatedAt": "2026-11-02T18:55:16Z"
+      "updatedAt": "2026-11-16T18:53:59Z"
     }
   ],
   "community": {
@@ -1621,13 +1634,13 @@
   },
   "fundingLinks": [],
   "openIssuesOnly": 5,
-  "openPRs": 5,
+  "openPRs": 2,
   "releaseCount": 0,
   "discussionsEnabled": false,
   "discussionCount": 0,
   "discussions": [],
   "closedIssues": 3,
-  "mergedPRs": 27,
+  "mergedPRs": 31,
   "environmentCount": 1,
   "isFork": false,
   "isInOrganization": true,
@@ -1638,10 +1651,6 @@
   },
   "latestRelease": null,
   "commitActivity": [
-    {
-      "week": "2025-11-16",
-      "commits": 0
-    },
     {
       "week": "2025-11-23",
       "commits": 0
@@ -1845,37 +1854,13 @@
     {
       "week": "2026-11-08",
       "commits": 0
+    },
+    {
+      "week": "2026-11-15",
+      "commits": 4
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-11-16",
-      "count": 0
-    },
-    {
-      "date": "2025-11-17",
-      "count": 0
-    },
-    {
-      "date": "2025-11-18",
-      "count": 0
-    },
-    {
-      "date": "2025-11-19",
-      "count": 0
-    },
-    {
-      "date": "2025-11-20",
-      "count": 0
-    },
-    {
-      "date": "2025-11-21",
-      "count": 0
-    },
-    {
-      "date": "2025-11-22",
-      "count": 0
-    },
     {
       "date": "2025-11-23",
       "count": 0
@@ -3303,10 +3288,38 @@
     {
       "date": "2026-11-14",
       "count": 0
+    },
+    {
+      "date": "2026-11-15",
+      "count": 0
+    },
+    {
+      "date": "2026-11-16",
+      "count": 2
+    },
+    {
+      "date": "2026-11-17",
+      "count": 0
+    },
+    {
+      "date": "2026-11-18",
+      "count": 2
+    },
+    {
+      "date": "2026-11-19",
+      "count": 0
+    },
+    {
+      "date": "2026-11-20",
+      "count": 0
+    },
+    {
+      "date": "2026-11-21",
+      "count": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-11-08T12:17:32.714Z",
+  "factsUpdatedAt": "2026-11-19T14:44:51.287Z",
   "aiSummary": {
     "oneLiner": "A read-write-optimized, concurrent, larger-than-memory range index written in Rust.",
     "whatItDoes": "Bf-Tree is a highly advanced, read-write-optimized range index data structure developed by Microsoft Research and implemented entirely in modern Rust. It is specifically engineered to manage massive, larger-than-memory datasets efficiently by utilizing a highly concurrent, tree-based architecture. The system minimizes expensive disk I/O operations by tightly optimizing its internal node layouts to align with modern CPU caches, drastically reducing latency during complex search operations. It employs sophisticated lock-free techniques to allow thousands of threads to query and mutate the index simultaneously without experiencing performance-degrading contention. As an open-source crate, it serves as a foundational building block for developers creating high-throughput database engines and specialized storage systems.",
@@ -3594,6 +3607,11 @@
       "week": "2026-11-08",
       "additions": 0,
       "deletions": 0
+    },
+    {
+      "week": "2026-11-15",
+      "additions": 3258,
+      "deletions": 4
     }
   ]
 }
