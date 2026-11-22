@@ -270,6 +270,11 @@
       "date": "2026-11-18",
       "stars": 8088,
       "forks": 37
+    },
+    {
+      "date": "2026-11-22",
+      "stars": 8086,
+      "forks": 37
     }
   ],
   "trendingHistory": [
@@ -296,7 +301,7 @@
   "license": "Apache-2.0",
   "language": "TypeScript",
   "topics": [],
-  "stars": 8088,
+  "stars": 8086,
   "forks": 37,
   "watchers": 7,
   "openIssues": 12,
@@ -304,7 +309,7 @@
   "pushedAt": "2026-08-05T18:36:06Z",
   "defaultBranch": "main",
   "archived": false,
-  "updatedAt": "2026-11-18T14:23:13.268Z",
+  "updatedAt": "2026-11-22T08:19:20.873Z",
   "languages": {
     "TypeScript": 198120,
     "JavaScript": 67800,
@@ -343,7 +348,7 @@
   ],
   "readmeExcerpt": "# sdk-js\n\n\n\n\n\n**The JavaScript / TypeScript SDK for building [Astrid](https://github.com/astrid-runtime/astrid) capsules.**\n\nCompanion to [sdk-rust](https://github.com/astrid-runtime/sdk-rust). Same WIT contract, same wasip2 Component Model output, same `.capsule` archive format — your kernel can't tell which language built the binary. Where the Rust SDK feels like writing against `std`, this one uses `node:fs/promises`, `node:child_process`, WHATWG fetch, async iterators, and disposable resource handles. Same host ABI, idiom translated.\n\n## Packages\n\n| Package | Role |\n|---|---|\n| `@astrid-runtime/sdk` | The capsule author API. Module-by-module mirror of `astrid-sdk`'s prelude — `fs`, `net`, `process`, `env`, `time`, `log`, plus Astrid-specific `ipc`, `kv`, `http`, `hooks`, `uplink`, `identity`, `approval`, `runtime`, `elicit`, `capabilities`, `interceptors`. TypeScript decorators (`@capsule`, `@tool`, `@interceptor`, `@hook`, `@command`, `@install`, `@upgrade`, `@run`) replace Rust attributes. |\n| `@astrid-runtime/build` | Build orchestrator. Runs `tsc` + esbuild + ComponentizeJS programmatic API. Emits a `wasm32-wasip2` component that the Rust-side `astrid-build` packs into a `.capsule` archive. |\n| `@astrid-runtime/sdk/contracts` | Auto-generated TS types from `astrid-contracts.wit` — IPC event types (`Message`, `ToolCall`, `GenerateRequest`, `StreamEvent`, etc.) usable on both ends of cross-capsule IPC. |\n\n## Quick start\n\n```bash\nmkdir my-capsule && cd my-capsule\nnpm init -y\nnpm install @astrid-runtime/sdk\nnpm install --save-dev @astrid-runtime/build typescript\n```\n\n`Capsule.toml`:\n\n```toml\n[package]\nname = \"my-capsule\"\nversion = \"0.1.0\"\n\n[[component]]\nid = \"my-capsule\"\nfile = \"my-capsule.wasm\"\ntype = \"executable\"\n\n[capabilities]\nkv = [\"*\"]\n\n[publish]\n\"tool.v1.execute.*\" = { wit = \"opaque\" }\n```\n\n`src/index.ts`:\n\n```typescript\nimport { capsule, tool, install, log, kv } from \"@astrid-runtime/sdk\";\n\n@capsule\nexport class MyCapsule {\n  greetings = 0;\n\n  @tool(\"greet\", { mutable: true })\n  greet({ name }: { name: string }): { message: string; count: number } {\n    this.greetings++;\n    log.info(`greeting ${name} (#${this.greetings})`);\n    return { message: `Hello, ${name}!`, count: this.greetings };\n  }\n\n  @install\n  onInstall(): void {\n    log.info(\"my-capsule installed\");\n  }\n}\n```\n\nBuild:\n\n```bash\nastrid build           # or: astrid capsule install .\n```\n\nThat's it. `tsc` compiles your TypeScript, esbuild bundles in the SDK, ComponentizeJS produces a `wasip2` component, the Rust-side `astrid-build` packs it into `dist/my-capsule.capsule`.\n\n## Building capsules\n\nEnd-to-end pipeline:\n\n```\nsrc/*.ts\n   ↓  tsc (typecheck + emit dist/*.js)\n   ↓  esbuild (bundle dist/ + @astrid-runtime/sdk into one ESM, mark astrid:* WIT specifiers external)\n   ↓  ComponentizeJS programmatic API (StarlingMonkey + your bundle → wasip2 Component)\ntarget/<name>.wasm\n   ↓  pack_capsule_archive (Rust side)\ndist/<name>.capsule (Capsule.toml + .wasm + wit/, gzipped tar)\n```\n\n`tsc` and esbuild run from `@astrid-runtime/build/src/index.mjs` — a small Node CLI invoked by Rust's `astrid build` when it detects a `package.json + Capsule.toml` project.\n\n## Trade-off: binary size\n\nJS capsules cost ~11 MB raw (3.5 MB gzipped in the `.capsule` archive). That's the StarlingMonkey embed. Rust capsules are ~200 KB. Acceptable for daemon-mode workloads (capsules load once); if size matters more than ergonomics, write Rust.\n\nThe host ABI is identical, so a hot capsule can be ported between languages without kernel changes.\n\n## Repository layout\n\n```\nsdk-js/\n├── packages/\n│   ├── astrid-sdk/        @astrid-runtime/sdk — public API\n│   ├── astrid-build/      @astrid-runtime/build — build orchestrator\n│   └── ...\n├── examples/\n│   └── test-capsule/      Minimal end-to-end example mirroring sdk-rust/examples/test-capsule\n├── notes/                 Phase-by-phase development notes (Phase 0–3)\n├── package.json           npm workspace root\n└── tsconfig.base.json\n```\n\n## Development\n\n```bash\nnpm install\nnpm --workspace @astrid-runtime/sdk run build\nnode packages/astrid-build/src/index.mjs examples/test-capsule\n```\n\nOr, from a kernel checkout with the JS dispatch wired into `astrid-build`:\n\n```bash\ncd core\ncargo build -p astrid-build\n./target/debug/astrid-build ../sdk-js/examples/test-capsule\n```\n\n## Status\n\nAlpha. The vertical slice (TypeScript → wasip2 component → `.capsule` → installed by `astrid capsule install` → kernel lifecycle hook execution) is proven end-to-end. Daemon-mode tool-dispatch round-trip (`/tool greet { \"name\": \"world\" }`) is on the same code path as install — same wasmtime instantiation, same linker contract — and ready for human-operator smoke testing.\n\nSee `notes/phase-{0,1,2,3-install}.md` for development history, design decisions, and known follow-ups.\n\n## License\n\nDual-licensed under [MIT](LICENSE-MIT) and [Apache 2.0](LICENSE-APACHE).\n\nCopyright (c) 2025-2026 Joshua J. Bouw and Unicity Labs.\n",
   "contributorCount": 1,
-  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">sdk-js</h1></div>\n<p dir=\"auto\"><a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-MIT\"><img src=\"https://camo.githubusercontent.com/f39131127545ad7907bcecba201dabc10b0b32199c4a45b16a35959a3eb21da4/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542532304f522532304170616368652d2d322e302d626c75652e737667\" alt=\"License: MIT OR Apache-2.0\" data-canonical-src=\"https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://nodejs.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/e3f7891e10a2cae2734b080a29e59989f0acde6a3e33d83b7d9186535c159d17/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4e6f64652d25334525334432302d626c7565\" alt=\"Node: &gt;=20\" data-canonical-src=\"https://img.shields.io/badge/Node-%3E%3D20-blue\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.typescriptlang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/c802d339ab5294b371b0c31853461c27c9d9e6d3adb9182787e24c0dea3c2f5c/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f547970655363726970742d352e322532422d626c7565\" alt=\"TypeScript: 5.2+\" data-canonical-src=\"https://img.shields.io/badge/TypeScript-5.2%2B-blue\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><strong>The JavaScript / TypeScript SDK for building <a href=\"https://github.com/astrid-runtime/astrid\">Astrid</a> capsules.</strong></p>\n<p dir=\"auto\">Companion to <a href=\"https://github.com/astrid-runtime/sdk-rust\">sdk-rust</a>. Same WIT contract, same wasip2 Component Model output, same <code>.capsule</code> archive format — your kernel can't tell which language built the binary. Where the Rust SDK feels like writing against <code>std</code>, this one uses <code>node:fs/promises</code>, <code>node:child_process</code>, WHATWG fetch, async iterators, and disposable resource handles. Same host ABI, idiom translated.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Packages</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>@astrid-runtime/sdk</code></td>\n<td>The capsule author API. Module-by-module mirror of <code>astrid-sdk</code>'s prelude — <code>fs</code>, <code>net</code>, <code>process</code>, <code>env</code>, <code>time</code>, <code>log</code>, plus Astrid-specific <code>ipc</code>, <code>kv</code>, <code>http</code>, <code>hooks</code>, <code>uplink</code>, <code>identity</code>, <code>approval</code>, <code>runtime</code>, <code>elicit</code>, <code>capabilities</code>, <code>interceptors</code>. TypeScript decorators (<code>@capsule</code>, <code>@tool</code>, <code>@interceptor</code>, <code>@hook</code>, <code>@command</code>, <code>@install</code>, <code>@upgrade</code>, <code>@run</code>) replace Rust attributes.</td>\n</tr>\n<tr>\n<td><code>@astrid-runtime/build</code></td>\n<td>Build orchestrator. Runs <code>tsc</code> + esbuild + ComponentizeJS programmatic API. Emits a <code>wasm32-wasip2</code> component that the Rust-side <code>astrid-build</code> packs into a <code>.capsule</code> archive.</td>\n</tr>\n<tr>\n<td><code>@astrid-runtime/sdk/contracts</code></td>\n<td>Auto-generated TS types from <code>astrid-contracts.wit</code> — IPC event types (<code>Message</code>, <code>ToolCall</code>, <code>GenerateRequest</code>, <code>StreamEvent</code>, etc.) usable on both ends of cross-capsule IPC.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"mkdir my-capsule &amp;&amp; cd my-capsule\nnpm init -y\nnpm install @astrid-runtime/sdk\nnpm install --save-dev @astrid-runtime/build typescript\"><pre>mkdir my-capsule <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> my-capsule\nnpm init -y\nnpm install @astrid-runtime/sdk\nnpm install --save-dev @astrid-runtime/build typescript</pre></div>\n<p dir=\"auto\"><code>Capsule.toml</code>:</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"[package]\nname = &quot;my-capsule&quot;\nversion = &quot;0.1.0&quot;\n\n[[component]]\nid = &quot;my-capsule&quot;\nfile = &quot;my-capsule.wasm&quot;\ntype = &quot;executable&quot;\n\n[capabilities]\nkv = [&quot;*&quot;]\n\n[publish]\n&quot;tool.v1.execute.*&quot; = { wit = &quot;opaque&quot; }\"><pre>[<span class=\"pl-en\">package</span>]\n<span class=\"pl-smi\">name</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">version</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.1.0<span class=\"pl-pds\">\"</span></span>\n\n[[<span class=\"pl-en\">component</span>]]\n<span class=\"pl-smi\">id</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">file</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule.wasm<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">type</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>executable<span class=\"pl-pds\">\"</span></span>\n\n[<span class=\"pl-en\">capabilities</span>]\n<span class=\"pl-smi\">kv</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>*<span class=\"pl-pds\">\"</span></span>]\n\n[<span class=\"pl-en\">publish</span>]\n<span class=\"pl-smi\">\"tool.v1.execute.*\"</span> = { <span class=\"pl-smi\">wit</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>opaque<span class=\"pl-pds\">\"</span></span> }</pre></div>\n<p dir=\"auto\"><code>src/index.ts</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { capsule, tool, install, log, kv } from &quot;@astrid-runtime/sdk&quot;;\n\n@capsule\nexport class MyCapsule {\n  greetings = 0;\n\n  @tool(&quot;greet&quot;, { mutable: true })\n  greet({ name }: { name: string }): { message: string; count: number } {\n    this.greetings++;\n    log.info(`greeting ${name} (#${this.greetings})`);\n    return { message: `Hello, ${name}!`, count: this.greetings };\n  }\n\n  @install\n  onInstall(): void {\n    log.info(&quot;my-capsule installed&quot;);\n  }\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">capsule</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">tool</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">install</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">log</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">kv</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@astrid-runtime/sdk\"</span><span class=\"pl-kos\">;</span>\n\n@<span class=\"pl-s1\">capsule</span>\n<span class=\"pl-k\">export</span> <span class=\"pl-k\">class</span> <span class=\"pl-smi\">MyCapsule</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">greetings</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">;</span>\n\n  @<span class=\"pl-en\">tool</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"greet\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">mutable</span>: <span class=\"pl-c1\">true</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-en\">greet</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> name <span class=\"pl-kos\">}</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">name</span>: <span class=\"pl-smi\">string</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">message</span>: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">count</span>: <span class=\"pl-smi\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span><span class=\"pl-c1\">++</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-s1\">log</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">info</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`greeting <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">name</span><span class=\"pl-kos\">}</span></span> (#<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span><span class=\"pl-kos\">}</span></span>)`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-k\">return</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">message</span>: <span class=\"pl-s\">`Hello, <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">name</span><span class=\"pl-kos\">}</span></span>!`</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">count</span>: <span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n\n  @<span class=\"pl-s1\">install</span>\n  <span class=\"pl-en\">onInstall</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-smi\"><span class=\"pl-k\">void</span></span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-s1\">log</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">info</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"my-capsule installed\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Build:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid build           # or: astrid capsule install .\"><pre>astrid build           <span class=\"pl-c\"><span class=\"pl-c\">#</span> or: astrid capsule install .</span></pre></div>\n<p dir=\"auto\">That's it. <code>tsc</code> compiles your TypeScript, esbuild bundles in the SDK, ComponentizeJS produces a <code>wasip2</code> component, the Rust-side <code>astrid-build</code> packs it into <code>dist/my-capsule.capsule</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building capsules</h2></div>\n<p dir=\"auto\">End-to-end pipeline:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"src/*.ts\n   ↓  tsc (typecheck + emit dist/*.js)\n   ↓  esbuild (bundle dist/ + @astrid-runtime/sdk into one ESM, mark astrid:* WIT specifiers external)\n   ↓  ComponentizeJS programmatic API (StarlingMonkey + your bundle → wasip2 Component)\ntarget/&lt;name&gt;.wasm\n   ↓  pack_capsule_archive (Rust side)\ndist/&lt;name&gt;.capsule (Capsule.toml + .wasm + wit/, gzipped tar)\"><pre class=\"notranslate\"><code>src/*.ts\n   ↓  tsc (typecheck + emit dist/*.js)\n   ↓  esbuild (bundle dist/ + @astrid-runtime/sdk into one ESM, mark astrid:* WIT specifiers external)\n   ↓  ComponentizeJS programmatic API (StarlingMonkey + your bundle → wasip2 Component)\ntarget/&lt;name&gt;.wasm\n   ↓  pack_capsule_archive (Rust side)\ndist/&lt;name&gt;.capsule (Capsule.toml + .wasm + wit/, gzipped tar)\n</code></pre></div>\n<p dir=\"auto\"><code>tsc</code> and esbuild run from <code>@astrid-runtime/build/src/index.mjs</code> — a small Node CLI invoked by Rust's <code>astrid build</code> when it detects a <code>package.json + Capsule.toml</code> project.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Trade-off: binary size</h2></div>\n<p dir=\"auto\">JS capsules cost ~11 MB raw (3.5 MB gzipped in the <code>.capsule</code> archive). That's the StarlingMonkey embed. Rust capsules are ~200 KB. Acceptable for daemon-mode workloads (capsules load once); if size matters more than ergonomics, write Rust.</p>\n<p dir=\"auto\">The host ABI is identical, so a hot capsule can be ported between languages without kernel changes.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository layout</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"sdk-js/\n├── packages/\n│   ├── astrid-sdk/        @astrid-runtime/sdk — public API\n│   ├── astrid-build/      @astrid-runtime/build — build orchestrator\n│   └── ...\n├── examples/\n│   └── test-capsule/      Minimal end-to-end example mirroring sdk-rust/examples/test-capsule\n├── notes/                 Phase-by-phase development notes (Phase 0–3)\n├── package.json           npm workspace root\n└── tsconfig.base.json\"><pre class=\"notranslate\"><code>sdk-js/\n├── packages/\n│   ├── astrid-sdk/        @astrid-runtime/sdk — public API\n│   ├── astrid-build/      @astrid-runtime/build — build orchestrator\n│   └── ...\n├── examples/\n│   └── test-capsule/      Minimal end-to-end example mirroring sdk-rust/examples/test-capsule\n├── notes/                 Phase-by-phase development notes (Phase 0–3)\n├── package.json           npm workspace root\n└── tsconfig.base.json\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install\nnpm --workspace @astrid-runtime/sdk run build\nnode packages/astrid-build/src/index.mjs examples/test-capsule\"><pre>npm install\nnpm --workspace @astrid-runtime/sdk run build\nnode packages/astrid-build/src/index.mjs examples/test-capsule</pre></div>\n<p dir=\"auto\">Or, from a kernel checkout with the JS dispatch wired into <code>astrid-build</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd core\ncargo build -p astrid-build\n./target/debug/astrid-build ../sdk-js/examples/test-capsule\"><pre><span class=\"pl-c1\">cd</span> core\ncargo build -p astrid-build\n./target/debug/astrid-build ../sdk-js/examples/test-capsule</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Status</h2></div>\n<p dir=\"auto\">Alpha. The vertical slice (TypeScript → wasip2 component → <code>.capsule</code> → installed by <code>astrid capsule install</code> → kernel lifecycle hook execution) is proven end-to-end. Daemon-mode tool-dispatch round-trip (<code>/tool greet { \"name\": \"world\" }</code>) is on the same code path as install — same wasmtime instantiation, same linker contract — and ready for human-operator smoke testing.</p>\n<p dir=\"auto\">See <code>notes/phase-{0,1,2,3-install}.md</code> for development history, design decisions, and known follow-ups.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Dual-licensed under <a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-MIT\">MIT</a> and <a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-APACHE\">Apache 2.0</a>.</p>\n<p dir=\"auto\">Copyright (c) 2025-2026 Joshua J. Bouw and Unicity Labs.</p>\n</article></div>",
+  "readmeHtml": "<div id=\"readme\" class=\"md\" data-path=\"README.md\"><article class=\"markdown-body entry-content container-lg\" itemprop=\"text\"><div class=\"markdown-heading\" dir=\"auto\"><h1 class=\"heading-element\" dir=\"auto\">sdk-js</h1></div>\n<p dir=\"auto\"><a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-MIT\"><img src=\"https://camo.githubusercontent.com/4d29ceac996100587f586bd57eb856d7695fb7fed73581eb44cd4f7fd4a5d4fa/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4c6963656e73652d4d49542532304f522532304170616368652d2d322e302d626c75652e737667\" alt=\"License: MIT OR Apache-2.0\" data-canonical-src=\"https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg\" style=\"max-width: 100%;\"></a>\n<a href=\"https://nodejs.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/cc8f6882f92273a6eb0a687d7315e6072a64e4c7fb5c50cc4e66a1c14885c64f/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f4e6f64652d25334525334432302d626c7565\" alt=\"Node: &gt;=20\" data-canonical-src=\"https://img.shields.io/badge/Node-%3E%3D20-blue\" style=\"max-width: 100%;\"></a>\n<a href=\"https://www.typescriptlang.org\" rel=\"nofollow\"><img src=\"https://camo.githubusercontent.com/1c795823a8de00f24a9319ff0e3fb848212602ffa7e0f81d71cb21e59812d538/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f547970655363726970742d352e322532422d626c7565\" alt=\"TypeScript: 5.2+\" data-canonical-src=\"https://img.shields.io/badge/TypeScript-5.2%2B-blue\" style=\"max-width: 100%;\"></a></p>\n<p dir=\"auto\"><strong>The JavaScript / TypeScript SDK for building <a href=\"https://github.com/astrid-runtime/astrid\">Astrid</a> capsules.</strong></p>\n<p dir=\"auto\">Companion to <a href=\"https://github.com/astrid-runtime/sdk-rust\">sdk-rust</a>. Same WIT contract, same wasip2 Component Model output, same <code>.capsule</code> archive format — your kernel can't tell which language built the binary. Where the Rust SDK feels like writing against <code>std</code>, this one uses <code>node:fs/promises</code>, <code>node:child_process</code>, WHATWG fetch, async iterators, and disposable resource handles. Same host ABI, idiom translated.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Packages</h2></div>\n<markdown-accessiblity-table><table>\n<thead>\n<tr>\n<th>Package</th>\n<th>Role</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>@astrid-runtime/sdk</code></td>\n<td>The capsule author API. Module-by-module mirror of <code>astrid-sdk</code>'s prelude — <code>fs</code>, <code>net</code>, <code>process</code>, <code>env</code>, <code>time</code>, <code>log</code>, plus Astrid-specific <code>ipc</code>, <code>kv</code>, <code>http</code>, <code>hooks</code>, <code>uplink</code>, <code>identity</code>, <code>approval</code>, <code>runtime</code>, <code>elicit</code>, <code>capabilities</code>, <code>interceptors</code>. TypeScript decorators (<code>@capsule</code>, <code>@tool</code>, <code>@interceptor</code>, <code>@hook</code>, <code>@command</code>, <code>@install</code>, <code>@upgrade</code>, <code>@run</code>) replace Rust attributes.</td>\n</tr>\n<tr>\n<td><code>@astrid-runtime/build</code></td>\n<td>Build orchestrator. Runs <code>tsc</code> + esbuild + ComponentizeJS programmatic API. Emits a <code>wasm32-wasip2</code> component that the Rust-side <code>astrid-build</code> packs into a <code>.capsule</code> archive.</td>\n</tr>\n<tr>\n<td><code>@astrid-runtime/sdk/contracts</code></td>\n<td>Auto-generated TS types from <code>astrid-contracts.wit</code> — IPC event types (<code>Message</code>, <code>ToolCall</code>, <code>GenerateRequest</code>, <code>StreamEvent</code>, etc.) usable on both ends of cross-capsule IPC.</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Quick start</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"mkdir my-capsule &amp;&amp; cd my-capsule\nnpm init -y\nnpm install @astrid-runtime/sdk\nnpm install --save-dev @astrid-runtime/build typescript\"><pre>mkdir my-capsule <span class=\"pl-k\">&amp;&amp;</span> <span class=\"pl-c1\">cd</span> my-capsule\nnpm init -y\nnpm install @astrid-runtime/sdk\nnpm install --save-dev @astrid-runtime/build typescript</pre></div>\n<p dir=\"auto\"><code>Capsule.toml</code>:</p>\n<div class=\"highlight highlight-source-toml notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"[package]\nname = &quot;my-capsule&quot;\nversion = &quot;0.1.0&quot;\n\n[[component]]\nid = &quot;my-capsule&quot;\nfile = &quot;my-capsule.wasm&quot;\ntype = &quot;executable&quot;\n\n[capabilities]\nkv = [&quot;*&quot;]\n\n[publish]\n&quot;tool.v1.execute.*&quot; = { wit = &quot;opaque&quot; }\"><pre>[<span class=\"pl-en\">package</span>]\n<span class=\"pl-smi\">name</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">version</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>0.1.0<span class=\"pl-pds\">\"</span></span>\n\n[[<span class=\"pl-en\">component</span>]]\n<span class=\"pl-smi\">id</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">file</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>my-capsule.wasm<span class=\"pl-pds\">\"</span></span>\n<span class=\"pl-smi\">type</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>executable<span class=\"pl-pds\">\"</span></span>\n\n[<span class=\"pl-en\">capabilities</span>]\n<span class=\"pl-smi\">kv</span> = [<span class=\"pl-s\"><span class=\"pl-pds\">\"</span>*<span class=\"pl-pds\">\"</span></span>]\n\n[<span class=\"pl-en\">publish</span>]\n<span class=\"pl-smi\">\"tool.v1.execute.*\"</span> = { <span class=\"pl-smi\">wit</span> = <span class=\"pl-s\"><span class=\"pl-pds\">\"</span>opaque<span class=\"pl-pds\">\"</span></span> }</pre></div>\n<p dir=\"auto\"><code>src/index.ts</code>:</p>\n<div class=\"highlight highlight-source-ts notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"import { capsule, tool, install, log, kv } from &quot;@astrid-runtime/sdk&quot;;\n\n@capsule\nexport class MyCapsule {\n  greetings = 0;\n\n  @tool(&quot;greet&quot;, { mutable: true })\n  greet({ name }: { name: string }): { message: string; count: number } {\n    this.greetings++;\n    log.info(`greeting ${name} (#${this.greetings})`);\n    return { message: `Hello, ${name}!`, count: this.greetings };\n  }\n\n  @install\n  onInstall(): void {\n    log.info(&quot;my-capsule installed&quot;);\n  }\n}\"><pre><span class=\"pl-k\">import</span> <span class=\"pl-kos\">{</span> <span class=\"pl-s1\">capsule</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">tool</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">install</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">log</span><span class=\"pl-kos\">,</span> <span class=\"pl-s1\">kv</span> <span class=\"pl-kos\">}</span> <span class=\"pl-k\">from</span> <span class=\"pl-s\">\"@astrid-runtime/sdk\"</span><span class=\"pl-kos\">;</span>\n\n@<span class=\"pl-s1\">capsule</span>\n<span class=\"pl-k\">export</span> <span class=\"pl-k\">class</span> <span class=\"pl-smi\">MyCapsule</span> <span class=\"pl-kos\">{</span>\n  <span class=\"pl-c1\">greetings</span> <span class=\"pl-c1\">=</span> <span class=\"pl-c1\">0</span><span class=\"pl-kos\">;</span>\n\n  @<span class=\"pl-en\">tool</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"greet\"</span><span class=\"pl-kos\">,</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">mutable</span>: <span class=\"pl-c1\">true</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>\n  <span class=\"pl-en\">greet</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">{</span> name <span class=\"pl-kos\">}</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">name</span>: <span class=\"pl-smi\">string</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">)</span>: <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">message</span>: <span class=\"pl-smi\">string</span><span class=\"pl-kos\">;</span> <span class=\"pl-c1\">count</span>: <span class=\"pl-smi\">number</span> <span class=\"pl-kos\">}</span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span><span class=\"pl-c1\">++</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-s1\">log</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">info</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">`greeting <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">name</span><span class=\"pl-kos\">}</span></span> (#<span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span><span class=\"pl-kos\">}</span></span>)`</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n    <span class=\"pl-k\">return</span> <span class=\"pl-kos\">{</span> <span class=\"pl-c1\">message</span>: <span class=\"pl-s\">`Hello, <span class=\"pl-s1\"><span class=\"pl-kos\">${</span><span class=\"pl-s1\">name</span><span class=\"pl-kos\">}</span></span>!`</span><span class=\"pl-kos\">,</span> <span class=\"pl-c1\">count</span>: <span class=\"pl-smi\">this</span><span class=\"pl-kos\">.</span><span class=\"pl-c1\">greetings</span> <span class=\"pl-kos\">}</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n\n  @<span class=\"pl-s1\">install</span>\n  <span class=\"pl-en\">onInstall</span><span class=\"pl-kos\">(</span><span class=\"pl-kos\">)</span>: <span class=\"pl-smi\"><span class=\"pl-k\">void</span></span> <span class=\"pl-kos\">{</span>\n    <span class=\"pl-s1\">log</span><span class=\"pl-kos\">.</span><span class=\"pl-en\">info</span><span class=\"pl-kos\">(</span><span class=\"pl-s\">\"my-capsule installed\"</span><span class=\"pl-kos\">)</span><span class=\"pl-kos\">;</span>\n  <span class=\"pl-kos\">}</span>\n<span class=\"pl-kos\">}</span></pre></div>\n<p dir=\"auto\">Build:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"astrid build           # or: astrid capsule install .\"><pre>astrid build           <span class=\"pl-c\"><span class=\"pl-c\">#</span> or: astrid capsule install .</span></pre></div>\n<p dir=\"auto\">That's it. <code>tsc</code> compiles your TypeScript, esbuild bundles in the SDK, ComponentizeJS produces a <code>wasip2</code> component, the Rust-side <code>astrid-build</code> packs it into <code>dist/my-capsule.capsule</code>.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Building capsules</h2></div>\n<p dir=\"auto\">End-to-end pipeline:</p>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"src/*.ts\n   ↓  tsc (typecheck + emit dist/*.js)\n   ↓  esbuild (bundle dist/ + @astrid-runtime/sdk into one ESM, mark astrid:* WIT specifiers external)\n   ↓  ComponentizeJS programmatic API (StarlingMonkey + your bundle → wasip2 Component)\ntarget/&lt;name&gt;.wasm\n   ↓  pack_capsule_archive (Rust side)\ndist/&lt;name&gt;.capsule (Capsule.toml + .wasm + wit/, gzipped tar)\"><pre class=\"notranslate\"><code>src/*.ts\n   ↓  tsc (typecheck + emit dist/*.js)\n   ↓  esbuild (bundle dist/ + @astrid-runtime/sdk into one ESM, mark astrid:* WIT specifiers external)\n   ↓  ComponentizeJS programmatic API (StarlingMonkey + your bundle → wasip2 Component)\ntarget/&lt;name&gt;.wasm\n   ↓  pack_capsule_archive (Rust side)\ndist/&lt;name&gt;.capsule (Capsule.toml + .wasm + wit/, gzipped tar)\n</code></pre></div>\n<p dir=\"auto\"><code>tsc</code> and esbuild run from <code>@astrid-runtime/build/src/index.mjs</code> — a small Node CLI invoked by Rust's <code>astrid build</code> when it detects a <code>package.json + Capsule.toml</code> project.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Trade-off: binary size</h2></div>\n<p dir=\"auto\">JS capsules cost ~11 MB raw (3.5 MB gzipped in the <code>.capsule</code> archive). That's the StarlingMonkey embed. Rust capsules are ~200 KB. Acceptable for daemon-mode workloads (capsules load once); if size matters more than ergonomics, write Rust.</p>\n<p dir=\"auto\">The host ABI is identical, so a hot capsule can be ported between languages without kernel changes.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Repository layout</h2></div>\n<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\" data-snippet-clipboard-copy-content=\"sdk-js/\n├── packages/\n│   ├── astrid-sdk/        @astrid-runtime/sdk — public API\n│   ├── astrid-build/      @astrid-runtime/build — build orchestrator\n│   └── ...\n├── examples/\n│   └── test-capsule/      Minimal end-to-end example mirroring sdk-rust/examples/test-capsule\n├── notes/                 Phase-by-phase development notes (Phase 0–3)\n├── package.json           npm workspace root\n└── tsconfig.base.json\"><pre class=\"notranslate\"><code>sdk-js/\n├── packages/\n│   ├── astrid-sdk/        @astrid-runtime/sdk — public API\n│   ├── astrid-build/      @astrid-runtime/build — build orchestrator\n│   └── ...\n├── examples/\n│   └── test-capsule/      Minimal end-to-end example mirroring sdk-rust/examples/test-capsule\n├── notes/                 Phase-by-phase development notes (Phase 0–3)\n├── package.json           npm workspace root\n└── tsconfig.base.json\n</code></pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Development</h2></div>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"npm install\nnpm --workspace @astrid-runtime/sdk run build\nnode packages/astrid-build/src/index.mjs examples/test-capsule\"><pre>npm install\nnpm --workspace @astrid-runtime/sdk run build\nnode packages/astrid-build/src/index.mjs examples/test-capsule</pre></div>\n<p dir=\"auto\">Or, from a kernel checkout with the JS dispatch wired into <code>astrid-build</code>:</p>\n<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\" data-snippet-clipboard-copy-content=\"cd core\ncargo build -p astrid-build\n./target/debug/astrid-build ../sdk-js/examples/test-capsule\"><pre><span class=\"pl-c1\">cd</span> core\ncargo build -p astrid-build\n./target/debug/astrid-build ../sdk-js/examples/test-capsule</pre></div>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">Status</h2></div>\n<p dir=\"auto\">Alpha. The vertical slice (TypeScript → wasip2 component → <code>.capsule</code> → installed by <code>astrid capsule install</code> → kernel lifecycle hook execution) is proven end-to-end. Daemon-mode tool-dispatch round-trip (<code>/tool greet { \"name\": \"world\" }</code>) is on the same code path as install — same wasmtime instantiation, same linker contract — and ready for human-operator smoke testing.</p>\n<p dir=\"auto\">See <code>notes/phase-{0,1,2,3-install}.md</code> for development history, design decisions, and known follow-ups.</p>\n<div class=\"markdown-heading\" dir=\"auto\"><h2 class=\"heading-element\" dir=\"auto\">License</h2></div>\n<p dir=\"auto\">Dual-licensed under <a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-MIT\">MIT</a> and <a href=\"https://github.com/astrid-runtime/sdk-js/blob/main/LICENSE-APACHE\">Apache 2.0</a>.</p>\n<p dir=\"auto\">Copyright (c) 2025-2026 Joshua J. Bouw and Unicity Labs.</p>\n</article></div>",
   "punchCard": [
     {
       "day": 0,
@@ -1244,14 +1249,6 @@
   ],
   "commitActivity": [
     {
-      "week": "2025-11-16",
-      "commits": 0
-    },
-    {
-      "week": "2025-11-23",
-      "commits": 0
-    },
-    {
       "week": "2025-11-30",
       "commits": 0
     },
@@ -1450,65 +1447,17 @@
     {
       "week": "2026-11-08",
       "commits": 0
+    },
+    {
+      "week": "2026-11-15",
+      "commits": 0
+    },
+    {
+      "week": "2026-11-22",
+      "commits": 0
     }
   ],
   "contributionDays": [
-    {
-      "date": "2025-11-16",
-      "count": 0
-    },
-    {
-      "date": "2025-11-17",
-      "count": 0
-    },
-    {
-      "date": "2025-11-18",
-      "count": 0
-    },
-    {
-      "date": "2025-11-19",
-      "count": 0
-    },
-    {
-      "date": "2025-11-20",
-      "count": 0
-    },
-    {
-      "date": "2025-11-21",
-      "count": 0
-    },
-    {
-      "date": "2025-11-22",
-      "count": 0
-    },
-    {
-      "date": "2025-11-23",
-      "count": 0
-    },
-    {
-      "date": "2025-11-24",
-      "count": 0
-    },
-    {
-      "date": "2025-11-25",
-      "count": 0
-    },
-    {
-      "date": "2025-11-26",
-      "count": 0
-    },
-    {
-      "date": "2025-11-27",
-      "count": 0
-    },
-    {
-      "date": "2025-11-28",
-      "count": 0
-    },
-    {
-      "date": "2025-11-29",
-      "count": 0
-    },
     {
       "date": "2025-11-30",
       "count": 0
@@ -2908,6 +2857,62 @@
     {
       "date": "2026-11-14",
       "count": 0
+    },
+    {
+      "date": "2026-11-15",
+      "count": 0
+    },
+    {
+      "date": "2026-11-16",
+      "count": 0
+    },
+    {
+      "date": "2026-11-17",
+      "count": 0
+    },
+    {
+      "date": "2026-11-18",
+      "count": 0
+    },
+    {
+      "date": "2026-11-19",
+      "count": 0
+    },
+    {
+      "date": "2026-11-20",
+      "count": 0
+    },
+    {
+      "date": "2026-11-21",
+      "count": 0
+    },
+    {
+      "date": "2026-11-22",
+      "count": 0
+    },
+    {
+      "date": "2026-11-23",
+      "count": 0
+    },
+    {
+      "date": "2026-11-24",
+      "count": 0
+    },
+    {
+      "date": "2026-11-25",
+      "count": 0
+    },
+    {
+      "date": "2026-11-26",
+      "count": 0
+    },
+    {
+      "date": "2026-11-27",
+      "count": 0
+    },
+    {
+      "date": "2026-11-28",
+      "count": 0
     }
   ],
   "participation": {
@@ -3350,10 +3355,20 @@
       "week": "2026-11-08",
       "additions": 0,
       "deletions": 0
+    },
+    {
+      "week": "2026-11-15",
+      "additions": 0,
+      "deletions": 0
+    },
+    {
+      "week": "2026-11-22",
+      "additions": 0,
+      "deletions": 0
     }
   ],
   "factsVersion": 3,
-  "factsUpdatedAt": "2026-11-10T23:37:10.821Z",
+  "factsUpdatedAt": "2026-11-22T08:19:24.133Z",
   "aiSummary": {
     "oneLiner": "The JavaScript SDK for building secure, sandboxed WebAssembly capsules within the Unicity Astrid ecosystem.",
     "whatItDoes": "This SDK provides the essential JavaScript and TypeScript bindings required to author, compile, and execute WebAssembly capsules for the Unicity Astrid runtime. It serves as a direct counterpart to the Rust SDK, offering identical functionality like IPC messaging, environment access, and capability management. It presents these low-level features through familiar Node.js paradigms like Promises and EventEmitters. By handling the complex orchestration of transpiling code into the wasm32-wasip2 Component Model, it allows developers to seamlessly integrate their JavaScript logic into the secure Astrid execution kernel.",
