@@ -25,8 +25,10 @@ function parseTrendingHtml(html) {
   // Each repo is an <article class="Box-row"> block.
   const articles = html.split(/<article class="Box-row"/).slice(1);
   for (const chunk of articles) {
-    const nameMatch = chunk.match(/href="\/([^"\/]+\/[^"?]+)"[^>]*data-view-component="true"/);
-    const hrefMatch = nameMatch || chunk.match(/<h2[^>]*>[\s\S]*?href="\/([^"]+)"/);
+    // The repo link lives in the row's <h2>. Rows whose owner has GitHub
+    // Sponsors also carry a /sponsors/<owner> button before it, so a
+    // first-link-in-row match would pick that up and drop the whole row.
+    const hrefMatch = chunk.match(/<h2[^>]*>[\s\S]*?href="\/([^"]+)"/);
     if (!hrefMatch) continue;
     const fullName = hrefMatch[1].trim();
     if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) continue;
